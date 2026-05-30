@@ -19,14 +19,14 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Smart CRM",
-  description: "Local service business lead scoring dashboard",
+  title: "Axon",
+  description: "Built on data, focused on people.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`h-full ${robotoSlab.variable} ${geist.variable} ${geistMono.variable}`}>
-      <body className="h-full">{children}</body>
+    <html lang="en" className={`${robotoSlab.variable} ${geist.variable} ${geistMono.variable}`}>
+      <body>{children}</body>
     </html>
   );
 }
