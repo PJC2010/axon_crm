@@ -1,0 +1,156 @@
+@import "tailwindcss";
+
+@theme inline {
+  /* Paper & ink — warm neutrals */
+  --color-paper:      #F7F4EE;
+  --color-paper-deep: #EFEBE2;
+  --color-cream:      #FBF8F2;
+
+  --color-ink-50:  #F1F2F5;
+  --color-ink-100: #E8EAEF;
+  --color-ink-200: #DCDFE5;
+  --color-ink-300: #B8BDC8;
+  --color-ink-400: #8B92A1;
+  --color-ink-500: #6E7585;
+  --color-ink-600: #555B68;
+  --color-ink-700: #3D424D;
+  --color-ink-800: #24272F;
+  --color-ink-900: #16181D;
+
+  /* Deep ocean — signature accent */
+  --color-accent:     #1A5A75;
+  --color-accent-700: #134A61;
+  --color-accent-800: #0E3A4D;
+  --color-accent-300: #8DB4C3;
+  --color-accent-100: #CDE0E7;
+  --color-accent-50:  #E8F1F4;
+
+  /* Data viz */
+  --color-moss:       #4F7A4A;
+  --color-moss-soft:  #DCE6D5;
+  --color-ocean-d:    #2E5F7A;
+  --color-ocean-soft: #D2E0E8;
+  --color-gold:       #C29A3D;
+  --color-gold-soft:  #EFE3C2;
+  --color-plum:       #7A4870;
+  --color-plum-soft:  #E5D5E0;
+  --color-rose:       #B05666;
+  --color-rose-soft:  #EED5D8;
+
+  /* Semantic */
+  --color-success:    #4F7A4A;
+  --color-success-bg: #E6EEDE;
+  --color-warning:    #B07A2A;
+  --color-warning-bg: #F4E7CB;
+  --color-danger:     #A84236;
+  --color-danger-bg:  #F0D9D6;
+  --color-info:       #2E5F7A;
+  --color-info-bg:    #DCE7ED;
+
+  /* Fonts */
+  --font-display: "Roboto Slab", ui-serif, Georgia, serif;
+  --font-sans:    "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono:    "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Radius */
+  --radius-input:  4px;
+  --radius-button: 6px;
+  --radius-card:   10px;
+  --radius-modal:  14px;
+  --radius-pill:   9999px;
+
+  /* Shadows — warm-tinted */
+  --shadow-card:   0 1px 2px rgba(28,22,14,0.04), 0 2px 8px rgba(28,22,14,0.06);
+  --shadow-pop:    0 4px 12px rgba(28,22,14,0.08), 0 2px 4px rgba(28,22,14,0.04);
+  --shadow-modal:  0 12px 32px rgba(28,22,14,0.14), 0 4px 12px rgba(28,22,14,0.08);
+  --shadow-drawer: -4px 0 24px 0 rgba(22,24,29,0.12);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink-900);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Semantic type utilities ── */
+.t-eyebrow {
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-500);
+}
+
+.t-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* alias kept for existing usages */
+.tabular { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* ── Form controls ── */
+.select-field {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: var(--radius-button);
+  border: 1px solid var(--color-ink-200);
+  background: white;
+  color: var(--color-ink-900);
+  appearance: none;
+  cursor: pointer;
+  transition: border-color 180ms, box-shadow 180ms;
+}
+.select-field:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent);
+}
+
+/* ── Buttons ── */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-button);
+  border: 1px solid transparent;
+  background: var(--color-accent);
+  color: var(--color-cream);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 180ms;
+}
+.btn-primary:hover   { background: var(--color-accent-700); }
+.btn-primary:active  { background: var(--color-accent-800); }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-button);
+  border: 1px solid var(--color-ink-300);
+  background: var(--color-paper);
+  color: var(--color-ink-900);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 180ms, background 180ms;
+}
+.btn-secondary:hover { background: var(--color-paper-deep); border-color: var(--color-ink-400); }

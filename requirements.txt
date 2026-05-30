@@ -1,0 +1,10 @@
+# Pipeline
+psycopg2-binary>=2.9
+requests>=2.31
+geohash2>=1.1          # optional: lat/lng → geohash encoding
+python-dotenv>=1.0     # optional: load .env file for API keys
+
+# API
+fastapi>=0.111
+uvicorn[standard]>=0.29
+pydantic>=2.0
