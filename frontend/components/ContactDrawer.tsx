@@ -15,6 +15,12 @@ interface Props {
 const ACTION_OPTIONS = ['Called', 'Door knocked', 'Emailed', 'Texted', 'Left voicemail', 'Meeting']
 const OUTCOME_OPTIONS = ['No answer', 'Left message', 'Not interested', 'Interested', 'Quoted', 'Booked', 'Converted']
 
+const VERTICAL_LABELS: Record<string, string> = {
+  epoxy_flooring:   'Epoxy flooring',
+  pool_maintenance: 'Pool maintenance',
+  solar:            'Solar',
+}
+
 function fmt(d: string | null) {
   if (!d) return '—'
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -22,6 +28,10 @@ function fmt(d: string | null) {
 function fmtCurrency(n: number | null) {
   if (!n) return '—'
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+}
+function fmtOccupied(v: boolean | null) {
+  if (v === null || v === undefined) return '—'
+  return v ? 'Yes' : 'No'
 }
 
 export function ContactDrawer({ lead, onClose, onStatusChange }: Props) {
@@ -120,27 +130,7 @@ export function ContactDrawer({ lead, onClose, onStatusChange }: Props) {
               <StatusSelect leadId={lead.id} value={lead.status} onChange={s => onStatusChange(lead.id, s)} />
             </div>
           </div>
-          <button
-            onClick={onClose}
-            style={{
-              padding: 6,
-              borderRadius: 'var(--radius-button)',
-              border: 'none',
-              background: 'transparent',
-              color: 'var(--color-ink-400)',
-              cursor: 'pointer',
-              display: 'flex',
-              transition: 'background 120ms, color 120ms',
-            }}
-            onMouseEnter={e => {
-              (e.currentTarget as HTMLButtonElement).style.background = 'var(--color-paper)'
-              ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--color-ink-900)'
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLButtonElement).style.background = 'transparent'
-              ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--color-ink-400)'
-            }}
-          >
+          <button onClick={onClose} className="dash-icon-btn borderless">
             <X size={16} strokeWidth={1.5} />
           </button>
         </div>
@@ -148,12 +138,29 @@ export function ContactDrawer({ lead, onClose, onStatusChange }: Props) {
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {/* Property signals */}
           <section style={{ padding: '16px 24px', ...SECTION_BORDER }}>
-            <p className="t-eyebrow" style={{ marginBottom: 12 }}>Property signals</p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <p className="t-eyebrow" style={{ margin: 0 }}>Property signals</p>
+              {lead.vertical && (
+                <span style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  padding: '2px 8px',
+                  borderRadius: 'var(--radius-pill)',
+                  background: 'var(--color-accent-100)',
+                  color: 'var(--color-accent-800)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                }}>
+                  {VERTICAL_LABELS[lead.vertical] ?? lead.vertical}
+                </span>
+              )}
+            </div>
             <dl style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 16, rowGap: 10 }}>
               {[
                 ['Year built',     lead.year_built],
                 ['Sq footage',     lead.square_footage ? `${lead.square_footage.toLocaleString()} sqft` : null],
                 ['Garage spaces',  lead.garage_spaces],
+                ['Owner occupied', fmtOccupied(lead.owner_occupied)],
                 ['Est. value',     fmtCurrency(lead.estimated_value)],
                 ['Est. equity',    fmtCurrency(lead.estimated_equity)],
                 ['Last sale',      fmt(lead.last_sale_date)],
@@ -173,6 +180,11 @@ export function ContactDrawer({ lead, onClose, onStatusChange }: Props) {
                 </div>
               ))}
             </dl>
+            {lead.score_updated_at && (
+              <p style={{ marginTop: 12, marginBottom: 0, fontSize: 11, color: 'var(--color-ink-400)' }}>
+                Score updated {fmt(lead.score_updated_at)}
+              </p>
+            )}
           </section>
 
           {/* Log contact */}
