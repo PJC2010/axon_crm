@@ -14,10 +14,7 @@ export function ExportButton({ filters }: Props) {
   }
 
   return (
-    <button
-      onClick={handleClick}
-      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] border border-[#E2DDD5] bg-white text-[#16181D]/70 text-xs font-medium hover:border-[#1A5A75]/40 hover:text-[#1A5A75] transition-colors cursor-pointer"
-    >
+    <button onClick={handleClick} className="btn-secondary" style={{ fontSize: 13, padding: '5px 12px' }}>
       <Download size={13} strokeWidth={1.5} />
       Export CSV
     </button>

@@ -154,3 +154,20 @@ body {
   transition: border-color 180ms, background 180ms;
 }
 .btn-secondary:hover { background: var(--color-paper-deep); border-color: var(--color-ink-400); }
+
+/* ── Dashboard icon button (refresh, close) ── */
+.dash-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: var(--radius-button);
+  border: 1px solid var(--color-ink-200);
+  background: white;
+  color: var(--color-ink-400);
+  cursor: pointer;
+  transition: color 180ms, border-color 180ms, background 180ms;
+}
+.dash-icon-btn:hover { color: var(--color-ink-900); border-color: var(--color-accent); }
+.dash-icon-btn.borderless { border-color: transparent; background: transparent; }
+.dash-icon-btn.borderless:hover { background: var(--color-paper); border-color: transparent; }

@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { RefreshCw, AlertCircle } from 'lucide-react'
+import Link from 'next/link'
 import { getLeads } from '@/lib/api'
 import type { Lead, LeadFilters, LeadStatus } from '@/lib/types'
 import { LeadTable } from './LeadTable'
@@ -41,7 +42,7 @@ export function Dashboard() {
 
   return (
     <div className="flex flex-col h-screen" style={{ background: 'var(--color-paper)' }}>
-      {/* Top nav */}
+      {/* Top nav — matches landing page nav height and token usage */}
       <header
         className="flex items-center justify-between shrink-0"
         style={{
@@ -51,40 +52,42 @@ export function Dashboard() {
           borderBottom: '1px solid var(--color-ink-200)',
         }}
       >
+        {/* Axon logo + wordmark — links back to landing */}
         <div className="flex items-center gap-3">
-          <span
-            className="text-[22px] font-semibold tracking-tight"
-            style={{ fontFamily: 'var(--font-display)', letterSpacing: '-0.01em', color: 'var(--color-ink-900)' }}
+          <Link
+            href="/"
+            style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none', color: 'inherit' }}
           >
-            Smart CRM
-          </span>
+            <svg width="26" height="26" viewBox="0 0 40 40" fill="none">
+              <path
+                d="M4 32 C 12 32, 14 22, 22 22 C 30 22, 30 14, 38 6"
+                stroke="var(--color-ink-900)" strokeWidth="2.5"
+                strokeLinecap="round" strokeLinejoin="round"
+              />
+              <circle cx="4" cy="32" r="3" fill="var(--color-ink-900)" />
+              <circle cx="22" cy="22" r="4" fill="var(--color-paper)" stroke="var(--color-ink-900)" strokeWidth="2.5" />
+              <circle cx="38" cy="6" r="6" fill="var(--color-accent)" />
+            </svg>
+            <span style={{
+              fontFamily: 'var(--font-display)',
+              fontSize: 20,
+              fontWeight: 600,
+              letterSpacing: '-0.01em',
+              color: 'var(--color-ink-900)',
+            }}>
+              Axon
+            </span>
+          </Link>
           <span style={{ color: 'var(--color-ink-300)', fontSize: 14 }}>·</span>
           <span className="t-eyebrow">Lead dashboard</span>
         </div>
+
         <div className="flex items-center gap-2">
           <ExportButton filters={filters} />
           <button
             onClick={() => fetchLeads(filters)}
             title="Refresh"
-            style={{
-              padding: '6px',
-              borderRadius: 'var(--radius-button)',
-              border: '1px solid var(--color-ink-200)',
-              background: 'white',
-              color: 'var(--color-ink-400)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              transition: 'color 180ms, border-color 180ms',
-            }}
-            onMouseEnter={e => {
-              (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-ink-900)'
-              ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--color-accent)'
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLButtonElement).style.color = 'var(--color-ink-400)'
-              ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--color-ink-200)'
-            }}
+            className="dash-icon-btn"
           >
             <RefreshCw size={13} strokeWidth={1.5} className={loading ? 'animate-spin' : ''} />
           </button>
