@@ -159,6 +159,10 @@ export function getPipelineRuns(limit = 20): Promise<PipelineRun[]> {
   return req(`/pipeline/runs?limit=${limit}`)
 }
 
+export function cancelRun(id: number): Promise<void> {
+  return req(`/pipeline/runs/${id}`, { method: 'DELETE' })
+}
+
 // ── Misc ──────────────────────────────────────────────────────────────────────
 
 export function getZips(): Promise<string[]> {

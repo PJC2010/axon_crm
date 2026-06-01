@@ -12,6 +12,23 @@ log = logging.getLogger(__name__)
 
 scheduler = BackgroundScheduler(timezone="UTC")
 
+# ── Cancellation flags ────────────────────────────────────────────────────────
+# run_id → True means a cancel has been requested for that run
+_cancel_flags: set[int] = set()
+
+
+def request_cancel(run_id: int) -> None:
+    """Signal a running pipeline to stop after its current step."""
+    _cancel_flags.add(run_id)
+
+
+def is_cancelled(run_id: int) -> bool:
+    return run_id in _cancel_flags
+
+
+def _clear_cancel(run_id: int) -> None:
+    _cancel_flags.discard(run_id)
+
 DAY_MAP = {
     "monday": "mon", "tuesday": "tue", "wednesday": "wed",
     "thursday": "thu", "friday": "fri", "saturday": "sat", "sunday": "sun",
@@ -23,8 +40,25 @@ def _job_id(schedule_id: int) -> str:
 
 
 def _run_pipeline(run_id: int, zip_code: str, vertical: str | None):
-    """Execute the enrichment pipeline and update the pipeline_runs row."""
+    """Execute the enrichment pipeline step-by-step, checking for cancellation between steps."""
     conn = psycopg2.connect(DATABASE_URL)
+
+    def _set_status(status: str, result: dict | None = None):
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE pipeline_runs SET status = %s, finished_at = NOW(), result_json = %s WHERE id = %s",
+                (status, psycopg2.extras.Json(result or {}), run_id),
+            )
+        conn.commit()
+
+    def _check_cancel() -> bool:
+        if is_cancelled(run_id):
+            log.info("Pipeline run %d cancelled", run_id)
+            _set_status("cancelled", {"reason": "cancelled by user"})
+            _clear_cancel(run_id)
+            return True
+        return False
+
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -33,43 +67,56 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None):
             )
         conn.commit()
 
-        # Import here to avoid circular imports at module load time
         import sys, os
-        from types import SimpleNamespace
         sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-        from run_pipeline import run_zip
 
-        fake_args = SimpleNamespace(
-            vertical=vertical,
-            skip="",
-            seed_csv=None,
-            permit_csv=None,
-            limit=None,
-        )
-        run_zip(zip_code, fake_args)
-        result = {"status": "completed", "zip": zip_code}
+        # Step 1 — Seed
+        if _check_cancel(): return
+        from pipeline.seed import seed
+        n = seed(zip_code, csv_path=None, limit=None)
+        log.info("[1/6] run=%d Seed: %d records", run_id, n)
 
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE pipeline_runs SET status = 'done', finished_at = NOW(), result_json = %s WHERE id = %s",
-                (psycopg2.extras.Json(result), run_id),
-            )
-        conn.commit()
+        # Step 2 — Census
+        if _check_cancel(): return
+        from pipeline.census import enrich_census
+        n = enrich_census(zip_code)
+        log.info("[2/6] run=%d Census: %d updated", run_id, n)
+
+        # Step 3 — Geocode
+        if _check_cancel(): return
+        from pipeline.geocode import enrich_geocode
+        n = enrich_geocode(zip_code)
+        log.info("[3/6] run=%d Geocode: %d updated", run_id, n)
+
+        # Step 4 — Property detail
+        if _check_cancel(): return
+        from pipeline.property import enrich_property
+        n = enrich_property(zip_code)
+        log.info("[4/6] run=%d Property: %d updated", run_id, n)
+
+        # Step 5 — Permits
+        if _check_cancel(): return
+        from pipeline.permits import enrich_permits
+        n = enrich_permits(zip_code, csv_path=None)
+        log.info("[5/6] run=%d Permits: %d updated", run_id, n)
+
+        # Step 6 — Score
+        if _check_cancel(): return
+        from pipeline.scorer import score_zip
+        n = score_zip(zip_code, vertical=vertical)
+        log.info("[6/6] run=%d Scoring: %d scored", run_id, n)
+
+        _set_status("done", {"status": "completed", "zip": zip_code})
         log.info("Pipeline run %d done", run_id)
 
     except Exception as exc:
         log.exception("Pipeline run %d failed", run_id)
         try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE pipeline_runs SET status = 'failed', finished_at = NOW(), "
-                    "result_json = %s WHERE id = %s",
-                    (psycopg2.extras.Json({"error": str(exc)}), run_id),
-                )
-            conn.commit()
+            _set_status("failed", {"error": str(exc)})
         except Exception:
             pass
     finally:
+        _clear_cancel(run_id)
         conn.close()
 
 

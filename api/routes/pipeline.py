@@ -204,3 +204,25 @@ def get_run(run_id: int, _: dict = Depends(get_current_user), db: PGConn = Depen
     if not row:
         raise HTTPException(status_code=404, detail="Run not found")
     return row
+
+
+@router.delete("/pipeline/runs/{run_id}", status_code=204)
+def cancel_run(run_id: int, _: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+    """Signal a running pipeline to stop after its current step."""
+    from api.scheduler import request_cancel
+    with db.cursor() as cur:
+        cur.execute("SELECT status FROM pipeline_runs WHERE id = %s", (run_id,))
+        row = cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if row[0] not in ("queued", "running"):
+        raise HTTPException(status_code=400, detail=f"Run is already {row[0]}")
+    request_cancel(run_id)
+    # Mark as cancelled immediately so the UI updates even if the thread hasn't checked yet
+    with db.cursor() as cur:
+        cur.execute(
+            "UPDATE pipeline_runs SET status = 'cancelled', finished_at = NOW() WHERE id = %s",
+            (run_id,),
+        )
+    db.commit()
+    return

@@ -1,18 +1,19 @@
 'use client'
 import { useEffect, useState, useCallback, FormEvent } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Play, Trash2, RefreshCw, Home } from 'lucide-react'
-import { getSchedules, createSchedule, updateSchedule, deleteSchedule, triggerRun, getPipelineRuns } from '@/lib/api'
+import { ArrowLeft, Play, Trash2, RefreshCw, Home, XCircle } from 'lucide-react'
+import { getSchedules, createSchedule, updateSchedule, deleteSchedule, triggerRun, getPipelineRuns, cancelRun } from '@/lib/api'
 import { AuthGuard } from '@/components/AuthGuard'
 import type { PipelineSchedule, PipelineRun } from '@/lib/types'
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 const VERTICALS = ['', 'epoxy_flooring', 'pool_maintenance', 'solar']
 const STATUS_COLOR: Record<string, string> = {
-  queued:  'var(--color-ink-400)',
-  running: 'var(--color-accent)',
-  done:    'var(--color-moss)',
-  failed:  'var(--color-danger)',
+  queued:    'var(--color-ink-400)',
+  running:   'var(--color-accent)',
+  done:      'var(--color-moss)',
+  failed:    'var(--color-danger)',
+  cancelled: 'var(--color-gold)',
 }
 
 function duration(run: PipelineRun) {
@@ -222,7 +223,7 @@ function SettingsPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--color-ink-200)' }}>
-                  {['ZIP', 'Vertical', 'Triggered by', 'Status', 'Started', 'Duration'].map(h => (
+                  {['ZIP', 'Vertical', 'Triggered by', 'Status', 'Started', 'Duration', ''].map(h => (
                     <th key={h} style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--color-ink-400)', fontWeight: 500, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
                   ))}
                 </tr>
@@ -243,6 +244,27 @@ function SettingsPage() {
                       {r.started_at ? new Date(r.started_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'}
                     </td>
                     <td style={{ padding: '8px', color: 'var(--color-ink-500)' }}>{duration(r) ?? '—'}</td>
+                    <td style={{ padding: '8px' }}>
+                      {(r.status === 'running' || r.status === 'queued') && (
+                        <button
+                          onClick={async () => {
+                            if (!confirm('Stop this pipeline run?')) return
+                            try {
+                              await cancelRun(r.id)
+                              await getPipelineRuns().then(setRuns)
+                            } catch (e: unknown) {
+                              alert(e instanceof Error ? e.message : 'Failed to cancel')
+                            }
+                          }}
+                          title="Stop run"
+                          className="dash-icon-btn"
+                          style={{ color: 'var(--color-danger)', display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}
+                        >
+                          <XCircle size={14} strokeWidth={1.5} />
+                          Stop
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
