@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
-import { BookOpen, ChevronDown } from 'lucide-react'
+import { BookOpen, ChevronDown, Home } from 'lucide-react'
+import Link from 'next/link'
 import { BookkeepingOverview } from './BookkeepingOverview'
 import { InvoiceList } from './InvoiceList'
 import { ARDashboard } from './ARDashboard'
@@ -34,6 +35,9 @@ export function BookkeepingDashboard() {
         background: 'var(--color-paper)', position: 'sticky', top: 0, zIndex: 10,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Link href="/home" title="Home" className="dash-icon-btn" style={{ textDecoration: 'none', color: 'inherit' }}>
+            <Home size={15} strokeWidth={1.5} />
+          </Link>
           <BookOpen size={18} strokeWidth={1.5} color="var(--color-accent)" />
           <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600, color: 'var(--color-ink-900)', margin: 0 }}>
             Bookkeeping

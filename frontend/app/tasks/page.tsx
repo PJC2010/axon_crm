@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Home } from 'lucide-react'
 import { getTasks } from '@/lib/api'
 import { AuthGuard } from '@/components/AuthGuard'
 import type { Task } from '@/lib/types'
@@ -42,6 +42,9 @@ function TasksPage() {
       }}>
         <Link href="/dashboard" className="dash-icon-btn" style={{ textDecoration: 'none', color: 'inherit' }}>
           <ArrowLeft size={15} strokeWidth={1.5} />
+        </Link>
+        <Link href="/home" title="Home" className="dash-icon-btn" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <Home size={15} strokeWidth={1.5} />
         </Link>
         <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600, color: 'var(--color-ink-900)', margin: 0 }}>
           Tasks

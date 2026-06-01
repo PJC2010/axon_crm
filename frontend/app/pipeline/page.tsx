@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, RefreshCw } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Home } from 'lucide-react'
 import { getPipeline, getPipelineStats, updateStatus } from '@/lib/api'
 import { AuthGuard } from '@/components/AuthGuard'
 import type { PipelineCardLead, PipelineGroup, LeadStatus } from '@/lib/types'
@@ -80,6 +80,9 @@ function PipelinePage() {
       }}>
         <Link href="/dashboard" className="dash-icon-btn" style={{ textDecoration: 'none', color: 'inherit' }}>
           <ArrowLeft size={15} strokeWidth={1.5} />
+        </Link>
+        <Link href="/home" title="Home" className="dash-icon-btn" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <Home size={15} strokeWidth={1.5} />
         </Link>
         <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600, color: 'var(--color-ink-900)', margin: 0, flex: 1 }}>
           Pipeline
