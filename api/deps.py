@@ -65,6 +65,6 @@ def get_current_user(
 
 
 def require_owner(current_user: dict = Depends(get_current_user)) -> dict:
-    if current_user["role"] != "owner":
+    if current_user["role"] not in ("owner", "admin"):
         raise HTTPException(status_code=403, detail="Owner access required")
     return current_user
