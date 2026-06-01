@@ -1,18 +1,41 @@
-import type { Lead, LeadPage, LeadFilters, Note, HistoryEntry, LeadStatus } from './types'
+import type { Lead, LeadPage, LeadFilters, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, ARSummary, AgingBucket, PnLReport, JobCostRow } from './types'
+import { getToken, clearToken } from './auth'
 
 const BASE = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000') + '/api'
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  })
+  const token = getToken()
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(`${BASE}${path}`, { headers, ...init })
+
+  if (res.status === 401) {
+    clearToken()
+    if (typeof window !== 'undefined') window.location.href = '/login'
+    throw new Error('Session expired')
+  }
+
   if (!res.ok) {
     const msg = await res.text().catch(() => res.statusText)
     throw new Error(`API ${res.status}: ${msg}`)
   }
+
+  if (res.status === 204) return undefined as T
   return res.json()
 }
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+export function login(username: string, password: string): Promise<{ access_token: string }> {
+  return req('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) })
+}
+
+export function getMe(): Promise<User> {
+  return req('/auth/me')
+}
+
+// ── Leads ─────────────────────────────────────────────────────────────────────
 
 export function getLeads(filters: LeadFilters = {}): Promise<LeadPage> {
   const params = new URLSearchParams()
@@ -33,6 +56,15 @@ export function updateStatus(id: number, status: LeadStatus): Promise<Lead> {
   })
 }
 
+export function updateJobValue(id: number, value: number): Promise<Lead> {
+  return req<Lead>(`/leads/${id}/job-value`, {
+    method: 'PATCH',
+    body: JSON.stringify({ estimated_job_value: value }),
+  })
+}
+
+// ── Notes ─────────────────────────────────────────────────────────────────────
+
 export function getNotes(leadId: number): Promise<Note[]> {
   return req<Note[]>(`/leads/${leadId}/notes`)
 }
@@ -43,6 +75,8 @@ export function addNote(leadId: number, note: string): Promise<Note> {
     body: JSON.stringify({ note }),
   })
 }
+
+// ── History ───────────────────────────────────────────────────────────────────
 
 export function getHistory(leadId: number): Promise<HistoryEntry[]> {
   return req<HistoryEntry[]>(`/leads/${leadId}/history`)
@@ -55,8 +89,181 @@ export function addHistory(leadId: number, action: string, outcome?: string): Pr
   })
 }
 
+// ── Tasks ─────────────────────────────────────────────────────────────────────
+
+export function getTasks(params: { due?: string; overdue?: boolean; property_id?: number; complete?: boolean } = {}): Promise<Task[]> {
+  const p = new URLSearchParams()
+  if (params.due) p.set('due', params.due)
+  if (params.overdue) p.set('overdue', 'true')
+  if (params.property_id) p.set('property_id', String(params.property_id))
+  if (params.complete !== undefined) p.set('complete', String(params.complete))
+  return req<Task[]>(`/tasks?${p}`)
+}
+
+export function getTaskCounts(): Promise<PipelineCounts> {
+  return req<PipelineCounts>('/tasks/counts')
+}
+
+export function getLeadTasks(leadId: number): Promise<Task[]> {
+  return req<Task[]>(`/leads/${leadId}/tasks`)
+}
+
+export function createTask(body: TaskCreate): Promise<Task> {
+  return req<Task>('/tasks', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function completeTask(id: number): Promise<Task> {
+  return req<Task>(`/tasks/${id}/complete`, { method: 'POST' })
+}
+
+export function deleteTask(id: number): Promise<void> {
+  return req<void>(`/tasks/${id}`, { method: 'DELETE' })
+}
+
+// ── Pipeline / Kanban ─────────────────────────────────────────────────────────
+
+export function getPipeline(filters: { vertical?: string; zip?: string } = {}): Promise<PipelineGroup> {
+  const p = new URLSearchParams()
+  if (filters.vertical) p.set('vertical', filters.vertical)
+  if (filters.zip) p.set('zip', filters.zip)
+  return req<PipelineGroup>(`/pipeline?${p}`)
+}
+
+export function getPipelineStats(): Promise<Record<string, { count: number; total_value: number }>> {
+  return req('/pipeline/stats')
+}
+
+// ── Pipeline scheduling ───────────────────────────────────────────────────────
+
+export function getSchedules(): Promise<PipelineSchedule[]> {
+  return req('/pipeline-schedules')
+}
+
+export function createSchedule(body: { zip: string; vertical?: string; day_of_week: string; hour: number }): Promise<PipelineSchedule> {
+  return req('/pipeline-schedules', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateSchedule(id: number, body: { is_active?: boolean; day_of_week?: string; hour?: number }): Promise<PipelineSchedule> {
+  return req(`/pipeline-schedules/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export function deleteSchedule(id: number): Promise<void> {
+  return req<void>(`/pipeline-schedules/${id}`, { method: 'DELETE' })
+}
+
+export function triggerRun(zip: string, vertical?: string): Promise<PipelineRun> {
+  return req('/pipeline/run', { method: 'POST', body: JSON.stringify({ zip, vertical }) })
+}
+
+export function getPipelineRuns(limit = 20): Promise<PipelineRun[]> {
+  return req(`/pipeline/runs?limit=${limit}`)
+}
+
+// ── Misc ──────────────────────────────────────────────────────────────────────
+
 export function getZips(): Promise<string[]> {
   return req<string[]>('/zips')
+}
+
+// ── Expenses ──────────────────────────────────────────────────────────────────
+
+export function getExpenses(filters: ExpenseFilters = {}): Promise<{ items: Expense[]; total: number; page: number; page_size: number }> {
+  const p = new URLSearchParams()
+  Object.entries(filters).forEach(([k, v]) => {
+    if (v !== undefined && v !== '') p.set(k, String(v))
+  })
+  return req(`/expenses?${p}`)
+}
+
+export function getExpenseSummary(year?: number, month?: number): Promise<ExpenseSummary> {
+  const p = new URLSearchParams()
+  if (year) p.set('year', String(year))
+  if (month) p.set('month', String(month))
+  return req(`/expenses/summary?${p}`)
+}
+
+export function createExpense(body: ExpenseCreate): Promise<Expense> {
+  return req<Expense>('/expenses', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateExpense(id: number, body: Partial<ExpenseCreate>): Promise<Expense> {
+  return req<Expense>(`/expenses/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export function deleteExpense(id: number): Promise<void> {
+  return req<void>(`/expenses/${id}`, { method: 'DELETE' })
+}
+
+export function expenseExportUrl(filters: ExpenseFilters = {}): string {
+  const p = new URLSearchParams()
+  Object.entries(filters).forEach(([k, v]) => {
+    if (v !== undefined && v !== '') p.set(k, String(v))
+  })
+  const token = getToken()
+  if (token) p.set('token', token)
+  return `${BASE}/expenses/export?${p}`
+}
+
+// ── Invoices ──────────────────────────────────────────────────────────────────
+
+export function getInvoices(filters: InvoiceFilters = {}): Promise<{ items: Invoice[]; total: number; page: number; page_size: number }> {
+  const p = new URLSearchParams()
+  Object.entries(filters).forEach(([k, v]) => { if (v !== undefined && v !== '') p.set(k, String(v)) })
+  return req(`/invoices?${p}`)
+}
+
+export function getInvoice(id: number): Promise<Invoice> {
+  return req<Invoice>(`/invoices/${id}`)
+}
+
+export function createInvoice(body: InvoiceCreate): Promise<Invoice> {
+  return req<Invoice>('/invoices', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateInvoice(id: number, body: Partial<InvoiceCreate> & { status?: string }): Promise<Invoice> {
+  return req<Invoice>(`/invoices/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export function deleteInvoice(id: number): Promise<void> {
+  return req<void>(`/invoices/${id}`, { method: 'DELETE' })
+}
+
+export function recordPayment(invoiceId: number, body: { amount: number; payment_date: string; payment_method: string; notes?: string }): Promise<InvoicePayment> {
+  return req<InvoicePayment>(`/invoices/${invoiceId}/payments`, { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function deletePayment(invoiceId: number, paymentId: number): Promise<void> {
+  return req<void>(`/invoices/${invoiceId}/payments/${paymentId}`, { method: 'DELETE' })
+}
+
+export function getARSummary(year?: number): Promise<ARSummary> {
+  const p = new URLSearchParams()
+  if (year) p.set('year', String(year))
+  return req(`/invoices/summary?${p}`)
+}
+
+export function getAgingReport(): Promise<AgingBucket[]> {
+  return req('/invoices/aging')
+}
+
+export function invoiceExportUrl(filters: InvoiceFilters = {}): string {
+  const p = new URLSearchParams()
+  Object.entries(filters).forEach(([k, v]) => { if (v !== undefined && v !== '') p.set(k, String(v)) })
+  const token = getToken()
+  if (token) p.set('token', token)
+  return `${BASE}/invoices/export?${p}`
+}
+
+// ── Bookkeeping reports ───────────────────────────────────────────────────────
+
+export function getPnL(year: number): Promise<PnLReport> {
+  return req(`/bookkeeping/pnl?year=${year}`)
+}
+
+export function getJobCosting(year?: number): Promise<JobCostRow[]> {
+  const p = new URLSearchParams()
+  if (year) p.set('year', String(year))
+  return req(`/bookkeeping/job-costing?${p}`)
 }
 
 export function exportUrl(filters: LeadFilters = {}): string {
@@ -64,5 +271,7 @@ export function exportUrl(filters: LeadFilters = {}): string {
   Object.entries(filters).forEach(([k, v]) => {
     if (v !== undefined && v !== '') params.set(k, String(v))
   })
+  const token = getToken()
+  if (token) params.set('token', token)
   return `${BASE}/export?${params}`
 }

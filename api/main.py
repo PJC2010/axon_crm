@@ -1,20 +1,34 @@
 """FastAPI application entry point."""
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import leads, notes, history, export
+from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from api.scheduler import scheduler, load_active_schedules
+    scheduler.start()
+    load_active_schedules()
+    yield
+    scheduler.shutdown(wait=False)
+
 
 app = FastAPI(
-    title="Smart CRM API",
+    title="Axon CRM API",
     description="Local service business lead scoring and contact management",
-    version="1.0.0",
+    version="2.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000", "http://127.0.0.1:3000",   # Next.js dev
-        "http://localhost:5173", "http://127.0.0.1:5173",   # Vite dev
+        "http://localhost:3000", "http://127.0.0.1:3000",
+        "http://localhost:5173", "http://127.0.0.1:5173",
         "http://localhost:5174", "http://127.0.0.1:5174",
     ],
     allow_credentials=True,
@@ -22,10 +36,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(leads.router,   prefix="/api", tags=["Leads"])
-app.include_router(notes.router,   prefix="/api", tags=["Notes"])
-app.include_router(history.router, prefix="/api", tags=["History"])
-app.include_router(export.router,  prefix="/api", tags=["Export"])
+app.include_router(auth.router,     prefix="/api", tags=["Auth"])
+app.include_router(leads.router,    prefix="/api", tags=["Leads"])
+app.include_router(notes.router,    prefix="/api", tags=["Notes"])
+app.include_router(history.router,  prefix="/api", tags=["History"])
+app.include_router(export.router,   prefix="/api", tags=["Export"])
+app.include_router(tasks.router,    prefix="/api", tags=["Tasks"])
+app.include_router(pipeline.router,  prefix="/api", tags=["Pipeline"])
+app.include_router(expenses.router,    prefix="/api", tags=["Expenses"])
+app.include_router(invoices.router,    prefix="/api", tags=["Invoices"])
+app.include_router(bookkeeping.router, prefix="/api", tags=["Bookkeeping"])
 
 
 @app.get("/api/health")

@@ -50,23 +50,30 @@ def run_zip(zip_code: str, args) -> None:
     if "property" not in skip:
         from pipeline.property import enrich_property
         n = enrich_property(zip_code)
-        log.info("[4/6] Property detail: %d updated", n)
+        log.info("[4/7] Property detail: %d updated", n)
     else:
-        log.info("[4/6] Property detail: skipped")
+        log.info("[4/7] Property detail: skipped")
+
+    if "hcad" not in skip:
+        from pipeline.hcad_enrichment import enrich_hcad
+        n = enrich_hcad(zip_code)
+        log.info("[4b/7] HCAD fallback: %d fields backfilled", n)
+    else:
+        log.info("[4b/7] HCAD fallback: skipped")
 
     if "permits" not in skip:
         from pipeline.permits import enrich_permits
         n = enrich_permits(zip_code, csv_path=args.permit_csv)
-        log.info("[5/6] Permits: %d updated", n)
+        log.info("[5/7] Permits: %d updated", n)
     else:
-        log.info("[5/6] Permits: skipped")
+        log.info("[5/7] Permits: skipped")
 
     if "score" not in skip:
         from pipeline.scorer import score_zip
         n = score_zip(zip_code, vertical=args.vertical)
-        log.info("[6/6] Scoring: %d scored", n)
+        log.info("[6/7] Scoring: %d scored", n)
     else:
-        log.info("[6/6] Scoring: skipped")
+        log.info("[6/7] Scoring: skipped")
 
 
 def main():
@@ -82,7 +89,7 @@ def main():
     parser.add_argument("--permit-csv", default=None,
                         help="CSV file with permit counts (address, zip, permit_count)")
     parser.add_argument("--skip",       default="",
-                        help="Comma-separated steps to skip: seed,census,geocode,property,permits,score")
+                        help="Comma-separated steps to skip: seed,census,geocode,property,hcad,permits,score")
     parser.add_argument("--limit",      type=int, default=None,
                         help="Cap the number of seeded records (useful for testing)")
 

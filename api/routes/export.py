@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from psycopg2.extensions import connection as PGConn
 
-from api.deps import get_db, dict_fetchall
+from api.deps import get_db, dict_fetchall, get_current_user
 from api.routes.leads import SORT_MAP, _build_filters
 
 router = APIRouter()
@@ -31,6 +31,7 @@ def export_leads(
     status: str | None = Query(None),
     sort: str = Query("score"),
     db: PGConn = Depends(get_db),
+    _: dict = Depends(get_current_user),
 ):
     order = SORT_MAP.get(sort, SORT_MAP["score"])
     conditions, params = _build_filters(zip=zip, grade=grade, vertical=vertical, status=status)

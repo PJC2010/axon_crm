@@ -7,7 +7,7 @@ GET  /api/zips            — distinct ZIP codes in DB
 from fastapi import APIRouter, Depends, HTTPException, Query
 from psycopg2.extensions import connection as PGConn
 
-from api.deps import get_db, dict_fetchall, dict_fetchone
+from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user
 from api.models import Lead, LeadPage, StatusUpdate
 
 router = APIRouter()
@@ -30,6 +30,7 @@ def list_leads(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: PGConn = Depends(get_db),
+    _: dict = Depends(get_current_user),
 ):
     order = SORT_MAP.get(sort, SORT_MAP["score"])
     conditions, params = _build_filters(zip=zip, grade=grade, vertical=vertical, status=status)
@@ -51,7 +52,7 @@ def list_leads(
 
 
 @router.get("/leads/{lead_id}", response_model=Lead)
-def get_lead(lead_id: int, db: PGConn = Depends(get_db)):
+def get_lead(lead_id: int, db: PGConn = Depends(get_db), _: dict = Depends(get_current_user)):
     with db.cursor() as cur:
         cur.execute("SELECT * FROM properties WHERE id = %s", (lead_id,))
         row = dict_fetchone(cur)
@@ -61,11 +62,11 @@ def get_lead(lead_id: int, db: PGConn = Depends(get_db)):
 
 
 @router.patch("/leads/{lead_id}/status", response_model=Lead)
-def update_status(lead_id: int, body: StatusUpdate, db: PGConn = Depends(get_db)):
+def update_status(lead_id: int, body: StatusUpdate, db: PGConn = Depends(get_db), _: dict = Depends(get_current_user)):
     body.validate_status()
     with db.cursor() as cur:
         cur.execute(
-            "UPDATE properties SET status = %s WHERE id = %s RETURNING *",
+            "UPDATE properties SET status = %s, stage_moved_at = NOW() WHERE id = %s RETURNING *",
             (body.status, lead_id),
         )
         row = dict_fetchone(cur)
@@ -76,7 +77,7 @@ def update_status(lead_id: int, body: StatusUpdate, db: PGConn = Depends(get_db)
 
 
 @router.get("/zips")
-def list_zips(db: PGConn = Depends(get_db)):
+def list_zips(db: PGConn = Depends(get_db), _: dict = Depends(get_current_user)):
     with db.cursor() as cur:
         cur.execute("SELECT DISTINCT zip FROM properties WHERE zip IS NOT NULL ORDER BY zip")
         return [r[0] for r in cur.fetchall()]

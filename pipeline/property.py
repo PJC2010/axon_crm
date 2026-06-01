@@ -123,10 +123,12 @@ def _attom_detail(address: str, zip_code: str) -> dict | None:
         prop = resp.json().get("property", [{}])[0]
         building = prop.get("building", {})
         lot      = prop.get("lot", {})
+        parking  = building.get("parking", {})
+        raw_spaces = parking.get("prkgSpaces")
         return {
-            "garage_spaces": building.get("garageSpaces") or building.get("parkingSpaces"),
-            "lot_size":      lot.get("lotSize1"),
-            "square_footage": building.get("size", {}).get("livingSize"),
+            "garage_spaces":  int(raw_spaces) if raw_spaces is not None else None,
+            "lot_size":       lot.get("lotsize2"),   # sq ft
+            "square_footage": building.get("size", {}).get("livingsize"),
         }
     except Exception as e:
         log.warning("Attom detail failed for %s: %s", address, e)

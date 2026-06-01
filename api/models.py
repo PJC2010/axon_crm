@@ -3,6 +3,9 @@ from datetime import date, datetime
 from typing import Optional
 from pydantic import BaseModel
 
+EXPENSE_CATEGORIES = ["fuel", "materials", "meals", "tools", "advertising", "subcontractor", "office", "other"]
+PAYMENT_METHODS    = ["cash", "card", "check", "zelle", "other"]
+
 
 # ── Lead ──────────────────────────────────────────────────────────────────────
 
@@ -30,8 +33,158 @@ class Lead(BaseModel):
     vertical: Optional[str] = None
     status: str = "new"
     score_updated_at: Optional[datetime] = None
+    estimated_job_value: Optional[int] = None
+    stage_moved_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ── Expenses ──────────────────────────────────────────────────────────────────
+
+class ExpenseCreate(BaseModel):
+    amount: float
+    category: str
+    vendor: str
+    description: Optional[str] = None
+    expense_date: date
+    payment_method: str = "card"
+    is_tax_deductible: bool = True
+    property_id: Optional[int] = None
+
+
+class ExpenseUpdate(BaseModel):
+    amount: Optional[float] = None
+    category: Optional[str] = None
+    vendor: Optional[str] = None
+    description: Optional[str] = None
+    expense_date: Optional[date] = None
+    payment_method: Optional[str] = None
+    is_tax_deductible: Optional[bool] = None
+    property_id: Optional[int] = None
+
+
+class Expense(BaseModel):
+    id: int
+    amount: float
+    category: str
+    vendor: str
+    description: Optional[str] = None
+    expense_date: date
+    payment_method: str
+    is_tax_deductible: bool
+    property_id: Optional[int] = None
+    receipt_url: Optional[str] = None
+    created_by: Optional[int] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ExpenseSummary(BaseModel):
+    total: float
+    by_category: dict
+    tax_deductible_total: float
+    count: int
+
+
+# ── Invoices ──────────────────────────────────────────────────────────────────
+
+INVOICE_STATUSES = ["draft", "sent", "paid", "partial", "overdue", "void"]
+
+
+class LineItemCreate(BaseModel):
+    description: str
+    quantity: float = 1.0
+    unit_price: float
+    sort_order: int = 0
+
+
+class LineItem(BaseModel):
+    id: int
+    invoice_id: int
+    description: str
+    quantity: float
+    unit_price: float
+    amount: float
+    sort_order: int
+
+    class Config:
+        from_attributes = True
+
+
+class PaymentCreate(BaseModel):
+    amount: float
+    payment_date: date
+    payment_method: str = "card"
+    notes: Optional[str] = None
+
+
+class InvoicePayment(BaseModel):
+    id: int
+    invoice_id: int
+    amount: float
+    payment_date: date
+    payment_method: str
+    notes: Optional[str] = None
+    created_by: Optional[int] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class InvoiceCreate(BaseModel):
+    property_id: Optional[int] = None
+    client_name: str
+    client_phone: Optional[str] = None
+    client_email: Optional[str] = None
+    client_address: Optional[str] = None
+    tax_rate: float = 0.0
+    issue_date: date
+    due_date: Optional[date] = None
+    notes: Optional[str] = None
+    line_items: list[LineItemCreate]
+
+
+class InvoiceUpdate(BaseModel):
+    client_name: Optional[str] = None
+    client_phone: Optional[str] = None
+    client_email: Optional[str] = None
+    client_address: Optional[str] = None
+    status: Optional[str] = None
+    tax_rate: Optional[float] = None
+    issue_date: Optional[date] = None
+    due_date: Optional[date] = None
+    notes: Optional[str] = None
+    line_items: Optional[list[LineItemCreate]] = None
+
+
+class Invoice(BaseModel):
+    id: int
+    invoice_number: str
+    property_id: Optional[int] = None
+    client_name: str
+    client_phone: Optional[str] = None
+    client_email: Optional[str] = None
+    client_address: Optional[str] = None
+    status: str
+    subtotal: float
+    tax_rate: float
+    tax_amount: float
+    total: float
+    amount_paid: float
+    balance_due: float
+    issue_date: date
+    due_date: Optional[date] = None
+    notes: Optional[str] = None
+    created_by: Optional[int] = None
+    created_at: datetime
+    line_items: list[LineItem] = []
+    payments: list[InvoicePayment] = []
 
     class Config:
         from_attributes = True
@@ -44,13 +197,15 @@ class LeadPage(BaseModel):
     results: list[Lead]
 
 
+ALLOWED_STATUSES = {"new", "contacted", "qualified", "not_interested", "converted", "quote_sent", "won", "lost"}
+
+
 class StatusUpdate(BaseModel):
-    status: str   # new | contacted | qualified | not_interested | converted
+    status: str
 
     def validate_status(self):
-        allowed = {"new", "contacted", "qualified", "not_interested", "converted"}
-        if self.status not in allowed:
-            raise ValueError(f"status must be one of {allowed}")
+        if self.status not in ALLOWED_STATUSES:
+            raise ValueError(f"status must be one of {ALLOWED_STATUSES}")
         return self
 
 

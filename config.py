@@ -3,6 +3,9 @@ import os
 # ── Database ──────────────────────────────────────────────────────────────────
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost/smart_crm")
 
+# ── Harris County Appraisal District DuckDB ───────────────────────────────────
+PERMIT_DB_PATH = os.getenv("PERMIT_DB_PATH", "/Users/petecastillo/property_data/harris_county.duckdb")
+
 # ── API keys ─────────────────────────────────────────────────────────────────
 RENTCAST_API_KEY    = os.getenv("RENTCAST_API_KEY", "")
 ATTOM_API_KEY       = os.getenv("ATTOM_API_KEY", "")

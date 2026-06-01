@@ -1,23 +1,32 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { RefreshCw, AlertCircle } from 'lucide-react'
+import { RefreshCw, AlertCircle, Kanban, CheckSquare, Settings, LogOut, Receipt, BookOpen, Home } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { getLeads } from '@/lib/api'
+import { clearToken } from '@/lib/auth'
 import type { Lead, LeadFilters, LeadStatus } from '@/lib/types'
 import { LeadTable } from './LeadTable'
 import { TerritoryFilter } from './TerritoryFilter'
 import { ContactDrawer } from './ContactDrawer'
 import { ExportButton } from './ExportButton'
+import { TaskBell } from './TaskBell'
 
 const DEFAULT_FILTERS: LeadFilters = { sort: 'score', page: 1, page_size: 50 }
 
 export function Dashboard() {
+  const router = useRouter()
   const [filters, setFilters]   = useState<LeadFilters>(DEFAULT_FILTERS)
   const [leads, setLeads]       = useState<Lead[]>([])
   const [total, setTotal]       = useState(0)
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState<string | null>(null)
   const [selected, setSelected] = useState<Lead | null>(null)
+
+  function handleSignOut() {
+    clearToken()
+    router.push('/login')
+  }
 
   const fetchLeads = useCallback(async (f: LeadFilters) => {
     setLoading(true)
@@ -82,7 +91,28 @@ export function Dashboard() {
           <span className="t-eyebrow">Lead dashboard</span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
+          <Link href="/home" title="Home" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
+            <Home size={13} strokeWidth={1.5} />
+            <span>Home</span>
+          </Link>
+          <Link href="/pipeline" title="Pipeline" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
+            <Kanban size={13} strokeWidth={1.5} />
+            <span>Pipeline</span>
+          </Link>
+          <Link href="/tasks" title="Tasks" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
+            <CheckSquare size={13} strokeWidth={1.5} />
+            <span>Tasks</span>
+          </Link>
+          <Link href="/expenses" title="Expenses" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
+            <Receipt size={13} strokeWidth={1.5} />
+            <span>Expenses</span>
+          </Link>
+          <Link href="/bookkeeping" title="Bookkeeping" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
+            <BookOpen size={13} strokeWidth={1.5} />
+            <span>Books</span>
+          </Link>
+          <TaskBell />
           <ExportButton filters={filters} />
           <button
             onClick={() => fetchLeads(filters)}
@@ -90,6 +120,12 @@ export function Dashboard() {
             className="dash-icon-btn"
           >
             <RefreshCw size={13} strokeWidth={1.5} className={loading ? 'animate-spin' : ''} />
+          </button>
+          <Link href="/settings" title="Settings" className="dash-icon-btn">
+            <Settings size={13} strokeWidth={1.5} />
+          </Link>
+          <button onClick={handleSignOut} title="Sign out" className="dash-icon-btn">
+            <LogOut size={13} strokeWidth={1.5} />
           </button>
         </div>
       </header>
