@@ -18,10 +18,6 @@ log = logging.getLogger(__name__)
 
 
 def enrich_hcad(zip_code: str) -> int:
-    if not hcad_store.db_exists():
-        log.info("[4b] HCAD: DuckDB not found, skipping")
-        return 0
-
     hcad_map = hcad_store.query_properties(zip_code)
     if not hcad_map:
         log.info("[4b] HCAD: no data for ZIP %s", zip_code)

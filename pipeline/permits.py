@@ -31,18 +31,14 @@ def enrich_permits(zip_code: str, csv_path: str | None = None) -> int:
             "from harris_county.duckdb (PERMIT_DB_PATH in config)."
         )
 
-    if hcad_store.db_exists():
-        permit_map = hcad_store.query_permits(zip_code)
-    else:
+    # query_permits tries DuckDB first, then falls back to Postgres hcad_* tables
+    permit_map = hcad_store.query_permits(zip_code)
+    if not permit_map:
         adapter = COUNTY_ADAPTERS.get(zip_code[:3])
         if adapter:
             permit_map = adapter(zip_code)
         else:
-            log.warning(
-                "No HCAD DuckDB store found and no county adapter for ZIP %s — "
-                "permit_count_24mo will remain NULL.",
-                zip_code,
-            )
+            log.info("No HCAD data (DuckDB or Postgres) for ZIP %s", zip_code)
             return 0
 
     if not permit_map:

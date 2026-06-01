@@ -92,13 +92,19 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None):
         if _check_cancel(): return
         from pipeline.property import enrich_property
         n = enrich_property(zip_code)
-        log.info("[4/6] run=%d Property: %d updated", run_id, n)
+        log.info("[4/7] run=%d Property: %d updated", run_id, n)
+
+        # Step 4b — HCAD fallback enrichment
+        if _check_cancel(): return
+        from pipeline.hcad_enrichment import enrich_hcad
+        n = enrich_hcad(zip_code)
+        log.info("[4b/7] run=%d HCAD fallback: %d backfilled", run_id, n)
 
         # Step 5 — Permits
         if _check_cancel(): return
         from pipeline.permits import enrich_permits
         n = enrich_permits(zip_code, csv_path=None)
-        log.info("[5/6] run=%d Permits: %d updated", run_id, n)
+        log.info("[5/7] run=%d Permits: %d updated", run_id, n)
 
         # Step 6 — Score
         if _check_cancel(): return
