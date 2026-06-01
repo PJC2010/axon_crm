@@ -250,6 +250,7 @@ export interface InvoiceFilters {
   month?: number
   property_id?: number
   page?: number
+  page_size?: number
 }
 
 export interface ARSummary {
