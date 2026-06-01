@@ -12,7 +12,8 @@ import argparse
 from pathlib import Path
 
 import psycopg2
-from config import DATABASE_URL
+
+DATABASE_URL = os.environ["DATABASE_URL"]
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
