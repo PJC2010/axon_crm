@@ -163,6 +163,14 @@ export function cancelRun(id: number): Promise<void> {
   return req(`/pipeline/runs/${id}`, { method: 'DELETE' })
 }
 
+export function rescoreZip(zip: string, vertical?: string): Promise<{ scored: number; zip: string; vertical: string | null }> {
+  return req('/pipeline/rescore', { method: 'POST', body: JSON.stringify({ zip, vertical }) })
+}
+
+export function rescoreAll(): Promise<{ scored: number; zips: number }> {
+  return req('/pipeline/rescore-all', { method: 'POST' })
+}
+
 // ── Misc ──────────────────────────────────────────────────────────────────────
 
 export function getZips(): Promise<string[]> {

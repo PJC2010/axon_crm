@@ -206,6 +206,31 @@ def get_run(run_id: int, _: dict = Depends(get_current_user), db: PGConn = Depen
     return row
 
 
+@router.post("/pipeline/rescore")
+def rescore(body: RunCreate, _: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+    """Score (or re-score) all leads in a ZIP without re-running the full pipeline."""
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    from pipeline.scorer import score_zip
+    n = score_zip(body.zip, vertical=body.vertical)
+    return {"scored": n, "zip": body.zip, "vertical": body.vertical}
+
+
+@router.post("/pipeline/rescore-all")
+def rescore_all(_: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+    """Score (or re-score) all leads in every ZIP."""
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    from pipeline.scorer import score_zip
+    with db.cursor() as cur:
+        cur.execute("SELECT DISTINCT zip FROM properties WHERE zip IS NOT NULL ORDER BY zip")
+        zips = [row[0] for row in cur.fetchall()]
+    total = 0
+    for z in zips:
+        total += score_zip(z, vertical=None)
+    return {"scored": total, "zips": len(zips)}
+
+
 @router.delete("/pipeline/runs/{run_id}", status_code=204)
 def cancel_run(run_id: int, _: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
     """Signal a running pipeline to stop after its current step."""

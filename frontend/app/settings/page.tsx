@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback, FormEvent } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Play, Trash2, RefreshCw, Home, XCircle } from 'lucide-react'
-import { getSchedules, createSchedule, updateSchedule, deleteSchedule, triggerRun, getPipelineRuns, cancelRun } from '@/lib/api'
+import { getSchedules, createSchedule, updateSchedule, deleteSchedule, triggerRun, getPipelineRuns, cancelRun, rescoreZip, rescoreAll } from '@/lib/api'
 import { AuthGuard } from '@/components/AuthGuard'
 import type { PipelineSchedule, PipelineRun } from '@/lib/types'
 
@@ -38,6 +38,8 @@ function SettingsPage() {
   const [runZip, setRunZip] = useState('')
   const [runVertical, setRunVertical] = useState('')
   const [triggering, setTriggering] = useState(false)
+  const [rescoring, setRescoring] = useState(false)
+  const [rescoringAll, setRescoringAll] = useState(false)
 
   const loadData = useCallback(async () => {
     try {
@@ -137,6 +139,50 @@ function SettingsPage() {
             }}>
               <Play size={12} />
               {triggering ? 'Starting…' : 'Run'}
+            </button>
+            <button
+              type="button"
+              disabled={rescoring || !runZip.trim()}
+              onClick={async () => {
+                if (!runZip.trim()) return
+                setRescoring(true)
+                try {
+                  const result = await rescoreZip(runZip.trim(), runVertical || undefined)
+                  alert(`Scored ${result.scored} leads in ZIP ${result.zip}`)
+                } catch (e: unknown) {
+                  alert(e instanceof Error ? e.message : 'Rescore failed')
+                } finally {
+                  setRescoring(false)
+                }
+              }}
+              style={{
+                padding: '0 16px', height: 36, background: 'var(--color-accent)', color: 'white',
+                border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, cursor: rescoring ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              {rescoring ? 'Scoring…' : 'Rescore Only'}
+            </button>
+            <button
+              type="button"
+              disabled={rescoringAll}
+              onClick={async () => {
+                if (!confirm('Rescore all leads across all ZIPs? This may take a minute.')) return
+                setRescoringAll(true)
+                try {
+                  const result = await rescoreAll()
+                  alert(`Scored ${result.scored} leads across ${result.zips} ZIP codes`)
+                } catch (e: unknown) {
+                  alert(e instanceof Error ? e.message : 'Rescore failed')
+                } finally {
+                  setRescoringAll(false)
+                }
+              }}
+              style={{
+                padding: '0 16px', height: 36, background: 'var(--color-moss)', color: 'white',
+                border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, cursor: rescoringAll ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              {rescoringAll ? 'Scoring all…' : 'Rescore All ZIPs'}
             </button>
           </form>
         </section>
