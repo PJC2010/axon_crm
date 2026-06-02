@@ -1,14 +1,15 @@
 import './landing.css'
+import Link from 'next/link'
 import {
-  Sparkles, ArrowRight, PlayCircle,
-  LayoutDashboard, Zap, Users, TrendingUp, TrendingDown,
-  BarChart2, Settings, Layers, Database, FileText, ShieldCheck,
-  Bell, GitBranch, Target, Map, MessageSquare,
+  Zap, ArrowRight, PlayCircle,
+  LayoutDashboard, Columns2, CheckSquare, Receipt, FileText, BookOpen, Settings,
+  Layers, Star, GitBranch, TrendingUp, TrendingDown,
+  Bell, Target, Map, MessageSquare,
 } from 'lucide-react'
 
 export const metadata = {
   title: 'Axon — Built on data, focused on people',
-  description: 'Axon gives small businesses enterprise-grade intelligence — without the complexity.',
+  description: 'Axon turns public property data into ranked leads and runs your entire service-business back-office in one place.',
 }
 
 export default function LandingPage() {
@@ -32,13 +33,13 @@ export default function LandingPage() {
           </a>
           <ul className="lp-nav-links">
             <li><a href="#features">Features</a></li>
-            <li><a href="#insights">Insights</a></li>
+            <li><a href="#pipeline">Pipeline</a></li>
             <li><a href="#how">How it works</a></li>
             <li><a href="#pricing">Pricing</a></li>
           </ul>
           <div className="lp-nav-actions">
-            <a href="#" className="lp-btn lp-btn-ghost">Sign in</a>
-            <a href="#" className="lp-btn lp-btn-dark">Start free trial</a>
+            <Link href="/login" className="lp-btn lp-btn-ghost">Sign in</Link>
+            <Link href="/login" className="lp-btn lp-btn-dark">Get started</Link>
           </div>
         </div>
       </nav>
@@ -47,34 +48,34 @@ export default function LandingPage() {
       <section className="lp-hero">
         <div className="lp-container">
           <div className="lp-hero-badge">
-            <Sparkles size={12} />
-            Now with predictive forecasting
+            <Zap size={12} />
+            Automated lead scoring for service businesses
           </div>
           <h1 className="lp-hero-heading">
             Built on data,<br /><em>focused on people.</em>
           </h1>
           <p className="lp-hero-sub">
-            Axon gives small businesses enterprise-grade intelligence — without the complexity.
-            Surface the insights that matter, understand your customers, and make confident decisions every day.
+            Axon turns public property records into a ranked lead list, tracks every deal through your
+            pipeline, and keeps your expenses, invoices, and books in order — all without the spreadsheets.
           </p>
           <div className="lp-hero-ctas">
-            <a href="#" className="lp-btn lp-btn-accent lp-btn-lg">
-              Get started free
+            <Link href="/login" className="lp-btn lp-btn-accent lp-btn-lg">
+              Open your dashboard
               <ArrowRight size={16} />
-            </a>
-            <a href="#" className="lp-btn lp-btn-outline lp-btn-lg">
+            </Link>
+            <a href="#how" className="lp-btn lp-btn-outline lp-btn-lg">
               <PlayCircle size={16} />
-              Watch a demo
+              See how it works
             </a>
           </div>
           <div className="lp-hero-trust">
             <div className="lp-hero-trust-avatars">
-              <span style={{ background: 'var(--color-moss)' }}>MR</span>
-              <span style={{ background: 'var(--color-ocean-d)' }}>JK</span>
-              <span style={{ background: 'var(--color-plum)' }}>TL</span>
-              <span style={{ background: 'var(--color-accent)' }}>AS</span>
+              <span style={{ background: 'var(--color-moss)' }}>HC</span>
+              <span style={{ background: 'var(--color-ocean-d)' }}>PS</span>
+              <span style={{ background: 'var(--color-plum)' }}>SL</span>
+              <span style={{ background: 'var(--color-accent)' }}>RF</span>
             </div>
-            <span>Trusted by 2,400+ small business owners</span>
+            <span>Used by HVAC, pool, solar, and flooring contractors</span>
           </div>
 
           {/* Dashboard mockup */}
@@ -95,88 +96,96 @@ export default function LandingPage() {
                     Overview
                   </div>
                   <div className="lp-dash-nav-item">
-                    <Zap size={14} />
-                    Insights
+                    <Star size={14} />
+                    Leads
                   </div>
                   <div className="lp-dash-nav-item">
-                    <Users size={14} />
-                    Connections
+                    <Columns2 size={14} />
+                    Pipeline
                   </div>
                   <div className="lp-dash-nav-item">
-                    <TrendingUp size={14} />
-                    Forecasts
+                    <CheckSquare size={14} />
+                    Tasks
                   </div>
                   <div className="lp-dash-nav-item">
-                    <BarChart2 size={14} />
-                    Reports
+                    <Receipt size={14} />
+                    Expenses
+                  </div>
+                  <div className="lp-dash-nav-item">
+                    <FileText size={14} />
+                    Invoices
+                  </div>
+                  <div className="lp-dash-nav-item">
+                    <BookOpen size={14} />
+                    Bookkeeping
                   </div>
                   <div className="lp-dash-nav-item">
                     <Settings size={14} />
-                    Settings
+                    Scheduler
                   </div>
                 </div>
                 <div className="lp-dash-main">
                   <div className="lp-dash-topbar">
-                    <span className="lp-dash-title">Good morning, Maria</span>
-                    <span className="lp-dash-date">May 29, 2026</span>
+                    <span className="lp-dash-title">Good morning, Pete</span>
+                    <span className="lp-dash-date">Jun 1, 2026</span>
                   </div>
                   <div className="lp-dash-metrics">
                     <div className="lp-dash-metric">
-                      <div className="lp-dash-metric-label">Revenue MTD</div>
-                      <div className="lp-dash-metric-value">$84,210</div>
+                      <div className="lp-dash-metric-label">Pipeline Value</div>
+                      <div className="lp-dash-metric-value">$142k</div>
                       <div className="lp-dash-metric-delta">
                         <TrendingUp size={10} />
-                        +12.4%
+                        +$18k this week
                       </div>
                     </div>
                     <div className="lp-dash-metric">
-                      <div className="lp-dash-metric-label">Active clients</div>
-                      <div className="lp-dash-metric-value">347</div>
+                      <div className="lp-dash-metric-label">Scored Leads</div>
+                      <div className="lp-dash-metric-value">1,847</div>
                       <div className="lp-dash-metric-delta">
                         <TrendingUp size={10} />
-                        +8 this week
+                        +124 this run
                       </div>
                     </div>
                     <div className="lp-dash-metric">
-                      <div className="lp-dash-metric-label">Avg. deal size</div>
-                      <div className="lp-dash-metric-value">$2,430</div>
+                      <div className="lp-dash-metric-label">Tasks Due Today</div>
+                      <div className="lp-dash-metric-value">8</div>
                       <div className="lp-dash-metric-delta neg">
                         <TrendingDown size={10} />
-                        −3.1%
+                        3 overdue
                       </div>
                     </div>
                     <div className="lp-dash-metric">
-                      <div className="lp-dash-metric-label">Retention rate</div>
-                      <div className="lp-dash-metric-value">94.2%</div>
+                      <div className="lp-dash-metric-label">Outstanding AR</div>
+                      <div className="lp-dash-metric-value">$9,450</div>
                       <div className="lp-dash-metric-delta">
                         <TrendingUp size={10} />
-                        +1.8 pts
+                        2 invoices
                       </div>
                     </div>
                   </div>
                   <div className="lp-dash-charts">
                     <div className="lp-dash-chart-card">
-                      <div className="lp-dash-chart-label">Monthly revenue</div>
+                      <div className="lp-dash-chart-label">Lead scores — this run</div>
                       <div className="lp-chart-bars">
-                        <div className="lp-chart-bar" style={{ height: '45%' }} />
+                        <div className="lp-chart-bar" style={{ height: '30%' }} />
                         <div className="lp-chart-bar" style={{ height: '55%' }} />
-                        <div className="lp-chart-bar" style={{ height: '40%' }} />
+                        <div className="lp-chart-bar" style={{ height: '70%' }} />
                         <div className="lp-chart-bar" style={{ height: '65%' }} />
-                        <div className="lp-chart-bar" style={{ height: '58%' }} />
+                        <div className="lp-chart-bar" style={{ height: '80%' }} />
                         <div className="lp-chart-bar" style={{ height: '72%' }} />
-                        <div className="lp-chart-bar hi" style={{ height: '88%' }} />
+                        <div className="lp-chart-bar hi" style={{ height: '90%' }} />
                       </div>
                     </div>
                     <div className="lp-dash-chart-card">
-                      <div className="lp-dash-chart-label">Client engagement trend</div>
+                      <div className="lp-dash-chart-label">Pipeline by stage</div>
                       <div style={{ height: 80, display: 'flex', alignItems: 'center' }}>
                         <svg viewBox="0 0 200 64" fill="none" style={{ width: '100%', height: '100%' }}>
                           <path
-                            d="M0 48 C30 44 50 36 80 30 C110 24 140 20 160 16 C175 13 190 10 200 8"
+                            d="M0 52 C20 48 40 40 70 32 C100 24 130 18 155 14 C175 11 190 9 200 7"
                             stroke="var(--color-accent)" strokeWidth="2" fill="none"
                           />
                           <path
-                            d="M0 48 C30 44 50 36 80 30 C110 24 140 20 160 16 C175 13 190 10 200 8 L200 64 L0 64Z"
+                            d="M0 52 C20 48 40 40 70 32 C100 24 130 18 155 14 C175 11 190 9 200 7 L200 64 L0 64Z"
                             fill="var(--color-accent-50)"
                           />
                         </svg>
@@ -190,17 +199,17 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── Logo strip ── */}
+      {/* ── Industry strip ── */}
       <div className="lp-logos-section">
         <div className="lp-container">
-          <p className="lp-logos-label">Trusted by businesses across industries</p>
+          <p className="lp-logos-label">Built for service contractors across verticals</p>
           <div className="lp-logos-row">
-            <span className="lp-logo-item">Hargrove Realty</span>
-            <span className="lp-logo-item">Bellmont Legal</span>
-            <span className="lp-logo-item">Sutton &amp; Co.</span>
-            <span className="lp-logo-item">Meridian Consulting</span>
-            <span className="lp-logo-item">Calloway Clinic</span>
-            <span className="lp-logo-item">Ridgeline Retail</span>
+            <span className="lp-logo-item">HVAC Services</span>
+            <span className="lp-logo-item">Pool &amp; Spa</span>
+            <span className="lp-logo-item">Solar Install</span>
+            <span className="lp-logo-item">Epoxy Flooring</span>
+            <span className="lp-logo-item">Roofing Co.</span>
+            <span className="lp-logo-item">Pest Control</span>
           </div>
         </div>
       </div>
@@ -213,107 +222,107 @@ export default function LandingPage() {
             What Axon does
           </div>
           <h2 className="lp-section-heading">
-            Everything a big enterprise has —<br />built for the way you actually work
+            Every tool your service business needs —<br />in one purpose-built platform
           </h2>
           <p className="lp-section-sub">
-            Axon connects your data sources, learns your business patterns, and delivers intelligence that
-            feels less like a report and more like advice from a trusted partner.
+            From finding your next customer to getting paid and closing the books, Axon handles the
+            entire job lifecycle without stitching together six different apps.
           </p>
           <div className="lp-features-grid">
             <div className="lp-feature-card">
-              <div className="lp-feature-icon accent"><Zap size={20} /></div>
-              <h3 className="lp-feature-name">Predictive insights</h3>
+              <div className="lp-feature-icon accent"><Star size={20} /></div>
+              <h3 className="lp-feature-name">Lead scoring engine</h3>
               <p className="lp-feature-desc">
-                Axon surfaces what matters next — revenue at risk, customers likely to churn, and emerging
-                opportunities — before they become urgent.
+                Axon pulls public property records for your target ZIP codes and scores every address by
+                opportunity size, condition signals, and vertical fit. Know who to call before you dial.
               </p>
             </div>
             <div className="lp-feature-card">
-              <div className="lp-feature-icon ocean"><Users size={20} /></div>
-              <h3 className="lp-feature-name">Personal connections</h3>
+              <div className="lp-feature-icon ocean"><Columns2 size={20} /></div>
+              <h3 className="lp-feature-name">Visual pipeline</h3>
               <p className="lp-feature-desc">
-                Understand each client relationship at a glance. See communication history, engagement
-                signals, and next-best actions in one place.
+                Drag leads through your stages — New, Contacted, Quoted, Won — on a live Kanban board.
+                See your total pipeline value update in real time as deals move forward.
               </p>
             </div>
             <div className="lp-feature-card">
-              <div className="lp-feature-icon moss"><TrendingUp size={20} /></div>
-              <h3 className="lp-feature-name">Revenue forecasting</h3>
+              <div className="lp-feature-icon moss"><CheckSquare size={20} /></div>
+              <h3 className="lp-feature-name">Task management</h3>
               <p className="lp-feature-desc">
-                Accurate 30, 60, and 90-day forecasts built from your actual pipeline — not spreadsheet
-                guesses. Know where you stand before month-end.
+                Create tasks linked to specific properties and leads, set priorities from low to urgent,
+                and get overdue alerts. Your follow-up list and your CRM, finally in sync.
               </p>
             </div>
             <div className="lp-feature-card">
-              <div className="lp-feature-icon gold"><Database size={20} /></div>
-              <h3 className="lp-feature-name">Unified data hub</h3>
+              <div className="lp-feature-icon gold"><Receipt size={20} /></div>
+              <h3 className="lp-feature-name">Expense tracker</h3>
               <p className="lp-feature-desc">
-                Connect your CRM, accounting tools, and marketing platforms. Axon normalizes everything
-                into a single source of truth — no spreadsheets required.
+                Log every business expense by category — fuel, materials, subcontractors, and more. Flag
+                tax-deductible items and export a clean CSV for your accountant any time.
               </p>
             </div>
             <div className="lp-feature-card">
               <div className="lp-feature-icon plum"><FileText size={20} /></div>
-              <h3 className="lp-feature-name">Automated reporting</h3>
+              <h3 className="lp-feature-name">Invoicing &amp; accounts receivable</h3>
               <p className="lp-feature-desc">
-                Board-ready reports and weekly digests — written in plain language, delivered on schedule.
-                Spend less time compiling and more time deciding.
+                Build invoices with line items, record partial payments, and pull an AR aging report with
+                one click. Know exactly who owes you, and how long they&apos;ve owed it.
               </p>
             </div>
             <div className="lp-feature-card">
-              <div className="lp-feature-icon rose"><ShieldCheck size={20} /></div>
-              <h3 className="lp-feature-name">Enterprise-grade security</h3>
+              <div className="lp-feature-icon rose"><BookOpen size={20} /></div>
+              <h3 className="lp-feature-name">Bookkeeping &amp; P&amp;L</h3>
               <p className="lp-feature-desc">
-                SOC 2 Type II certified. Role-based access, audit logs, and encrypted-at-rest storage — the
-                same protections Fortune 500 companies demand.
+                See your monthly profit and loss and per-property job costing — revenue versus expenses
+                and margin per job. No separate accounting app needed.
               </p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ── Split: Insights ── */}
-      <section className="lp-section" id="insights">
+      {/* ── Split: Pipeline ── */}
+      <section className="lp-section" id="pipeline">
         <div className="lp-container">
           <div className="lp-split-section">
             <div>
               <div className="lp-section-eyebrow">
-                <Zap size={12} />
-                Predictive insights
+                <Star size={12} />
+                Lead intelligence
               </div>
-              <h2 className="lp-section-heading">Your data knows what&apos;s coming — now so do you</h2>
+              <h2 className="lp-section-heading">Know your best lead before you make the call</h2>
               <p className="lp-section-sub">
-                Axon&apos;s intelligence layer reads patterns across your business and flags what needs your
-                attention — not what already happened.
+                Axon scores every property in your territory overnight and surfaces the highest-opportunity
+                addresses at the top of your list — with the context you need to close.
               </p>
               <div className="lp-split-points">
                 <div className="lp-split-point">
                   <div className="lp-split-point-icon"><Bell size={16} /></div>
                   <div className="lp-split-point-text">
-                    <strong>Proactive alerts</strong>
+                    <strong>Automated scoring runs</strong>
                     <span>
-                      Get notified when a high-value client goes quiet, a deal stalls, or a revenue target
-                      looks at risk — with context on why.
+                      Schedule your pipeline to score leads by ZIP code and vertical on any cadence.
+                      Wake up to a fresh ranked list with no manual work.
                     </span>
                   </div>
                 </div>
                 <div className="lp-split-point">
                   <div className="lp-split-point-icon"><GitBranch size={16} /></div>
                   <div className="lp-split-point-text">
-                    <strong>Scenario modeling</strong>
+                    <strong>Grade-based prioritization</strong>
                     <span>
-                      Run &ldquo;what if&rdquo; forecasts in seconds. Model the impact of a new hire, a price change,
-                      or a seasonal dip without a spreadsheet in sight.
+                      Each lead gets an A–F grade based on score percentile. Filter by grade so your
+                      team focuses exclusively on the highest-potential properties.
                     </span>
                   </div>
                 </div>
                 <div className="lp-split-point">
                   <div className="lp-split-point-icon"><Target size={16} /></div>
                   <div className="lp-split-point-text">
-                    <strong>Recommended actions</strong>
+                    <strong>One-click pipeline entry</strong>
                     <span>
-                      Axon doesn&apos;t just surface problems — it suggests what to do next, ranked by expected
-                      impact on your goals.
+                      Promote any scored lead into your Kanban pipeline, assign a task, and add notes —
+                      all from the same lead detail drawer.
                     </span>
                   </div>
                 </div>
@@ -322,42 +331,42 @@ export default function LandingPage() {
             <div>
               <div className="lp-insight-panel">
                 <div className="lp-insight-header">
-                  <span className="lp-insight-title">Today&apos;s insights</span>
-                  <span className="lp-insight-badge">3 new</span>
+                  <span className="lp-insight-title">Top scored leads — 77007</span>
+                  <span className="lp-insight-badge">124 new</span>
                 </div>
                 <div className="lp-insight-list">
                   <div className="lp-insight-item">
                     <div className="lp-insight-item-dot" style={{ background: 'var(--color-accent)' }} />
                     <div style={{ flex: 1 }}>
-                      <div className="lp-insight-item-headline">Calloway account may be at risk</div>
+                      <div className="lp-insight-item-headline">1842 Westheimer Rd — Grade A</div>
                       <div className="lp-insight-item-detail">
-                        No engagement in 18 days — last contact was invoice-related. Historical pattern
-                        suggests 40% churn risk.
+                        3,400 sq ft single-family, built 1987. High signal for HVAC replacement based on
+                        age and lot characteristics.
                       </div>
                     </div>
-                    <div className="lp-insight-item-metric">$14k</div>
+                    <div className="lp-insight-item-metric">Score 94</div>
                   </div>
                   <div className="lp-insight-item">
                     <div className="lp-insight-item-dot" style={{ background: 'var(--color-moss)' }} />
                     <div style={{ flex: 1 }}>
-                      <div className="lp-insight-item-headline">Q3 revenue on track to beat forecast</div>
+                      <div className="lp-insight-item-headline">504 River Oaks Blvd — Quote sent</div>
                       <div className="lp-insight-item-detail">
-                        Pipeline coverage at 2.1× target. Strongest quarter since Q1 2025 if current close
-                        rate holds.
+                        In pipeline · contacted last Tuesday · quote for epoxy garage at $6,200. Follow-up
+                        task due tomorrow.
                       </div>
                     </div>
-                    <div className="lp-insight-item-metric">+18%</div>
+                    <div className="lp-insight-item-metric">$6.2k</div>
                   </div>
                   <div className="lp-insight-item">
                     <div className="lp-insight-item-dot" style={{ background: 'var(--color-ocean-d)' }} />
                     <div style={{ flex: 1 }}>
-                      <div className="lp-insight-item-headline">Expansion opportunity — Sutton &amp; Co.</div>
+                      <div className="lp-insight-item-headline">3 leads in &ldquo;Contacted&rdquo; past 14 days</div>
                       <div className="lp-insight-item-detail">
-                        Usage patterns match clients who upgraded within 90 days. Recommend a check-in
-                        this week.
+                        No activity in two weeks on these accounts. Add a follow-up task to keep them
+                        from going cold.
                       </div>
                     </div>
-                    <div className="lp-insight-item-metric">$8.4k</div>
+                    <div className="lp-insight-item-metric">$21k</div>
                   </div>
                 </div>
               </div>
@@ -371,20 +380,20 @@ export default function LandingPage() {
         <div className="lp-container">
           <div className="lp-proof-inner">
             <div className="lp-proof-stat">
-              <span className="lp-proof-stat-value lp-proof-stat-accent">2,400+</span>
-              <span className="lp-proof-stat-label">Small businesses<br />running on Axon</span>
+              <span className="lp-proof-stat-value lp-proof-stat-accent">50k+</span>
+              <span className="lp-proof-stat-label">Property leads<br />scored per territory</span>
             </div>
             <div className="lp-proof-stat">
-              <span className="lp-proof-stat-value">94%</span>
-              <span className="lp-proof-stat-label">Average customer<br />retention rate</span>
+              <span className="lp-proof-stat-value">5 hrs</span>
+              <span className="lp-proof-stat-label">Saved per week vs.<br />manual spreadsheets</span>
             </div>
             <div className="lp-proof-stat">
-              <span className="lp-proof-stat-value lp-proof-stat-accent">4.2×</span>
-              <span className="lp-proof-stat-label">Average ROI within<br />the first 6 months</span>
+              <span className="lp-proof-stat-value lp-proof-stat-accent">3.8×</span>
+              <span className="lp-proof-stat-label">Higher contact rate<br />on grade-A leads</span>
             </div>
             <div className="lp-proof-stat">
-              <span className="lp-proof-stat-value">11 hrs</span>
-              <span className="lp-proof-stat-label">Saved per week on<br />reporting and analysis</span>
+              <span className="lp-proof-stat-value">1 app</span>
+              <span className="lp-proof-stat-label">Replacing CRM, tasks,<br />expenses &amp; invoicing</span>
             </div>
           </div>
         </div>
@@ -398,35 +407,35 @@ export default function LandingPage() {
               <Map size={12} />
               How it works
             </div>
-            <h2 className="lp-section-heading">From setup to insight — in a single afternoon</h2>
+            <h2 className="lp-section-heading">From territory to closed job — in one workflow</h2>
             <p className="lp-section-sub" style={{ margin: '0 auto' }}>
-              No dedicated data team. No six-month implementation. Axon connects to your existing tools
-              and starts surfacing value immediately.
+              No data team. No complex setup. Point Axon at your ZIP codes and vertical, and it handles
+              the rest — from lead discovery to invoicing.
             </p>
           </div>
           <div className="lp-how-steps">
             <div className="lp-how-step">
               <div className="lp-how-step-number active">01</div>
-              <h3 className="lp-how-step-title">Connect your data</h3>
+              <h3 className="lp-how-step-title">Set your territory</h3>
               <p className="lp-how-step-desc">
-                Link your CRM, accounting software, and marketing tools in minutes with pre-built
-                integrations. No data team required.
+                Choose your ZIP codes and service vertical. Schedule scoring runs daily, weekly, or on
+                demand — Axon pulls fresh property data automatically.
               </p>
             </div>
             <div className="lp-how-step">
               <div className="lp-how-step-number">02</div>
-              <h3 className="lp-how-step-title">Axon learns your business</h3>
+              <h3 className="lp-how-step-title">Work your ranked leads</h3>
               <p className="lp-how-step-desc">
-                Our models analyze your historical patterns, set baselines, and calibrate to your industry
-                and goals automatically.
+                Open the lead table sorted by score, filter to grade-A properties, and add the best ones
+                to your Kanban pipeline. Assign tasks, take notes, and track every touchpoint.
               </p>
             </div>
             <div className="lp-how-step">
               <div className="lp-how-step-number">03</div>
-              <h3 className="lp-how-step-title">Act on what matters</h3>
+              <h3 className="lp-how-step-title">Invoice, track, and close the books</h3>
               <p className="lp-how-step-desc">
-                Get your daily digest, answer questions in plain English, and make confident decisions with
-                context you can trust.
+                When you win a job, create an invoice in seconds. Log your expenses, monitor your AR,
+                and check your P&amp;L — Axon ties the whole job together so nothing falls through the cracks.
               </p>
             </div>
           </div>
@@ -440,45 +449,44 @@ export default function LandingPage() {
             <MessageSquare size={12} />
             From our customers
           </div>
-          <h2 className="lp-section-heading">What a difference real intelligence makes</h2>
+          <h2 className="lp-section-heading">What it&apos;s like to stop guessing who to call</h2>
           <div className="lp-testimonials-grid">
             <div className="lp-testimonial-card">
               <p className="lp-testimonial-quote">
-                &ldquo;Axon flagged that one of our best clients was disengaging before we even noticed. We
-                reached out, found out there was an issue, fixed it — and kept a $40k account. That&apos;s not
-                a dashboard. That&apos;s a business partner.&rdquo;
+                &ldquo;The lead scoring found us three commercial accounts we never would have found cold-calling.
+                We just worked the top of the list and closed $60k in new business the first month.&rdquo;
               </p>
               <div className="lp-testimonial-attr">
-                <div className="lp-testimonial-avatar" style={{ background: 'var(--color-accent)' }}>MR</div>
+                <div className="lp-testimonial-avatar" style={{ background: 'var(--color-accent)' }}>HC</div>
                 <div>
-                  <div className="lp-testimonial-name">Maria Reyes</div>
-                  <div className="lp-testimonial-role">Owner, Hargrove Realty Group</div>
+                  <div className="lp-testimonial-name">Henry Castillo</div>
+                  <div className="lp-testimonial-role">Owner, Houston Climate HVAC</div>
                 </div>
               </div>
             </div>
             <div className="lp-testimonial-card">
               <p className="lp-testimonial-quote">
-                &ldquo;I used to spend half my Sunday building the Monday morning report. Now Axon sends it
-                before I wake up — and it&apos;s better than anything I was putting together by hand.&rdquo;
+                &ldquo;I run my entire business from Axon — leads, tasks, expenses, invoices. I cancelled
+                three different subscriptions. It pays for itself before the first job is done.&rdquo;
               </p>
               <div className="lp-testimonial-attr">
-                <div className="lp-testimonial-avatar" style={{ background: 'var(--color-moss)' }}>JK</div>
+                <div className="lp-testimonial-avatar" style={{ background: 'var(--color-moss)' }}>PS</div>
                 <div>
-                  <div className="lp-testimonial-name">James Kim</div>
-                  <div className="lp-testimonial-role">Managing Partner, Bellmont Legal</div>
+                  <div className="lp-testimonial-name">Priya Sutton</div>
+                  <div className="lp-testimonial-role">Owner, Premier Pool &amp; Spa</div>
                 </div>
               </div>
             </div>
             <div className="lp-testimonial-card">
               <p className="lp-testimonial-quote">
-                &ldquo;We&apos;re a 12-person firm. We couldn&apos;t afford a data analyst. Axon gave us something
-                better — intelligence that&apos;s specific to our clients, our numbers, and our goals.&rdquo;
+                &ldquo;The pipeline Kanban alone was worth switching. I can see my $400k pipeline at a glance
+                and know exactly who needs a follow-up — without digging through emails.&rdquo;
               </p>
               <div className="lp-testimonial-attr">
-                <div className="lp-testimonial-avatar" style={{ background: 'var(--color-plum)' }}>TL</div>
+                <div className="lp-testimonial-avatar" style={{ background: 'var(--color-plum)' }}>SL</div>
                 <div>
-                  <div className="lp-testimonial-name">Tara Lawson</div>
-                  <div className="lp-testimonial-role">CEO, Meridian Consulting</div>
+                  <div className="lp-testimonial-name">Sam Lindqvist</div>
+                  <div className="lp-testimonial-role">CEO, SunPath Solar Install</div>
                 </div>
               </div>
             </div>
@@ -490,12 +498,12 @@ export default function LandingPage() {
       <section className="lp-cta-section">
         <div className="lp-container">
           <h2 className="lp-cta-heading">
-            Predictive insights,<br /><em>personal connections.</em>
+            Score leads, close jobs,<br /><em>run your books.</em>
           </h2>
           <div className="lp-cta-actions">
-            <a href="#" className="lp-btn lp-btn-paper lp-btn-lg">Start your free trial</a>
-            <a href="#" className="lp-btn lp-btn-ghost lp-btn-lg" style={{ color: 'rgba(255,255,255,0.7)' }}>
-              Schedule a demo
+            <Link href="/login" className="lp-btn lp-btn-paper lp-btn-lg">Open your dashboard</Link>
+            <a href="#how" className="lp-btn lp-btn-ghost lp-btn-lg" style={{ color: 'rgba(255,255,255,0.7)' }}>
+              See how it works
             </a>
           </div>
         </div>
@@ -512,31 +520,32 @@ export default function LandingPage() {
             <div>
               <div className="lp-footer-col-title">Product</div>
               <ul className="lp-footer-links">
-                <li><a href="#">Features</a></li>
-                <li><a href="#">Insights</a></li>
-                <li><a href="#">Pricing</a></li>
+                <li><a href="#features">Features</a></li>
+                <li><a href="#pipeline">Pipeline</a></li>
+                <li><a href="#how">How it works</a></li>
               </ul>
             </div>
             <div>
-              <div className="lp-footer-col-title">Company</div>
+              <div className="lp-footer-col-title">Platform</div>
               <ul className="lp-footer-links">
-                <li><a href="#">About</a></li>
-                <li><a href="#">Blog</a></li>
-                <li><a href="#">Contact</a></li>
+                <li><Link href="/login">Lead scoring</Link></li>
+                <li><Link href="/login">Kanban pipeline</Link></li>
+                <li><Link href="/login">Invoicing &amp; AR</Link></li>
+                <li><Link href="/login">Bookkeeping</Link></li>
               </ul>
             </div>
             <div>
-              <div className="lp-footer-col-title">Legal</div>
+              <div className="lp-footer-col-title">Account</div>
               <ul className="lp-footer-links">
+                <li><Link href="/login">Sign in</Link></li>
                 <li><a href="#">Privacy</a></li>
                 <li><a href="#">Terms</a></li>
-                <li><a href="#">Security</a></li>
               </ul>
             </div>
           </div>
           <div className="lp-footer-bottom">
             <span>&copy; 2026 Axon Intelligence, Inc. All rights reserved.</span>
-            <span>Made with care for small business owners.</span>
+            <span>Made with care for service contractors.</span>
           </div>
         </div>
       </footer>
