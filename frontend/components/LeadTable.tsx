@@ -1,6 +1,9 @@
 'use client'
-import { ChevronLeft, ChevronRight, Home } from 'lucide-react'
+import { useState } from 'react'
+import { ChevronLeft, ChevronRight, Home, Search, Settings, Archive, MoreVertical } from 'lucide-react'
+import Link from 'next/link'
 import type { Lead, LeadFilters, LeadStatus } from '@/lib/types'
+import { archiveBulk, archiveByFilter } from '@/lib/api'
 import { ScoreBadge } from './ScoreBadge'
 import { StatusSelect } from './StatusSelect'
 
@@ -44,12 +47,125 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
   const pageSize  = filters.page_size ?? PAGE_SIZE
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
 
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [archiving, setArchiving] = useState(false)
+  const [showBulkMenu, setShowBulkMenu] = useState(false)
+
+  const toggleSelect = (id: number) => {
+    const next = new Set(selected)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setSelected(next)
+  }
+
+  const toggleSelectAll = () => {
+    if (selected.size === leads.length) {
+      setSelected(new Set())
+    } else {
+      setSelected(new Set(leads.map(l => l.id)))
+    }
+  }
+
+  async function handleArchiveSelected() {
+    if (selected.size === 0) return
+    setArchiving(true)
+    try {
+      await archiveBulk(Array.from(selected))
+      setSelected(new Set())
+      onFiltersChange(filters)
+    } finally { setArchiving(false) }
+  }
+
+  async function handleArchiveAll() {
+    if (!confirm(`Archive all ${total} leads matching current filters?`)) return
+    setArchiving(true)
+    try {
+      await archiveByFilter(filters)
+      setSelected(new Set())
+      onFiltersChange(filters)
+    } finally { setArchiving(false) }
+  }
+
   return (
     <div className="flex flex-col h-full">
+      {/* Bulk action toolbar */}
+      {selected.size > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12,
+          padding: '12px 16px', background: 'var(--color-accent)', color: 'white',
+          fontSize: 13, borderBottom: '1px solid var(--color-ink-200)',
+        }}>
+          <span style={{ flex: 1 }}>{selected.size} of {leads.length} selected</span>
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => setShowBulkMenu(!showBulkMenu)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '6px 14px', background: 'rgba(255,255,255,0.2)', border: 'none',
+                borderRadius: 'var(--radius-pill)', color: 'white', fontSize: 12, fontWeight: 500,
+                cursor: 'pointer',
+              }}
+            >
+              <Archive size={12} strokeWidth={1.5} /> Archive
+              <MoreVertical size={12} strokeWidth={1.5} />
+            </button>
+            {showBulkMenu && (
+              <div style={{
+                position: 'absolute', top: '100%', right: 0, marginTop: 4,
+                background: 'white', border: '1px solid var(--color-ink-200)',
+                borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)',
+                zIndex: 100, minWidth: 200,
+              }}>
+                <button
+                  onClick={handleArchiveSelected}
+                  disabled={archiving}
+                  style={{
+                    display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px',
+                    background: 'none', border: 'none', color: 'var(--color-ink-900)',
+                    fontSize: 13, cursor: archiving ? 'not-allowed' : 'pointer',
+                    borderBottom: '1px solid var(--color-ink-100)',
+                  }}
+                >
+                  Archive {selected.size} selected
+                </button>
+                <button
+                  onClick={handleArchiveAll}
+                  disabled={archiving}
+                  style={{
+                    display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px',
+                    background: 'none', border: 'none', color: 'var(--color-ink-900)',
+                    fontSize: 13, cursor: archiving ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  Archive all {total} matching filters
+                </button>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => setSelected(new Set())}
+            style={{
+              background: 'none', border: 'none', color: 'white', fontSize: 12,
+              cursor: 'pointer', textDecoration: 'underline',
+            }}
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
       <div className="flex-1 overflow-auto">
         <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--font-sans)' }}>
           <thead>
             <tr style={{ background: 'var(--color-paper)', position: 'sticky', top: 0, zIndex: 10 }}>
+              <th style={{ ...TH_STYLE, width: 32, padding: '10px 8px', textAlign: 'center' }}>
+                <input
+                  type="checkbox"
+                  checked={selected.size > 0 && selected.size === leads.length}
+                  onChange={toggleSelectAll}
+                  style={{ cursor: 'pointer' }}
+                />
+              </th>
               {['Address', 'Score', 'Year built', 'Equity', 'Garage', 'Last sale', 'Status', ''].map(h => (
                 <th key={h} style={TH_STYLE}>{h}</th>
               ))}
@@ -58,14 +174,32 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={8} style={{ textAlign: 'center', padding: '64px 0', fontSize: 13, color: 'var(--color-ink-400)' }}>
+                <td colSpan={9} style={{ textAlign: 'center', padding: '64px 0', fontSize: 13, color: 'var(--color-ink-400)' }}>
                   Loading…
                 </td>
               </tr>
             )}
-            {!loading && leads.length === 0 && (
+            {!loading && leads.length === 0 && total === 0 && (
               <tr>
-                <td colSpan={8} style={{ textAlign: 'center', padding: '64px 0', fontSize: 13, color: 'var(--color-ink-400)' }}>
+                <td colSpan={9} style={{ textAlign: 'center', padding: '64px 20px' }}>
+                  <Search size={48} strokeWidth={1} style={{ color: 'var(--color-ink-300)', marginBottom: 12 }} />
+                  <p style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 600, color: 'var(--color-ink-700)' }}>No leads yet</p>
+                  <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--color-ink-400)', maxWidth: 320, marginLeft: 'auto', marginRight: 'auto' }}>
+                    Run the pipeline to import leads from your target area and start scoring them.
+                  </p>
+                  <Link href="/settings" style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 20px',
+                    borderRadius: 'var(--radius-pill)', background: 'var(--color-accent)', color: 'white',
+                    fontSize: 13, fontWeight: 500, textDecoration: 'none',
+                  }}>
+                    <Settings size={14} strokeWidth={1.5} /> Go to Settings
+                  </Link>
+                </td>
+              </tr>
+            )}
+            {!loading && leads.length === 0 && total > 0 && (
+              <tr>
+                <td colSpan={9} style={{ textAlign: 'center', padding: '64px 0', fontSize: 13, color: 'var(--color-ink-400)' }}>
                   No leads match the current filters.
                 </td>
               </tr>
@@ -83,6 +217,14 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
                 onMouseEnter={e => (e.currentTarget as HTMLTableRowElement).style.background = 'var(--color-cream)'}
                 onMouseLeave={e => (e.currentTarget as HTMLTableRowElement).style.background = i % 2 === 0 ? 'white' : 'var(--color-paper)'}
               >
+                <td style={{ padding: '8px', width: 32, textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={selected.has(lead.id)}
+                    onChange={() => toggleSelect(lead.id)}
+                    style={{ cursor: 'pointer' }}
+                  />
+                </td>
                 <td style={{ padding: '12px 14px', maxWidth: 240 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <Home size={13} strokeWidth={1.5} style={{ color: 'var(--color-ink-300)', flexShrink: 0 }} />

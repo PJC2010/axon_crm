@@ -1,8 +1,8 @@
 'use client'
 import { useEffect, useState, useRef } from 'react'
-import { X, Plus, Phone, DoorOpen, Mail, MessageSquare } from 'lucide-react'
-import type { Lead, Note, HistoryEntry, LeadStatus } from '@/lib/types'
-import { getNotes, addNote, getHistory, addHistory } from '@/lib/api'
+import { X, Plus, Phone, DoorOpen, Mail, MessageSquare, Pencil, Check, User, FileText, CheckSquare, Archive } from 'lucide-react'
+import type { Lead, Note, HistoryEntry, LeadStatus, TimelineEntry } from '@/lib/types'
+import { getNotes, addNote, getHistory, addHistory, updateLeadContact, getTimeline, archiveLead } from '@/lib/api'
 import { StatusSelect } from './StatusSelect'
 import { ScoreBadge } from './ScoreBadge'
 
@@ -35,33 +35,58 @@ function fmtOccupied(v: boolean | null) {
 }
 
 export function ContactDrawer({ lead, onClose, onStatusChange }: Props) {
-  const [notes, setNotes]       = useState<Note[]>([])
-  const [history, setHistory]   = useState<HistoryEntry[]>([])
+  const [timeline, setTimeline]   = useState<TimelineEntry[]>([])
   const [noteText, setNoteText] = useState('')
   const [action, setAction]     = useState('Called')
   const [outcome, setOutcome]   = useState('')
   const [saving, setSaving]     = useState(false)
   const noteRef = useRef<HTMLTextAreaElement>(null)
 
+  const [editingContact, setEditingContact] = useState(false)
+  const [contactDraft, setContactDraft] = useState({ name: '', phone: '', email: '' })
+  const [savingContact, setSavingContact] = useState(false)
+  const [archiving, setArchiving] = useState(false)
+
   useEffect(() => {
     if (!lead) return
-    setNotes([]); setHistory([])
-    getNotes(lead.id).then(setNotes).catch(() => {})
-    getHistory(lead.id).then(setHistory).catch(() => {})
+    setTimeline([])
+    setEditingContact(false)
+    setContactDraft({
+      name: lead.contact_name ?? '',
+      phone: lead.contact_phone ?? '',
+      email: lead.contact_email ?? '',
+    })
+    getTimeline(lead.id).then(setTimeline).catch(() => {})
   }, [lead?.id])
 
   if (!lead) return null
 
   const address = [lead.address, lead.city, lead.state].filter(Boolean).join(', ')
 
+  async function saveContact() {
+    setSavingContact(true)
+    try {
+      const body: Record<string, string> = {}
+      if (contactDraft.name !== (lead!.contact_name ?? '')) body.contact_name = contactDraft.name
+      if (contactDraft.phone !== (lead!.contact_phone ?? '')) body.contact_phone = contactDraft.phone
+      if (contactDraft.email !== (lead!.contact_email ?? '')) body.contact_email = contactDraft.email
+      if (Object.keys(body).length > 0) await updateLeadContact(lead!.id, body)
+      setEditingContact(false)
+    } finally { setSavingContact(false) }
+  }
+
+  async function refreshTimeline() {
+    getTimeline(lead!.id).then(setTimeline).catch(() => {})
+  }
+
   async function submitNote(e: React.FormEvent) {
     e.preventDefault()
     if (!noteText.trim()) return
     setSaving(true)
     try {
-      const n = await addNote(lead!.id, noteText.trim())
-      setNotes(prev => [n, ...prev])
+      await addNote(lead!.id, noteText.trim())
       setNoteText('')
+      refreshTimeline()
     } finally { setSaving(false) }
   }
 
@@ -69,10 +94,19 @@ export function ContactDrawer({ lead, onClose, onStatusChange }: Props) {
     e.preventDefault()
     setSaving(true)
     try {
-      const h = await addHistory(lead!.id, action, outcome || undefined)
-      setHistory(prev => [h, ...prev])
+      await addHistory(lead!.id, action, outcome || undefined)
       setOutcome('')
+      refreshTimeline()
     } finally { setSaving(false) }
+  }
+
+  async function handleArchive() {
+    if (!lead) return
+    setArchiving(true)
+    try {
+      await archiveLead(lead.id)
+      onClose()
+    } finally { setArchiving(false) }
   }
 
   const SECTION_BORDER: React.CSSProperties = { borderBottom: '1px solid var(--color-ink-100)' }
@@ -130,12 +164,107 @@ export function ContactDrawer({ lead, onClose, onStatusChange }: Props) {
               <StatusSelect leadId={lead.id} value={lead.status} onChange={s => onStatusChange(lead.id, s)} />
             </div>
           </div>
-          <button onClick={onClose} className="dash-icon-btn borderless">
-            <X size={16} strokeWidth={1.5} />
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={handleArchive}
+              disabled={archiving}
+              className="dash-icon-btn borderless"
+              title="Archive this lead"
+            >
+              <Archive size={16} strokeWidth={1.5} />
+            </button>
+            <button onClick={onClose} className="dash-icon-btn borderless">
+              <X size={16} strokeWidth={1.5} />
+            </button>
+          </div>
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto' }}>
+          {/* Contact info */}
+          <section style={{ padding: '16px 24px', ...SECTION_BORDER }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <p className="t-eyebrow" style={{ margin: 0 }}>Contact info</p>
+              {editingContact ? (
+                <button
+                  onClick={saveContact}
+                  disabled={savingContact}
+                  className="dash-icon-btn borderless"
+                  style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--color-accent)' }}
+                >
+                  <Check size={13} strokeWidth={1.5} /> Save
+                </button>
+              ) : (
+                <button
+                  onClick={() => setEditingContact(true)}
+                  className="dash-icon-btn borderless"
+                  style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--color-ink-400)' }}
+                >
+                  <Pencil size={11} strokeWidth={1.5} /> Edit
+                </button>
+              )}
+            </div>
+            {editingContact ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {[
+                  { label: 'Name', key: 'name' as const, placeholder: 'Contact name' },
+                  { label: 'Phone', key: 'phone' as const, placeholder: '(555) 123-4567' },
+                  { label: 'Email', key: 'email' as const, placeholder: 'name@example.com' },
+                ].map(({ label, key, placeholder }) => (
+                  <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <label className="t-eyebrow" style={{ width: 48, margin: 0 }}>{label}</label>
+                    <input
+                      type={key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text'}
+                      value={contactDraft[key]}
+                      onChange={e => setContactDraft(prev => ({ ...prev, [key]: e.target.value }))}
+                      placeholder={placeholder}
+                      style={{
+                        flex: 1,
+                        fontSize: 13,
+                        padding: '6px 10px',
+                        borderRadius: 'var(--radius-input)',
+                        border: '1px solid var(--color-ink-200)',
+                        background: 'var(--color-paper)',
+                        color: 'var(--color-ink-900)',
+                        fontFamily: 'var(--font-sans)',
+                        outline: 'none',
+                      }}
+                      onKeyDown={e => { if (e.key === 'Enter') saveContact() }}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <dl style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <User size={13} strokeWidth={1.5} style={{ color: 'var(--color-ink-400)', flexShrink: 0 }} />
+                  <dd style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-ink-900)', margin: 0 }}>
+                    {lead.contact_name || lead.owner_name || '—'}
+                  </dd>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Phone size={13} strokeWidth={1.5} style={{ color: 'var(--color-ink-400)', flexShrink: 0 }} />
+                  {lead.contact_phone ? (
+                    <a href={`tel:${lead.contact_phone}`} style={{ fontSize: 13, color: 'var(--color-accent)', textDecoration: 'none' }}>
+                      {lead.contact_phone}
+                    </a>
+                  ) : (
+                    <dd style={{ fontSize: 13, color: 'var(--color-ink-400)', margin: 0 }}>—</dd>
+                  )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Mail size={13} strokeWidth={1.5} style={{ color: 'var(--color-ink-400)', flexShrink: 0 }} />
+                  {lead.contact_email ? (
+                    <a href={`mailto:${lead.contact_email}`} style={{ fontSize: 13, color: 'var(--color-accent)', textDecoration: 'none' }}>
+                      {lead.contact_email}
+                    </a>
+                  ) : (
+                    <dd style={{ fontSize: 13, color: 'var(--color-ink-400)', margin: 0 }}>—</dd>
+                  )}
+                </div>
+              </dl>
+            )}
+          </section>
+
           {/* Property signals */}
           <section style={{ padding: '16px 24px', ...SECTION_BORDER }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -187,7 +316,7 @@ export function ContactDrawer({ lead, onClose, onStatusChange }: Props) {
             )}
           </section>
 
-          {/* Log contact */}
+          {/* Activity — log contact + add note forms, then unified timeline */}
           <section style={{ padding: '16px 24px', ...SECTION_BORDER }}>
             <p className="t-eyebrow" style={{ marginBottom: 12 }}>Log contact</p>
             <form onSubmit={submitHistory} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -204,25 +333,10 @@ export function ContactDrawer({ lead, onClose, onStatusChange }: Props) {
                 <Plus size={13} strokeWidth={1.5} /> Log
               </button>
             </form>
-            {history.length > 0 && (
-              <ul style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6, listStyle: 'none', padding: 0 }}>
-                {history.map(h => (
-                  <li key={h.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12 }}>
-                    <ContactIcon action={h.action} />
-                    <div>
-                      <span style={{ fontWeight: 500, color: 'var(--color-ink-900)' }}>{h.action}</span>
-                      {h.outcome && <span style={{ color: 'var(--color-ink-500)' }}> · {h.outcome}</span>}
-                      <p style={{ color: 'var(--color-ink-400)', fontSize: 11, marginTop: 2, marginBottom: 0 }}>{fmt(h.created_at)}</p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
           </section>
 
-          {/* Notes */}
-          <section style={{ padding: '16px 24px' }}>
-            <p className="t-eyebrow" style={{ marginBottom: 12 }}>Notes</p>
+          <section style={{ padding: '16px 24px', ...SECTION_BORDER }}>
+            <p className="t-eyebrow" style={{ marginBottom: 12 }}>Add note</p>
             <form onSubmit={submitNote} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <textarea
                 ref={noteRef}
@@ -255,21 +369,67 @@ export function ContactDrawer({ lead, onClose, onStatusChange }: Props) {
                 <Plus size={13} strokeWidth={1.5} /> Add note
               </button>
             </form>
-            {notes.length > 0 && (
-              <ul style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10, listStyle: 'none', padding: 0 }}>
-                {notes.map(n => (
-                  <li
-                    key={n.id}
-                    style={{
-                      background: 'var(--color-paper)',
-                      borderRadius: 'var(--radius-card)',
-                      padding: '10px 14px',
-                      border: '1px solid var(--color-ink-200)',
-                      boxShadow: 'var(--shadow-card)',
-                    }}
-                  >
-                    <p style={{ color: 'var(--color-ink-900)', fontSize: 13, lineHeight: 1.55, margin: 0 }}>{n.note}</p>
-                    <p style={{ color: 'var(--color-ink-400)', fontSize: 11, marginTop: 6, marginBottom: 0 }}>{fmt(n.created_at)}</p>
+          </section>
+
+          {/* Unified activity timeline */}
+          <section style={{ padding: '16px 24px' }}>
+            <p className="t-eyebrow" style={{ marginBottom: 12 }}>Activity</p>
+            {timeline.length === 0 ? (
+              <p style={{ fontSize: 13, color: 'var(--color-ink-400)', margin: 0 }}>No activity yet</p>
+            ) : (
+              <ul style={{ display: 'flex', flexDirection: 'column', gap: 8, listStyle: 'none', padding: 0, margin: 0 }}>
+                {timeline.map(entry => (
+                  <li key={`${entry.type}-${entry.id}`} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12 }}>
+                    <TimelineIcon entry={entry} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {entry.type === 'history' && (
+                        <>
+                          <span style={{ fontWeight: 500, color: 'var(--color-ink-900)' }}>{entry.title}</span>
+                          {entry.detail && <span style={{ color: 'var(--color-ink-500)' }}> · {entry.detail}</span>}
+                        </>
+                      )}
+                      {entry.type === 'note' && (
+                        <p style={{
+                          color: 'var(--color-ink-900)',
+                          fontSize: 13,
+                          lineHeight: 1.5,
+                          margin: 0,
+                          background: 'var(--color-paper)',
+                          borderRadius: 'var(--radius-card)',
+                          padding: '8px 12px',
+                          border: '1px solid var(--color-ink-200)',
+                        }}>
+                          {entry.title}
+                        </p>
+                      )}
+                      {entry.type === 'task' && (
+                        <span style={{
+                          fontWeight: 500,
+                          color: entry.detail === 'completed' ? 'var(--color-ink-400)' : 'var(--color-ink-900)',
+                          textDecoration: entry.detail === 'completed' ? 'line-through' : 'none',
+                        }}>
+                          {entry.title}
+                          {entry.detail && entry.detail !== 'completed' && (
+                            <span style={{
+                              marginLeft: 6,
+                              fontSize: 10,
+                              fontWeight: 600,
+                              padding: '1px 6px',
+                              borderRadius: 'var(--radius-pill)',
+                              background: entry.detail === 'urgent' ? 'var(--color-danger-100, #FEE2E2)' :
+                                          entry.detail === 'high' ? '#FEF3C7' : 'var(--color-ink-100)',
+                              color: entry.detail === 'urgent' ? 'var(--color-danger, #DC2626)' :
+                                     entry.detail === 'high' ? '#92400E' : 'var(--color-ink-500)',
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.05em',
+                            }}>
+                              {entry.detail}
+                            </span>
+                          )}
+                        </span>
+                      )}
+                      <p style={{ color: 'var(--color-ink-400)', fontSize: 11, marginTop: 2, marginBottom: 0 }}>{fmt(entry.created_at)}</p>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -281,13 +441,18 @@ export function ContactDrawer({ lead, onClose, onStatusChange }: Props) {
   )
 }
 
-function ContactIcon({ action }: { action: string }) {
-  const a = action.toLowerCase()
+function TimelineIcon({ entry }: { entry: TimelineEntry }) {
+  const iconStyle = { marginTop: 1, flexShrink: 0 } as const
+  if (entry.type === 'note')
+    return <FileText size={13} strokeWidth={1.5} style={{ ...iconStyle, color: 'var(--color-plum)' }} />
+  if (entry.type === 'task')
+    return <CheckSquare size={13} strokeWidth={1.5} style={{ ...iconStyle, color: entry.detail === 'completed' ? 'var(--color-moss)' : 'var(--color-warning)' }} />
+  const a = entry.title.toLowerCase()
   if (a.includes('call') || a.includes('voicemail'))
-    return <Phone size={13} strokeWidth={1.5} style={{ color: 'var(--color-accent)', marginTop: 1, flexShrink: 0 }} />
+    return <Phone size={13} strokeWidth={1.5} style={{ ...iconStyle, color: 'var(--color-accent)' }} />
   if (a.includes('door'))
-    return <DoorOpen size={13} strokeWidth={1.5} style={{ color: 'var(--color-moss)', marginTop: 1, flexShrink: 0 }} />
+    return <DoorOpen size={13} strokeWidth={1.5} style={{ ...iconStyle, color: 'var(--color-moss)' }} />
   if (a.includes('email'))
-    return <Mail size={13} strokeWidth={1.5} style={{ color: 'var(--color-warning)', marginTop: 1, flexShrink: 0 }} />
-  return <MessageSquare size={13} strokeWidth={1.5} style={{ color: 'var(--color-plum)', marginTop: 1, flexShrink: 0 }} />
+    return <Mail size={13} strokeWidth={1.5} style={{ ...iconStyle, color: 'var(--color-warning)' }} />
+  return <MessageSquare size={13} strokeWidth={1.5} style={{ ...iconStyle, color: 'var(--color-plum)' }} />
 }

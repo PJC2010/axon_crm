@@ -19,6 +19,9 @@ export interface Lead {
   last_sale_price: number | null
   owner_name: string | null
   owner_occupied: boolean | null
+  contact_phone: string | null
+  contact_email: string | null
+  contact_name: string | null
   zip_median_income: number | null
   permit_count_24mo: number | null
   lead_score: number | null
@@ -30,6 +33,7 @@ export interface Lead {
   score_updated_at: string | null
   created_at: string | null
   updated_at: string | null
+  archived_at: string | null
 }
 
 export interface LeadPage {
@@ -51,6 +55,15 @@ export interface HistoryEntry {
   property_id: number
   action: string
   outcome: string | null
+  created_at: string
+}
+
+export interface TimelineEntry {
+  id: number
+  property_id: number
+  type: 'history' | 'note' | 'task'
+  title: string
+  detail: string | null
   created_at: string
 }
 
@@ -90,6 +103,8 @@ export interface PipelineCardLead {
   id: number
   address: string
   owner_name: string | null
+  contact_name: string | null
+  contact_phone: string | null
   lead_score: number | null
   score_grade: ScoreGrade | null
   estimated_job_value: number | null
@@ -111,6 +126,15 @@ export interface User {
   email: string
   role: string
   is_active: boolean
+  onboarding_complete: boolean
+}
+
+export interface ChecklistStatus {
+  has_leads: boolean
+  has_contact: boolean
+  has_invoice: boolean
+  has_workflow: boolean
+  has_expense: boolean
 }
 
 export interface PipelineSchedule {
@@ -282,6 +306,62 @@ export interface PnLReport {
   total_revenue: number
   total_expenses: number
   net_profit: number
+}
+
+// ── Pipeline Stages ──────────────────────────────────────────────────────
+
+export interface PipelineStage {
+  id: number
+  key: string
+  label: string
+  color: string
+  sort_order: number
+  is_terminal: boolean
+  is_default: boolean
+  created_by: number | null
+  created_at: string
+}
+
+// ── Pipeline Analytics ───────────────────────────────────────────────────────
+
+export interface PipelineAnalytics {
+  win_rate: number
+  avg_cycle_time: number | null
+  leads_won: number
+  funnel: Record<string, number>
+  avg_days_per_stage: Record<string, number | null>
+  period_days: number
+}
+
+export interface ForecastData {
+  weighted_total: number
+  by_stage: { stage: string; count: number; raw_value: number; weight_pct: number; weighted_value: number }[]
+}
+
+// ── Workflows ────────────────────────────────────────────────────────────────
+
+export interface WorkflowRule {
+  id: number
+  name: string
+  trigger_type: string
+  trigger_config: { from_status?: string; to_status?: string }
+  action_type: string
+  action_config: { title?: string; due_days_offset?: number; priority?: string }
+  is_active: boolean
+  vertical: string | null
+  created_by: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowRuleCreate {
+  name: string
+  trigger_type?: string
+  trigger_config: { from_status?: string; to_status?: string }
+  action_type?: string
+  action_config: { title?: string; due_days_offset?: number; priority?: string }
+  is_active?: boolean
+  vertical?: string
 }
 
 export interface JobCostRow {

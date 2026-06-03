@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import leads, notes, history, export
-from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, hcad
+from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, hcad, workflows
 
 
 @asynccontextmanager
@@ -48,6 +48,7 @@ app.include_router(expenses.router,    prefix="/api", tags=["Expenses"])
 app.include_router(invoices.router,    prefix="/api", tags=["Invoices"])
 app.include_router(bookkeeping.router, prefix="/api", tags=["Bookkeeping"])
 app.include_router(hcad.router,        prefix="/api", tags=["HCAD"])
+app.include_router(workflows.router,   prefix="/api", tags=["Workflows"])
 
 
 @app.get("/api/health")

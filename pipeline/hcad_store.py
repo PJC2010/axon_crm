@@ -98,6 +98,48 @@ def query_properties(zip_code: str, db_path: str | None = None) -> dict[str, dic
     return _pg_query_properties(zip_code)
 
 
+def query_extra_features(zip_code: str, db_path: str | None = None) -> dict[str, dict]:
+    """
+    Return {address_norm: {has_pool, has_cracked_slab, garage_units}} for a ZIP.
+
+    Sources: extra_features table in DuckDB (joined to property_summary), or
+    hcad_extra_features in Postgres. Gracefully returns {} if neither is available.
+
+    Garage detection: l_dscr LIKE '%GARAGE%'
+    Pool detection:   l_dscr LIKE '%POOL%'
+    Cracked slab:     l_dscr LIKE '%CRACKED SLAB%' or s_dscr LIKE '%CRACK%'
+    """
+    db_file = db_path or PERMIT_DB_PATH
+    if db_exists(db_file):
+        con = duckdb.connect(str(db_file), read_only=True)
+        try:
+            rows = con.execute("""
+                SELECT
+                    LOWER(TRIM(REGEXP_REPLACE(ps.site_address, '[^a-zA-Z0-9 ]', ' ', 'g'))) AS address_norm,
+                    BOOL_OR(UPPER(ef.l_dscr) LIKE '%POOL%')                                  AS has_pool,
+                    BOOL_OR(UPPER(ef.l_dscr) LIKE '%CRACKED SLAB%'
+                            OR UPPER(ef.s_dscr) LIKE '%CRACK%')                             AS has_cracked_slab,
+                    COALESCE(SUM(
+                        CASE WHEN UPPER(ef.l_dscr) LIKE '%GARAGE%'
+                             THEN TRY_CAST(ef.uts AS INTEGER) ELSE 0 END
+                    ), 0)                                                                     AS garage_units
+                FROM property_summary ps
+                JOIN extra_features ef ON ps.acct = ef.acct
+                WHERE ps.site_zip = ?
+                GROUP BY address_norm
+            """, [zip_code]).fetchall()
+            return {
+                r[0]: {"has_pool": bool(r[1]), "has_cracked_slab": bool(r[2]), "garage_units": int(r[3] or 0)}
+                for r in rows if r[0]
+            }
+        except Exception as e:
+            log.debug("DuckDB extra_features query skipped (table may not exist): %s", e)
+        finally:
+            con.close()
+
+    return _pg_query_extra_features(zip_code)
+
+
 # ── Postgres fallback functions ──────────────────────────────────────────────
 
 def _pg_query_permits(zip_code: str) -> dict[str, int]:
@@ -125,6 +167,45 @@ def _pg_query_permits(zip_code: str) -> dict[str, int]:
         return result
     except Exception as e:
         log.warning("Postgres HCAD permit query failed: %s", e)
+        return {}
+
+
+def _pg_query_extra_features(zip_code: str) -> dict[str, dict]:
+    """Query pool/slab/garage signals from Postgres hcad_extra_features table."""
+    try:
+        from pipeline.db import get_conn
+        conn = get_conn()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    LOWER(TRIM(REGEXP_REPLACE(hp.site_address, '[^a-zA-Z0-9 ]', ' ', 'g'))) AS address_norm,
+                    BOOL_OR(UPPER(ef.l_dscr) LIKE '%%POOL%%')                               AS has_pool,
+                    BOOL_OR(UPPER(ef.l_dscr) LIKE '%%CRACKED SLAB%%'
+                            OR UPPER(ef.s_dscr) LIKE '%%CRACK%%')                          AS has_cracked_slab,
+                    COALESCE(SUM(
+                        CASE WHEN UPPER(ef.l_dscr) LIKE '%%GARAGE%%'
+                             THEN CAST(NULLIF(ef.units, '') AS INTEGER) ELSE 0 END
+                    ), 0)                                                                    AS garage_units
+                FROM hcad_properties hp
+                JOIN hcad_extra_features ef ON ef.acct = hp.acct
+                WHERE hp.site_zip = %s
+                GROUP BY address_norm
+            """, (zip_code,))
+            result = {}
+            for row in cur.fetchall():
+                addr = row[0]
+                if addr:
+                    result[addr] = {
+                        "has_pool":        bool(row[1]),
+                        "has_cracked_slab": bool(row[2]),
+                        "garage_units":    int(row[3] or 0),
+                    }
+        conn.close()
+        if result:
+            log.info("Postgres HCAD extra_features: %d addresses for ZIP %s", len(result), zip_code)
+        return result
+    except Exception as e:
+        log.debug("Postgres HCAD extra_features query skipped: %s", e)
         return {}
 
 

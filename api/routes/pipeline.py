@@ -22,10 +22,25 @@ router = APIRouter()
 
 PIPELINE_STAGES = ["new", "contacted", "qualified", "quote_sent", "won", "lost", "not_interested"]
 
-CARD_COLS = "id, address, owner_name, lead_score, score_grade, estimated_job_value, status, vertical, zip"
+CARD_COLS = "id, address, owner_name, contact_name, contact_phone, lead_score, score_grade, estimated_job_value, status, vertical, zip"
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
+
+class StageCreate(BaseModel):
+    key: str
+    label: str
+    color: str = "var(--color-ink-300)"
+    sort_order: int = 0
+    is_terminal: bool = False
+
+
+class StageUpdate(BaseModel):
+    label: Optional[str] = None
+    color: Optional[str] = None
+    sort_order: Optional[int] = None
+    is_terminal: Optional[bool] = None
+
 
 class JobValueUpdate(BaseModel):
     estimated_job_value: int
@@ -49,6 +64,69 @@ class RunCreate(BaseModel):
     vertical: Optional[str] = None
 
 
+# ── Pipeline Stages ──────────────────────────────────────────────────────
+
+@router.get("/pipeline/stages")
+def list_stages(_: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+    with db.cursor() as cur:
+        cur.execute("SELECT * FROM pipeline_stages ORDER BY sort_order, id")
+        return dict_fetchall(cur)
+
+
+@router.post("/pipeline/stages", status_code=201)
+def create_stage(body: StageCreate, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO pipeline_stages (key, label, color, sort_order, is_terminal, created_by) "
+            "VALUES (%s, %s, %s, %s, %s, %s) RETURNING *",
+            (body.key, body.label, body.color, body.sort_order, body.is_terminal, current_user["id"]),
+        )
+        row = dict_fetchone(cur)
+        db.commit()
+    return row
+
+
+@router.patch("/pipeline/stages/{stage_id}")
+def update_stage(stage_id: int, body: StageUpdate, _: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+    sets, params = [], []
+    if body.label is not None:
+        sets.append("label = %s"); params.append(body.label)
+    if body.color is not None:
+        sets.append("color = %s"); params.append(body.color)
+    if body.sort_order is not None:
+        sets.append("sort_order = %s"); params.append(body.sort_order)
+    if body.is_terminal is not None:
+        sets.append("is_terminal = %s"); params.append(body.is_terminal)
+    if not sets:
+        from fastapi import HTTPException as HE
+        raise HE(status_code=400, detail="Nothing to update")
+    params.append(stage_id)
+    with db.cursor() as cur:
+        cur.execute(f"UPDATE pipeline_stages SET {', '.join(sets)} WHERE id = %s RETURNING *", params)
+        row = dict_fetchone(cur)
+        db.commit()
+    if not row:
+        raise HTTPException(status_code=404, detail="Stage not found")
+    return row
+
+
+@router.delete("/pipeline/stages/{stage_id}", status_code=204)
+def delete_stage(stage_id: int, _: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+    with db.cursor() as cur:
+        cur.execute("SELECT key, is_default FROM pipeline_stages WHERE id = %s", (stage_id,))
+        stage = dict_fetchone(cur)
+        if not stage:
+            raise HTTPException(status_code=404, detail="Stage not found")
+        if stage["is_default"]:
+            raise HTTPException(status_code=400, detail="Cannot delete the default stage")
+        cur.execute("SELECT COUNT(*) FROM properties WHERE status = %s", (stage["key"],))
+        count = cur.fetchone()[0]
+        if count > 0:
+            raise HTTPException(status_code=400, detail=f"Cannot delete — {count} leads are in this stage")
+        cur.execute("DELETE FROM pipeline_stages WHERE id = %s", (stage_id,))
+        db.commit()
+
+
 # ── Pipeline / Kanban ─────────────────────────────────────────────────────────
 
 @router.get("/pipeline")
@@ -66,15 +144,18 @@ def get_pipeline(
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
     with db.cursor() as cur:
+        cur.execute("SELECT key FROM pipeline_stages ORDER BY sort_order, id")
+        stage_keys = [r[0] for r in cur.fetchall()] or PIPELINE_STAGES
+
         cur.execute(
             f"SELECT {CARD_COLS} FROM properties {where} ORDER BY lead_score DESC NULLS LAST",
             params,
         )
         rows = dict_fetchall(cur)
 
-    grouped: dict[str, list] = {s: [] for s in PIPELINE_STAGES}
+    grouped: dict[str, list] = {s: [] for s in stage_keys}
     for row in rows:
-        stage = row["status"] if row["status"] in grouped else "new"
+        stage = row["status"] if row["status"] in grouped else stage_keys[0]
         grouped[stage].append(row)
     return grouped
 
@@ -88,6 +169,124 @@ def pipeline_stats(_: dict = Depends(get_current_user), db: PGConn = Depends(get
         )
         rows = dict_fetchall(cur)
     return {r["status"]: {"count": r["count"], "total_value": r["total_value"]} for r in rows}
+
+
+@router.get("/pipeline/analytics")
+def pipeline_analytics(
+    days: int = Query(90, ge=7, le=365),
+    vertical: str | None = Query(None),
+    _: dict = Depends(get_current_user),
+    db: PGConn = Depends(get_db),
+):
+    vert_filter = "AND vertical = %s" if vertical else ""
+    vert_params = [vertical] if vertical else []
+
+    with db.cursor() as cur:
+        # Win rate
+        cur.execute(
+            f"SELECT "
+            f"  COUNT(*) FILTER (WHERE status = 'won') AS won, "
+            f"  COUNT(*) FILTER (WHERE status IN ('won','lost')) AS decided "
+            f"FROM properties WHERE stage_moved_at >= NOW() - INTERVAL '%s days' {vert_filter}",
+            [days] + vert_params,
+        )
+        wr = dict_fetchone(cur)
+        win_rate = round((wr["won"] / wr["decided"] * 100) if wr["decided"] > 0 else 0, 1)
+
+        # Avg cycle time (created_at → stage_moved_at for won leads)
+        cur.execute(
+            f"SELECT AVG(EXTRACT(EPOCH FROM (stage_moved_at - created_at)) / 86400) AS avg_days "
+            f"FROM properties WHERE status = 'won' AND stage_moved_at IS NOT NULL AND created_at IS NOT NULL "
+            f"AND stage_moved_at >= NOW() - INTERVAL '%s days' {vert_filter}",
+            [days] + vert_params,
+        )
+        ct = dict_fetchone(cur)
+        avg_cycle_time = round(ct["avg_days"], 1) if ct and ct["avg_days"] else None
+
+        # Leads won in period
+        cur.execute(
+            f"SELECT COUNT(*) AS count FROM properties WHERE status = 'won' "
+            f"AND stage_moved_at >= NOW() - INTERVAL '%s days' {vert_filter}",
+            [days] + vert_params,
+        )
+        leads_won = cur.fetchone()[0]
+
+        # Funnel: count per stage from stage_transitions
+        cur.execute(
+            f"SELECT to_status, COUNT(DISTINCT property_id) AS leads "
+            f"FROM stage_transitions WHERE transitioned_at >= NOW() - INTERVAL '%s days' "
+            f"{'AND property_id IN (SELECT id FROM properties WHERE vertical = %s)' if vertical else ''} "
+            f"GROUP BY to_status",
+            [days] + vert_params,
+        )
+        funnel_rows = dict_fetchall(cur)
+        funnel = {r["to_status"]: r["leads"] for r in funnel_rows}
+
+        # Avg days per stage from transitions
+        cur.execute(
+            f"SELECT t1.from_status AS stage, "
+            f"  AVG(EXTRACT(EPOCH FROM (t1.transitioned_at - t2.transitioned_at)) / 86400) AS avg_days "
+            f"FROM stage_transitions t1 "
+            f"JOIN LATERAL ("
+            f"  SELECT transitioned_at FROM stage_transitions t2 "
+            f"  WHERE t2.property_id = t1.property_id AND t2.to_status = t1.from_status "
+            f"  ORDER BY t2.transitioned_at DESC LIMIT 1"
+            f") t2 ON TRUE "
+            f"WHERE t1.from_status IS NOT NULL AND t1.transitioned_at >= NOW() - INTERVAL '%s days' "
+            f"GROUP BY t1.from_status",
+            [days],
+        )
+        stage_time_rows = dict_fetchall(cur)
+        avg_days_per_stage = {r["stage"]: round(r["avg_days"], 1) if r["avg_days"] else None for r in stage_time_rows}
+
+    return {
+        "win_rate": win_rate,
+        "avg_cycle_time": avg_cycle_time,
+        "leads_won": leads_won,
+        "funnel": funnel,
+        "avg_days_per_stage": avg_days_per_stage,
+        "period_days": days,
+    }
+
+
+@router.get("/pipeline/forecast")
+def pipeline_forecast(
+    _: dict = Depends(get_current_user),
+    db: PGConn = Depends(get_db),
+):
+    stage_weights = {
+        "new": 0.05,
+        "contacted": 0.15,
+        "qualified": 0.35,
+        "quote_sent": 0.60,
+    }
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT status, COUNT(*) AS count, COALESCE(SUM(estimated_job_value), 0) AS raw_value "
+            "FROM properties WHERE status IN ('new','contacted','qualified','quote_sent') "
+            "GROUP BY status"
+        )
+        rows = dict_fetchall(cur)
+
+    by_stage = []
+    weighted_total = 0
+    for row in rows:
+        stage = row["status"]
+        weight = stage_weights.get(stage, 0)
+        weighted = round(row["raw_value"] * weight)
+        weighted_total += weighted
+        by_stage.append({
+            "stage": stage,
+            "count": row["count"],
+            "raw_value": row["raw_value"],
+            "weight_pct": round(weight * 100),
+            "weighted_value": weighted,
+        })
+
+    return {
+        "weighted_total": weighted_total,
+        "by_stage": sorted(by_stage, key=lambda x: stage_weights.get(x["stage"], 0)),
+    }
 
 
 @router.patch("/leads/{lead_id}/job-value")

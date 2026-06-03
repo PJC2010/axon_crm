@@ -12,6 +12,7 @@ from config import (
     AGE_SWEET_SPOT_MIN, AGE_SWEET_SPOT_MAX,
     SALE_RECENCY_MAX_MO, EQUITY_TARGET,
     GARAGE_TARGET, INCOME_TARGET, PERMIT_TARGET,
+    POOL_SIGNAL_VALUE, SLAB_SIGNAL_VALUE,
 )
 
 
@@ -23,12 +24,14 @@ def score_property(row: dict, weights: dict) -> tuple[float, str]:
 
 def _compute_score(row: dict, weights: dict) -> float:
     return (
-        weights["age"]    * _age_signal(row.get("year_built"))       +
-        weights["sale"]   * _sale_signal(row.get("last_sale_date"))  +
-        weights["equity"] * _equity_signal(row.get("estimated_equity")) +
-        weights["garage"] * _garage_signal(row.get("garage_spaces")) +
-        weights["income"] * _income_signal(row.get("zip_median_income")) +
-        weights["permit"] * _permit_signal(row.get("permit_count_24mo"))
+        weights["age"]              * _age_signal(row.get("year_built"))          +
+        weights["sale"]             * _sale_signal(row.get("last_sale_date"))     +
+        weights["equity"]           * _equity_signal(row.get("estimated_equity")) +
+        weights["garage"]           * _garage_signal(row.get("garage_spaces"))    +
+        weights["income"]           * _income_signal(row.get("zip_median_income"))+
+        weights["permit"]           * _permit_signal(row.get("permit_count_24mo"))+
+        weights.get("pool", 0)      * _pool_signal(row.get("has_pool"))           +
+        weights.get("slab", 0)      * _slab_signal(row.get("has_cracked_slab"))
     ) * 100
 
 
@@ -93,3 +96,13 @@ def _permit_signal(count: int | None) -> float:
     if not count or count <= 0:
         return 0.0
     return min(1.0, count / PERMIT_TARGET)
+
+
+def _pool_signal(has_pool: bool | None) -> float:
+    """1.0 if property has a pool, else 0. Used by pool_maintenance vertical."""
+    return POOL_SIGNAL_VALUE if has_pool else 0.0
+
+
+def _slab_signal(has_cracked_slab: bool | None) -> float:
+    """1.0 if HCAD records a cracked slab, else 0. Used by epoxy_flooring vertical."""
+    return SLAB_SIGNAL_VALUE if has_cracked_slab else 0.0

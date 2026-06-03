@@ -1,4 +1,4 @@
-import type { Lead, LeadPage, LeadFilters, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, ARSummary, AgingBucket, PnLReport, JobCostRow } from './types'
+import type { Lead, LeadPage, LeadFilters, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, WorkflowRule, WorkflowRuleCreate } from './types'
 import { getToken, clearToken } from './auth'
 
 const BASE = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000') + '/api'
@@ -35,6 +35,14 @@ export function getMe(): Promise<User> {
   return req('/auth/me')
 }
 
+export function completeOnboarding(): Promise<{ ok: boolean }> {
+  return req('/auth/onboarding-complete', { method: 'PATCH' })
+}
+
+export function getChecklistStatus(): Promise<import('./types').ChecklistStatus> {
+  return req('/auth/checklist-status')
+}
+
 // ── Leads ─────────────────────────────────────────────────────────────────────
 
 export function getLeads(filters: LeadFilters = {}): Promise<LeadPage> {
@@ -54,6 +62,41 @@ export function updateStatus(id: number, status: LeadStatus): Promise<Lead> {
     method: 'PATCH',
     body: JSON.stringify({ status }),
   })
+}
+
+export function getTimeline(leadId: number): Promise<TimelineEntry[]> {
+  return req<TimelineEntry[]>(`/leads/${leadId}/timeline`)
+}
+
+export function updateLeadContact(id: number, body: { contact_phone?: string; contact_email?: string; contact_name?: string }): Promise<Lead> {
+  return req<Lead>(`/leads/${id}/contact`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export function archiveLead(id: number): Promise<Lead> {
+  return req<Lead>(`/leads/${id}/archive`, { method: 'POST' })
+}
+
+export function unarchiveLead(id: number): Promise<Lead> {
+  return req<Lead>(`/leads/${id}/unarchive`, { method: 'POST' })
+}
+
+export function archiveBulk(ids: number[]): Promise<{ archived_count: number; ids: number[] }> {
+  return req('/leads/archive-bulk', { method: 'POST', body: JSON.stringify({ ids }) })
+}
+
+export function unarchiveBulk(ids: number[]): Promise<{ unarchived_count: number; ids: number[] }> {
+  return req('/leads/unarchive-bulk', { method: 'POST', body: JSON.stringify({ ids }) })
+}
+
+export function archiveByFilter(filters: LeadFilters): Promise<{ archived_count: number; ids: number[] }> {
+  const params = new URLSearchParams()
+  Object.entries(filters).forEach(([k, v]) => {
+    if (v !== undefined && v !== '' && k !== 'page' && k !== 'page_size') params.set(k, String(v))
+  })
+  return req(`/leads/archive-by-filter?${params}`, { method: 'POST' })
 }
 
 export function updateJobValue(id: number, value: number): Promise<Lead> {
@@ -127,6 +170,32 @@ export function getPipeline(filters: { vertical?: string; zip?: string } = {}): 
   if (filters.vertical) p.set('vertical', filters.vertical)
   if (filters.zip) p.set('zip', filters.zip)
   return req<PipelineGroup>(`/pipeline?${p}`)
+}
+
+export function getPipelineStages(): Promise<PipelineStage[]> {
+  return req<PipelineStage[]>('/pipeline/stages')
+}
+
+export function createPipelineStage(body: { key: string; label: string; color?: string; sort_order?: number; is_terminal?: boolean }): Promise<PipelineStage> {
+  return req<PipelineStage>('/pipeline/stages', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updatePipelineStage(id: number, body: { label?: string; color?: string; sort_order?: number; is_terminal?: boolean }): Promise<PipelineStage> {
+  return req<PipelineStage>(`/pipeline/stages/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export function deletePipelineStage(id: number): Promise<void> {
+  return req<void>(`/pipeline/stages/${id}`, { method: 'DELETE' })
+}
+
+export function getPipelineAnalytics(days = 90, vertical?: string): Promise<PipelineAnalytics> {
+  const p = new URLSearchParams({ days: String(days) })
+  if (vertical) p.set('vertical', vertical)
+  return req<PipelineAnalytics>(`/pipeline/analytics?${p}`)
+}
+
+export function getPipelineForecast(): Promise<ForecastData> {
+  return req<ForecastData>('/pipeline/forecast')
 }
 
 export function getPipelineStats(): Promise<Record<string, { count: number; total_value: number }>> {
@@ -277,6 +346,30 @@ export function getJobCosting(year?: number): Promise<JobCostRow[]> {
   if (year) p.set('year', String(year))
   return req(`/bookkeeping/job-costing?${p}`)
 }
+
+// ── Workflows ────────────────────────────────────────────────────────────────
+
+export function getWorkflows(): Promise<WorkflowRule[]> {
+  return req<WorkflowRule[]>('/workflows')
+}
+
+export function createWorkflow(body: WorkflowRuleCreate): Promise<WorkflowRule> {
+  return req<WorkflowRule>('/workflows', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateWorkflow(id: number, body: Partial<WorkflowRuleCreate>): Promise<WorkflowRule> {
+  return req<WorkflowRule>(`/workflows/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export function deleteWorkflow(id: number): Promise<void> {
+  return req<void>(`/workflows/${id}`, { method: 'DELETE' })
+}
+
+export function seedWorkflowDefaults(vertical: string): Promise<{ created: number; rules: WorkflowRule[] }> {
+  return req(`/workflows/seed-defaults?vertical=${vertical}`, { method: 'POST' })
+}
+
+// ── Export ────────────────────────────────────────────────────────────────────
 
 export function exportUrl(filters: LeadFilters = {}): string {
   const params = new URLSearchParams()

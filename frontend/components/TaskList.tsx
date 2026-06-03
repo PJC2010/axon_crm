@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
-import { Check, Trash2, Clock } from 'lucide-react'
+import { Check, Trash2, Clock, Zap } from 'lucide-react'
+import Link from 'next/link'
 import type { Task } from '@/lib/types'
 import { completeTask, deleteTask } from '@/lib/api'
 
@@ -44,7 +45,16 @@ export function TaskList({ tasks, onUpdate, showLeadLink }: Props) {
   }
 
   if (tasks.length === 0) {
-    return <p style={{ fontSize: 13, color: 'var(--color-ink-400)', padding: '12px 0' }}>No tasks here.</p>
+    return (
+      <div style={{ textAlign: 'center', padding: '32px 16px' }}>
+        <Zap size={36} strokeWidth={1} style={{ color: 'var(--color-ink-300)', marginBottom: 8 }} />
+        <p style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 500, color: 'var(--color-ink-500)' }}>No tasks here</p>
+        <p style={{ margin: 0, fontSize: 12, color: 'var(--color-ink-400)' }}>
+          Tasks are created automatically when you move leads through your pipeline.{' '}
+          <Link href="/settings" style={{ color: 'var(--color-accent)', textDecoration: 'none' }}>Set up automations →</Link>
+        </p>
+      </div>
+    )
   }
 
   return (

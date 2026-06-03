@@ -31,12 +31,16 @@ class Lead(BaseModel):
     lead_score: Optional[float] = None
     score_grade: Optional[str] = None
     vertical: Optional[str] = None
+    contact_phone: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_name: Optional[str] = None
     status: str = "new"
     score_updated_at: Optional[datetime] = None
     estimated_job_value: Optional[int] = None
     stage_moved_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    archived_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -207,6 +211,12 @@ class StatusUpdate(BaseModel):
         if self.status not in ALLOWED_STATUSES:
             raise ValueError(f"status must be one of {ALLOWED_STATUSES}")
         return self
+
+
+class LeadContactUpdate(BaseModel):
+    contact_phone: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_name: Optional[str] = None
 
 
 # ── Notes ─────────────────────────────────────────────────────────────────────

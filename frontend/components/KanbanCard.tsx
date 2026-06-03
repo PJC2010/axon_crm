@@ -30,8 +30,8 @@ export function KanbanCard({ lead, onClick }: Props) {
         </span>
         {lead.score_grade && <ScoreBadge grade={lead.score_grade} score={lead.lead_score} />}
       </div>
-      {lead.owner_name && (
-        <span style={{ fontSize: 11, color: 'var(--color-ink-400)' }}>{lead.owner_name}</span>
+      {(lead.contact_name || lead.owner_name) && (
+        <span style={{ fontSize: 11, color: 'var(--color-ink-400)' }}>{lead.contact_name || lead.owner_name}</span>
       )}
       {lead.estimated_job_value != null && (
         <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-accent)' }}>

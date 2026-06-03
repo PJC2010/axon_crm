@@ -8,6 +8,7 @@ Usage:
     python run_pipeline.py --zip 30066 --seed-csv /path/to/addresses.csv
     python run_pipeline.py --zip 30066 --permit-csv /path/to/permits.csv
     python run_pipeline.py --zip 30066 --skip seed,geocode
+    python run_pipeline.py --zip 30066 --force-seed   # re-seed even if ZIP already exists
 """
 import argparse
 import logging
@@ -22,58 +23,76 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
+def _zip_already_seeded(zip_code: str) -> bool:
+    """Return True if the ZIP already has properties in the DB."""
+    from pipeline.db import get_conn
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM properties WHERE zip = %s LIMIT 1", (zip_code,))
+        exists = cur.fetchone() is not None
+    conn.close()
+    return exists
+
+
 def run_zip(zip_code: str, args) -> None:
     skip = set(s.strip() for s in (args.skip or "").split(",") if s.strip())
     log.info("━━━  ZIP %s  ━━━", zip_code)
 
     if "seed" not in skip:
         from pipeline.seed import seed
-        n = seed(zip_code, csv_path=args.seed_csv, limit=args.limit)
-        log.info("[1/6] Seed: %d records", n)
+        if not args.force_seed and _zip_already_seeded(zip_code):
+            log.info("[1/7] Seed: skipped (ZIP already in DB — use --force-seed to re-fetch)")
+        else:
+            n = seed(zip_code, csv_path=args.seed_csv, limit=args.limit)
+            log.info("[1/7] Seed: %d records", n)
     else:
-        log.info("[1/6] Seed: skipped")
+        log.info("[1/7] Seed: skipped")
 
     if "census" not in skip:
         from pipeline.census import enrich_census
         n = enrich_census(zip_code)
-        log.info("[2/6] Census: %d updated", n)
+        log.info("[2/7] Census: %d updated", n)
     else:
-        log.info("[2/6] Census: skipped")
+        log.info("[2/7] Census: skipped")
 
     if "geocode" not in skip:
         from pipeline.geocode import enrich_geocode
         n = enrich_geocode(zip_code)
-        log.info("[3/6] Geocode: %d updated", n)
+        log.info("[3/7] Geocode: %d updated", n)
     else:
-        log.info("[3/6] Geocode: skipped")
+        log.info("[3/7] Geocode: skipped")
+
+    # HCAD runs BEFORE RentCast/ATTOM — it's free (local DuckDB) and fills many
+    # of the same fields (year_built, square_footage, estimated_value, etc.).
+    # Running it first means fewer properties will have NULL fields, so RentCast
+    # and ATTOM see a smaller work queue and make fewer paid API calls.
+    if "hcad" not in skip:
+        from pipeline.hcad_enrichment import enrich_hcad
+        n = enrich_hcad(zip_code)
+        log.info("[4/7] HCAD (free): %d fields backfilled", n)
+    else:
+        log.info("[4/7] HCAD: skipped")
 
     if "property" not in skip:
         from pipeline.property import enrich_property
         n = enrich_property(zip_code)
-        log.info("[4/7] Property detail: %d updated", n)
+        log.info("[5/7] Property detail (RentCast/ATTOM): %d updated", n)
     else:
-        log.info("[4/7] Property detail: skipped")
-
-    if "hcad" not in skip:
-        from pipeline.hcad_enrichment import enrich_hcad
-        n = enrich_hcad(zip_code)
-        log.info("[4b/7] HCAD fallback: %d fields backfilled", n)
-    else:
-        log.info("[4b/7] HCAD fallback: skipped")
+        log.info("[5/7] Property detail: skipped")
 
     if "permits" not in skip:
         from pipeline.permits import enrich_permits
         n = enrich_permits(zip_code, csv_path=args.permit_csv)
-        log.info("[5/7] Permits: %d updated", n)
+        log.info("[6/7] Permits: %d updated", n)
     else:
-        log.info("[5/7] Permits: skipped")
+        log.info("[6/7] Permits: skipped")
 
     if "score" not in skip:
         from pipeline.scorer import score_zip
         n = score_zip(zip_code, vertical=args.vertical)
-        log.info("[6/7] Scoring: %d scored", n)
+        log.info("[7/7] Scoring: %d scored", n)
     else:
-        log.info("[6/7] Scoring: skipped")
+        log.info("[7/7] Scoring: skipped")
 
 
 def main():
@@ -89,9 +108,11 @@ def main():
     parser.add_argument("--permit-csv", default=None,
                         help="CSV file with permit counts (address, zip, permit_count)")
     parser.add_argument("--skip",       default="",
-                        help="Comma-separated steps to skip: seed,census,geocode,property,hcad,permits,score")
+                        help="Comma-separated steps to skip: seed,census,geocode,hcad,property,permits,score")
     parser.add_argument("--limit",      type=int, default=None,
                         help="Cap the number of seeded records (useful for testing)")
+    parser.add_argument("--force-seed", action="store_true", default=False,
+                        help="Re-fetch from RentCast even if the ZIP already has properties in the DB")
 
     args = parser.parse_args()
 

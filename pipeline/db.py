@@ -20,10 +20,11 @@ def upsert_properties(conn, rows: list[dict]) -> int:
 
     all_cols = [
         "address", "city", "state", "zip", "latitude", "longitude", "geohash",
-        "year_built", "square_footage", "garage_spaces", "lot_size",
+        "year_built", "square_footage", "garage_spaces", "garage_type", "lot_size",
         "property_type", "estimated_value", "estimated_equity",
         "last_sale_date", "last_sale_price", "owner_name", "owner_occupied",
         "ownership_years", "zip_median_income", "permit_count_24mo",
+        "has_pool", "has_cracked_slab",
         "lead_score", "score_grade", "vertical", "score_updated_at",
         "enrichment_flags",
     ]

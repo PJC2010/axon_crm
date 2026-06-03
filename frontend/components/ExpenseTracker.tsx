@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Download, ChevronDown, ReceiptText, Home } from 'lucide-react'
+import { Plus, Download, ChevronDown, ReceiptText, Receipt, Home } from 'lucide-react'
 import Link from 'next/link'
 import { getExpenses, getExpenseSummary, expenseExportUrl } from '@/lib/api'
 import type { Expense, ExpenseCategory, ExpenseSummary, ExpenseFilters } from '@/lib/types'
@@ -205,10 +205,10 @@ export function ExpenseTracker() {
           </div>
         ) : expenses.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>🧾</div>
-            <div style={{ fontWeight: 600, color: 'var(--color-ink-700)', marginBottom: 6 }}>No expenses yet</div>
-            <div style={{ color: 'var(--color-ink-400)', fontSize: 14, marginBottom: 20 }}>
-              Tap Add to log your first expense
+            <Receipt size={48} strokeWidth={1} style={{ color: 'var(--color-ink-300)', marginBottom: 12 }} />
+            <div style={{ fontWeight: 600, color: 'var(--color-ink-700)', marginBottom: 6, fontSize: 16 }}>Track your first expense</div>
+            <div style={{ color: 'var(--color-ink-400)', fontSize: 14, marginBottom: 20, maxWidth: 320, marginLeft: 'auto', marginRight: 'auto' }}>
+              Keep track of business expenses like fuel, materials, and tools. Tax-deductible items are flagged automatically.
             </div>
             <button onClick={openAdd} className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 20px', height: 40 }}>
               <Plus size={14} strokeWidth={2} /> Add Expense

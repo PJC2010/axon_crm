@@ -114,7 +114,7 @@ def _attom_detail(address: str, zip_code: str) -> dict | None:
         return None
     try:
         resp = requests.get(
-            f"{ATTOM_BASE_URL}/property/detail",
+            f"{ATTOM_BASE_URL}/assessment/detail",
             headers={"apikey": ATTOM_API_KEY, "Accept": "application/json"},
             params={"address1": address, "address2": zip_code},
             timeout=15,
@@ -124,10 +124,32 @@ def _attom_detail(address: str, zip_code: str) -> dict | None:
         building = prop.get("building", {})
         lot      = prop.get("lot", {})
         parking  = building.get("parking", {})
-        raw_spaces = parking.get("prkgSpaces")
+
+        # garageType: non-empty string means a garage exists (e.g. "Attached", "Detached")
+        # prkgType:   "Garage", "Carport", etc. — only count as garage spaces if it's a garage
+        # prkgSize:   garage square footage — use to estimate number of car spaces
+        garage_type = parking.get("garageType") or ""
+        prkg_type   = (parking.get("prkgType") or "").lower()
+        prkg_size   = parking.get("prkgSize")
+
+        is_garage = bool(garage_type) or "garage" in prkg_type
+        garage_spaces = None
+        if is_garage:
+            try:
+                sqft = float(prkg_size) if prkg_size is not None else 0
+                if sqft >= 550:
+                    garage_spaces = 3
+                elif sqft >= 300:
+                    garage_spaces = 2
+                else:
+                    garage_spaces = 1
+            except (ValueError, TypeError):
+                garage_spaces = 1
+
         return {
-            "garage_spaces":  int(raw_spaces) if raw_spaces is not None else None,
-            "lot_size":       lot.get("lotsize2"),   # sq ft
+            "garage_spaces":  garage_spaces,
+            "garage_type":    garage_type or None,
+            "lot_size":       lot.get("lotsize2"),
             "square_footage": building.get("size", {}).get("livingsize"),
         }
     except Exception as e:

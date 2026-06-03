@@ -47,6 +47,7 @@ class UserOut(BaseModel):
     email: str
     role: str
     is_active: bool
+    onboarding_complete: bool = False
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -73,13 +74,46 @@ def login(body: LoginRequest, db: PGConn = Depends(get_db)):
 def me(current_user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
     with db.cursor() as cur:
         cur.execute(
-            "SELECT id, username, email, role, is_active FROM users WHERE id = %s",
+            "SELECT id, username, email, role, is_active, onboarding_complete FROM users WHERE id = %s",
             (current_user["id"],),
         )
         row = dict_fetchone(cur)
     if not row:
         raise HTTPException(status_code=404, detail="User not found")
     return UserOut(**row)
+
+
+@router.patch("/auth/onboarding-complete")
+def complete_onboarding(current_user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+    with db.cursor() as cur:
+        cur.execute(
+            "UPDATE users SET onboarding_complete = TRUE WHERE id = %s RETURNING id",
+            (current_user["id"],),
+        )
+        db.commit()
+    return {"ok": True}
+
+
+@router.get("/auth/checklist-status")
+def checklist_status(current_user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+    with db.cursor() as cur:
+        cur.execute("SELECT COUNT(*) FROM properties")
+        has_leads = cur.fetchone()[0] > 0
+        cur.execute("SELECT COUNT(*) FROM contact_history")
+        has_contact = cur.fetchone()[0] > 0
+        cur.execute("SELECT COUNT(*) FROM invoices")
+        has_invoice = cur.fetchone()[0] > 0
+        cur.execute("SELECT COUNT(*) FROM workflow_rules")
+        has_workflow = cur.fetchone()[0] > 0
+        cur.execute("SELECT COUNT(*) FROM expenses")
+        has_expense = cur.fetchone()[0] > 0
+    return {
+        "has_leads": has_leads,
+        "has_contact": has_contact,
+        "has_invoice": has_invoice,
+        "has_workflow": has_workflow,
+        "has_expense": has_expense,
+    }
 
 
 @router.post("/users", response_model=UserOut, status_code=201)

@@ -55,8 +55,7 @@ export default function LandingPage() {
             Built on data,<br /><em>focused on people.</em>
           </h1>
           <p className="lp-hero-sub">
-            Axon turns public property records into a ranked lead list, tracks every deal through your
-            pipeline, and keeps your expenses, invoices, and books in order — all without the spreadsheets.
+            Axon gives small businesses enterprise-grade intelligence — without the complexity. Surface the insights that matter, understand your customers, and make confident decisions every day.
           </p>
           <div className="lp-hero-ctas">
             <Link href="/login" className="lp-btn lp-btn-accent lp-btn-lg">
@@ -222,11 +221,10 @@ export default function LandingPage() {
             What Axon does
           </div>
           <h2 className="lp-section-heading">
-            Every tool your service business needs —<br />in one purpose-built platform
+            Everything a big enterprise has —<br />built for the way you actually work
           </h2>
           <p className="lp-section-sub">
-            From finding your next customer to getting paid and closing the books, Axon handles the
-            entire job lifecycle without stitching together six different apps.
+            Axon connects your data sources, learns your business patterns, and delivers intelligence that feels less like a report and more like advice from a trusted partner.
           </p>
           <div className="lp-features-grid">
             <div className="lp-feature-card">
@@ -290,10 +288,9 @@ export default function LandingPage() {
                 <Star size={12} />
                 Lead intelligence
               </div>
-              <h2 className="lp-section-heading">Know your best lead before you make the call</h2>
+              <h2 className="lp-section-heading">Your data knows what&#39;s coming -<br/> now so do you</h2>
               <p className="lp-section-sub">
-                Axon scores every property in your territory overnight and surfaces the highest-opportunity
-                addresses at the top of your list — with the context you need to close.
+                Axons intelligence layer reads patterns across your business and flags what needs your attention — not what already happened.
               </p>
               <div className="lp-split-points">
                 <div className="lp-split-point">

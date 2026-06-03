@@ -1,10 +1,10 @@
 'use client'
 import { useEffect, useState, useCallback, FormEvent } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Play, Trash2, RefreshCw, Home, XCircle } from 'lucide-react'
-import { getSchedules, createSchedule, updateSchedule, deleteSchedule, triggerRun, getPipelineRuns, cancelRun, rescoreZip, rescoreAll } from '@/lib/api'
+import { ArrowLeft, Play, Trash2, RefreshCw, Home, XCircle, Zap, Plus } from 'lucide-react'
+import { getSchedules, createSchedule, updateSchedule, deleteSchedule, triggerRun, getPipelineRuns, cancelRun, rescoreZip, rescoreAll, getWorkflows, createWorkflow, updateWorkflow, deleteWorkflow, seedWorkflowDefaults } from '@/lib/api'
 import { AuthGuard } from '@/components/AuthGuard'
-import type { PipelineSchedule, PipelineRun } from '@/lib/types'
+import type { PipelineSchedule, PipelineRun, WorkflowRule } from '@/lib/types'
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 const VERTICALS = ['', 'epoxy_flooring', 'pool_maintenance', 'solar']
@@ -25,7 +25,18 @@ function duration(run: PipelineRun) {
 function SettingsPage() {
   const [schedules, setSchedules] = useState<PipelineSchedule[]>([])
   const [runs, setRuns] = useState<PipelineRun[]>([])
+  const [workflows, setWorkflows] = useState<WorkflowRule[]>([])
   const [loading, setLoading] = useState(true)
+  const [showWfForm, setShowWfForm] = useState(false)
+  const [wfName, setWfName] = useState('')
+  const [wfFromStatus, setWfFromStatus] = useState('')
+  const [wfToStatus, setWfToStatus] = useState('')
+  const [wfTaskTitle, setWfTaskTitle] = useState('')
+  const [wfDueDays, setWfDueDays] = useState(3)
+  const [wfPriority, setWfPriority] = useState('normal')
+  const [wfVertical, setWfVertical] = useState('')
+  const [wfSaving, setWfSaving] = useState(false)
+  const [seeding, setSeeding] = useState(false)
 
   // Form state
   const [zip, setZip] = useState('')
@@ -43,9 +54,10 @@ function SettingsPage() {
 
   const loadData = useCallback(async () => {
     try {
-      const [s, r] = await Promise.all([getSchedules(), getPipelineRuns()])
+      const [s, r, w] = await Promise.all([getSchedules(), getPipelineRuns(), getWorkflows()])
       setSchedules(s)
       setRuns(r)
+      setWorkflows(w)
     } finally {
       setLoading(false)
     }
@@ -251,6 +263,181 @@ function SettingsPage() {
               {saving ? 'Saving…' : 'Add schedule'}
             </button>
           </form>
+        </section>
+
+        {/* Workflow rules */}
+        <section>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Zap size={14} strokeWidth={1.5} style={{ color: 'var(--color-accent)' }} />
+              <h2 className="t-eyebrow" style={{ margin: 0 }}>Workflow automations</h2>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <select
+                value=""
+                onChange={async (e) => {
+                  const v = e.target.value
+                  if (!v) return
+                  setSeeding(true)
+                  try {
+                    await seedWorkflowDefaults(v)
+                    const w = await getWorkflows()
+                    setWorkflows(w)
+                  } catch (err: unknown) {
+                    alert(err instanceof Error ? err.message : 'Failed to seed defaults')
+                  } finally {
+                    setSeeding(false)
+                  }
+                }}
+                className="drawer-input"
+                style={{ fontSize: 12 }}
+                disabled={seeding}
+              >
+                <option value="">{seeding ? 'Seeding…' : 'Seed defaults…'}</option>
+                <option value="epoxy_flooring">Epoxy Flooring</option>
+                <option value="pool_maintenance">Pool Maintenance</option>
+                <option value="solar">Solar</option>
+              </select>
+              <button onClick={() => setShowWfForm(!showWfForm)} className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+                <Plus size={12} strokeWidth={1.5} /> New rule
+              </button>
+            </div>
+          </div>
+
+          {showWfForm && (
+            <form
+              onSubmit={async (e: FormEvent) => {
+                e.preventDefault()
+                if (!wfName.trim() || !wfToStatus || !wfTaskTitle.trim()) return
+                setWfSaving(true)
+                try {
+                  await createWorkflow({
+                    name: wfName.trim(),
+                    trigger_config: {
+                      ...(wfFromStatus ? { from_status: wfFromStatus } : {}),
+                      to_status: wfToStatus,
+                    },
+                    action_config: { title: wfTaskTitle.trim(), due_days_offset: wfDueDays, priority: wfPriority },
+                    vertical: wfVertical || undefined,
+                  })
+                  setWfName(''); setWfToStatus(''); setWfTaskTitle(''); setWfDueDays(3); setWfPriority('normal'); setWfVertical(''); setWfFromStatus('')
+                  setShowWfForm(false)
+                  const w = await getWorkflows()
+                  setWorkflows(w)
+                } finally { setWfSaving(false) }
+              }}
+              style={{
+                display: 'flex', flexDirection: 'column', gap: 10, padding: 16,
+                background: 'var(--color-surface)', borderRadius: 'var(--radius-card)',
+                border: '1px solid var(--color-ink-200)', marginBottom: 16,
+              }}
+            >
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <input type="text" value={wfName} onChange={e => setWfName(e.target.value)} placeholder="Rule name" className="drawer-input" style={{ flex: 1, minWidth: 140 }} required />
+                <select value={wfVertical} onChange={e => setWfVertical(e.target.value)} className="drawer-input">
+                  {VERTICALS.map(v => <option key={v} value={v}>{v || 'All verticals'}</option>)}
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, color: 'var(--color-ink-500)', fontWeight: 500 }}>When status changes</span>
+                <select value={wfFromStatus} onChange={e => setWfFromStatus(e.target.value)} className="drawer-input" style={{ width: 120 }}>
+                  <option value="">from any</option>
+                  {['new', 'contacted', 'qualified', 'quote_sent', 'won', 'lost', 'not_interested'].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <span style={{ fontSize: 12, color: 'var(--color-ink-500)' }}>to</span>
+                <select value={wfToStatus} onChange={e => setWfToStatus(e.target.value)} className="drawer-input" style={{ width: 120 }} required>
+                  <option value="">select…</option>
+                  {['new', 'contacted', 'qualified', 'quote_sent', 'won', 'lost', 'not_interested'].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, color: 'var(--color-ink-500)', fontWeight: 500 }}>Create task:</span>
+                <input type="text" value={wfTaskTitle} onChange={e => setWfTaskTitle(e.target.value)} placeholder="Task title" className="drawer-input" style={{ flex: 1, minWidth: 160 }} required />
+                <span style={{ fontSize: 12, color: 'var(--color-ink-500)' }}>due in</span>
+                <input type="number" value={wfDueDays} onChange={e => setWfDueDays(Number(e.target.value))} className="drawer-input" style={{ width: 56 }} min={0} max={90} />
+                <span style={{ fontSize: 12, color: 'var(--color-ink-500)' }}>days</span>
+                <select value={wfPriority} onChange={e => setWfPriority(e.target.value)} className="drawer-input" style={{ width: 90 }}>
+                  <option value="low">Low</option>
+                  <option value="normal">Normal</option>
+                  <option value="high">High</option>
+                  <option value="urgent">Urgent</option>
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setShowWfForm(false)} style={{
+                  padding: '0 14px', height: 32, background: 'transparent', color: 'var(--color-ink-500)',
+                  border: '1px solid var(--color-ink-200)', borderRadius: 'var(--radius-pill)', fontSize: 12, cursor: 'pointer',
+                }}>Cancel</button>
+                <button type="submit" disabled={wfSaving} style={{
+                  padding: '0 14px', height: 32, background: 'var(--color-ink-900)', color: 'var(--color-paper)',
+                  border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 12, cursor: wfSaving ? 'not-allowed' : 'pointer',
+                }}>{wfSaving ? 'Saving…' : 'Create rule'}</button>
+              </div>
+            </form>
+          )}
+
+          {workflows.length > 0 ? (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--color-ink-200)' }}>
+                  {['Name', 'Trigger', 'Action', 'Vertical', 'Active', ''].map(h => (
+                    <th key={h} style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--color-ink-400)', fontWeight: 500, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {workflows.map(w => (
+                  <tr key={w.id} style={{ borderBottom: '1px solid var(--color-ink-100)' }}>
+                    <td style={{ padding: '8px', fontWeight: 500 }}>{w.name}</td>
+                    <td style={{ padding: '8px', color: 'var(--color-ink-500)', fontSize: 12 }}>
+                      {w.trigger_config.from_status ? `${w.trigger_config.from_status} → ` : '* → '}{w.trigger_config.to_status || '*'}
+                    </td>
+                    <td style={{ padding: '8px', color: 'var(--color-ink-500)', fontSize: 12 }}>
+                      {w.action_config.title || w.action_type}
+                      {w.action_config.due_days_offset != null && ` (${w.action_config.due_days_offset}d)`}
+                    </td>
+                    <td style={{ padding: '8px', color: 'var(--color-ink-500)' }}>{w.vertical || 'All'}</td>
+                    <td style={{ padding: '8px' }}>
+                      <button
+                        onClick={async () => {
+                          await updateWorkflow(w.id, { is_active: !w.is_active })
+                          setWorkflows(prev => prev.map(x => x.id === w.id ? { ...x, is_active: !w.is_active } : x))
+                        }}
+                        style={{
+                          width: 36, height: 20, borderRadius: 10, border: 'none', cursor: 'pointer',
+                          background: w.is_active ? 'var(--color-moss)' : 'var(--color-ink-300)',
+                          position: 'relative', transition: 'background 0.2s',
+                        }}
+                      >
+                        <span style={{
+                          position: 'absolute', top: 2, left: w.is_active ? 18 : 2,
+                          width: 16, height: 16, borderRadius: '50%', background: '#fff',
+                          transition: 'left 0.2s',
+                        }} />
+                      </button>
+                    </td>
+                    <td style={{ padding: '8px' }}>
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Delete rule "${w.name}"?`)) return
+                          await deleteWorkflow(w.id)
+                          setWorkflows(prev => prev.filter(x => x.id !== w.id))
+                        }}
+                        className="dash-icon-btn"
+                        style={{ padding: 4 }}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p style={{ fontSize: 13, color: 'var(--color-ink-400)' }}>
+              No workflow rules yet. Use &quot;Seed defaults&quot; to get started with recommended automations for your vertical.
+            </p>
+          )}
         </section>
 
         {/* Run log */}

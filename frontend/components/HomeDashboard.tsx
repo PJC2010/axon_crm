@@ -8,11 +8,13 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { getMe, getTaskCounts, getPipelineStats, getARSummary, getLeads } from '@/lib/api'
+import { getMe, getTaskCounts, getPipelineStats, getARSummary, getLeads, getPipelineForecast } from '@/lib/api'
 import { clearToken } from '@/lib/auth'
-import type { Lead, PipelineCounts, ARSummary, User } from '@/lib/types'
+import type { Lead, PipelineCounts, ARSummary, ForecastData, User } from '@/lib/types'
 import { ScoreBadge } from './ScoreBadge'
 import { TaskBell } from './TaskBell'
+import { OnboardingWizard } from './OnboardingWizard'
+import { GettingStartedChecklist } from './GettingStartedChecklist'
 
 const CLOSED_STAGES = new Set(['won', 'lost', 'not_interested'])
 
@@ -43,6 +45,7 @@ interface DashData {
   taskCounts: PipelineCounts | null
   pipelineStats: Record<string, { count: number; total_value: number }> | null
   arSummary: ARSummary | null
+  forecast: ForecastData | null
   recentLeads: Lead[]
 }
 
@@ -55,11 +58,12 @@ function fmtCurrency(n: number): string {
 export function HomeDashboard() {
   const router = useRouter()
   const [data, setData] = useState<DashData>({
-    user: null, taskCounts: null, pipelineStats: null, arSummary: null, recentLeads: [],
+    user: null, taskCounts: null, pipelineStats: null, arSummary: null, forecast: null, recentLeads: [],
   })
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
   const [wide, setWide]       = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
 
   useEffect(() => {
     const check = () => setWide(window.innerWidth >= 640)
@@ -73,19 +77,21 @@ export function HomeDashboard() {
     setError(null)
     try {
       const year = new Date().getFullYear()
-      const [userRes, countsRes, statsRes, arRes, leadsRes] = await Promise.allSettled([
+      const [userRes, countsRes, statsRes, arRes, forecastRes, leadsRes] = await Promise.allSettled([
         getMe(),
         getTaskCounts(),
         getPipelineStats(),
         getARSummary(year),
+        getPipelineForecast(),
         getLeads({ sort: 'score', page: 1, page_size: 5 }),
       ])
       setData({
-        user:          userRes.status    === 'fulfilled' ? userRes.value             : null,
-        taskCounts:    countsRes.status  === 'fulfilled' ? countsRes.value           : null,
-        pipelineStats: statsRes.status   === 'fulfilled' ? statsRes.value            : null,
-        arSummary:     arRes.status      === 'fulfilled' ? arRes.value               : null,
-        recentLeads:   leadsRes.status   === 'fulfilled' ? leadsRes.value.results    : [],
+        user:          userRes.status     === 'fulfilled' ? userRes.value             : null,
+        taskCounts:    countsRes.status   === 'fulfilled' ? countsRes.value           : null,
+        pipelineStats: statsRes.status    === 'fulfilled' ? statsRes.value            : null,
+        arSummary:     arRes.status       === 'fulfilled' ? arRes.value               : null,
+        forecast:      forecastRes.status === 'fulfilled' ? forecastRes.value         : null,
+        recentLeads:   leadsRes.status    === 'fulfilled' ? leadsRes.value.results    : [],
       })
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load dashboard')
@@ -95,6 +101,12 @@ export function HomeDashboard() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    if (data.user && !data.user.onboarding_complete) {
+      setShowOnboarding(true)
+    }
+  }, [data.user])
 
   function handleSignOut() {
     clearToken()
@@ -119,6 +131,10 @@ export function HomeDashboard() {
   const overdue     = data.taskCounts?.overdue ?? 0
   const outstanding = data.arSummary?.total_outstanding ?? 0
   const showAttention = overdue > 0 || outstanding > 0
+
+  if (showOnboarding) {
+    return <OnboardingWizard onComplete={() => { setShowOnboarding(false); load() }} />
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--color-paper)', display: 'flex', flexDirection: 'column' }}>
@@ -222,12 +238,12 @@ export function HomeDashboard() {
           gap: 12,
           marginBottom: 20,
         }}>
-          {/* Pipeline */}
+          {/* Weighted Forecast */}
           <KPICard
             icon={<TrendingUp size={16} strokeWidth={1.5} color="var(--color-accent)" />}
-            label="Pipeline"
-            value={loading || pipelineValue === null ? '—' : fmtCurrency(pipelineValue)}
-            sub={activeLeads !== null ? `${activeLeads} active stage${activeLeads !== 1 ? 's' : ''}` : '—'}
+            label="Forecast"
+            value={loading || !data.forecast ? '—' : fmtCurrency(data.forecast.weighted_total)}
+            sub="weighted pipeline"
           />
           {/* Active Leads */}
           <KPICard
@@ -255,6 +271,9 @@ export function HomeDashboard() {
               : '—'}
           />
         </div>
+
+        {/* ── Getting Started Checklist ── */}
+        <GettingStartedChecklist />
 
         {/* ── D. Quick Actions ── */}
         <div style={{ marginBottom: 24 }}>

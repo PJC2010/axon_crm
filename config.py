@@ -1,4 +1,7 @@
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ── Database ──────────────────────────────────────────────────────────────────
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost/smart_crm")
@@ -25,22 +28,26 @@ DEFAULT_WEIGHTS = {
 }
 
 # Per-vertical weight overrides. Keys match vertical names used in the DB.
+# Weights must sum to 1.0. pool/slab keys are optional — omit them (or set 0)
+# for verticals where they are irrelevant; _compute_score uses weights.get().
 VERTICAL_WEIGHTS = {
     "epoxy_flooring": {
-        "age":    0.25,
-        "sale":   0.20,
-        "equity": 0.18,
-        "garage": 0.22,   # garage is more important for epoxy
+        "age":    0.20,
+        "sale":   0.15,
+        "equity": 0.15,
+        "garage": 0.20,   # garage = primary work surface
         "income": 0.10,
         "permit": 0.05,
+        "slab":   0.15,   # cracked slab = confirmed job opportunity (from HCAD)
     },
     "pool_maintenance": {
-        "age":    0.15,
-        "sale":   0.25,
-        "equity": 0.20,
-        "garage": 0.05,
-        "income": 0.25,
-        "permit": 0.10,
+        "age":    0.10,
+        "sale":   0.20,
+        "equity": 0.15,
+        "garage": 0.00,
+        "income": 0.20,
+        "permit": 0.05,
+        "pool":   0.30,   # has a pool = confirmed service target (from HCAD)
     },
     "solar": {
         "age":    0.10,
@@ -60,6 +67,12 @@ EQUITY_TARGET        = 100_000   # USD
 GARAGE_TARGET        = 2     # spaces
 INCOME_TARGET        = 75_000    # zip median USD
 PERMIT_TARGET        = 2     # permits in 24 months
+
+# Binary signal values for presence-based features (pool / cracked slab).
+# Both are 0.0–1.0 floats; set to 1.0 so the full vertical weight is applied
+# when the feature is confirmed present by HCAD.
+POOL_SIGNAL_VALUE    = 1.0
+SLAB_SIGNAL_VALUE    = 1.0
 
 # ── Grade bands ──────────────────────────────────────────────────────────────
 GRADE_BANDS = [
