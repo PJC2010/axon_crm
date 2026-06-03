@@ -1,8 +1,10 @@
 'use client'
 import { useState } from 'react'
-import { X, CreditCard, Trash2, ChevronDown } from 'lucide-react'
-import { recordPayment, deletePayment, deleteInvoice, updateInvoice } from '@/lib/api'
+import { X, CreditCard, Trash2, Send, Link2, Check } from 'lucide-react'
+import { recordPayment, deletePayment, updateInvoice, sendInvoice } from '@/lib/api'
 import type { Invoice, InvoiceStatus } from '@/lib/types'
+
+const PUBLIC_APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? (typeof window !== 'undefined' ? window.location.origin : '')
 
 const STATUS_COLORS: Record<InvoiceStatus, { bg: string; text: string }> = {
   draft:   { bg: 'var(--color-ink-100)', text: 'var(--color-ink-600)' },
@@ -37,7 +39,38 @@ export function InvoiceDetail({ invoice, onUpdate, onClose }: Props) {
   const [saving, setSaving]           = useState(false)
   const [error, setError]             = useState<string | null>(null)
 
+  // Send-invoice state
+  const [showSendForm, setShowSendForm] = useState(false)
+  const [sendEmail, setSendEmail]       = useState(!!invoice.client_email)
+  const [sendSms, setSendSms]           = useState(false)
+  const [sending, setSending]           = useState(false)
+  const [sendError, setSendError]       = useState<string | null>(null)
+  const [copied, setCopied]             = useState(false)
+
   const colors = STATUS_COLORS[invoice.status] ?? STATUS_COLORS.draft
+  const payUrl = invoice.pay_token ? `${PUBLIC_APP_URL}/pay/${invoice.pay_token}` : null
+
+  async function handleSend() {
+    const channels = [sendEmail && 'email', sendSms && 'sms'].filter(Boolean) as string[]
+    if (channels.length === 0) { setSendError('Pick at least one channel'); return }
+    setSending(true); setSendError(null)
+    try {
+      await sendInvoice(invoice.id, channels)
+      setShowSendForm(false)
+      onUpdate()
+    } catch (e: unknown) {
+      setSendError(e instanceof Error ? e.message : 'Failed to send')
+    } finally { setSending(false) }
+  }
+
+  async function handleCopyLink() {
+    if (!payUrl) return
+    try {
+      await navigator.clipboard.writeText(payUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    } catch { /* clipboard may be unavailable */ }
+  }
 
   async function handleRecordPayment() {
     const amt = parseFloat(payAmount)
@@ -192,6 +225,51 @@ export function InvoiceDetail({ invoice, onUpdate, onClose }: Props) {
             </div>
           )}
 
+          {/* Sent status + pay link */}
+          {(invoice.sent_at || payUrl) && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {invoice.sent_at && (
+                <div style={{ fontSize: 12, color: 'var(--color-ink-400)' }}>
+                  Sent {fmtDate(invoice.sent_at.slice(0, 10))}
+                  {invoice.sent_channels && invoice.sent_channels.length > 0 && ` · ${invoice.sent_channels.join(', ')}`}
+                </div>
+              )}
+              {payUrl && (
+                <button onClick={handleCopyLink} className="btn-secondary" style={{
+                  display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-start',
+                  height: 38, padding: '0 12px', fontSize: 13, width: '100%',
+                }}>
+                  {copied ? <Check size={14} strokeWidth={1.5} /> : <Link2 size={14} strokeWidth={1.5} />}
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {copied ? 'Copied pay link' : payUrl}
+                  </span>
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Send invoice form */}
+          {showSendForm && invoice.status !== 'void' && (
+            <div style={{ padding: '16px', background: 'var(--color-ink-50)', borderRadius: 'var(--radius-card)', border: '1px solid var(--color-ink-200)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div className="t-eyebrow">Send Invoice</div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: invoice.client_email ? 'var(--color-ink-800)' : 'var(--color-ink-400)' }}>
+                <input type="checkbox" checked={sendEmail} disabled={!invoice.client_email} onChange={e => setSendEmail(e.target.checked)} />
+                Email {invoice.client_email ? `· ${invoice.client_email}` : '(no email on file)'}
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: invoice.client_phone ? 'var(--color-ink-800)' : 'var(--color-ink-400)' }}>
+                <input type="checkbox" checked={sendSms} disabled={!invoice.client_phone} onChange={e => setSendSms(e.target.checked)} />
+                Text {invoice.client_phone ? `· ${invoice.client_phone}` : '(no phone on file)'}
+              </label>
+              {sendError && <div style={{ fontSize: 13, color: 'var(--color-danger)' }}>{sendError}</div>}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={handleSend} disabled={sending} className="btn-primary" style={{ flex: 1, height: 40, fontSize: 14 }}>
+                  {sending ? 'Sending…' : 'Send'}
+                </button>
+                <button onClick={() => setShowSendForm(false)} className="btn-secondary" style={{ height: 40, padding: '0 16px', fontSize: 14 }}>Cancel</button>
+              </div>
+            </div>
+          )}
+
           {/* Record payment form */}
           {showPayForm && invoice.status !== 'void' && invoice.status !== 'paid' && (
             <div style={{ padding: '16px', background: 'var(--color-ink-50)', borderRadius: 'var(--radius-card)', border: '1px solid var(--color-ink-200)', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -233,6 +311,11 @@ export function InvoiceDetail({ invoice, onUpdate, onClose }: Props) {
             {invoice.status !== 'void' && invoice.status !== 'paid' && !showPayForm && (
               <button onClick={() => setShowPayForm(true)} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, justifyContent: 'center', height: 42, fontSize: 14 }}>
                 <CreditCard size={14} strokeWidth={1.5} /> Record Payment
+              </button>
+            )}
+            {invoice.status !== 'void' && !showSendForm && (
+              <button onClick={() => setShowSendForm(true)} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, justifyContent: 'center', height: 42, fontSize: 14 }}>
+                <Send size={14} strokeWidth={1.5} /> Send Invoice
               </button>
             )}
             {invoice.status === 'draft' && (

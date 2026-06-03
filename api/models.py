@@ -4,7 +4,7 @@ from typing import Optional
 from pydantic import BaseModel
 
 EXPENSE_CATEGORIES = ["fuel", "materials", "meals", "tools", "advertising", "subcontractor", "office", "other"]
-PAYMENT_METHODS    = ["cash", "card", "check", "zelle", "other"]
+PAYMENT_METHODS    = ["cash", "card", "check", "zelle", "stripe", "other"]
 
 
 # ── Lead ──────────────────────────────────────────────────────────────────────
@@ -192,6 +192,54 @@ class Invoice(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ── Payments / Stripe Connect ─────────────────────────────────────────────────
+
+class ConnectStatus(BaseModel):
+    connected: bool
+    onboarding_status: str = "none"  # none|pending|active|restricted
+    charges_enabled: bool = False
+    payouts_enabled: bool = False
+    details_submitted: bool = False
+
+
+class OnboardingLink(BaseModel):
+    url: str
+
+
+class CheckoutSessionResponse(BaseModel):
+    url: str
+
+
+class SendInvoiceRequest(BaseModel):
+    channels: list[str]  # any of: "email", "sms"
+
+
+class PublicLineItem(BaseModel):
+    description: str
+    quantity: float
+    unit_price: float
+    amount: float
+
+
+class PublicInvoiceView(BaseModel):
+    """Redacted invoice shape for the unauthenticated /pay/<token> page."""
+    invoice_number: str
+    business_name: Optional[str] = None
+    client_name: str
+    status: str
+    subtotal: float
+    tax_rate: float
+    tax_amount: float
+    total: float
+    amount_paid: float
+    balance_due: float
+    issue_date: date
+    due_date: Optional[date] = None
+    notes: Optional[str] = None
+    line_items: list[PublicLineItem] = []
+    payable: bool = False  # owner has Stripe connected + charges enabled
 
 
 class LeadPage(BaseModel):
