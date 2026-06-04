@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timezone
 
 import psycopg2
+import psycopg2.extras
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -70,49 +71,68 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None):
         import sys, os
         sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+        sources: dict = {}
+
         # Step 1 — Seed
         if _check_cancel(): return
         from pipeline.seed import seed
         n = seed(zip_code, csv_path=None, limit=None)
-        log.info("[1/6] run=%d Seed: %d records", run_id, n)
+        log.info("[1/8] run=%d Seed: %d records", run_id, n)
 
         # Step 2 — Census
         if _check_cancel(): return
         from pipeline.census import enrich_census
         n = enrich_census(zip_code)
-        log.info("[2/6] run=%d Census: %d updated", run_id, n)
+        log.info("[2/8] run=%d Census: %d updated", run_id, n)
 
         # Step 3 — Geocode
         if _check_cancel(): return
         from pipeline.geocode import enrich_geocode
         n = enrich_geocode(zip_code)
-        log.info("[3/6] run=%d Geocode: %d updated", run_id, n)
+        log.info("[3/8] run=%d Geocode: %d updated", run_id, n)
 
-        # Step 4 — Property detail
-        if _check_cancel(): return
-        from pipeline.property import enrich_property
-        n = enrich_property(zip_code)
-        log.info("[4/7] run=%d Property: %d updated", run_id, n)
-
-        # Step 4b — HCAD fallback enrichment
+        # Step 4 — HCAD fallback (free) — runs BEFORE paid RentCast/Attom so they
+        # only spend calls on fields HCAD couldn't fill.
         if _check_cancel(): return
         from pipeline.hcad_enrichment import enrich_hcad
         n = enrich_hcad(zip_code)
-        log.info("[4b/7] run=%d HCAD fallback: %d backfilled", run_id, n)
+        log.info("[4/8] run=%d HCAD fallback: %d backfilled", run_id, n)
 
-        # Step 5 — Permits
+        # Step 5 — Property detail (RentCast → Attom)
+        if _check_cancel(): return
+        from pipeline.property import enrich_property
+        counters = enrich_property(zip_code)
+        sources.update(counters)
+        log.info("[5/8] run=%d Property: %s", run_id, counters)
+
+        # Step 6 — Permits
         if _check_cancel(): return
         from pipeline.permits import enrich_permits
         n = enrich_permits(zip_code, csv_path=None)
-        log.info("[5/7] run=%d Permits: %d updated", run_id, n)
+        log.info("[6/8] run=%d Permits: %d updated", run_id, n)
 
-        # Step 6 — Score
+        # Step 7 — Score
         if _check_cancel(): return
         from pipeline.scorer import score_zip
         n = score_zip(zip_code, vertical=vertical)
-        log.info("[6/6] run=%d Scoring: %d scored", run_id, n)
+        log.info("[7/8] run=%d Scoring: %d scored", run_id, n)
 
-        _set_status("done", {"status": "completed", "zip": zip_code})
+        # Step 8 — Contact / skip-trace (after scoring for optional grade gate)
+        if _check_cancel(): return
+        from pipeline.contact import enrich_contact
+        sources["contact"] = enrich_contact(zip_code)
+        log.info("[8/8] run=%d Contact: %s", run_id, sources["contact"])
+
+        # Coverage snapshot for the frontend.
+        from pipeline.coverage import fill_rates
+        coverage = fill_rates(conn, zip_code)
+
+        _set_status("done", {
+            "status": "completed",
+            "zip": zip_code,
+            "sources": sources,
+            "coverage": coverage,
+        })
         log.info("Pipeline run %d done", run_id)
 
     except Exception as exc:

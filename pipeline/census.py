@@ -7,10 +7,9 @@ No API key required for ACS; optional key removes rate limits.
 """
 import logging
 
-import requests
-
 from config import CENSUS_ACS_URL, CENSUS_API_KEY, CENSUS_INCOME_VAR
 from pipeline.db import get_conn, fetch_missing_field, upsert_properties
+from pipeline.http import get_json
 
 log = logging.getLogger(__name__)
 
@@ -56,12 +55,8 @@ def _fetch_income(zips: list[str]) -> dict[str, int]:
     if CENSUS_API_KEY:
         params["key"] = CENSUS_API_KEY
 
-    try:
-        resp = requests.get(CENSUS_ACS_URL, params=params, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-    except Exception as e:
-        log.error("Census API error: %s", e)
+    data = get_json(CENSUS_ACS_URL, params=params, timeout=30)
+    if not data:
         return {}
 
     zip_set = set(zips)

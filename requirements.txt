@@ -3,6 +3,9 @@ psycopg2-binary>=2.9
 requests>=2.31
 geohash2>=1.1
 python-dotenv>=1.0
+# Optional: enables automatic search-area expansion (pipeline/geo_expand.py).
+# The code degrades gracefully if it isn't installed.
+uszipcode>=1.0
 
 # API
 fastapi>=0.111

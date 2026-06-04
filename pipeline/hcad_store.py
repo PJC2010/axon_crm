@@ -8,13 +8,13 @@ Two query functions:
 Both open the file in read_only=True so concurrent API/scheduler threads
 can query simultaneously without blocking each other.
 """
-import re
 import logging
 from pathlib import Path
 
 import duckdb
 
 from config import PERMIT_DB_PATH
+from pipeline.addr import normalize   # shared single source of truth
 
 log = logging.getLogger(__name__)
 
@@ -22,11 +22,6 @@ log = logging.getLogger(__name__)
 def db_exists(db_path: str | None = None) -> bool:
     path = Path(db_path or PERMIT_DB_PATH)
     return path.exists() and path.stat().st_size > 0
-
-
-def normalize(address: str) -> str:
-    """Lowercase + strip non-alphanumeric (except spaces). Single source of truth."""
-    return re.sub(r'[^a-z0-9 ]', '', address.lower()).strip()
 
 
 def query_permits(zip_code: str, db_path: str | None = None) -> dict[str, int]:

@@ -1,157 +1,191 @@
 """
-Step 4 — Property detail enrichment via RentCast and Attom Data.
+Step — Property detail enrichment via RentCast and Attom Data.
 
-RentCast fills: year_built, estimated_value, last_sale_date, last_sale_price,
-                estimated_equity, owner_name, owner_occupied, ownership_years.
-Attom fills:    garage_spaces, lot_size  (and fills gaps from RentCast).
+Free HCAD runs upstream and fills what it can. This step then fills the
+remaining NULL holes from paid sources in priority order (RentCast, then Attom).
+Because upsert_properties only writes non-NULL values, each source touches only
+the fields still missing, so paid calls are spent on genuine gaps.
 
-Attom is ~10x more expensive per record, so it only runs for properties that
-are still missing garage_spaces after RentCast.
+RentCast and Attom both return value/sale/owner/year fields; Attom additionally
+provides garage and lot data. Attom is ~10x more expensive, so it runs second
+and is capped per ZIP (ATTOM_MAX_ROWS_PER_ZIP).
 """
 import logging
 import time
-from datetime import date
-
-import requests
 
 from config import (
     RENTCAST_API_KEY, RENTCAST_BASE_URL,
     ATTOM_API_KEY, ATTOM_BASE_URL,
+    PROPERTY_FIELD_SOURCES, SOURCE_FIELDS, ATTOM_MAX_ROWS_PER_ZIP,
 )
-from pipeline.db import get_conn, fetch_missing_field, upsert_properties
+from pipeline.db import get_conn, fetch_missing_any, upsert_properties
+from pipeline.equity import estimate_equity
+from pipeline.http import get_json
 
 log = logging.getLogger(__name__)
 
+# Per-source detail fetchers and the metadata each one needs.
+_SOURCE_CONFIG = {
+    "rentcast": {
+        "key": RENTCAST_API_KEY,
+        "flag": {"property": "rentcast"},
+        "delay": 0.05,
+        "cap": None,
+    },
+    "attom": {
+        "key": ATTOM_API_KEY,
+        "flag": {"property": "attom"},
+        "delay": 0.1,
+        "cap": ATTOM_MAX_ROWS_PER_ZIP,
+    },
+}
 
-def enrich_property(zip_code: str | None = None) -> int:
+
+def enrich_property(zip_code: str | None = None) -> dict:
+    """Run each configured source in priority order.
+
+    Returns per-source counters: {source: {"ok", "fail", "updated",
+    "skipped_no_key"}}.
+    """
     conn = get_conn()
-    total = 0
+    counters: dict[str, dict] = {}
+    fetchers = {"rentcast": _rentcast_detail, "attom": _attom_detail}
 
-    # RentCast: fill year_built and related fields
-    rows = fetch_missing_field(conn, "year_built", zip_code)
-    if rows and RENTCAST_API_KEY:
-        log.info("RentCast enriching %d properties…", len(rows))
-        updates = []
-        for row in rows:
-            data = _rentcast_detail(row["address"], row.get("zip", ""))
-            if data:
-                data.update({"address": row["address"], "zip": row["zip"],
-                             "enrichment_flags": {"property": "rentcast"}})
-                updates.append(data)
-            time.sleep(0.05)
-        total += upsert_properties(conn, updates)
-    elif not RENTCAST_API_KEY:
-        log.warning("RENTCAST_API_KEY not set — skipping RentCast property enrichment.")
+    try:
+        for source in PROPERTY_FIELD_SOURCES:
+            cfg = _SOURCE_CONFIG[source]
+            counter = {"ok": 0, "fail": 0, "updated": 0, "skipped_no_key": False}
+            counters[source] = counter
 
-    # Attom: fill garage_spaces for properties still missing it
-    rows_attom = fetch_missing_field(conn, "garage_spaces", zip_code)
-    if rows_attom and ATTOM_API_KEY:
-        log.info("Attom enriching %d properties for garage data…", len(rows_attom))
-        updates = []
-        for row in rows_attom:
-            data = _attom_detail(row["address"], row.get("zip", ""))
-            if data:
-                data.update({"address": row["address"], "zip": row["zip"],
-                             "enrichment_flags": {"garage": "attom"}})
-                updates.append(data)
-            time.sleep(0.1)
-        total += upsert_properties(conn, updates)
-    elif not ATTOM_API_KEY:
-        log.warning("ATTOM_API_KEY not set — skipping Attom enrichment.")
+            if not cfg["key"]:
+                counter["skipped_no_key"] = True
+                log.warning("%s key not set — skipping %s property enrichment.",
+                            source.upper(), source)
+                continue
 
-    conn.close()
-    return total
+            rows = fetch_missing_any(conn, SOURCE_FIELDS[source], zip_code)
+            if cfg["cap"]:
+                rows = rows[: cfg["cap"]]
+            if not rows:
+                continue
+
+            log.info("%s enriching %d properties…", source, len(rows))
+            updates = []
+            for row in rows:
+                data = fetchers[source](row["address"], row.get("zip", ""))
+                if data:
+                    counter["ok"] += 1
+                    data.update({"address": row["address"], "zip": row["zip"],
+                                 "enrichment_flags": cfg["flag"]})
+                    updates.append(data)
+                else:
+                    counter["fail"] += 1
+                time.sleep(cfg["delay"])
+            counter["updated"] = upsert_properties(conn, updates)
+    finally:
+        conn.close()
+
+    return counters
 
 
 def _rentcast_detail(address: str, zip_code: str) -> dict | None:
-    if not RENTCAST_API_KEY:
+    data = get_json(
+        f"{RENTCAST_BASE_URL}/properties",
+        headers={"X-Api-Key": RENTCAST_API_KEY},
+        params={"address": address, "zipCode": zip_code, "limit": 1},
+        timeout=15,
+    )
+    if not data:
         return None
-    try:
-        resp = requests.get(
-            f"{RENTCAST_BASE_URL}/properties",
-            headers={"X-Api-Key": RENTCAST_API_KEY},
-            params={"address": address, "zipCode": zip_code, "limit": 1},
-            timeout=15,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        if not data:
-            return None
-        p = data[0] if isinstance(data, list) else data
+    p = data[0] if isinstance(data, list) else data
 
-        equity = None
-        value = p.get("price")
-        if value:
-            equity = int(value * 0.6)   # rough 60% equity proxy; replace with real mortgage data if available
+    value = p.get("price")
+    sale_date = p.get("lastSaleDate")
+    sale_price = p.get("lastSalePrice")
 
-        ownership_years = None
-        sale_date = p.get("lastSaleDate")
-        if sale_date:
-            try:
-                sold_year = int(sale_date[:4])
-                ownership_years = date.today().year - sold_year
-            except (ValueError, TypeError):
-                pass
+    ownership_years = None
+    if sale_date:
+        try:
+            ownership_years = _years_from(sale_date)
+        except (ValueError, TypeError):
+            pass
 
-        return {
-            "year_built":      p.get("yearBuilt"),
-            "square_footage":  p.get("squareFootage"),
-            "estimated_value": value,
-            "estimated_equity": equity,
-            "last_sale_date":  sale_date,
-            "last_sale_price": p.get("lastSalePrice"),
-            "owner_name":      p.get("ownerName"),
-            "owner_occupied":  p.get("ownerOccupied"),
-            "ownership_years": ownership_years,
-        }
-    except Exception as e:
-        log.warning("RentCast detail failed for %s: %s", address, e)
-        return None
+    return {
+        "year_built":       p.get("yearBuilt"),
+        "square_footage":   p.get("squareFootage"),
+        "estimated_value":  value,
+        "estimated_equity": estimate_equity(value, sale_price, sale_date),
+        "last_sale_date":   sale_date,
+        "last_sale_price":  sale_price,
+        "owner_name":       p.get("ownerName"),
+        "owner_occupied":   p.get("ownerOccupied"),
+        "ownership_years":  ownership_years,
+    }
 
 
 def _attom_detail(address: str, zip_code: str) -> dict | None:
-    if not ATTOM_API_KEY:
+    payload = get_json(
+        f"{ATTOM_BASE_URL}/assessment/detail",
+        headers={"apikey": ATTOM_API_KEY, "Accept": "application/json"},
+        params={"address1": address, "address2": zip_code},
+        timeout=15,
+    )
+    if not payload:
         return None
-    try:
-        resp = requests.get(
-            f"{ATTOM_BASE_URL}/assessment/detail",
-            headers={"apikey": ATTOM_API_KEY, "Accept": "application/json"},
-            params={"address1": address, "address2": zip_code},
-            timeout=15,
-        )
-        resp.raise_for_status()
-        prop = resp.json().get("property", [{}])[0]
-        building = prop.get("building", {})
-        lot      = prop.get("lot", {})
-        parking  = building.get("parking", {})
+    props = payload.get("property") or [{}]
+    prop = props[0] if props else {}
 
-        # garageType: non-empty string means a garage exists (e.g. "Attached", "Detached")
-        # prkgType:   "Garage", "Carport", etc. — only count as garage spaces if it's a garage
-        # prkgSize:   garage square footage — use to estimate number of car spaces
-        garage_type = parking.get("garageType") or ""
-        prkg_type   = (parking.get("prkgType") or "").lower()
-        prkg_size   = parking.get("prkgSize")
+    building   = prop.get("building", {}) or {}
+    lot        = prop.get("lot", {}) or {}
+    summary    = prop.get("summary", {}) or {}
+    assessment = prop.get("assessment", {}) or {}
+    parking    = building.get("parking", {}) or {}
 
-        is_garage = bool(garage_type) or "garage" in prkg_type
-        garage_spaces = None
-        if is_garage:
-            try:
-                sqft = float(prkg_size) if prkg_size is not None else 0
-                if sqft >= 550:
-                    garage_spaces = 3
-                elif sqft >= 300:
-                    garage_spaces = 2
-                else:
-                    garage_spaces = 1
-            except (ValueError, TypeError):
-                garage_spaces = 1
+    # ── Garage ────────────────────────────────────────────────────────────────
+    garage_type = parking.get("garageType") or ""
+    prkg_type   = (parking.get("prkgType") or "").lower()
+    prkg_size   = parking.get("prkgSize")
+    is_garage   = bool(garage_type) or "garage" in prkg_type
+    garage_spaces = None
+    if is_garage:
+        try:
+            sqft = float(prkg_size) if prkg_size is not None else 0
+            garage_spaces = 3 if sqft >= 550 else 2 if sqft >= 300 else 1
+        except (ValueError, TypeError):
+            garage_spaces = 1
 
-        return {
-            "garage_spaces":  garage_spaces,
-            "garage_type":    garage_type or None,
-            "lot_size":       lot.get("lotsize2"),
-            "square_footage": building.get("size", {}).get("livingsize"),
-        }
-    except Exception as e:
-        log.warning("Attom detail failed for %s: %s", address, e)
-        return None
+    # ── Value / sale / owner (previously discarded) ───────────────────────────
+    assessed = assessment.get("assessed", {}) or {}
+    market   = assessment.get("market", {}) or {}
+    sale     = assessment.get("sale", {}) or {}
+    owner    = assessment.get("owner", {}) or {}
+    mortgage = assessment.get("mortgage", {}) or {}
+
+    estimated_value = assessed.get("assdttlvalue") or market.get("mktttlvalue")
+    sale_amount = (sale.get("amount", {}) or {}).get("saleamt")
+    sale_date = sale.get("salesearchdate") or sale.get("saledate")
+    owner_name = ((owner.get("owner1", {}) or {}).get("fullname")
+                  or owner.get("owner1"))
+    absentee = (owner.get("absenteeownerstatus") or "").upper()
+    owner_occupied = (absentee == "O") if absentee in ("O", "A") else None
+    mortgage_balance = (mortgage.get("lender", {}) or {}).get("balance")
+
+    return {
+        "year_built":       summary.get("yearbuilt"),
+        "square_footage":   (building.get("size", {}) or {}).get("livingsize"),
+        "lot_size":         lot.get("lotsize2"),
+        "estimated_value":  estimated_value,
+        "estimated_equity": estimate_equity(estimated_value, sale_amount, sale_date,
+                                             mortgage_balance=mortgage_balance),
+        "last_sale_date":   sale_date,
+        "last_sale_price":  sale_amount,
+        "owner_name":       owner_name,
+        "owner_occupied":   owner_occupied,
+        "garage_spaces":    garage_spaces,
+        "garage_type":      garage_type or None,
+    }
+
+
+def _years_from(sale_date: str) -> int:
+    from datetime import date
+    return date.today().year - int(str(sale_date)[:4])

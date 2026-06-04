@@ -15,6 +15,51 @@ ATTOM_API_KEY       = os.getenv("ATTOM_API_KEY", "")
 GOOGLE_GEOCODE_KEY  = os.getenv("GOOGLE_GEOCODE_KEY", "")
 CENSUS_API_KEY      = os.getenv("CENSUS_API_KEY", "")   # optional; ACS works without one
 
+# ── Contact / skip-trace enrichment (fills contact_name/phone/email) ──────────
+# Provider-pluggable; default "" means the contact step is skipped (no key).
+# Supported providers: see pipeline/contact.py PROVIDERS.
+CONTACT_PROVIDER         = os.getenv("CONTACT_PROVIDER", "")
+CONTACT_API_KEY          = os.getenv("CONTACT_API_KEY", "")
+CONTACT_BASE_URL         = os.getenv("CONTACT_BASE_URL", "")
+CONTACT_MAX_ROWS_PER_ZIP = int(os.getenv("CONTACT_MAX_ROWS_PER_ZIP", "200"))
+# Only skip-trace leads at or above this grade ("" = no grade filter). A is best.
+CONTACT_MIN_GRADE        = os.getenv("CONTACT_MIN_GRADE", "")
+
+# ── HTTP robustness (retry/backoff for all outbound API calls) ────────────────
+HTTP_RETRIES = int(os.getenv("HTTP_RETRIES", "3"))
+HTTP_BACKOFF = float(os.getenv("HTTP_BACKOFF", "0.5"))   # seconds, exponential
+
+# ── Property detail source priority ───────────────────────────────────────────
+# Free HCAD already runs upstream. enrich_property tries these paid sources in
+# order; each only fills fields still NULL after the previous one (upsert writes
+# non-NULL only), so cost is spent only on genuine gaps.
+PROPERTY_FIELD_SOURCES = ["rentcast", "attom"]
+SOURCE_FIELDS = {
+    "rentcast": [
+        "year_built", "square_footage", "estimated_value", "estimated_equity",
+        "last_sale_date", "last_sale_price", "owner_name", "owner_occupied",
+        "ownership_years",
+    ],
+    "attom": [
+        "year_built", "square_footage", "lot_size", "estimated_value",
+        "estimated_equity", "last_sale_date", "last_sale_price", "owner_name",
+        "owner_occupied", "garage_spaces", "garage_type",
+    ],
+}
+# Cost guard: cap Attom (paid, ~10x RentCast) lookups per ZIP.
+ATTOM_MAX_ROWS_PER_ZIP = int(os.getenv("ATTOM_MAX_ROWS_PER_ZIP", "500"))
+
+# ── Equity estimation ─────────────────────────────────────────────────────────
+# Fallback fraction of value treated as equity when no mortgage/sale data exists.
+EQUITY_FALLBACK_PCT = float(os.getenv("EQUITY_FALLBACK_PCT", "0.6"))
+
+# ── Search-area expansion (when a ZIP returns too few seed rows) ──────────────
+SEED_EXPAND_ENABLED   = os.getenv("SEED_EXPAND_ENABLED", "true").lower() == "true"
+SEED_EXPAND_THRESHOLD = int(os.getenv("SEED_EXPAND_THRESHOLD", "50"))   # expand below this
+SEED_EXPAND_TARGET    = int(os.getenv("SEED_EXPAND_TARGET", "200"))     # stop once reached
+SEED_EXPAND_RADIUS_MI = float(os.getenv("SEED_EXPAND_RADIUS_MI", "5"))
+SEED_EXPAND_MAX_ZIPS  = int(os.getenv("SEED_EXPAND_MAX_ZIPS", "10"))
+
 # ── Score weights (must sum to 1.0) ──────────────────────────────────────────
 # Default weights from context - score.docx.
 # Override per vertical by passing a weights dict to the scorer.
