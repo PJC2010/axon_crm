@@ -229,15 +229,17 @@ export function ExpenseForm({ expense, onSaved, onClose }: Props) {
                 width: 44, height: 24, borderRadius: 12,
                 background: deductible ? 'var(--color-moss)' : 'var(--color-ink-300)',
                 position: 'relative', transition: 'background 0.2s', flexShrink: 0,
-              }}
-                onClick={() => setDeduct(d => !d)}
-              >
+              }}>
                 <div style={{
                   width: 18, height: 18, borderRadius: '50%', background: '#fff',
                   position: 'absolute', top: 3, left: deductible ? 23 : 3,
                   transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
                 }} />
               </div>
+              {/* The wrapping <label> drives this checkbox, so a click anywhere on
+                  the row — including the toggle above — flips state exactly once.
+                  Do not add a separate onClick to the toggle div: being inside the
+                  label, it would also forward the click here and double-fire. */}
               <input type="checkbox" checked={deductible} onChange={() => setDeduct(d => !d)} style={{ display: 'none' }} />
             </label>
 
