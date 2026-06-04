@@ -292,6 +292,8 @@ PERFECT_ROW = {
     "garage_spaces":    2,                    # at target → 1.0
     "zip_median_income": 75_000,              # at target → 1.0
     "permit_count_24mo": 2,                   # at target → 1.0
+    "has_pool":          True,                # pool_maintenance signal → 1.0
+    "has_cracked_slab":  True,                # epoxy_flooring slab signal → 1.0
 }
 
 EMPTY_ROW: dict = {}
@@ -370,6 +372,9 @@ ALL_PROFILES = {
 }
 
 EXPECTED_KEYS = set(config.DEFAULT_WEIGHTS.keys())
+# pool/slab are optional vertical-only signals (scored via weights.get()).
+OPTIONAL_KEYS = {"pool", "slab"}
+ALLOWED_KEYS = EXPECTED_KEYS | OPTIONAL_KEYS
 
 
 class TestWeightProfiles:
@@ -381,8 +386,12 @@ class TestWeightProfiles:
 
     @pytest.mark.parametrize("name,weights", ALL_PROFILES.items())
     def test_weights_have_correct_keys(self, name, weights):
-        assert set(weights.keys()) == EXPECTED_KEYS, (
-            f"Profile '{name}' has keys {set(weights.keys())}, expected {EXPECTED_KEYS}"
+        keys = set(weights.keys())
+        assert EXPECTED_KEYS <= keys, (
+            f"Profile '{name}' is missing base keys: {EXPECTED_KEYS - keys}"
+        )
+        assert keys <= ALLOWED_KEYS, (
+            f"Profile '{name}' has unexpected keys: {keys - ALLOWED_KEYS}"
         )
 
     @pytest.mark.parametrize("name,weights", ALL_PROFILES.items())
