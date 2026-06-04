@@ -22,9 +22,10 @@ from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user, req
 from api.invoice_logic import (
     _calc_totals, _recalc_paid, _update_invoice_payment_state, _load_invoice,
 )
+from api.notifications import send_invoice_email, send_invoice_sms
 from api.models import (
     Invoice, InvoiceCreate, InvoiceUpdate,
-    InvoicePayment, PaymentCreate, LineItem,
+    InvoicePayment, PaymentCreate, LineItem, SendInvoiceRequest,
     INVOICE_STATUSES, PAYMENT_METHODS,
 )
 
@@ -366,3 +367,69 @@ def delete_payment(
 
     _update_invoice_payment_state(db, invoice_id)
     db.commit()
+
+
+@router.post("/invoices/{invoice_id}/send", response_model=Invoice)
+def send_invoice(
+    invoice_id: int,
+    body: SendInvoiceRequest,
+    current_user: dict = Depends(get_current_user),
+    db: PGConn = Depends(get_db),
+):
+    """Deliver an invoice summary to the client by email and/or SMS."""
+    inv = _load_invoice(db, invoice_id)
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if inv["status"] == "void":
+        raise HTTPException(status_code=400, detail="Cannot send a voided invoice")
+
+    channels = [c for c in body.channels if c in ("email", "sms")]
+    if not channels:
+        raise HTTPException(status_code=400, detail="No valid channels (email, sms)")
+
+    business_name = current_user.get("username") or "Axon"
+    amount_due = float(inv["balance_due"])
+    errors: list[str] = []
+    sent: list[str] = []
+
+    if "email" in channels:
+        if not inv.get("client_email"):
+            errors.append("No client email on file")
+        else:
+            try:
+                send_invoice_email(
+                    to_email=inv["client_email"], business_name=business_name,
+                    invoice_number=inv["invoice_number"], amount_due=amount_due,
+                )
+                sent.append("email")
+            except Exception as e:
+                errors.append(f"Email: {e}")
+
+    if "sms" in channels:
+        if not inv.get("client_phone"):
+            errors.append("No client phone on file")
+        else:
+            try:
+                send_invoice_sms(
+                    to_phone=inv["client_phone"], business_name=business_name,
+                    invoice_number=inv["invoice_number"], amount_due=amount_due,
+                )
+                sent.append("sms")
+            except Exception as e:
+                errors.append(f"SMS: {e}")
+
+    if not sent:
+        raise HTTPException(status_code=400, detail="; ".join(errors) or "Failed to send")
+
+    new_status = "sent" if inv["status"] == "draft" else inv["status"]
+    with db.cursor() as cur:
+        cur.execute(
+            "UPDATE invoices SET status=%s, sent_at=NOW(), sent_channels=%s, "
+            "last_emailed_at = CASE WHEN %s THEN NOW() ELSE last_emailed_at END, "
+            "last_sms_at     = CASE WHEN %s THEN NOW() ELSE last_sms_at END, "
+            "updated_at=NOW() WHERE id=%s",
+            (new_status, sent, "email" in sent, "sms" in sent, invoice_id),
+        )
+        db.commit()
+
+    return Invoice(**_load_invoice(db, invoice_id))

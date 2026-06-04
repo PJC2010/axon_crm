@@ -1,10 +1,10 @@
 'use client'
 import { useEffect, useState, useCallback, FormEvent } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Play, Trash2, RefreshCw, Home, XCircle, Zap, Plus, CreditCard, CheckCircle2 } from 'lucide-react'
-import { getSchedules, createSchedule, updateSchedule, deleteSchedule, triggerRun, getPipelineRuns, cancelRun, rescoreZip, rescoreAll, getWorkflows, createWorkflow, updateWorkflow, deleteWorkflow, seedWorkflowDefaults, getStripeStatus, startStripeOnboarding } from '@/lib/api'
+import { ArrowLeft, Play, Trash2, RefreshCw, Home, XCircle, Zap, Plus } from 'lucide-react'
+import { getSchedules, createSchedule, updateSchedule, deleteSchedule, triggerRun, getPipelineRuns, cancelRun, rescoreZip, rescoreAll, getWorkflows, createWorkflow, updateWorkflow, deleteWorkflow, seedWorkflowDefaults } from '@/lib/api'
 import { AuthGuard } from '@/components/AuthGuard'
-import type { PipelineSchedule, PipelineRun, WorkflowRule, ConnectStatus } from '@/lib/types'
+import type { PipelineSchedule, PipelineRun, WorkflowRule } from '@/lib/types'
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 const VERTICALS = ['', 'epoxy_flooring', 'pool_maintenance', 'solar']
@@ -52,31 +52,12 @@ function SettingsPage() {
   const [rescoring, setRescoring] = useState(false)
   const [rescoringAll, setRescoringAll] = useState(false)
 
-  // Stripe Connect state
-  const [stripe, setStripe] = useState<ConnectStatus | null>(null)
-  const [connecting, setConnecting] = useState(false)
-
-  async function handleConnectStripe() {
-    setConnecting(true)
-    try {
-      const { url } = await startStripeOnboarding()
-      window.location.href = url
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Could not start Stripe onboarding')
-      setConnecting(false)
-    }
-  }
-
   const loadData = useCallback(async () => {
     try {
-      const [s, r, w, st] = await Promise.all([
-        getSchedules(), getPipelineRuns(), getWorkflows(),
-        getStripeStatus().catch(() => null),
-      ])
+      const [s, r, w] = await Promise.all([getSchedules(), getPipelineRuns(), getWorkflows()])
       setSchedules(s)
       setRuns(r)
       setWorkflows(w)
-      setStripe(st)
     } finally {
       setLoading(false)
     }
@@ -155,49 +136,6 @@ function SettingsPage() {
       </header>
 
       <div style={{ maxWidth: 760, margin: '0 auto', padding: '28px 20px', display: 'flex', flexDirection: 'column', gap: 32 }}>
-
-        {/* Payments / Stripe Connect */}
-        <section>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <CreditCard size={14} strokeWidth={1.5} style={{ color: 'var(--color-accent)' }} />
-            <h2 className="t-eyebrow" style={{ margin: 0 }}>Online payments</h2>
-          </div>
-          <div style={{
-            padding: 16, background: 'var(--color-surface)', borderRadius: 'var(--radius-card)',
-            border: '1px solid var(--color-ink-200)', display: 'flex', alignItems: 'center',
-            justifyContent: 'space-between', gap: 16, flexWrap: 'wrap',
-          }}>
-            <div style={{ flex: 1, minWidth: 220 }}>
-              {stripe?.charges_enabled ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <CheckCircle2 size={16} strokeWidth={1.5} style={{ color: 'var(--color-moss)' }} />
-                  <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-ink-800)' }}>
-                    Stripe connected — you can accept card payments on invoices.
-                  </span>
-                </div>
-              ) : stripe?.connected ? (
-                <span style={{ fontSize: 13, color: 'var(--color-ink-500)' }}>
-                  Onboarding started but not complete. Finish setup to start accepting payments.
-                </span>
-              ) : (
-                <span style={{ fontSize: 13, color: 'var(--color-ink-500)' }}>
-                  Connect Stripe to email/text customers a secure payment link. Axon adds a small
-                  platform fee to each online payment; funds settle directly to your Stripe account.
-                </span>
-              )}
-            </div>
-            {!stripe?.charges_enabled && (
-              <button onClick={handleConnectStripe} disabled={connecting} style={{
-                padding: '0 16px', height: 36, background: 'var(--color-ink-900)', color: 'var(--color-paper)',
-                border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13,
-                cursor: connecting ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-              }}>
-                <CreditCard size={13} strokeWidth={1.5} />
-                {connecting ? 'Opening…' : stripe?.connected ? 'Finish setup' : 'Connect Stripe'}
-              </button>
-            )}
-          </div>
-        </section>
 
         {/* Manual run */}
         <section>

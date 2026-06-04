@@ -1,4 +1,4 @@
-import type { Lead, LeadPage, LeadFilters, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, WorkflowRule, WorkflowRuleCreate, ConnectStatus, PublicInvoiceView } from './types'
+import type { Lead, LeadPage, LeadFilters, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, WorkflowRule, WorkflowRuleCreate } from './types'
 import { getToken, clearToken } from './auth'
 
 const BASE = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000') + '/api'
@@ -335,42 +335,10 @@ export function invoiceExportUrl(filters: InvoiceFilters = {}): string {
   return `${BASE}/invoices/export?${p}`
 }
 
-// ── Payments / Stripe Connect ──────────────────────────────────────────────────
-
-export function startStripeOnboarding(): Promise<{ url: string }> {
-  return req('/stripe/connect/onboard', { method: 'POST' })
-}
-
-export function getStripeStatus(): Promise<ConnectStatus> {
-  return req<ConnectStatus>('/stripe/connect/status')
-}
-
-export function createCheckoutSession(invoiceId: number): Promise<{ url: string }> {
-  return req(`/invoices/${invoiceId}/checkout-session`, { method: 'POST' })
-}
+// ── Invoice delivery ───────────────────────────────────────────────────────────
 
 export function sendInvoice(invoiceId: number, channels: string[]): Promise<Invoice> {
   return req<Invoice>(`/invoices/${invoiceId}/send`, { method: 'POST', body: JSON.stringify({ channels }) })
-}
-
-// Public (unauthenticated) — must NOT use req(): no bearer token, no /login redirect.
-async function publicReq<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' }, ...init,
-  })
-  if (!res.ok) {
-    const msg = await res.text().catch(() => res.statusText)
-    throw new Error(`API ${res.status}: ${msg}`)
-  }
-  return res.json()
-}
-
-export function getPublicInvoice(token: string): Promise<PublicInvoiceView> {
-  return publicReq<PublicInvoiceView>(`/public/invoices/${token}`)
-}
-
-export function startPublicCheckout(token: string): Promise<{ url: string }> {
-  return publicReq(`/public/invoices/${token}/checkout`, { method: 'POST' })
 }
 
 // ── Bookkeeping reports ───────────────────────────────────────────────────────

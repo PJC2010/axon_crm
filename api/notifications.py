@@ -2,7 +2,8 @@
 
 Both senders fail soft per channel: if a provider isn't configured they raise a
 clear error so the route can report which channel failed without aborting the
-others. Phase 1 sends a plain pay link; PDF attachments come in Phase 2.
+others. Messages are a plain invoice summary (no online pay link — Stripe
+payments are deferred; see api/integrations/stripe/README.md).
 """
 from config import (
     RESEND_API_KEY, RESEND_FROM_EMAIL,
@@ -19,7 +20,7 @@ def sms_configured() -> bool:
 
 
 def send_invoice_email(*, to_email: str, business_name: str, invoice_number: str,
-                       amount_due: float, pay_url: str) -> None:
+                       amount_due: float) -> None:
     if not email_configured():
         raise RuntimeError("Email is not configured (RESEND_API_KEY / RESEND_FROM_EMAIL)")
     import resend
@@ -31,13 +32,8 @@ def send_invoice_email(*, to_email: str, business_name: str, invoice_number: str
         <h2 style="margin:0 0 4px">Invoice {invoice_number}</h2>
         <p style="color:#555;margin:0 0 20px">from {business_name}</p>
         <p>You have a new invoice with a balance of <strong>{amount}</strong>.</p>
-        <p style="margin:28px 0">
-          <a href="{pay_url}" style="background:#1a5a75;color:#fff;text-decoration:none;
-             padding:12px 22px;border-radius:8px;font-weight:600;display:inline-block">
-            View &amp; Pay Invoice
-          </a>
-        </p>
-        <p style="color:#888;font-size:13px">Or open this link: {pay_url}</p>
+        <p style="color:#888;font-size:13px">Please reply to this email or contact
+           {business_name} to arrange payment.</p>
       </div>
     """
     resend.Emails.send({
@@ -49,13 +45,13 @@ def send_invoice_email(*, to_email: str, business_name: str, invoice_number: str
 
 
 def send_invoice_sms(*, to_phone: str, business_name: str, invoice_number: str,
-                     amount_due: float, pay_url: str) -> None:
+                     amount_due: float) -> None:
     if not sms_configured():
         raise RuntimeError("SMS is not configured (TWILIO_* env vars)")
     from twilio.rest import Client
     client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
     body = (
-        f"{business_name}: Invoice {invoice_number} for ${amount_due:,.2f}. "
-        f"View & pay securely: {pay_url}"
+        f"{business_name}: Invoice {invoice_number} for ${amount_due:,.2f} is ready. "
+        f"Please contact us to arrange payment."
     )
     client.messages.create(body=body, from_=TWILIO_FROM_NUMBER, to=to_phone)

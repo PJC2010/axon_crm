@@ -15,22 +15,12 @@ ATTOM_API_KEY       = os.getenv("ATTOM_API_KEY", "")
 GOOGLE_GEOCODE_KEY  = os.getenv("GOOGLE_GEOCODE_KEY", "")
 CENSUS_API_KEY      = os.getenv("CENSUS_API_KEY", "")   # optional; ACS works without one
 
-# ── Payments (Stripe Connect) ────────────────────────────────────────────────
-# Axon is the Connect platform; each owner is an Express connected account.
-# Payments are direct charges on the connected account with an application fee.
-STRIPE_SECRET_KEY       = os.getenv("STRIPE_SECRET_KEY", "")
-STRIPE_WEBHOOK_SECRET   = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-STRIPE_PLATFORM_FEE_PCT = float(os.getenv("STRIPE_PLATFORM_FEE_PCT", "0.02"))  # 2% platform fee
-
-# ── Notifications (invoice delivery) ─────────────────────────────────────────
+# ── Invoice delivery (notifications) ─────────────────────────────────────────
 RESEND_API_KEY      = os.getenv("RESEND_API_KEY", "")
 RESEND_FROM_EMAIL   = os.getenv("RESEND_FROM_EMAIL", "")
 TWILIO_ACCOUNT_SID  = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN   = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_FROM_NUMBER  = os.getenv("TWILIO_FROM_NUMBER", "")
-
-# Public base URL used to build customer-facing pay links (/pay/<token>).
-PUBLIC_APP_URL      = os.getenv("PUBLIC_APP_URL", "http://localhost:3000")
 
 # ── Score weights (must sum to 1.0) ──────────────────────────────────────────
 # Default weights from context - score.docx.

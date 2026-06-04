@@ -1,10 +1,8 @@
 'use client'
 import { useState } from 'react'
-import { X, CreditCard, Trash2, Send, Link2, Check } from 'lucide-react'
+import { X, CreditCard, Trash2, Send } from 'lucide-react'
 import { recordPayment, deletePayment, updateInvoice, sendInvoice } from '@/lib/api'
 import type { Invoice, InvoiceStatus } from '@/lib/types'
-
-const PUBLIC_APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? (typeof window !== 'undefined' ? window.location.origin : '')
 
 const STATUS_COLORS: Record<InvoiceStatus, { bg: string; text: string }> = {
   draft:   { bg: 'var(--color-ink-100)', text: 'var(--color-ink-600)' },
@@ -45,10 +43,8 @@ export function InvoiceDetail({ invoice, onUpdate, onClose }: Props) {
   const [sendSms, setSendSms]           = useState(false)
   const [sending, setSending]           = useState(false)
   const [sendError, setSendError]       = useState<string | null>(null)
-  const [copied, setCopied]             = useState(false)
 
   const colors = STATUS_COLORS[invoice.status] ?? STATUS_COLORS.draft
-  const payUrl = invoice.pay_token ? `${PUBLIC_APP_URL}/pay/${invoice.pay_token}` : null
 
   async function handleSend() {
     const channels = [sendEmail && 'email', sendSms && 'sms'].filter(Boolean) as string[]
@@ -61,15 +57,6 @@ export function InvoiceDetail({ invoice, onUpdate, onClose }: Props) {
     } catch (e: unknown) {
       setSendError(e instanceof Error ? e.message : 'Failed to send')
     } finally { setSending(false) }
-  }
-
-  async function handleCopyLink() {
-    if (!payUrl) return
-    try {
-      await navigator.clipboard.writeText(payUrl)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1800)
-    } catch { /* clipboard may be unavailable */ }
   }
 
   async function handleRecordPayment() {
@@ -225,26 +212,11 @@ export function InvoiceDetail({ invoice, onUpdate, onClose }: Props) {
             </div>
           )}
 
-          {/* Sent status + pay link */}
-          {(invoice.sent_at || payUrl) && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {invoice.sent_at && (
-                <div style={{ fontSize: 12, color: 'var(--color-ink-400)' }}>
-                  Sent {fmtDate(invoice.sent_at.slice(0, 10))}
-                  {invoice.sent_channels && invoice.sent_channels.length > 0 && ` · ${invoice.sent_channels.join(', ')}`}
-                </div>
-              )}
-              {payUrl && (
-                <button onClick={handleCopyLink} className="btn-secondary" style={{
-                  display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-start',
-                  height: 38, padding: '0 12px', fontSize: 13, width: '100%',
-                }}>
-                  {copied ? <Check size={14} strokeWidth={1.5} /> : <Link2 size={14} strokeWidth={1.5} />}
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {copied ? 'Copied pay link' : payUrl}
-                  </span>
-                </button>
-              )}
+          {/* Sent status */}
+          {invoice.sent_at && (
+            <div style={{ fontSize: 12, color: 'var(--color-ink-400)' }}>
+              Sent {fmtDate(invoice.sent_at.slice(0, 10))}
+              {invoice.sent_channels && invoice.sent_channels.length > 0 && ` · ${invoice.sent_channels.join(', ')}`}
             </div>
           )}
 

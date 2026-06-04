@@ -163,7 +163,7 @@ export interface PipelineRun {
 // ── Expenses ──────────────────────────────────────────────────────────────────
 
 export type ExpenseCategory = 'fuel' | 'materials' | 'meals' | 'tools' | 'advertising' | 'subcontractor' | 'office' | 'other'
-export type PaymentMethod = 'cash' | 'card' | 'check' | 'zelle' | 'stripe' | 'other'
+export type PaymentMethod = 'cash' | 'card' | 'check' | 'zelle' | 'other'
 
 export interface Expense {
   id: number
@@ -253,47 +253,9 @@ export interface Invoice {
   created_at: string
   line_items: LineItem[]
   payments: InvoicePayment[]
-  // payment automation
-  pay_token?: string | null
-  platform_fee_amount?: number | null
-  stripe_checkout_session_id?: string | null
+  // delivery tracking
   sent_at?: string | null
   sent_channels?: string[] | null
-}
-
-// ── Payments / Stripe Connect ──────────────────────────────────────────────────
-
-export interface ConnectStatus {
-  connected: boolean
-  onboarding_status: string  // none|pending|active|restricted
-  charges_enabled: boolean
-  payouts_enabled: boolean
-  details_submitted: boolean
-}
-
-export interface PublicLineItem {
-  description: string
-  quantity: number
-  unit_price: number
-  amount: number
-}
-
-export interface PublicInvoiceView {
-  invoice_number: string
-  business_name?: string | null
-  client_name: string
-  status: InvoiceStatus
-  subtotal: number
-  tax_rate: number
-  tax_amount: number
-  total: number
-  amount_paid: number
-  balance_due: number
-  issue_date: string
-  due_date?: string | null
-  notes?: string | null
-  line_items: PublicLineItem[]
-  payable: boolean
 }
 
 export interface InvoiceCreate {
