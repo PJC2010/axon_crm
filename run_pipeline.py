@@ -23,6 +23,18 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
+def _fmt_counters(counters: dict) -> str:
+    """Render per-source property counters compactly for logs."""
+    parts = []
+    for src, c in counters.items():
+        if c.get("skipped_no_key"):
+            parts.append(f"{src}=skipped(no key)")
+        else:
+            parts.append(f"{src}: {c.get('updated', 0)} updated "
+                         f"({c.get('ok', 0)} ok/{c.get('fail', 0)} fail)")
+    return "; ".join(parts) or "nothing to do"
+
+
 def _zip_already_seeded(zip_code: str) -> bool:
     """Return True if the ZIP already has properties in the DB."""
     from pipeline.db import get_conn
@@ -75,24 +87,48 @@ def run_zip(zip_code: str, args) -> None:
 
     if "property" not in skip:
         from pipeline.property import enrich_property
-        n = enrich_property(zip_code)
-        log.info("[5/7] Property detail (RentCast/ATTOM): %d updated", n)
+        counters = enrich_property(zip_code)
+        log.info("[5/8] Property detail (RentCast/ATTOM): %s",
+                 _fmt_counters(counters))
     else:
-        log.info("[5/7] Property detail: skipped")
+        log.info("[5/8] Property detail: skipped")
 
     if "permits" not in skip:
         from pipeline.permits import enrich_permits
         n = enrich_permits(zip_code, csv_path=args.permit_csv)
-        log.info("[6/7] Permits: %d updated", n)
+        log.info("[6/8] Permits: %d updated", n)
     else:
-        log.info("[6/7] Permits: skipped")
+        log.info("[6/8] Permits: skipped")
 
     if "score" not in skip:
         from pipeline.scorer import score_zip
         n = score_zip(zip_code, vertical=args.vertical)
-        log.info("[7/7] Scoring: %d scored", n)
+        log.info("[7/8] Scoring: %d scored", n)
     else:
-        log.info("[7/7] Scoring: skipped")
+        log.info("[7/8] Scoring: skipped")
+
+    # Contact runs after scoring so the optional min-grade gate can apply.
+    if "contact" not in skip:
+        from pipeline.contact import enrich_contact
+        c = enrich_contact(zip_code)
+        log.info("[8/8] Contact: %d filled%s", c.get("updated", 0),
+                 " (skipped: no provider)" if c.get("skipped_no_key") else "")
+    else:
+        log.info("[8/8] Contact: skipped")
+
+    if "score" not in skip:
+        from pipeline.coverage import fill_rates
+        from pipeline.db import get_conn
+        conn = get_conn()
+        try:
+            weak = sorted(
+                ((f, r["pct"]) for f, r in fill_rates(conn, zip_code).items()),
+                key=lambda kv: kv[1],
+            )[:5]
+        finally:
+            conn.close()
+        log.info("Weakest columns for ZIP %s: %s", zip_code,
+                 ", ".join(f"{f} {p}%" for f, p in weak))
 
 
 def main():
@@ -108,7 +144,7 @@ def main():
     parser.add_argument("--permit-csv", default=None,
                         help="CSV file with permit counts (address, zip, permit_count)")
     parser.add_argument("--skip",       default="",
-                        help="Comma-separated steps to skip: seed,census,geocode,hcad,property,permits,score")
+                        help="Comma-separated steps to skip: seed,census,geocode,hcad,property,permits,score,contact")
     parser.add_argument("--limit",      type=int, default=None,
                         help="Cap the number of seeded records (useful for testing)")
     parser.add_argument("--force-seed", action="store_true", default=False,

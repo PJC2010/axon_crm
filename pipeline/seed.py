@@ -1,50 +1,52 @@
 """
 Step 1 — Seed address list for a ZIP code.
 
-Uses RentCast /properties endpoint to pull all known property records for a ZIP.
-Falls back to a CSV file if RENTCAST_API_KEY is not set (useful for dev/testing).
+Uses RentCast /properties to pull all known property records for a ZIP. When a
+ZIP returns very few records, optionally expands the search to nearby/city ZIPs
+so downstream enrichment has enough to work with. Falls back to a CSV file if
+RENTCAST_API_KEY is not set (useful for dev/testing).
 """
 import csv
 import logging
 import time
 from pathlib import Path
 
-import requests
-
-from config import RENTCAST_API_KEY, RENTCAST_BASE_URL
+from config import (
+    RENTCAST_API_KEY, RENTCAST_BASE_URL,
+    SEED_EXPAND_ENABLED, SEED_EXPAND_THRESHOLD, SEED_EXPAND_TARGET,
+    SEED_EXPAND_RADIUS_MI, SEED_EXPAND_MAX_ZIPS,
+)
 from pipeline.db import get_conn, upsert_properties
+from pipeline.http import get_json
 
 log = logging.getLogger(__name__)
 
 BATCH_SIZE = 500   # RentCast max per request
-TEST_LIMIT = None   # set to 3 (or any int) to cap records for testing
 
 
-def seed_from_rentcast(zip_code: str, limit: int | None = None) -> int:
-    """Pull property records from RentCast and upsert into DB. Returns count."""
-    if not RENTCAST_API_KEY:
-        raise ValueError("RENTCAST_API_KEY is not set. Use seed_from_csv() instead.")
+def _seed_one_zip(conn, zip_code: str, limit: int | None = None,
+                  origin_zip: str | None = None) -> int:
+    """Paginate RentCast for a single ZIP and upsert. Returns rows affected.
 
+    `origin_zip` (set when this ZIP was reached via expansion) is recorded in
+    enrichment_flags; each row keeps its own true `zip` from RentCast.
+    """
     headers = {"X-Api-Key": RENTCAST_API_KEY, "Accept": "application/json"}
     offset = 0
     total = 0
-    conn = get_conn()
     batch = min(limit, BATCH_SIZE) if limit else BATCH_SIZE
 
     while True:
-        resp = requests.get(
+        data = get_json(
             f"{RENTCAST_BASE_URL}/properties",
             headers=headers,
             params={"zipCode": zip_code, "limit": batch, "offset": offset},
             timeout=30,
         )
-        resp.raise_for_status()
-        data = resp.json()
-
         if not data:
             break
 
-        rows = [_normalize_rentcast(p) for p in data]
+        rows = [_normalize_rentcast(p, origin_zip) for p in data]
         n = upsert_properties(conn, rows)
         total += n
         log.info("Seeded %d records (offset %d) for ZIP %s", n, offset, zip_code)
@@ -56,8 +58,51 @@ def seed_from_rentcast(zip_code: str, limit: int | None = None) -> int:
         offset += batch
         time.sleep(0.2)   # be polite
 
-    conn.close()
     return total
+
+
+def seed_from_rentcast(zip_code: str, limit: int | None = None) -> int:
+    """Seed `zip_code`, expanding to nearby ZIPs when the result is thin."""
+    if not RENTCAST_API_KEY:
+        raise ValueError("RENTCAST_API_KEY is not set. Use seed_from_csv() instead.")
+
+    conn = get_conn()
+    try:
+        total = _seed_one_zip(conn, zip_code, limit=limit)
+
+        # Expansion only when not explicitly limited (limit is a test/cost cap).
+        if (limit is None and SEED_EXPAND_ENABLED
+                and total < SEED_EXPAND_THRESHOLD):
+            total += _expand_seed(conn, zip_code, already=total)
+    finally:
+        conn.close()
+    return total
+
+
+def _expand_seed(conn, zip_code: str, already: int) -> int:
+    """Seed nearby ZIPs (then same-city ZIPs) until SEED_EXPAND_TARGET is met."""
+    from pipeline import geo_expand
+
+    if not geo_expand.available():
+        log.warning("Seed expansion requested but `uszipcode` is not installed — "
+                    "skipping. `pip install uszipcode` to enable.")
+        return 0
+
+    candidates = geo_expand.nearby_zips(
+        zip_code, radius_miles=SEED_EXPAND_RADIUS_MI, max_zips=SEED_EXPAND_MAX_ZIPS,
+    )
+    if not candidates:
+        candidates = geo_expand.city_zips(zip_code, max_zips=SEED_EXPAND_MAX_ZIPS)
+
+    log.info("ZIP %s thin (%d rows); expanding to %d nearby ZIP(s)",
+             zip_code, already, len(candidates))
+
+    gained = 0
+    for z in candidates:
+        if already + gained >= SEED_EXPAND_TARGET:
+            break
+        gained += _seed_one_zip(conn, z, origin_zip=zip_code)
+    return gained
 
 
 def seed_from_csv(csv_path: str, zip_code: str | None = None) -> int:
@@ -93,7 +138,10 @@ def seed(zip_code: str, csv_path: str | None = None, limit: int | None = None) -
 
 # ── Normalizers ───────────────────────────────────────────────────────────────
 
-def _normalize_rentcast(p: dict) -> dict:
+def _normalize_rentcast(p: dict, origin_zip: str | None = None) -> dict:
+    flags = {"seed": "rentcast"}
+    if origin_zip and p.get("zipCode") != origin_zip:
+        flags["seed_origin_zip"] = origin_zip
     return {
         "address":         p.get("addressLine1", ""),
         "city":            p.get("city", ""),
@@ -109,5 +157,5 @@ def _normalize_rentcast(p: dict) -> dict:
         "last_sale_price": p.get("lastSalePrice"),
         "owner_name":      p.get("ownerName"),
         "owner_occupied":  p.get("ownerOccupied"),
-        "enrichment_flags": {"seed": "rentcast"},
+        "enrichment_flags": flags,
     }
