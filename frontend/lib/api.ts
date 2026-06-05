@@ -1,4 +1,4 @@
-import type { Lead, LeadPage, LeadFilters, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, WorkflowRule, WorkflowRuleCreate } from './types'
+import type { Lead, LeadPage, LeadFilters, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, WorkflowRule, WorkflowRuleCreate, ScoreExplanation } from './types'
 import { getToken, clearToken } from './auth'
 
 const BASE = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000') + '/api'
@@ -66,6 +66,10 @@ export function updateStatus(id: number, status: LeadStatus): Promise<Lead> {
 
 export function getTimeline(leadId: number): Promise<TimelineEntry[]> {
   return req<TimelineEntry[]>(`/leads/${leadId}/timeline`)
+}
+
+export function getScoreExplanation(leadId: number): Promise<ScoreExplanation> {
+  return req<ScoreExplanation>(`/leads/${leadId}/score-explanation`)
 }
 
 export function updateLeadContact(id: number, body: { contact_phone?: string; contact_email?: string; contact_name?: string }): Promise<Lead> {

@@ -8,7 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from psycopg2.extensions import connection as PGConn
 
 from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user
-from api.models import Lead, LeadPage, StatusUpdate, LeadContactUpdate
+from api.models import (
+    Lead, LeadPage, StatusUpdate, LeadContactUpdate,
+    ScoreExplanation, ScoreFactor, VerticalFactor,
+)
+from config import DEFAULT_WEIGHTS, VERTICAL_WEIGHTS
+from pipeline.scoring import explain_score, describe_vertical
 
 router = APIRouter()
 
@@ -59,6 +64,41 @@ def get_lead(lead_id: int, db: PGConn = Depends(get_db), _: dict = Depends(get_c
     if not row:
         raise HTTPException(status_code=404, detail="Lead not found")
     return Lead(**row)
+
+
+@router.get("/leads/{lead_id}/score-explanation", response_model=ScoreExplanation)
+def get_score_explanation(lead_id: int, db: PGConn = Depends(get_db), _: dict = Depends(get_current_user)):
+    """Explain why a lead scored the way it did: per-factor contributions plus a
+    description of the weighting profile used for the lead's vertical."""
+    with db.cursor() as cur:
+        cur.execute("SELECT * FROM properties WHERE id = %s", (lead_id,))
+        row = dict_fetchone(cur)
+    if not row:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    vertical = row.get("vertical")
+    weights = VERTICAL_WEIGHTS.get(vertical, DEFAULT_WEIGHTS) if vertical else DEFAULT_WEIGHTS
+    breakdown = explain_score(row, weights)
+    vdesc = describe_vertical(vertical)
+
+    # The stored lead_score was computed when the lead was last scored; current
+    # weights may differ. Report the recomputed total (so factor contributions
+    # reconcile) and flag any drift from the stored value.
+    stored = row.get("lead_score")
+    drift = stored is not None and abs(stored - breakdown["score"]) > 0.5
+
+    return ScoreExplanation(
+        lead_id=lead_id,
+        score=breakdown["score"],
+        grade=breakdown["grade"],
+        vertical=vertical,
+        is_default_profile=vdesc["is_default"],
+        factors=[ScoreFactor(**f) for f in breakdown["factors"]],
+        top_drivers=breakdown["top_drivers"],
+        vertical_description=[VerticalFactor(**f) for f in vdesc["factors"]],
+        score_updated_at=row.get("score_updated_at"),
+        weights_drift=drift,
+    )
 
 
 @router.patch("/leads/{lead_id}/status", response_model=Lead)
