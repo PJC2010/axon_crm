@@ -76,12 +76,14 @@ export function OnboardingWizard({ onComplete }: Props) {
         {/* Step 0: Welcome */}
         {step === 0 && (
           <div style={{ textAlign: 'center' }}>
-            <svg width="48" height="48" viewBox="0 0 40 40" fill="none" style={{ marginBottom: 20 }}>
-              <path d="M4 32 C 12 32, 14 22, 22 22 C 30 22, 30 14, 38 6"
-                stroke="var(--color-ink-900)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-              <circle cx="4" cy="32" r="3" fill="var(--color-ink-900)" />
-              <circle cx="22" cy="22" r="4" fill="var(--color-paper)" stroke="var(--color-ink-900)" strokeWidth="2.5" />
-              <circle cx="38" cy="6" r="6" fill="var(--color-accent)" />
+            <svg width="48" height="48" viewBox="0 0 32 32" fill="none" style={{ marginBottom: 20 }} aria-hidden="true">
+              <mask id="axon-mark-onboard">
+                <rect width="32" height="32" fill="white" />
+                <rect x="2" y="14.5" width="28" height="3" rx="1.5" fill="black" />
+                <rect x="14.5" y="2" width="3" height="28" rx="1.5" fill="black" />
+              </mask>
+              <polygon points="16,5 27,16 16,27 5,16" fill="var(--color-accent)" mask="url(#axon-mark-onboard)" />
+              <circle cx="16" cy="16" r="1.5" fill="var(--color-ink-900)" />
             </svg>
             <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 600, color: 'var(--color-ink-900)', margin: '0 0 8px' }}>
               Welcome to Axon

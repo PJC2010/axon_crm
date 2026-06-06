@@ -19,15 +19,14 @@ export default function LandingPage() {
       <nav className="lp-nav">
         <div className="lp-container lp-nav-inner">
           <a href="#" className="lp-nav-logo">
-            <svg width="28" height="28" viewBox="0 0 40 40" fill="none">
-              <path
-                d="M4 32 C 12 32, 14 22, 22 22 C 30 22, 30 14, 38 6"
-                stroke="var(--color-ink-900)" strokeWidth="2.5"
-                strokeLinecap="round" strokeLinejoin="round" fill="none"
-              />
-              <circle cx="4" cy="32" r="3" fill="var(--color-ink-900)" />
-              <circle cx="22" cy="22" r="4" fill="#ffffff" stroke="var(--color-ink-900)" strokeWidth="2.5" />
-              <circle cx="38" cy="6" r="6" fill="var(--color-accent)" />
+            <svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+              <mask id="axon-mark-nav">
+                <rect width="32" height="32" fill="white" />
+                <rect x="2" y="14.5" width="28" height="3" rx="1.5" fill="black" />
+                <rect x="14.5" y="2" width="3" height="28" rx="1.5" fill="black" />
+              </mask>
+              <polygon points="16,5 27,16 16,27 5,16" fill="var(--color-accent)" mask="url(#axon-mark-nav)" />
+              <circle cx="16" cy="16" r="1.5" fill="var(--color-ink-900)" />
             </svg>
             <span className="lp-nav-wordmark">Axon</span>
           </a>
@@ -88,6 +87,15 @@ export default function LandingPage() {
               <div className="lp-dash-body">
                 <div className="lp-dash-sidebar">
                   <div className="lp-dash-sidebar-logo">
+                    <svg width="18" height="18" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+                      <mask id="axon-mark-mockup">
+                        <rect width="32" height="32" fill="white" />
+                        <rect x="2" y="14.5" width="28" height="3" rx="1.5" fill="black" />
+                        <rect x="14.5" y="2" width="3" height="28" rx="1.5" fill="black" />
+                      </mask>
+                      <polygon points="16,5 27,16 16,27 5,16" fill="#4B9EC4" mask="url(#axon-mark-mockup)" />
+                      <circle cx="16" cy="16" r="1.5" fill="#F7F4EE" />
+                    </svg>
                     <span>Axon</span>
                   </div>
                   <div className="lp-dash-nav-item active">
@@ -511,7 +519,18 @@ export default function LandingPage() {
         <div className="lp-container">
           <div className="lp-footer-inner">
             <div>
-              <span className="lp-footer-wordmark">Axon</span>
+              <span className="lp-footer-wordmark">
+                <svg width="20" height="20" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+                  <mask id="axon-mark-footer">
+                    <rect width="32" height="32" fill="white" />
+                    <rect x="2" y="14.5" width="28" height="3" rx="1.5" fill="black" />
+                    <rect x="14.5" y="2" width="3" height="28" rx="1.5" fill="black" />
+                  </mask>
+                  <polygon points="16,5 27,16 16,27 5,16" fill="#4B9EC4" mask="url(#axon-mark-footer)" />
+                  <circle cx="16" cy="16" r="1.5" fill="#F7F4EE" />
+                </svg>
+                Axon
+              </span>
               <p className="lp-footer-tagline">Built on data, focused on people.</p>
             </div>
             <div>
