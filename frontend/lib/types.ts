@@ -253,6 +253,9 @@ export interface Invoice {
   created_at: string
   line_items: LineItem[]
   payments: InvoicePayment[]
+  // delivery tracking
+  sent_at?: string | null
+  sent_channels?: string[] | null
 }
 
 export interface InvoiceCreate {

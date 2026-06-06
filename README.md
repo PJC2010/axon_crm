@@ -232,7 +232,17 @@ CENSUS_API_KEY=your_key
 
 # Optional (Harris County permit DuckDB path)
 PERMIT_DB_PATH=/path/to/harris_county.duckdb
+
+# Invoice delivery (optional, per channel) — used by "Send Invoice"
+RESEND_API_KEY=re_...                   # email via Resend
+RESEND_FROM_EMAIL=invoices@yourdomain.com
+TWILIO_ACCOUNT_SID=AC...                # SMS via Twilio
+TWILIO_AUTH_TOKEN=...
+TWILIO_FROM_NUMBER=+15555550123
 ```
+
+> Online card payments (Stripe Connect) are deferred — see
+> `api/integrations/stripe/README.md`.
 
 For the frontend, create `frontend/.env.local`:
 

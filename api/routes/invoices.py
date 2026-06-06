@@ -19,9 +19,13 @@ from fastapi.responses import StreamingResponse
 from psycopg2.extensions import connection as PGConn
 
 from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user, require_owner
+from api.invoice_logic import (
+    _calc_totals, _recalc_paid, _update_invoice_payment_state, _load_invoice,
+)
+from api.notifications import send_invoice_email, send_invoice_sms
 from api.models import (
     Invoice, InvoiceCreate, InvoiceUpdate,
-    InvoicePayment, PaymentCreate, LineItem,
+    InvoicePayment, PaymentCreate, LineItem, SendInvoiceRequest,
     INVOICE_STATUSES, PAYMENT_METHODS,
 )
 
@@ -29,95 +33,8 @@ router = APIRouter()
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _calc_totals(line_items: list, tax_rate: float) -> tuple[float, float, float]:
-    subtotal = sum(item["quantity"] * item["unit_price"] for item in line_items)
-    tax_amount = round(subtotal * tax_rate / 100, 2)
-    total = round(subtotal + tax_amount, 2)
-    return round(subtotal, 2), tax_amount, total
-
-
-def _derive_status(total: float, amount_paid: float, due_date, current_status: str) -> str:
-    if current_status == "void":
-        return "void"
-    if amount_paid <= 0:
-        if due_date and due_date < __import__("datetime").date.today() and current_status in ("sent", "partial"):
-            return "overdue"
-        return current_status if current_status in ("draft", "sent") else "sent"
-    if amount_paid >= total:
-        return "paid"
-    if due_date and due_date < __import__("datetime").date.today():
-        return "overdue"
-    return "partial"
-
-
-def _recalc_paid(db: PGConn, invoice_id: int) -> float:
-    with db.cursor() as cur:
-        cur.execute(
-            "SELECT COALESCE(SUM(amount), 0) FROM invoice_payments WHERE invoice_id = %s",
-            (invoice_id,),
-        )
-        return float(cur.fetchone()[0])
-
-
-def _update_invoice_payment_state(db: PGConn, invoice_id: int):
-    """Recalculate amount_paid and status after any payment change."""
-    with db.cursor() as cur:
-        cur.execute("SELECT total, due_date, status FROM invoices WHERE id = %s", (invoice_id,))
-        row = cur.fetchone()
-        if not row:
-            return
-        total, due_date, current_status = float(row[0]), row[1], row[2]
-
-    amount_paid = _recalc_paid(db, invoice_id)
-
-    if current_status == "void":
-        new_status = "void"
-    elif amount_paid >= total:
-        new_status = "paid"
-    elif amount_paid > 0:
-        import datetime
-        if due_date and due_date < datetime.date.today():
-            new_status = "overdue"
-        else:
-            new_status = "partial"
-    else:
-        import datetime
-        if due_date and due_date < datetime.date.today() and current_status in ("sent", "partial", "overdue"):
-            new_status = "overdue"
-        else:
-            new_status = current_status if current_status in ("draft", "sent", "overdue") else "sent"
-
-    with db.cursor() as cur:
-        cur.execute(
-            "UPDATE invoices SET amount_paid = %s, status = %s, updated_at = NOW() WHERE id = %s",
-            (amount_paid, new_status, invoice_id),
-        )
-
-
-def _load_invoice(db: PGConn, invoice_id: int) -> dict:
-    with db.cursor() as cur:
-        cur.execute("SELECT * FROM invoices WHERE id = %s", (invoice_id,))
-        inv = dict_fetchone(cur)
-        if not inv:
-            return None
-        cur.execute(
-            "SELECT * FROM invoice_line_items WHERE invoice_id = %s ORDER BY sort_order, id",
-            (invoice_id,),
-        )
-        inv["line_items"] = dict_fetchall(cur)
-        cur.execute(
-            "SELECT * FROM invoice_payments WHERE invoice_id = %s ORDER BY payment_date, id",
-            (invoice_id,),
-        )
-        inv["payments"] = dict_fetchall(cur)
-        # computed
-        inv["balance_due"] = float(inv["total"]) - float(inv["amount_paid"])
-        # enrich line items with amount
-        for li in inv["line_items"]:
-            li["amount"] = float(li["quantity"]) * float(li["unit_price"])
-    return inv
-
+# Payment-state helpers (_calc_totals, _recalc_paid, _update_invoice_payment_state,
+# _load_invoice) live in api/invoice_logic.py so the Stripe webhook can reuse them.
 
 def _build_where(status, year, month, property_id):
     conditions, params = [], []
@@ -450,3 +367,69 @@ def delete_payment(
 
     _update_invoice_payment_state(db, invoice_id)
     db.commit()
+
+
+@router.post("/invoices/{invoice_id}/send", response_model=Invoice)
+def send_invoice(
+    invoice_id: int,
+    body: SendInvoiceRequest,
+    current_user: dict = Depends(get_current_user),
+    db: PGConn = Depends(get_db),
+):
+    """Deliver an invoice summary to the client by email and/or SMS."""
+    inv = _load_invoice(db, invoice_id)
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if inv["status"] == "void":
+        raise HTTPException(status_code=400, detail="Cannot send a voided invoice")
+
+    channels = [c for c in body.channels if c in ("email", "sms")]
+    if not channels:
+        raise HTTPException(status_code=400, detail="No valid channels (email, sms)")
+
+    business_name = current_user.get("username") or "Axon"
+    amount_due = float(inv["balance_due"])
+    errors: list[str] = []
+    sent: list[str] = []
+
+    if "email" in channels:
+        if not inv.get("client_email"):
+            errors.append("No client email on file")
+        else:
+            try:
+                send_invoice_email(
+                    to_email=inv["client_email"], business_name=business_name,
+                    invoice_number=inv["invoice_number"], amount_due=amount_due,
+                )
+                sent.append("email")
+            except Exception as e:
+                errors.append(f"Email: {e}")
+
+    if "sms" in channels:
+        if not inv.get("client_phone"):
+            errors.append("No client phone on file")
+        else:
+            try:
+                send_invoice_sms(
+                    to_phone=inv["client_phone"], business_name=business_name,
+                    invoice_number=inv["invoice_number"], amount_due=amount_due,
+                )
+                sent.append("sms")
+            except Exception as e:
+                errors.append(f"SMS: {e}")
+
+    if not sent:
+        raise HTTPException(status_code=400, detail="; ".join(errors) or "Failed to send")
+
+    new_status = "sent" if inv["status"] == "draft" else inv["status"]
+    with db.cursor() as cur:
+        cur.execute(
+            "UPDATE invoices SET status=%s, sent_at=NOW(), sent_channels=%s, "
+            "last_emailed_at = CASE WHEN %s THEN NOW() ELSE last_emailed_at END, "
+            "last_sms_at     = CASE WHEN %s THEN NOW() ELSE last_sms_at END, "
+            "updated_at=NOW() WHERE id=%s",
+            (new_status, sent, "email" in sent, "sms" in sent, invoice_id),
+        )
+        db.commit()
+
+    return Invoice(**_load_invoice(db, invoice_id))

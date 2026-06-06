@@ -194,6 +194,12 @@ class Invoice(BaseModel):
         from_attributes = True
 
 
+# ── Invoice delivery ──────────────────────────────────────────────────────────
+
+class SendInvoiceRequest(BaseModel):
+    channels: list[str]  # any of: "email", "sms"
+
+
 class LeadPage(BaseModel):
     total: int
     page: int

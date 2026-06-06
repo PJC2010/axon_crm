@@ -21,3 +21,7 @@ duckdb>=0.10
 
 # Scheduling
 apscheduler>=3.10
+
+# Invoice delivery (email / SMS)
+resend>=2.0
+twilio>=9.0

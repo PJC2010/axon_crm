@@ -335,6 +335,12 @@ export function invoiceExportUrl(filters: InvoiceFilters = {}): string {
   return `${BASE}/invoices/export?${p}`
 }
 
+// ── Invoice delivery ───────────────────────────────────────────────────────────
+
+export function sendInvoice(invoiceId: number, channels: string[]): Promise<Invoice> {
+  return req<Invoice>(`/invoices/${invoiceId}/send`, { method: 'POST', body: JSON.stringify({ channels }) })
+}
+
 // ── Bookkeeping reports ───────────────────────────────────────────────────────
 
 export function getPnL(year: number): Promise<PnLReport> {
