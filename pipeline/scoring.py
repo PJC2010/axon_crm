@@ -13,6 +13,7 @@ from config import (
     SALE_RECENCY_MAX_MO, EQUITY_TARGET,
     GARAGE_TARGET, INCOME_TARGET, PERMIT_TARGET,
     POOL_SIGNAL_VALUE, SLAB_SIGNAL_VALUE,
+    FACTOR_META, DEFAULT_WEIGHTS, VERTICAL_WEIGHTS,
 )
 
 
@@ -106,3 +107,78 @@ def _pool_signal(has_pool: bool | None) -> float:
 def _slab_signal(has_cracked_slab: bool | None) -> float:
     """1.0 if HCAD records a cracked slab, else 0. Used by epoxy_flooring vertical."""
     return SLAB_SIGNAL_VALUE if has_cracked_slab else 0.0
+
+
+# ── Score explanation ─────────────────────────────────────────────────────────
+# Reuse the exact production signal functions above so the breakdown can never
+# drift from the real score. Keyed by the same factor keys used in the weights.
+_SIGNAL_FNS = {
+    "age":    _age_signal,
+    "sale":   _sale_signal,
+    "equity": _equity_signal,
+    "garage": _garage_signal,
+    "income": _income_signal,
+    "permit": _permit_signal,
+    "pool":   _pool_signal,
+    "slab":   _slab_signal,
+}
+
+
+def explain_score(row: dict, weights: dict) -> dict:
+    """Break a lead's score into per-factor contributions.
+
+    For each factor weighted in `weights` (skipping zero-weight factors), reports
+    its normalized signal strength (0–1) and weighted point contribution
+    (weight × signal × 100). The contributions sum to the score from
+    `_compute_score`, so the breakdown always reconciles with the displayed total.
+    """
+    factors = []
+    for key, weight in weights.items():
+        if not weight:
+            continue  # factor carries no weight in this profile — omit as noise
+        meta = FACTOR_META[key]
+        signal = _SIGNAL_FNS[key](row.get(meta["field"]))
+        factors.append({
+            "key":          key,
+            "label":        meta["label"],
+            "description":  meta["description"],
+            "weight":       weight,
+            "signal":       round(signal, 4),
+            "contribution": round(weight * signal * 100, 2),
+        })
+
+    factors.sort(key=lambda f: f["contribution"], reverse=True)
+    top_drivers = [f["key"] for f in factors[:3] if f["contribution"] > 0]
+    score = _compute_score(row, weights)
+    return {
+        "score":       round(score, 2),
+        "grade":       _grade(score),
+        "factors":     factors,
+        "top_drivers": top_drivers,
+    }
+
+
+def describe_vertical(vertical: str | None) -> dict:
+    """Describe the weight profile used for a vertical, derived purely from the
+    weights so the description can never drift from actual scoring.
+
+    Unknown/None verticals fall back to DEFAULT_WEIGHTS (same rule as
+    `scorer.score_zip`); `is_default` flags that fallback for the UI.
+    """
+    weights = VERTICAL_WEIGHTS.get(vertical) if vertical else None
+    is_default = weights is None
+    if is_default:
+        weights = DEFAULT_WEIGHTS
+
+    factors = [
+        {
+            "key":         key,
+            "label":       FACTOR_META[key]["label"],
+            "description": FACTOR_META[key]["description"],
+            "weight":      weight,
+        }
+        for key, weight in weights.items()
+        if weight
+    ]
+    factors.sort(key=lambda f: f["weight"], reverse=True)
+    return {"vertical": vertical, "is_default": is_default, "factors": factors}

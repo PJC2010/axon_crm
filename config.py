@@ -111,6 +111,54 @@ VERTICAL_WEIGHTS = {
     },
 }
 
+# ── Factor metadata (human-readable labels for score explanations) ────────────
+# Single source of truth for the labels/descriptions surfaced to users when we
+# explain why a lead scored the way it did. Keys match the weight-dict keys
+# above; `field` is the property row column each signal reads. Adding a new
+# weighted signal means adding its entry here too (enforced by test_scoring.py).
+FACTOR_META = {
+    "age": {
+        "label": "Home age",
+        "field": "year_built",
+        "description": "Homes 15–30 years old are in the renovation sweet spot.",
+    },
+    "sale": {
+        "label": "Recent sale",
+        "field": "last_sale_date",
+        "description": "Recently sold homes signal active, motivated owners (last 24 months).",
+    },
+    "equity": {
+        "label": "Home equity",
+        "field": "estimated_equity",
+        "description": "More equity (toward $100k) means more ability to fund the work.",
+    },
+    "garage": {
+        "label": "Garage space",
+        "field": "garage_spaces",
+        "description": "Two or more garage spaces — the primary work surface for many jobs.",
+    },
+    "income": {
+        "label": "Area income",
+        "field": "zip_median_income",
+        "description": "Higher ZIP median income (toward $75k) indicates spending capacity.",
+    },
+    "permit": {
+        "label": "Permit activity",
+        "field": "permit_count_24mo",
+        "description": "Recent building permits show the owner is already investing in the home.",
+    },
+    "pool": {
+        "label": "Pool present",
+        "field": "has_pool",
+        "description": "A confirmed pool (from HCAD) is a direct service target.",
+    },
+    "slab": {
+        "label": "Cracked slab",
+        "field": "has_cracked_slab",
+        "description": "A cracked slab (from HCAD) is a confirmed epoxy-flooring opportunity.",
+    },
+}
+
 # ── Signal thresholds ────────────────────────────────────────────────────────
 AGE_SWEET_SPOT_MIN   = 15    # years
 AGE_SWEET_SPOT_MAX   = 30    # years

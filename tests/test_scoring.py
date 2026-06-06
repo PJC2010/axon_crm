@@ -23,6 +23,9 @@ from pipeline.scoring import (
     _garage_signal,
     _income_signal,
     _permit_signal,
+    _SIGNAL_FNS,
+    explain_score,
+    describe_vertical,
 )
 
 
@@ -398,3 +401,125 @@ class TestWeightProfiles:
     def test_all_weights_non_negative(self, name, weights):
         for key, val in weights.items():
             assert val >= 0.0, f"Profile '{name}' has negative weight for '{key}'"
+
+    @pytest.mark.parametrize("name,weights", ALL_PROFILES.items())
+    def test_every_weighted_factor_has_metadata(self, name, weights):
+        # Every key in any profile must have FACTOR_META — otherwise the score
+        # explanation would KeyError on a real lead.
+        for key in weights:
+            assert key in config.FACTOR_META, (
+                f"Profile '{name}' weights key '{key}' missing from FACTOR_META"
+            )
+            meta = config.FACTOR_META[key]
+            assert {"label", "field", "description"} <= set(meta), (
+                f"FACTOR_META['{key}'] missing label/field/description"
+            )
+
+    def test_factor_meta_fields_are_real_input_columns(self):
+        # Each FACTOR_META.field must be a real property row column — PERFECT_ROW
+        # enumerates the columns every signal reads.
+        for key, meta in config.FACTOR_META.items():
+            assert meta["field"] in PERFECT_ROW, (
+                f"FACTOR_META['{key}'].field '{meta['field']}' is not a known input column"
+            )
+
+
+# ── explain_score ─────────────────────────────────────────────────────────────
+
+class TestExplainScore:
+    def test_contributions_sum_to_score_perfect_row(self):
+        result = explain_score(PERFECT_ROW, config.DEFAULT_WEIGHTS)
+        total = sum(f["contribution"] for f in result["factors"])
+        assert total == pytest.approx(result["score"], abs=0.5)
+        assert result["score"] == pytest.approx(
+            _compute_score(PERFECT_ROW, config.DEFAULT_WEIGHTS), abs=0.01
+        )
+
+    @pytest.mark.parametrize("name,weights", ALL_PROFILES.items())
+    def test_contributions_sum_to_compute_score_all_profiles(self, name, weights):
+        # Locks the single-source-of-truth invariant: the breakdown always
+        # reconciles with the production score for every profile.
+        result = explain_score(PERFECT_ROW, weights)
+        total = sum(f["contribution"] for f in result["factors"])
+        assert total == pytest.approx(_compute_score(PERFECT_ROW, weights), abs=0.5)
+
+    def test_per_factor_signal_matches_underlying_fn(self):
+        # Proves no duplicated math: each reported signal equals calling the
+        # production signal function directly on the row field.
+        result = explain_score(PERFECT_ROW, config.DEFAULT_WEIGHTS)
+        for f in result["factors"]:
+            field = config.FACTOR_META[f["key"]]["field"]
+            expected = _SIGNAL_FNS[f["key"]](PERFECT_ROW.get(field))
+            assert f["signal"] == pytest.approx(expected, abs=1e-4)
+
+    def test_factors_sorted_by_contribution_desc(self):
+        result = explain_score(PERFECT_ROW, config.DEFAULT_WEIGHTS)
+        contributions = [f["contribution"] for f in result["factors"]]
+        assert contributions == sorted(contributions, reverse=True)
+
+    def test_default_profile_excludes_pool_and_slab(self):
+        keys = {f["key"] for f in explain_score(PERFECT_ROW, config.DEFAULT_WEIGHTS)["factors"]}
+        assert "pool" not in keys
+        assert "slab" not in keys
+
+    def test_pool_maintenance_includes_pool_excludes_slab_and_zero_garage(self):
+        weights = config.VERTICAL_WEIGHTS["pool_maintenance"]
+        keys = {f["key"] for f in explain_score(PERFECT_ROW, weights)["factors"]}
+        assert "pool" in keys
+        assert "slab" not in keys
+        assert "garage" not in keys  # weight 0.00 — omitted as noise
+
+    def test_epoxy_flooring_includes_slab_excludes_pool(self):
+        weights = config.VERTICAL_WEIGHTS["epoxy_flooring"]
+        keys = {f["key"] for f in explain_score(PERFECT_ROW, weights)["factors"]}
+        assert "slab" in keys
+        assert "pool" not in keys
+
+    def test_empty_row_zero_contributions_no_top_drivers(self):
+        result = explain_score(EMPTY_ROW, config.DEFAULT_WEIGHTS)
+        assert result["score"] == 0.0
+        assert result["grade"] == "D"
+        assert result["top_drivers"] == []
+        assert all(f["contribution"] == 0.0 for f in result["factors"])
+
+    def test_top_drivers_max_three(self):
+        result = explain_score(PERFECT_ROW, config.DEFAULT_WEIGHTS)
+        assert len(result["top_drivers"]) <= 3
+
+    def test_grade_matches_score(self):
+        result = explain_score(PERFECT_ROW, config.DEFAULT_WEIGHTS)
+        assert result["grade"] == _grade(result["score"])
+
+
+# ── describe_vertical ─────────────────────────────────────────────────────────
+
+class TestDescribeVertical:
+    def test_known_vertical(self):
+        result = describe_vertical("pool_maintenance")
+        assert result["is_default"] is False
+        assert result["vertical"] == "pool_maintenance"
+        keys = {f["key"] for f in result["factors"]}
+        # Only non-zero-weight keys appear; garage (0.00) is excluded.
+        expected = {k for k, w in config.VERTICAL_WEIGHTS["pool_maintenance"].items() if w}
+        assert keys == expected
+
+    def test_factors_sorted_by_weight_desc(self):
+        result = describe_vertical("solar")
+        weights = [f["weight"] for f in result["factors"]]
+        assert weights == sorted(weights, reverse=True)
+
+    def test_unknown_vertical_falls_back_to_default(self):
+        result = describe_vertical("not_a_real_vertical")
+        assert result["is_default"] is True
+        keys = {f["key"] for f in result["factors"]}
+        assert keys == {k for k, w in config.DEFAULT_WEIGHTS.items() if w}
+
+    def test_none_vertical_falls_back_to_default(self):
+        result = describe_vertical(None)
+        assert result["is_default"] is True
+
+    def test_every_factor_has_metadata(self):
+        for name in ALL_PROFILES:
+            for f in describe_vertical(name)["factors"]:
+                assert f["key"] in config.FACTOR_META
+                assert f["label"] == config.FACTOR_META[f["key"]]["label"]

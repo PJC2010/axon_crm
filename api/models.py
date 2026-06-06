@@ -28,6 +28,8 @@ class Lead(BaseModel):
     owner_occupied: Optional[bool] = None
     zip_median_income: Optional[int] = None
     permit_count_24mo: Optional[int] = None
+    has_pool: Optional[bool] = None
+    has_cracked_slab: Optional[bool] = None
     lead_score: Optional[float] = None
     score_grade: Optional[str] = None
     vertical: Optional[str] = None
@@ -205,6 +207,39 @@ class LeadPage(BaseModel):
     page: int
     page_size: int
     results: list[Lead]
+
+
+# ── Score explanation ─────────────────────────────────────────────────────────
+
+class ScoreFactor(BaseModel):
+    """One weighed factor's contribution to a lead's score."""
+    key: str
+    label: str
+    description: str
+    weight: float
+    signal: float        # normalized 0–1 strength of this factor for the lead
+    contribution: float  # weighted points added to the score (weight × signal × 100)
+
+
+class VerticalFactor(BaseModel):
+    """A factor in a vertical's weighting profile (no per-lead values)."""
+    key: str
+    label: str
+    description: str
+    weight: float
+
+
+class ScoreExplanation(BaseModel):
+    lead_id: int
+    score: Optional[float] = None
+    grade: Optional[str] = None
+    vertical: Optional[str] = None
+    is_default_profile: bool = False
+    factors: list[ScoreFactor] = []
+    top_drivers: list[str] = []
+    vertical_description: list[VerticalFactor] = []
+    score_updated_at: Optional[datetime] = None
+    weights_drift: bool = False
 
 
 ALLOWED_STATUSES = {"new", "contacted", "qualified", "not_interested", "converted", "quote_sent", "won", "lost"}

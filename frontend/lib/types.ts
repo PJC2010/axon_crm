@@ -24,6 +24,8 @@ export interface Lead {
   contact_name: string | null
   zip_median_income: number | null
   permit_count_24mo: number | null
+  has_pool: boolean | null
+  has_cracked_slab: boolean | null
   lead_score: number | null
   score_grade: ScoreGrade | null
   vertical: string | null
@@ -41,6 +43,35 @@ export interface LeadPage {
   page: number
   page_size: number
   results: Lead[]
+}
+
+export interface ScoreFactor {
+  key: string
+  label: string
+  description: string
+  weight: number
+  signal: number
+  contribution: number
+}
+
+export interface VerticalFactor {
+  key: string
+  label: string
+  description: string
+  weight: number
+}
+
+export interface ScoreExplanation {
+  lead_id: number
+  score: number | null
+  grade: ScoreGrade | null
+  vertical: string | null
+  is_default_profile: boolean
+  factors: ScoreFactor[]
+  top_drivers: string[]
+  vertical_description: VerticalFactor[]
+  score_updated_at: string | null
+  weights_drift: boolean
 }
 
 export interface Note {
