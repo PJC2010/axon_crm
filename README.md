@@ -272,22 +272,13 @@ python db/migrate.py status
 python db/migrate.py create add_customers
 ```
 
-5. Create your first admin user (run once, then remove):
+5. Create your first owner (admin) user:
 ```bash
-python -c "
-from api.security import hash_password
-import psycopg2, os
-conn = psycopg2.connect(os.environ['DATABASE_URL'])
-cur = conn.cursor()
-cur.execute(
-  \"INSERT INTO users (username, email, password_hash, role) VALUES (%s, %s, %s, %s)\",
-  ('admin', 'you@example.com', hash_password('your-password'), 'admin')
-)
-conn.commit()
-conn.close()
-print('User created.')
-"
+python scripts/create_user.py --username admin --email you@example.com --role owner
 ```
+You'll be prompted for a password (or pass `--password`). Run
+`python scripts/create_user.py --help` for all options. Use this same
+command any time you need to create a user login from the command line.
 
 ### Running Locally
 
