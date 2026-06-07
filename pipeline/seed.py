@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 from config import (
-    RENTCAST_API_KEY, RENTCAST_BASE_URL,
+    RENTCAST_API_KEY, RENTCAST_BASE_URL, SEED_PROPERTY_TYPES,
     SEED_EXPAND_ENABLED, SEED_EXPAND_THRESHOLD, SEED_EXPAND_TARGET,
     SEED_EXPAND_RADIUS_MI, SEED_EXPAND_MAX_ZIPS,
 )
@@ -22,6 +22,20 @@ from pipeline.http import get_json
 log = logging.getLogger(__name__)
 
 BATCH_SIZE = 500   # RentCast max per request
+
+
+def _wanted_type(property_type: str | None) -> bool:
+    """True if a record's propertyType should be seeded.
+
+    The allowlist lives in SEED_PROPERTY_TYPES; "*" (or empty) disables the
+    filter and seeds everything. A record with no propertyType is kept — we have
+    no grounds to drop it, and dropping would lose legit homes with missing data.
+    """
+    if not SEED_PROPERTY_TYPES or "*" in SEED_PROPERTY_TYPES:
+        return True
+    if not property_type:
+        return True
+    return property_type in SEED_PROPERTY_TYPES
 
 
 def _seed_one_zip(conn, zip_code: str, limit: int | None = None,
@@ -46,7 +60,15 @@ def _seed_one_zip(conn, zip_code: str, limit: int | None = None,
         if not data:
             break
 
-        rows = [_normalize_rentcast(p, origin_zip) for p in data]
+        # Drop unwanted property types (e.g. Apartment, Multi-Family) before they
+        # reach the DB and incur paid enrichment downstream.
+        wanted = [p for p in data if _wanted_type(p.get("propertyType"))]
+        dropped = len(data) - len(wanted)
+        if dropped:
+            log.info("Skipped %d non-target property type(s) for ZIP %s",
+                     dropped, zip_code)
+
+        rows = [_normalize_rentcast(p, origin_zip) for p in wanted]
         n = upsert_properties(conn, rows)
         total += n
         log.info("Seeded %d records (offset %d) for ZIP %s", n, offset, zip_code)
@@ -122,6 +144,10 @@ def seed_from_csv(csv_path: str, zip_code: str | None = None) -> int:
             row = {k.lower().strip(): v.strip() for k, v in raw.items() if v}
             if zip_code and row.get("zip") != zip_code:
                 continue
+            # CSV headers vary: accept either property_type or propertytype.
+            ptype = row.get("property_type") or row.get("propertytype")
+            if not _wanted_type(ptype):
+                continue
             rows.append(row)
 
     n = upsert_properties(conn, rows)
@@ -142,6 +168,8 @@ def _normalize_rentcast(p: dict, origin_zip: str | None = None) -> dict:
     flags = {"seed": "rentcast"}
     if origin_zip and p.get("zipCode") != origin_zip:
         flags["seed_origin_zip"] = origin_zip
+    # Garage data lives in the nested `features` object in the records response.
+    features = p.get("features") or {}
     return {
         "address":         p.get("addressLine1", ""),
         "city":            p.get("city", ""),
@@ -157,5 +185,7 @@ def _normalize_rentcast(p: dict, origin_zip: str | None = None) -> dict:
         "last_sale_price": p.get("lastSalePrice"),
         "owner_name":      p.get("ownerName"),
         "owner_occupied":  p.get("ownerOccupied"),
+        "garage_spaces":   features.get("garageSpaces"),
+        "garage_type":     features.get("garageType"),
         "enrichment_flags": flags,
     }

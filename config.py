@@ -38,7 +38,7 @@ SOURCE_FIELDS = {
     "rentcast": [
         "year_built", "square_footage", "estimated_value", "estimated_equity",
         "last_sale_date", "last_sale_price", "owner_name", "owner_occupied",
-        "ownership_years",
+        "ownership_years", "garage_spaces", "garage_type",
     ],
     "attom": [
         "year_built", "square_footage", "lot_size", "estimated_value",
@@ -52,6 +52,17 @@ ATTOM_MAX_ROWS_PER_ZIP = int(os.getenv("ATTOM_MAX_ROWS_PER_ZIP", "500"))
 # ── Equity estimation ─────────────────────────────────────────────────────────
 # Fallback fraction of value treated as equity when no mortgage/sale data exists.
 EQUITY_FALLBACK_PCT = float(os.getenv("EQUITY_FALLBACK_PCT", "0.6"))
+
+# ── Seed property-type filter ─────────────────────────────────────────────────
+# Only these RentCast `propertyType` values are seeded; everything else (e.g.
+# Apartment, Multi-Family, Land) is skipped at seed so paid enrichment never
+# touches it. Comma-separated env override. Set to "*" (or empty) to seed all.
+SEED_PROPERTY_TYPES = [
+    t.strip() for t in os.getenv(
+        "SEED_PROPERTY_TYPES",
+        "Single Family,Condo,Townhouse,Manufactured",
+    ).split(",") if t.strip()
+]
 
 # ── Search-area expansion (when a ZIP returns too few seed rows) ──────────────
 SEED_EXPAND_ENABLED   = os.getenv("SEED_EXPAND_ENABLED", "true").lower() == "true"

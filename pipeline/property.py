@@ -115,6 +115,9 @@ def _rentcast_detail(address: str, zip_code: str) -> dict | None:
         except (ValueError, TypeError):
             pass
 
+    # Garage data lives in the nested `features` object in the records response.
+    features = p.get("features") or {}
+
     return {
         "year_built":       p.get("yearBuilt"),
         "square_footage":   p.get("squareFootage"),
@@ -125,6 +128,8 @@ def _rentcast_detail(address: str, zip_code: str) -> dict | None:
         "owner_name":       p.get("ownerName"),
         "owner_occupied":   p.get("ownerOccupied"),
         "ownership_years":  ownership_years,
+        "garage_spaces":    features.get("garageSpaces"),
+        "garage_type":      features.get("garageType"),
     }
 
 

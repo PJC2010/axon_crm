@@ -64,6 +64,7 @@ def test_rentcast_detail_maps_fields(monkeypatch):
         "lastSalePrice": 240000,
         "ownerName": "JOHN SMITH",
         "ownerOccupied": True,
+        "features": {"garage": True, "garageSpaces": 2, "garageType": "Attached"},
     }]
     monkeypatch.setattr(prop, "get_json", lambda *a, **k: fixture)
     out = prop._rentcast_detail("123 Main St", "77002")
@@ -72,3 +73,14 @@ def test_rentcast_detail_maps_fields(monkeypatch):
     assert out["estimated_value"] == 300000
     assert isinstance(out["estimated_equity"], int)
     assert out["ownership_years"] >= 0
+    # Garage now pulled from the nested features object (was previously dropped).
+    assert out["garage_spaces"] == 2
+    assert out["garage_type"] == "Attached"
+
+
+def test_rentcast_detail_missing_features_block(monkeypatch):
+    # No features object → garage fields are None, not a crash.
+    monkeypatch.setattr(prop, "get_json", lambda *a, **k: [{"price": 100000}])
+    out = prop._rentcast_detail("x", "y")
+    assert out["garage_spaces"] is None
+    assert out["garage_type"] is None
