@@ -8,7 +8,7 @@ POST /api/tasks/{id}/complete     — mark done
 DELETE /api/tasks/{id}            — delete (owner only)
 GET  /api/leads/{lead_id}/tasks   — tasks for a specific lead
 """
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -44,7 +44,7 @@ class Task(BaseModel):
     property_id: Optional[int] = None
     assigned_to: Optional[int] = None
     title: str
-    due_date: Optional[str] = None
+    due_date: Optional[date] = None
     priority: str
     is_complete: bool
     completed_at: Optional[datetime] = None
