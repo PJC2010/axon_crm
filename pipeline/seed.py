@@ -168,7 +168,8 @@ def _normalize_rentcast(p: dict, origin_zip: str | None = None) -> dict:
     flags = {"seed": "rentcast"}
     if origin_zip and p.get("zipCode") != origin_zip:
         flags["seed_origin_zip"] = origin_zip
-    # Garage data lives in the nested `features` object in the records response.
+    # Garage data lives in the nested `features` object; owner name lives in the
+    # nested `owner.names` list (NOT a flat `ownerName` field — confirmed live).
     features = p.get("features") or {}
     return {
         "address":         p.get("addressLine1", ""),
@@ -183,9 +184,23 @@ def _normalize_rentcast(p: dict, origin_zip: str | None = None) -> dict:
         "estimated_value": p.get("price"),
         "last_sale_date":  p.get("lastSaleDate"),
         "last_sale_price": p.get("lastSalePrice"),
-        "owner_name":      p.get("ownerName"),
+        "owner_name":      _owner_name(p),
         "owner_occupied":  p.get("ownerOccupied"),
         "garage_spaces":   features.get("garageSpaces"),
         "garage_type":     features.get("garageType"),
         "enrichment_flags": flags,
     }
+
+
+def _owner_name(p: dict) -> str | None:
+    """Pull the owner name from a RentCast record.
+
+    RentCast nests this as `owner.names` (a list, e.g. ["JOHN SMITH"]); the first
+    entry is used. Falls back to a flat `ownerName` for robustness against older
+    or differently-shaped responses.
+    """
+    owner = p.get("owner") or {}
+    names = owner.get("names")
+    if isinstance(names, list) and names:
+        return names[0]
+    return p.get("ownerName")

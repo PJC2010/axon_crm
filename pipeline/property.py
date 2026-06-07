@@ -115,8 +115,13 @@ def _rentcast_detail(address: str, zip_code: str) -> dict | None:
         except (ValueError, TypeError):
             pass
 
-    # Garage data lives in the nested `features` object in the records response.
+    # Garage data lives in the nested `features` object; owner name lives in the
+    # nested `owner.names` list (NOT a flat `ownerName` field — confirmed live).
     features = p.get("features") or {}
+    owner = p.get("owner") or {}
+    owner_names = owner.get("names")
+    owner_name = (owner_names[0] if isinstance(owner_names, list) and owner_names
+                  else p.get("ownerName"))
 
     return {
         "year_built":       p.get("yearBuilt"),
@@ -125,7 +130,7 @@ def _rentcast_detail(address: str, zip_code: str) -> dict | None:
         "estimated_equity": estimate_equity(value, sale_price, sale_date),
         "last_sale_date":   sale_date,
         "last_sale_price":  sale_price,
-        "owner_name":       p.get("ownerName"),
+        "owner_name":       owner_name,
         "owner_occupied":   p.get("ownerOccupied"),
         "ownership_years":  ownership_years,
         "garage_spaces":    features.get("garageSpaces"),

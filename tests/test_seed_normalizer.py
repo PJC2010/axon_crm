@@ -27,6 +27,22 @@ def test_normalize_missing_features_block():
     row = _normalize_rentcast({"addressLine1": "1 A St", "zipCode": "77002"})
     assert row["garage_spaces"] is None
     assert row["garage_type"] is None
+    assert row["owner_name"] is None
+
+
+def test_normalize_extracts_owner_name_from_nested_list():
+    # Real RentCast shape: owner.names is a list; first entry is the owner.
+    record = {"addressLine1": "5 B St", "zipCode": "77002",
+              "owner": {"names": ["ACME HOLDINGS LLC"], "type": "Organization"}}
+    row = _normalize_rentcast(record)
+    assert row["owner_name"] == "ACME HOLDINGS LLC"
+
+
+def test_normalize_owner_flat_fallback():
+    # No nested owner object → fall back to a flat ownerName if present.
+    row = _normalize_rentcast({"addressLine1": "6 C St", "zipCode": "77002",
+                               "ownerName": "FLAT OWNER"})
+    assert row["owner_name"] == "FLAT OWNER"
 
 
 def test_normalize_records_origin_zip_in_flags():
