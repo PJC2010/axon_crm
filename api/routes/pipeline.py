@@ -51,17 +51,28 @@ class ScheduleCreate(BaseModel):
     vertical: Optional[str] = None
     day_of_week: str = "monday"
     hour: int = 6
+    # Volume controls (optional): Top-N cap + radius-from-address narrowing.
+    top_n: Optional[int] = None
+    center_address: Optional[str] = None
+    radius_mi: Optional[float] = None
 
 
 class ScheduleUpdate(BaseModel):
     is_active: Optional[bool] = None
     day_of_week: Optional[str] = None
     hour: Optional[int] = None
+    top_n: Optional[int] = None
+    center_address: Optional[str] = None
+    radius_mi: Optional[float] = None
 
 
 class RunCreate(BaseModel):
     zip: str
     vertical: Optional[str] = None
+    # Volume controls (optional): Top-N cap + radius-from-address narrowing.
+    top_n: Optional[int] = None
+    center_address: Optional[str] = None
+    radius_mi: Optional[float] = None
 
 
 # ── Pipeline Stages ──────────────────────────────────────────────────────
@@ -317,9 +328,11 @@ def create_schedule(body: ScheduleCreate, current_user: dict = Depends(require_o
     from api.scheduler import add_schedule_job
     with db.cursor() as cur:
         cur.execute(
-            "INSERT INTO pipeline_schedules (zip, vertical, day_of_week, hour, created_by) "
-            "VALUES (%s, %s, %s, %s, %s) RETURNING *",
-            (body.zip, body.vertical, body.day_of_week, body.hour, current_user["id"]),
+            "INSERT INTO pipeline_schedules "
+            "(zip, vertical, day_of_week, hour, top_n, center_address, radius_mi, created_by) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
+            (body.zip, body.vertical, body.day_of_week, body.hour,
+             body.top_n, body.center_address, body.radius_mi, current_user["id"]),
         )
         row = dict_fetchone(cur)
         db.commit()
@@ -342,6 +355,12 @@ def update_schedule(
         sets.append("day_of_week = %s"); params.append(body.day_of_week)
     if body.hour is not None:
         sets.append("hour = %s"); params.append(body.hour)
+    if body.top_n is not None:
+        sets.append("top_n = %s"); params.append(body.top_n)
+    if body.center_address is not None:
+        sets.append("center_address = %s"); params.append(body.center_address)
+    if body.radius_mi is not None:
+        sets.append("radius_mi = %s"); params.append(body.radius_mi)
     if not sets:
         raise HTTPException(status_code=400, detail="Nothing to update")
     params.append(schedule_id)
@@ -379,12 +398,15 @@ def trigger_run(body: RunCreate, current_user: dict = Depends(require_owner), db
     from api.scheduler import enqueue_run
     with db.cursor() as cur:
         cur.execute(
-            "INSERT INTO pipeline_runs (zip, vertical, triggered_by) VALUES (%s, %s, 'manual') RETURNING *",
-            (body.zip, body.vertical),
+            "INSERT INTO pipeline_runs "
+            "(zip, vertical, top_n, center_address, radius_mi, triggered_by) "
+            "VALUES (%s, %s, %s, %s, %s, 'manual') RETURNING *",
+            (body.zip, body.vertical, body.top_n, body.center_address, body.radius_mi),
         )
         run = dict_fetchone(cur)
         db.commit()
-    enqueue_run(run["id"], body.zip, body.vertical)
+    enqueue_run(run["id"], body.zip, body.vertical, top_n=body.top_n,
+                center_address=body.center_address, radius_mi=body.radius_mi)
     return run
 
 

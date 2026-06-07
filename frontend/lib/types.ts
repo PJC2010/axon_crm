@@ -175,6 +175,9 @@ export interface PipelineSchedule {
   day_of_week: string
   hour: number
   is_active: boolean
+  top_n: number | null
+  center_address: string | null
+  radius_mi: number | null
   created_at: string
 }
 
@@ -185,6 +188,9 @@ export interface PipelineRun {
   vertical: string | null
   status: 'queued' | 'running' | 'done' | 'failed'
   triggered_by: string
+  top_n: number | null
+  center_address: string | null
+  radius_mi: number | null
   started_at: string | null
   finished_at: string | null
   result_json: Record<string, unknown> | null

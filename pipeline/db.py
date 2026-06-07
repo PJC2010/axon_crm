@@ -78,8 +78,13 @@ def fetch_by_zip(conn, zip_code: str) -> list[dict]:
         return [dict(r) for r in cur.fetchall()]
 
 
-def fetch_missing_field(conn, field: str, zip_code: str | None = None) -> list[dict]:
-    """Return properties where a given field is NULL."""
+def fetch_missing_field(conn, field: str, zip_code: str | None = None,
+                        selected_only: bool = False) -> list[dict]:
+    """Return properties where a given field is NULL.
+
+    When `selected_only` is True, restrict to rows the selection step picked for
+    paid enrichment (enrichment_selected = TRUE). Used by capped/radius runs.
+    """
     if field not in ALL_COLS:
         raise ValueError(f"Unknown field: {field}")
     where = f"WHERE {field} IS NULL"
@@ -87,16 +92,22 @@ def fetch_missing_field(conn, field: str, zip_code: str | None = None) -> list[d
     if zip_code:
         where += " AND zip = %s"
         params.append(zip_code)
+    if selected_only:
+        where += " AND enrichment_selected = TRUE"
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(f"SELECT * FROM properties {where}", params)
         return [dict(r) for r in cur.fetchall()]
 
 
-def fetch_missing_any(conn, fields: list[str], zip_code: str | None = None) -> list[dict]:
+def fetch_missing_any(conn, fields: list[str], zip_code: str | None = None,
+                      selected_only: bool = False) -> list[dict]:
     """Return properties where AT LEAST ONE of `fields` is NULL.
 
     Column names are validated against ALL_COLS before interpolation, so this is
     safe despite building SQL from `fields`.
+
+    When `selected_only` is True, restrict to rows the selection step picked for
+    paid enrichment (enrichment_selected = TRUE). Used by capped/radius runs.
     """
     bad = [f for f in fields if f not in ALL_COLS]
     if bad:
@@ -109,6 +120,8 @@ def fetch_missing_any(conn, fields: list[str], zip_code: str | None = None) -> l
     if zip_code:
         where += " AND zip = %s"
         params.append(zip_code)
+    if selected_only:
+        where += " AND enrichment_selected = TRUE"
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(f"SELECT * FROM properties {where}", params)
         return [dict(r) for r in cur.fetchall()]

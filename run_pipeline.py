@@ -48,6 +48,10 @@ def _zip_already_seeded(zip_code: str) -> bool:
 
 def run_zip(zip_code: str, args) -> None:
     skip = set(s.strip() for s in (args.skip or "").split(",") if s.strip())
+    top_n = getattr(args, "top_n", None)
+    radius_mi = getattr(args, "radius", None)
+    center_address = getattr(args, "address", None)
+    capped = bool(top_n or (center_address and radius_mi))
     log.info("━━━  ZIP %s  ━━━", zip_code)
 
     if "seed" not in skip:
@@ -85,9 +89,28 @@ def run_zip(zip_code: str, args) -> None:
     else:
         log.info("[4/7] HCAD: skipped")
 
+    # Selection (volume control) — after all FREE steps, before any PAID step.
+    if capped and "select" not in skip:
+        from pipeline.db import get_conn
+        from pipeline.select import select_for_enrichment
+        from pipeline.geocode import geocode_address
+        center = None
+        if center_address and radius_mi:
+            center = geocode_address(center_address)
+            if center is None:
+                log.warning("Could not geocode --address %r — radius filter skipped",
+                            center_address)
+        conn = get_conn()
+        try:
+            res = select_for_enrichment(conn, zip_code, top_n=top_n, center=center,
+                                        radius_mi=radius_mi, vertical=args.vertical)
+        finally:
+            conn.close()
+        log.info("[4.5/8] Selection: %s", res)
+
     if "property" not in skip:
         from pipeline.property import enrich_property
-        counters = enrich_property(zip_code)
+        counters = enrich_property(zip_code, selected_only=capped)
         log.info("[5/8] Property detail (RentCast/ATTOM): %s",
                  _fmt_counters(counters))
     else:
@@ -107,10 +130,22 @@ def run_zip(zip_code: str, args) -> None:
     else:
         log.info("[7/8] Scoring: skipped")
 
+    # Precision trim: cut the over-sampled selection back to exactly top_n using
+    # the now-available real scores, before the paid skip-trace step.
+    if capped and top_n and "score" not in skip:
+        from pipeline.db import get_conn
+        from pipeline.select import trim_to_top_n
+        conn = get_conn()
+        try:
+            kept = trim_to_top_n(conn, zip_code, top_n)
+        finally:
+            conn.close()
+        log.info("[7.5/8] Trim: kept top %d", kept)
+
     # Contact runs after scoring so the optional min-grade gate can apply.
     if "contact" not in skip:
         from pipeline.contact import enrich_contact
-        c = enrich_contact(zip_code)
+        c = enrich_contact(zip_code, selected_only=capped)
         log.info("[8/8] Contact: %d filled%s", c.get("updated", 0),
                  " (skipped: no provider)" if c.get("skipped_no_key") else "")
     else:
@@ -144,9 +179,16 @@ def main():
     parser.add_argument("--permit-csv", default=None,
                         help="CSV file with permit counts (address, zip, permit_count)")
     parser.add_argument("--skip",       default="",
-                        help="Comma-separated steps to skip: seed,census,geocode,hcad,property,permits,score,contact")
+                        help="Comma-separated steps to skip: seed,census,geocode,hcad,select,property,permits,score,contact")
     parser.add_argument("--limit",      type=int, default=None,
                         help="Cap the number of seeded records (useful for testing)")
+    parser.add_argument("--top-n",      type=int, default=None, dest="top_n",
+                        help="Keep only the top N leads per ZIP before paid enrichment "
+                             "(cuts RentCast/Attom/skip-trace cost)")
+    parser.add_argument("--address",    default=None,
+                        help="Center address for radius narrowing (with --radius)")
+    parser.add_argument("--radius",     type=float, default=None,
+                        help="Miles from --address; only homes inside the circle are enriched")
     parser.add_argument("--force-seed", action="store_true", default=False,
                         help="Re-fetch from RentCast even if the ZIP already has properties in the DB")
 

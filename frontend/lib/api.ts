@@ -1,7 +1,10 @@
 import type { Lead, LeadPage, LeadFilters, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, WorkflowRule, WorkflowRuleCreate, ScoreExplanation } from './types'
 import { getToken, clearToken } from './auth'
 
-const BASE = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000') + '/api'
+// Use 127.0.0.1 (not localhost): on macOS `localhost` resolves to IPv6 ::1
+// first, but the dev backend binds IPv4, so localhost can fail with
+// "Failed to fetch". 127.0.0.1 forces IPv4 and is unambiguous.
+const BASE = (process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000') + '/api'
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken()
@@ -212,11 +215,17 @@ export function getSchedules(): Promise<PipelineSchedule[]> {
   return req('/pipeline-schedules')
 }
 
-export function createSchedule(body: { zip: string; vertical?: string; day_of_week: string; hour: number }): Promise<PipelineSchedule> {
+export interface VolumeControls {
+  top_n?: number
+  center_address?: string
+  radius_mi?: number
+}
+
+export function createSchedule(body: { zip: string; vertical?: string; day_of_week: string; hour: number } & VolumeControls): Promise<PipelineSchedule> {
   return req('/pipeline-schedules', { method: 'POST', body: JSON.stringify(body) })
 }
 
-export function updateSchedule(id: number, body: { is_active?: boolean; day_of_week?: string; hour?: number }): Promise<PipelineSchedule> {
+export function updateSchedule(id: number, body: { is_active?: boolean; day_of_week?: string; hour?: number } & VolumeControls): Promise<PipelineSchedule> {
   return req(`/pipeline-schedules/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
 }
 
@@ -224,8 +233,8 @@ export function deleteSchedule(id: number): Promise<void> {
   return req<void>(`/pipeline-schedules/${id}`, { method: 'DELETE' })
 }
 
-export function triggerRun(zip: string, vertical?: string): Promise<PipelineRun> {
-  return req('/pipeline/run', { method: 'POST', body: JSON.stringify({ zip, vertical }) })
+export function triggerRun(zip: string, vertical?: string, controls: VolumeControls = {}): Promise<PipelineRun> {
+  return req('/pipeline/run', { method: 'POST', body: JSON.stringify({ zip, vertical, ...controls }) })
 }
 
 export function getPipelineRuns(limit = 20): Promise<PipelineRun[]> {

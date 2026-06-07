@@ -43,11 +43,17 @@ function SettingsPage() {
   const [vertical, setVertical] = useState('')
   const [day, setDay] = useState('monday')
   const [hour, setHour] = useState(6)
+  const [topN, setTopN] = useState('')
+  const [nearAddress, setNearAddress] = useState('')
+  const [radiusMi, setRadiusMi] = useState('')
   const [saving, setSaving] = useState(false)
 
   // Manual run state
   const [runZip, setRunZip] = useState('')
   const [runVertical, setRunVertical] = useState('')
+  const [runTopN, setRunTopN] = useState('')
+  const [runNearAddress, setRunNearAddress] = useState('')
+  const [runRadiusMi, setRunRadiusMi] = useState('')
   const [triggering, setTriggering] = useState(false)
   const [rescoring, setRescoring] = useState(false)
   const [rescoringAll, setRescoringAll] = useState(false)
@@ -73,13 +79,26 @@ function SettingsPage() {
     return () => clearInterval(id)
   }, [runs])
 
+  function buildControls(n: string, addr: string, radius: string) {
+    const controls: { top_n?: number; center_address?: string; radius_mi?: number } = {}
+    if (n.trim()) controls.top_n = Number(n)
+    if (addr.trim() && radius.trim()) {
+      controls.center_address = addr.trim()
+      controls.radius_mi = Number(radius)
+    }
+    return controls
+  }
+
   async function handleAddSchedule(e: FormEvent) {
     e.preventDefault()
     if (!zip.trim()) return
     setSaving(true)
     try {
-      await createSchedule({ zip: zip.trim(), vertical: vertical || undefined, day_of_week: day, hour })
-      setZip('')
+      await createSchedule({
+        zip: zip.trim(), vertical: vertical || undefined, day_of_week: day, hour,
+        ...buildControls(topN, nearAddress, radiusMi),
+      })
+      setZip(''); setTopN(''); setNearAddress(''); setRadiusMi('')
       await loadData()
     } finally {
       setSaving(false)
@@ -102,8 +121,9 @@ function SettingsPage() {
     if (!runZip.trim()) return
     setTriggering(true)
     try {
-      await triggerRun(runZip.trim(), runVertical || undefined)
-      setRunZip('')
+      await triggerRun(runZip.trim(), runVertical || undefined,
+        buildControls(runTopN, runNearAddress, runRadiusMi))
+      setRunZip(''); setRunTopN(''); setRunNearAddress(''); setRunRadiusMi('')
       await getPipelineRuns().then(setRuns)
     } finally {
       setTriggering(false)
@@ -145,6 +165,9 @@ function SettingsPage() {
             <select value={runVertical} onChange={e => setRunVertical(e.target.value)} className="drawer-input">
               {VERTICALS.map(v => <option key={v} value={v}>{v || 'Default'}</option>)}
             </select>
+            <input type="number" min={1} value={runTopN} onChange={e => setRunTopN(e.target.value)} placeholder="Leads/run" title="Cap leads enriched per run (saves API cost). Blank = whole ZIP." className="drawer-input" style={{ width: 110 }} />
+            <input type="text" value={runNearAddress} onChange={e => setRunNearAddress(e.target.value)} placeholder="Near address (optional)" title="Only enrich homes within the radius of this address" className="drawer-input" style={{ width: 200 }} />
+            <input type="number" min={0} step={0.5} value={runRadiusMi} onChange={e => setRunRadiusMi(e.target.value)} placeholder="mi" title="Radius in miles from the address above" className="drawer-input" style={{ width: 70 }} disabled={!runNearAddress.trim()} />
             <button type="submit" disabled={triggering || !runZip.trim()} style={{
               padding: '0 16px', height: 36, background: 'var(--color-ink-900)', color: 'var(--color-paper)',
               border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, cursor: triggering ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6,
@@ -207,7 +230,7 @@ function SettingsPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 16, fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--color-ink-200)' }}>
-                  {['ZIP', 'Vertical', 'Schedule', 'Active', ''].map(h => (
+                  {['ZIP', 'Vertical', 'Limit', 'Schedule', 'Active', ''].map(h => (
                     <th key={h} style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--color-ink-400)', fontWeight: 500, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
                   ))}
                 </tr>
@@ -217,6 +240,11 @@ function SettingsPage() {
                   <tr key={s.id} style={{ borderBottom: '1px solid var(--color-ink-100)' }}>
                     <td style={{ padding: '8px', fontWeight: 500 }}>{s.zip}</td>
                     <td style={{ padding: '8px', color: 'var(--color-ink-500)' }}>{s.vertical || '—'}</td>
+                    <td style={{ padding: '8px', color: 'var(--color-ink-500)' }}>
+                      {[s.top_n ? `top ${s.top_n}` : null,
+                        s.center_address && s.radius_mi ? `${s.radius_mi}mi` : null]
+                        .filter(Boolean).join(' · ') || '—'}
+                    </td>
                     <td style={{ padding: '8px', color: 'var(--color-ink-500)', textTransform: 'capitalize' }}>{s.day_of_week} {s.hour}:00 UTC</td>
                     <td style={{ padding: '8px' }}>
                       <button
@@ -256,6 +284,9 @@ function SettingsPage() {
             <select value={hour} onChange={e => setHour(Number(e.target.value))} className="drawer-input">
               {Array.from({ length: 24 }, (_, i) => <option key={i} value={i}>{String(i).padStart(2, '0')}:00 UTC</option>)}
             </select>
+            <input type="number" min={1} value={topN} onChange={e => setTopN(e.target.value)} placeholder="Leads/run" title="Cap leads enriched per run (saves API cost). Blank = whole ZIP." className="drawer-input" style={{ width: 110 }} />
+            <input type="text" value={nearAddress} onChange={e => setNearAddress(e.target.value)} placeholder="Near address (optional)" title="Only enrich homes within the radius of this address" className="drawer-input" style={{ width: 180 }} />
+            <input type="number" min={0} step={0.5} value={radiusMi} onChange={e => setRadiusMi(e.target.value)} placeholder="mi" title="Radius in miles from the address above" className="drawer-input" style={{ width: 70 }} disabled={!nearAddress.trim()} />
             <button type="submit" disabled={saving} style={{
               padding: '0 14px', height: 36, background: 'var(--color-surface)', color: 'var(--color-ink-800)',
               border: '1px solid var(--color-ink-200)', borderRadius: 'var(--radius-pill)', fontSize: 13, cursor: saving ? 'not-allowed' : 'pointer',

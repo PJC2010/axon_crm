@@ -54,6 +54,18 @@ def enrich_geocode(zip_code: str | None = None) -> int:
     return n
 
 
+def geocode_address(address: str) -> tuple[float, float] | None:
+    """Public one-shot geocode: turn a free-text address into (lat, lng).
+
+    Returns None if no key is set or the lookup fails. Used by the selection
+    step to resolve the center point for radius-from-address narrowing.
+    """
+    if not GOOGLE_GEOCODE_KEY:
+        log.warning("GOOGLE_GEOCODE_KEY not set — cannot geocode center address.")
+        return None
+    return _geocode(address)
+
+
 def _geocode(address: str) -> tuple[float, float] | None:
     data = get_json(
         GOOGLE_GEOCODE_URL,

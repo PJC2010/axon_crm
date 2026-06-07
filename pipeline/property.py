@@ -41,8 +41,12 @@ _SOURCE_CONFIG = {
 }
 
 
-def enrich_property(zip_code: str | None = None) -> dict:
+def enrich_property(zip_code: str | None = None, selected_only: bool = False) -> dict:
     """Run each configured source in priority order.
+
+    When `selected_only` is True (capped/radius runs), only rows the selection
+    step marked enrichment_selected = TRUE are enriched, keeping paid calls
+    bounded to the chosen subset.
 
     Returns per-source counters: {source: {"ok", "fail", "updated",
     "skipped_no_key"}}.
@@ -63,7 +67,8 @@ def enrich_property(zip_code: str | None = None) -> dict:
                             source.upper(), source)
                 continue
 
-            rows = fetch_missing_any(conn, SOURCE_FIELDS[source], zip_code)
+            rows = fetch_missing_any(conn, SOURCE_FIELDS[source], zip_code,
+                                     selected_only=selected_only)
             if cfg["cap"]:
                 rows = rows[: cfg["cap"]]
             if not rows:
