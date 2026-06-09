@@ -31,11 +31,11 @@ def export_leads(
     status: str | None = Query(None),
     sort: str = Query("score"),
     db: PGConn = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
 ):
     order = SORT_MAP.get(sort, SORT_MAP["score"])
-    conditions, params = _build_filters(zip=zip, grade=grade, vertical=vertical, status=status)
-    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    conditions, params = _build_filters(user["account_id"], zip=zip, grade=grade, vertical=vertical, status=status)
+    where = f"WHERE {' AND '.join(conditions)}"
 
     with db.cursor() as cur:
         cur.execute(

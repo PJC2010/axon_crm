@@ -35,10 +35,10 @@ def list_leads(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: PGConn = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
 ):
     order = SORT_MAP.get(sort, SORT_MAP["score"])
-    conditions, params = _build_filters(zip=zip, grade=grade, vertical=vertical, status=status)
+    conditions, params = _build_filters(user["account_id"], zip=zip, grade=grade, vertical=vertical, status=status)
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     offset = (page - 1) * page_size
 
@@ -57,9 +57,9 @@ def list_leads(
 
 
 @router.get("/leads/{lead_id}", response_model=Lead)
-def get_lead(lead_id: int, db: PGConn = Depends(get_db), _: dict = Depends(get_current_user)):
+def get_lead(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
     with db.cursor() as cur:
-        cur.execute("SELECT * FROM properties WHERE id = %s", (lead_id,))
+        cur.execute("SELECT * FROM properties WHERE id = %s AND account_id = %s", (lead_id, user["account_id"]))
         row = dict_fetchone(cur)
     if not row:
         raise HTTPException(status_code=404, detail="Lead not found")
@@ -67,11 +67,11 @@ def get_lead(lead_id: int, db: PGConn = Depends(get_db), _: dict = Depends(get_c
 
 
 @router.get("/leads/{lead_id}/score-explanation", response_model=ScoreExplanation)
-def get_score_explanation(lead_id: int, db: PGConn = Depends(get_db), _: dict = Depends(get_current_user)):
+def get_score_explanation(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
     """Explain why a lead scored the way it did: per-factor contributions plus a
     description of the weighting profile used for the lead's vertical."""
     with db.cursor() as cur:
-        cur.execute("SELECT * FROM properties WHERE id = %s", (lead_id,))
+        cur.execute("SELECT * FROM properties WHERE id = %s AND account_id = %s", (lead_id, user["account_id"]))
         row = dict_fetchone(cur)
     if not row:
         raise HTTPException(status_code=404, detail="Lead not found")
@@ -104,14 +104,15 @@ def get_score_explanation(lead_id: int, db: PGConn = Depends(get_db), _: dict = 
 @router.patch("/leads/{lead_id}/status", response_model=Lead)
 def update_status(lead_id: int, body: StatusUpdate, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
     body.validate_status()
+    acct = user["account_id"]
     with db.cursor() as cur:
-        cur.execute("SELECT status FROM properties WHERE id = %s", (lead_id,))
+        cur.execute("SELECT status FROM properties WHERE id = %s AND account_id = %s", (lead_id, acct))
         prev = cur.fetchone()
         old_status = prev[0] if prev else None
 
         cur.execute(
-            "UPDATE properties SET status = %s, stage_moved_at = NOW() WHERE id = %s RETURNING *",
-            (body.status, lead_id),
+            "UPDATE properties SET status = %s, stage_moved_at = NOW() WHERE id = %s AND account_id = %s RETURNING *",
+            (body.status, lead_id, acct),
         )
         row = dict_fetchone(cur)
         if not row:
@@ -125,22 +126,22 @@ def update_status(lead_id: int, body: StatusUpdate, db: PGConn = Depends(get_db)
         db.commit()
 
     from api.workflow_engine import execute_status_change_rules
-    workflow_results = execute_status_change_rules(db, lead_id, old_status, body.status, user["id"])
+    workflow_results = execute_status_change_rules(db, lead_id, old_status, body.status, user["id"], acct)
 
     lead = Lead(**row)
     return lead
 
 
 @router.patch("/leads/{lead_id}/contact", response_model=Lead)
-def update_contact(lead_id: int, body: LeadContactUpdate, db: PGConn = Depends(get_db), _: dict = Depends(get_current_user)):
+def update_contact(lead_id: int, body: LeadContactUpdate, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
     if not fields:
         raise HTTPException(status_code=400, detail="Nothing to update")
     sets = [f"{k} = %s" for k in fields]
-    params = list(fields.values()) + [lead_id]
+    params = list(fields.values()) + [lead_id, user["account_id"]]
     with db.cursor() as cur:
         cur.execute(
-            f"UPDATE properties SET {', '.join(sets)} WHERE id = %s RETURNING *",
+            f"UPDATE properties SET {', '.join(sets)} WHERE id = %s AND account_id = %s RETURNING *",
             params,
         )
         row = dict_fetchone(cur)
@@ -151,8 +152,11 @@ def update_contact(lead_id: int, body: LeadContactUpdate, db: PGConn = Depends(g
 
 
 @router.get("/leads/{lead_id}/timeline")
-def get_timeline(lead_id: int, db: PGConn = Depends(get_db), _: dict = Depends(get_current_user)):
+def get_timeline(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
     with db.cursor() as cur:
+        cur.execute("SELECT 1 FROM properties WHERE id = %s AND account_id = %s", (lead_id, user["account_id"]))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Lead not found")
         cur.execute(
             "SELECT id, property_id, 'history' AS type, action AS title, outcome AS detail, "
             "created_at FROM contact_history WHERE property_id = %s "
@@ -171,19 +175,22 @@ def get_timeline(lead_id: int, db: PGConn = Depends(get_db), _: dict = Depends(g
 
 
 @router.get("/zips")
-def list_zips(db: PGConn = Depends(get_db), _: dict = Depends(get_current_user)):
+def list_zips(db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
     with db.cursor() as cur:
-        cur.execute("SELECT DISTINCT zip FROM properties WHERE zip IS NOT NULL ORDER BY zip")
+        cur.execute(
+            "SELECT DISTINCT zip FROM properties WHERE zip IS NOT NULL AND account_id = %s ORDER BY zip",
+            (user["account_id"],),
+        )
         return [r[0] for r in cur.fetchall()]
 
 
 @router.post("/leads/{lead_id}/archive", response_model=Lead)
-def archive_lead(lead_id: int, db: PGConn = Depends(get_db), _: dict = Depends(get_current_user)):
+def archive_lead(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
     """Soft-delete: mark lead as archived"""
     with db.cursor() as cur:
         cur.execute(
-            "UPDATE properties SET archived_at = NOW() WHERE id = %s RETURNING *",
-            (lead_id,)
+            "UPDATE properties SET archived_at = NOW() WHERE id = %s AND account_id = %s RETURNING *",
+            (lead_id, user["account_id"])
         )
         row = dict_fetchone(cur)
     if not row:
@@ -193,12 +200,12 @@ def archive_lead(lead_id: int, db: PGConn = Depends(get_db), _: dict = Depends(g
 
 
 @router.post("/leads/{lead_id}/unarchive", response_model=Lead)
-def unarchive_lead(lead_id: int, db: PGConn = Depends(get_db), _: dict = Depends(get_current_user)):
+def unarchive_lead(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
     """Restore archived lead"""
     with db.cursor() as cur:
         cur.execute(
-            "UPDATE properties SET archived_at = NULL WHERE id = %s RETURNING *",
-            (lead_id,)
+            "UPDATE properties SET archived_at = NULL WHERE id = %s AND account_id = %s RETURNING *",
+            (lead_id, user["account_id"])
         )
         row = dict_fetchone(cur)
     if not row:
@@ -208,7 +215,7 @@ def unarchive_lead(lead_id: int, db: PGConn = Depends(get_db), _: dict = Depends
 
 
 @router.post("/leads/archive-bulk")
-def archive_bulk(body: dict, db: PGConn = Depends(get_db), _: dict = Depends(get_current_user)):
+def archive_bulk(body: dict, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
     """Bulk archive by IDs: {"ids": [1, 2, 3]}"""
     ids = body.get("ids", [])
     if not ids:
@@ -217,8 +224,8 @@ def archive_bulk(body: dict, db: PGConn = Depends(get_db), _: dict = Depends(get
     placeholders = ",".join(["%s"] * len(ids))
     with db.cursor() as cur:
         cur.execute(
-            f"UPDATE properties SET archived_at = NOW() WHERE id IN ({placeholders}) RETURNING id",
-            ids
+            f"UPDATE properties SET archived_at = NOW() WHERE id IN ({placeholders}) AND account_id = %s RETURNING id",
+            ids + [user["account_id"]]
         )
         updated = cur.fetchall()
     db.commit()
@@ -226,7 +233,7 @@ def archive_bulk(body: dict, db: PGConn = Depends(get_db), _: dict = Depends(get
 
 
 @router.post("/leads/unarchive-bulk")
-def unarchive_bulk(body: dict, db: PGConn = Depends(get_db), _: dict = Depends(get_current_user)):
+def unarchive_bulk(body: dict, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
     """Bulk unarchive by IDs: {"ids": [1, 2, 3]}"""
     ids = body.get("ids", [])
     if not ids:
@@ -235,8 +242,8 @@ def unarchive_bulk(body: dict, db: PGConn = Depends(get_db), _: dict = Depends(g
     placeholders = ",".join(["%s"] * len(ids))
     with db.cursor() as cur:
         cur.execute(
-            f"UPDATE properties SET archived_at = NULL WHERE id IN ({placeholders}) RETURNING id",
-            ids
+            f"UPDATE properties SET archived_at = NULL WHERE id IN ({placeholders}) AND account_id = %s RETURNING id",
+            ids + [user["account_id"]]
         )
         updated = cur.fetchall()
     db.commit()
@@ -250,10 +257,10 @@ def archive_by_filter(
     vertical: str | None = Query(None),
     status: str | None = Query(None),
     db: PGConn = Depends(get_db),
-    _: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
 ):
     """Archive all leads matching filters"""
-    conditions, params = _build_filters(zip=zip, grade=grade, vertical=vertical, status=status)
+    conditions, params = _build_filters(user["account_id"], zip=zip, grade=grade, vertical=vertical, status=status)
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
     with db.cursor() as cur:
@@ -268,8 +275,8 @@ def archive_by_filter(
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def _build_filters(**kwargs) -> tuple[list[str], list]:
-    conditions, params = [], []
+def _build_filters(account_id: int, **kwargs) -> tuple[list[str], list]:
+    conditions, params = ["account_id = %s"], [account_id]
     mapping = {
         "zip":      "zip = %s",
         "grade":    "score_grade = %s",

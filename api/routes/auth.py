@@ -47,6 +47,7 @@ class UserOut(BaseModel):
     email: str
     role: str
     is_active: bool
+    account_id: int
     onboarding_complete: bool = False
 
 
@@ -74,7 +75,7 @@ def login(body: LoginRequest, db: PGConn = Depends(get_db)):
 def me(current_user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
     with db.cursor() as cur:
         cur.execute(
-            "SELECT id, username, email, role, is_active, onboarding_complete FROM users WHERE id = %s",
+            "SELECT id, username, email, role, is_active, account_id, onboarding_complete FROM users WHERE id = %s",
             (current_user["id"],),
         )
         row = dict_fetchone(cur)
@@ -96,16 +97,21 @@ def complete_onboarding(current_user: dict = Depends(get_current_user), db: PGCo
 
 @router.get("/auth/checklist-status")
 def checklist_status(current_user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+    acct = current_user["account_id"]
     with db.cursor() as cur:
-        cur.execute("SELECT COUNT(*) FROM properties")
+        cur.execute("SELECT COUNT(*) FROM properties WHERE account_id = %s", (acct,))
         has_leads = cur.fetchone()[0] > 0
-        cur.execute("SELECT COUNT(*) FROM contact_history")
+        cur.execute(
+            "SELECT COUNT(*) FROM contact_history ch "
+            "JOIN properties p ON p.id = ch.property_id WHERE p.account_id = %s",
+            (acct,),
+        )
         has_contact = cur.fetchone()[0] > 0
-        cur.execute("SELECT COUNT(*) FROM invoices")
+        cur.execute("SELECT COUNT(*) FROM invoices WHERE account_id = %s", (acct,))
         has_invoice = cur.fetchone()[0] > 0
-        cur.execute("SELECT COUNT(*) FROM workflow_rules")
+        cur.execute("SELECT COUNT(*) FROM workflow_rules WHERE account_id = %s", (acct,))
         has_workflow = cur.fetchone()[0] > 0
-        cur.execute("SELECT COUNT(*) FROM expenses")
+        cur.execute("SELECT COUNT(*) FROM expenses WHERE account_id = %s", (acct,))
         has_expense = cur.fetchone()[0] > 0
     return {
         "has_leads": has_leads,
@@ -119,18 +125,19 @@ def checklist_status(current_user: dict = Depends(get_current_user), db: PGConn 
 @router.post("/users", response_model=UserOut, status_code=201)
 def create_user(
     body: UserCreate,
-    _: dict = Depends(require_owner),
+    current_user: dict = Depends(require_owner),
     db: PGConn = Depends(get_db),
 ):
     if body.role not in ("owner", "sales_rep"):
         raise HTTPException(status_code=400, detail="role must be owner or sales_rep")
     hashed = hash_password(body.password)
+    # New team members join the creator's org so they share the same leads.
     try:
         with db.cursor() as cur:
             cur.execute(
-                "INSERT INTO users (username, email, hashed_pw, role) "
-                "VALUES (%s, %s, %s, %s) RETURNING id, username, email, role, is_active",
-                (body.username, body.email, hashed, body.role),
+                "INSERT INTO users (username, email, hashed_pw, role, account_id) "
+                "VALUES (%s, %s, %s, %s, %s) RETURNING id, username, email, role, is_active, account_id",
+                (body.username, body.email, hashed, body.role, current_user["account_id"]),
             )
             row = dict_fetchone(cur)
             db.commit()
@@ -141,9 +148,13 @@ def create_user(
 
 
 @router.get("/users", response_model=list[UserOut])
-def list_users(_: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+def list_users(current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
     with db.cursor() as cur:
-        cur.execute("SELECT id, username, email, role, is_active FROM users ORDER BY id")
+        cur.execute(
+            "SELECT id, username, email, role, is_active, account_id FROM users "
+            "WHERE account_id = %s ORDER BY id",
+            (current_user["account_id"],),
+        )
         return [UserOut(**r) for r in dict_fetchall(cur)]
 
 
@@ -151,7 +162,7 @@ def list_users(_: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
 def update_user(
     user_id: int,
     body: UserUpdate,
-    _: dict = Depends(require_owner),
+    current_user: dict = Depends(require_owner),
     db: PGConn = Depends(get_db),
 ):
     sets, params = [], []
@@ -163,11 +174,11 @@ def update_user(
         sets.append("is_active = %s"); params.append(body.is_active)
     if not sets:
         raise HTTPException(status_code=400, detail="Nothing to update")
-    params.append(user_id)
+    params.extend([user_id, current_user["account_id"]])
     with db.cursor() as cur:
         cur.execute(
-            f"UPDATE users SET {', '.join(sets)} WHERE id = %s "
-            "RETURNING id, username, email, role, is_active",
+            f"UPDATE users SET {', '.join(sets)} WHERE id = %s AND account_id = %s "
+            "RETURNING id, username, email, role, is_active, account_id",
             params,
         )
         row = dict_fetchone(cur)

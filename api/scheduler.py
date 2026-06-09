@@ -40,7 +40,7 @@ def _job_id(schedule_id: int) -> str:
     return f"pipeline_schedule_{schedule_id}"
 
 
-def _run_pipeline(run_id: int, zip_code: str, vertical: str | None,
+def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: int,
                   top_n: int | None = None, center_address: str | None = None,
                   radius_mi: float | None = None):
     """Execute the enrichment pipeline step-by-step, checking for cancellation between steps.
@@ -85,26 +85,26 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None,
         # Step 1 — Seed
         if _check_cancel(): return
         from pipeline.seed import seed
-        n = seed(zip_code, csv_path=None, limit=None)
+        n = seed(zip_code, account_id, csv_path=None, limit=None)
         log.info("[1/8] run=%d Seed: %d records", run_id, n)
 
         # Step 2 — Census
         if _check_cancel(): return
         from pipeline.census import enrich_census
-        n = enrich_census(zip_code)
+        n = enrich_census(zip_code, account_id)
         log.info("[2/8] run=%d Census: %d updated", run_id, n)
 
         # Step 3 — Geocode
         if _check_cancel(): return
         from pipeline.geocode import enrich_geocode
-        n = enrich_geocode(zip_code)
+        n = enrich_geocode(zip_code, account_id)
         log.info("[3/8] run=%d Geocode: %d updated", run_id, n)
 
         # Step 4 — HCAD fallback (free) — runs BEFORE paid RentCast/Attom so they
         # only spend calls on fields HCAD couldn't fill.
         if _check_cancel(): return
         from pipeline.hcad_enrichment import enrich_hcad
-        n = enrich_hcad(zip_code)
+        n = enrich_hcad(zip_code, account_id)
         log.info("[4/8] run=%d HCAD fallback: %d backfilled", run_id, n)
 
         # Step 4.5 — Selection (volume control) — after all FREE steps, before
@@ -120,7 +120,7 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None,
                     log.warning("run=%d could not geocode center address %r — "
                                 "radius filter skipped", run_id, center_address)
             sources["selection"] = select_for_enrichment(
-                conn, zip_code, top_n=top_n, center=center,
+                conn, zip_code, account_id, top_n=top_n, center=center,
                 radius_mi=radius_mi, vertical=vertical,
             )
             log.info("[4.5/8] run=%d Selection: %s", run_id, sources["selection"])
@@ -128,20 +128,20 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None,
         # Step 5 — Property detail (RentCast → Attom)
         if _check_cancel(): return
         from pipeline.property import enrich_property
-        counters = enrich_property(zip_code, selected_only=capped)
+        counters = enrich_property(zip_code, account_id, selected_only=capped)
         sources.update(counters)
         log.info("[5/8] run=%d Property: %s", run_id, counters)
 
         # Step 6 — Permits
         if _check_cancel(): return
         from pipeline.permits import enrich_permits
-        n = enrich_permits(zip_code, csv_path=None)
+        n = enrich_permits(zip_code, account_id, csv_path=None)
         log.info("[6/8] run=%d Permits: %d updated", run_id, n)
 
         # Step 7 — Score
         if _check_cancel(): return
         from pipeline.scorer import score_zip
-        n = score_zip(zip_code, vertical=vertical)
+        n = score_zip(zip_code, account_id, vertical=vertical)
         log.info("[7/8] run=%d Scoring: %d scored", run_id, n)
 
         # Step 7.5 — Precision trim: now that real scores exist, cut the
@@ -149,18 +149,18 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None,
         if capped and top_n:
             if _check_cancel(): return
             from pipeline.select import trim_to_top_n
-            kept = trim_to_top_n(conn, zip_code, top_n)
+            kept = trim_to_top_n(conn, zip_code, account_id, top_n)
             log.info("[7.5/8] run=%d Trim: kept top %d", run_id, kept)
 
         # Step 8 — Contact / skip-trace (after scoring for optional grade gate)
         if _check_cancel(): return
         from pipeline.contact import enrich_contact
-        sources["contact"] = enrich_contact(zip_code, selected_only=capped)
+        sources["contact"] = enrich_contact(zip_code, account_id, selected_only=capped)
         log.info("[8/8] run=%d Contact: %s", run_id, sources["contact"])
 
         # Coverage snapshot for the frontend.
         from pipeline.coverage import fill_rates
-        coverage = fill_rates(conn, zip_code)
+        coverage = fill_rates(conn, zip_code, account_id)
 
         _set_status("done", {
             "status": "completed",
@@ -187,7 +187,7 @@ def _schedule_trigger(schedule: dict) -> CronTrigger:
     return CronTrigger(day_of_week=day, hour=hour, minute=0, timezone="UTC")
 
 
-def _scheduled_job(schedule_id: int, zip_code: str, vertical: str | None,
+def _scheduled_job(schedule_id: int, zip_code: str, vertical: str | None, account_id: int,
                    top_n: int | None = None, center_address: str | None = None,
                    radius_mi: float | None = None):
     """Wrapper that creates a pipeline_runs row then kicks off the pipeline."""
@@ -196,15 +196,15 @@ def _scheduled_job(schedule_id: int, zip_code: str, vertical: str | None,
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO pipeline_runs "
-                "(schedule_id, zip, vertical, top_n, center_address, radius_mi, triggered_by) "
-                "VALUES (%s, %s, %s, %s, %s, %s, 'schedule') RETURNING id",
-                (schedule_id, zip_code, vertical, top_n, center_address, radius_mi),
+                "(schedule_id, zip, vertical, top_n, center_address, radius_mi, triggered_by, account_id) "
+                "VALUES (%s, %s, %s, %s, %s, %s, 'schedule', %s) RETURNING id",
+                (schedule_id, zip_code, vertical, top_n, center_address, radius_mi, account_id),
             )
             run_id = cur.fetchone()[0]
         conn.commit()
     finally:
         conn.close()
-    _run_pipeline(run_id, zip_code, vertical, top_n=top_n,
+    _run_pipeline(run_id, zip_code, vertical, account_id, top_n=top_n,
                   center_address=center_address, radius_mi=radius_mi)
 
 
@@ -215,8 +215,8 @@ def add_schedule_job(schedule: dict):
         trigger=trigger,
         id=_job_id(schedule["id"]),
         args=[schedule["id"], schedule["zip"], schedule.get("vertical"),
-              schedule.get("top_n"), schedule.get("center_address"),
-              schedule.get("radius_mi")],
+              schedule["account_id"], schedule.get("top_n"),
+              schedule.get("center_address"), schedule.get("radius_mi")],
         replace_existing=True,
         misfire_grace_time=3600,
     )
@@ -229,14 +229,14 @@ def remove_schedule_job(schedule_id: int):
         scheduler.remove_job(job_id)
 
 
-def enqueue_run(run_id: int, zip_code: str, vertical: str | None,
+def enqueue_run(run_id: int, zip_code: str, vertical: str | None, account_id: int,
                 top_n: int | None = None, center_address: str | None = None,
                 radius_mi: float | None = None):
     """Fire a one-off pipeline run immediately in the thread pool."""
     scheduler.add_job(
         _run_pipeline,
         id=f"run_{run_id}",
-        args=[run_id, zip_code, vertical, top_n, center_address, radius_mi],
+        args=[run_id, zip_code, vertical, account_id, top_n, center_address, radius_mi],
         replace_existing=True,
     )
 

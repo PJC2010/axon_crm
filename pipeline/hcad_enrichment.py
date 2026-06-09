@@ -20,7 +20,7 @@ from pipeline import hcad_store
 log = logging.getLogger(__name__)
 
 
-def enrich_hcad(zip_code: str) -> int:
+def enrich_hcad(zip_code: str, account_id: int) -> int:
     hcad_map = hcad_store.query_properties(zip_code)
     ef_map   = hcad_store.query_extra_features(zip_code)
 
@@ -29,7 +29,7 @@ def enrich_hcad(zip_code: str) -> int:
         return 0
 
     conn = get_conn()
-    rows = fetch_by_zip(conn, zip_code)
+    rows = fetch_by_zip(conn, zip_code, account_id)
     updates = []
 
     for row in rows:
@@ -82,7 +82,7 @@ def enrich_hcad(zip_code: str) -> int:
             update["enrichment_flags"] = {"hcad": "assessor"}
             updates.append(update)
 
-    n = upsert_properties(conn, updates)
+    n = upsert_properties(conn, updates, account_id)
     conn.close()
     log.info("[4b] HCAD: backfilled %d properties in ZIP %s", n, zip_code)
     return n

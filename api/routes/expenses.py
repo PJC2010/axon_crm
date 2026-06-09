@@ -23,9 +23,9 @@ router = APIRouter()
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _build_where(year: Optional[int], month: Optional[int], category: Optional[str],
+def _build_where(account_id: int, year: Optional[int], month: Optional[int], category: Optional[str],
                  deductible: Optional[bool]) -> tuple[list[str], list]:
-    conditions, params = [], []
+    conditions, params = ["account_id = %s"], [account_id]
     if year:
         conditions.append("EXTRACT(YEAR FROM expense_date) = %s")
         params.append(year)
@@ -38,7 +38,7 @@ def _build_where(year: Optional[int], month: Optional[int], category: Optional[s
     if deductible is not None:
         conditions.append("is_tax_deductible = %s")
         params.append(deductible)
-    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    where = "WHERE " + " AND ".join(conditions)
     return where, params
 
 
@@ -48,10 +48,10 @@ def _build_where(year: Optional[int], month: Optional[int], category: Optional[s
 def expense_summary(
     year: Optional[int] = Query(None),
     month: Optional[int] = Query(None),
-    _: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
     db: PGConn = Depends(get_db),
 ):
-    where, params = _build_where(year, month, None, None)
+    where, params = _build_where(user["account_id"], year, month, None, None)
     with db.cursor() as cur:
         cur.execute(
             f"SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS count FROM expenses {where}",
@@ -67,7 +67,7 @@ def expense_summary(
         )
         by_cat = {r["category"]: float(r["subtotal"]) for r in dict_fetchall(cur)}
 
-        deduct_where, deduct_params = _build_where(year, month, None, True)
+        deduct_where, deduct_params = _build_where(user["account_id"], year, month, None, True)
         cur.execute(
             f"SELECT COALESCE(SUM(amount), 0) AS deductible FROM expenses {deduct_where}",
             deduct_params,
@@ -88,10 +88,10 @@ def export_expenses(
     month: Optional[int] = Query(None),
     category: Optional[str] = Query(None),
     deductible: Optional[bool] = Query(None),
-    _: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
     db: PGConn = Depends(get_db),
 ):
-    where, params = _build_where(year, month, category, deductible)
+    where, params = _build_where(user["account_id"], year, month, category, deductible)
     with db.cursor() as cur:
         cur.execute(
             f"SELECT expense_date, vendor, category, amount, payment_method, is_tax_deductible, description "
@@ -131,10 +131,10 @@ def list_expenses(
     deductible: Optional[bool] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
-    _: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
     db: PGConn = Depends(get_db),
 ):
-    where, params = _build_where(year, month, category, deductible)
+    where, params = _build_where(user["account_id"], year, month, category, deductible)
     offset = (page - 1) * page_size
 
     with db.cursor() as cur:
@@ -164,10 +164,11 @@ def create_expense(
     with db.cursor() as cur:
         cur.execute(
             "INSERT INTO expenses (amount, category, vendor, description, expense_date, payment_method, "
-            "is_tax_deductible, property_id, created_by) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
+            "is_tax_deductible, property_id, created_by, account_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
             (body.amount, body.category, body.vendor, body.description, body.expense_date,
-             body.payment_method, body.is_tax_deductible, body.property_id, current_user["id"]),
+             body.payment_method, body.is_tax_deductible, body.property_id, current_user["id"],
+             current_user["account_id"]),
         )
         row = dict_fetchone(cur)
         db.commit()
@@ -175,9 +176,9 @@ def create_expense(
 
 
 @router.get("/expenses/{expense_id}", response_model=Expense)
-def get_expense(expense_id: int, _: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+def get_expense(expense_id: int, user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
     with db.cursor() as cur:
-        cur.execute("SELECT * FROM expenses WHERE id = %s", (expense_id,))
+        cur.execute("SELECT * FROM expenses WHERE id = %s AND account_id = %s", (expense_id, user["account_id"]))
         row = dict_fetchone(cur)
     if not row:
         raise HTTPException(status_code=404, detail="Expense not found")
@@ -188,7 +189,7 @@ def get_expense(expense_id: int, _: dict = Depends(get_current_user), db: PGConn
 def update_expense(
     expense_id: int,
     body: ExpenseUpdate,
-    _: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
     db: PGConn = Depends(get_db),
 ):
     sets, params = ["updated_at = NOW()"], []
@@ -214,10 +215,10 @@ def update_expense(
     if body.property_id is not None:
         sets.append("property_id = %s"); params.append(body.property_id)
 
-    params.append(expense_id)
+    params.extend([expense_id, user["account_id"]])
     with db.cursor() as cur:
         cur.execute(
-            f"UPDATE expenses SET {', '.join(sets)} WHERE id = %s RETURNING *", params
+            f"UPDATE expenses SET {', '.join(sets)} WHERE id = %s AND account_id = %s RETURNING *", params
         )
         row = dict_fetchone(cur)
         db.commit()
@@ -227,9 +228,9 @@ def update_expense(
 
 
 @router.delete("/expenses/{expense_id}", status_code=204)
-def delete_expense(expense_id: int, _: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+def delete_expense(expense_id: int, user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
     with db.cursor() as cur:
-        cur.execute("DELETE FROM expenses WHERE id = %s RETURNING id", (expense_id,))
+        cur.execute("DELETE FROM expenses WHERE id = %s AND account_id = %s RETURNING id", (expense_id, user["account_id"]))
         deleted = cur.fetchone()
         db.commit()
     if not deleted:

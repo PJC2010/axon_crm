@@ -41,7 +41,7 @@ _SOURCE_CONFIG = {
 }
 
 
-def enrich_property(zip_code: str | None = None, selected_only: bool = False) -> dict:
+def enrich_property(zip_code: str, account_id: int, selected_only: bool = False) -> dict:
     """Run each configured source in priority order.
 
     When `selected_only` is True (capped/radius runs), only rows the selection
@@ -67,7 +67,7 @@ def enrich_property(zip_code: str | None = None, selected_only: bool = False) ->
                             source.upper(), source)
                 continue
 
-            rows = fetch_missing_any(conn, SOURCE_FIELDS[source], zip_code,
+            rows = fetch_missing_any(conn, SOURCE_FIELDS[source], account_id, zip_code,
                                      selected_only=selected_only)
             if cfg["cap"]:
                 rows = rows[: cfg["cap"]]
@@ -86,7 +86,7 @@ def enrich_property(zip_code: str | None = None, selected_only: bool = False) ->
                 else:
                     counter["fail"] += 1
                 time.sleep(cfg["delay"])
-            counter["updated"] = upsert_properties(conn, updates)
+            counter["updated"] = upsert_properties(conn, updates, account_id)
     finally:
         conn.close()
 

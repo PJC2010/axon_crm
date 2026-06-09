@@ -35,12 +35,12 @@ def _fmt_counters(counters: dict) -> str:
     return "; ".join(parts) or "nothing to do"
 
 
-def _zip_already_seeded(zip_code: str) -> bool:
-    """Return True if the ZIP already has properties in the DB."""
+def _zip_already_seeded(zip_code: str, account_id: int) -> bool:
+    """Return True if the ZIP already has properties for this org in the DB."""
     from pipeline.db import get_conn
     conn = get_conn()
     with conn.cursor() as cur:
-        cur.execute("SELECT 1 FROM properties WHERE zip = %s LIMIT 1", (zip_code,))
+        cur.execute("SELECT 1 FROM properties WHERE zip = %s AND account_id = %s LIMIT 1", (zip_code, account_id))
         exists = cur.fetchone() is not None
     conn.close()
     return exists
@@ -48,6 +48,7 @@ def _zip_already_seeded(zip_code: str) -> bool:
 
 def run_zip(zip_code: str, args) -> None:
     skip = set(s.strip() for s in (args.skip or "").split(",") if s.strip())
+    account_id = args.account_id
     top_n = getattr(args, "top_n", None)
     radius_mi = getattr(args, "radius", None)
     center_address = getattr(args, "address", None)
@@ -56,24 +57,24 @@ def run_zip(zip_code: str, args) -> None:
 
     if "seed" not in skip:
         from pipeline.seed import seed
-        if not args.force_seed and _zip_already_seeded(zip_code):
+        if not args.force_seed and _zip_already_seeded(zip_code, account_id):
             log.info("[1/7] Seed: skipped (ZIP already in DB — use --force-seed to re-fetch)")
         else:
-            n = seed(zip_code, csv_path=args.seed_csv, limit=args.limit)
+            n = seed(zip_code, account_id, csv_path=args.seed_csv, limit=args.limit)
             log.info("[1/7] Seed: %d records", n)
     else:
         log.info("[1/7] Seed: skipped")
 
     if "census" not in skip:
         from pipeline.census import enrich_census
-        n = enrich_census(zip_code)
+        n = enrich_census(zip_code, account_id)
         log.info("[2/7] Census: %d updated", n)
     else:
         log.info("[2/7] Census: skipped")
 
     if "geocode" not in skip:
         from pipeline.geocode import enrich_geocode
-        n = enrich_geocode(zip_code)
+        n = enrich_geocode(zip_code, account_id)
         log.info("[3/7] Geocode: %d updated", n)
     else:
         log.info("[3/7] Geocode: skipped")
@@ -84,7 +85,7 @@ def run_zip(zip_code: str, args) -> None:
     # and ATTOM see a smaller work queue and make fewer paid API calls.
     if "hcad" not in skip:
         from pipeline.hcad_enrichment import enrich_hcad
-        n = enrich_hcad(zip_code)
+        n = enrich_hcad(zip_code, account_id)
         log.info("[4/7] HCAD (free): %d fields backfilled", n)
     else:
         log.info("[4/7] HCAD: skipped")
@@ -102,7 +103,7 @@ def run_zip(zip_code: str, args) -> None:
                             center_address)
         conn = get_conn()
         try:
-            res = select_for_enrichment(conn, zip_code, top_n=top_n, center=center,
+            res = select_for_enrichment(conn, zip_code, account_id, top_n=top_n, center=center,
                                         radius_mi=radius_mi, vertical=args.vertical)
         finally:
             conn.close()
@@ -110,7 +111,7 @@ def run_zip(zip_code: str, args) -> None:
 
     if "property" not in skip:
         from pipeline.property import enrich_property
-        counters = enrich_property(zip_code, selected_only=capped)
+        counters = enrich_property(zip_code, account_id, selected_only=capped)
         log.info("[5/8] Property detail (RentCast/ATTOM): %s",
                  _fmt_counters(counters))
     else:
@@ -118,14 +119,14 @@ def run_zip(zip_code: str, args) -> None:
 
     if "permits" not in skip:
         from pipeline.permits import enrich_permits
-        n = enrich_permits(zip_code, csv_path=args.permit_csv)
+        n = enrich_permits(zip_code, account_id, csv_path=args.permit_csv)
         log.info("[6/8] Permits: %d updated", n)
     else:
         log.info("[6/8] Permits: skipped")
 
     if "score" not in skip:
         from pipeline.scorer import score_zip
-        n = score_zip(zip_code, vertical=args.vertical)
+        n = score_zip(zip_code, account_id, vertical=args.vertical)
         log.info("[7/8] Scoring: %d scored", n)
     else:
         log.info("[7/8] Scoring: skipped")
@@ -137,7 +138,7 @@ def run_zip(zip_code: str, args) -> None:
         from pipeline.select import trim_to_top_n
         conn = get_conn()
         try:
-            kept = trim_to_top_n(conn, zip_code, top_n)
+            kept = trim_to_top_n(conn, zip_code, account_id, top_n)
         finally:
             conn.close()
         log.info("[7.5/8] Trim: kept top %d", kept)
@@ -145,7 +146,7 @@ def run_zip(zip_code: str, args) -> None:
     # Contact runs after scoring so the optional min-grade gate can apply.
     if "contact" not in skip:
         from pipeline.contact import enrich_contact
-        c = enrich_contact(zip_code, selected_only=capped)
+        c = enrich_contact(zip_code, account_id, selected_only=capped)
         log.info("[8/8] Contact: %d filled%s", c.get("updated", 0),
                  " (skipped: no provider)" if c.get("skipped_no_key") else "")
     else:
@@ -157,7 +158,7 @@ def run_zip(zip_code: str, args) -> None:
         conn = get_conn()
         try:
             weak = sorted(
-                ((f, r["pct"]) for f, r in fill_rates(conn, zip_code).items()),
+                ((f, r["pct"]) for f, r in fill_rates(conn, zip_code, account_id).items()),
                 key=lambda kv: kv[1],
             )[:5]
         finally:
@@ -172,6 +173,8 @@ def main():
     group.add_argument("--zip",      help="Single ZIP code to process")
     group.add_argument("--zip-file", help="Path to a file with one ZIP per line")
 
+    parser.add_argument("--account-id", type=int, required=True, dest="account_id",
+                        help="Organization (account) id that owns the leads produced by this run")
     parser.add_argument("--vertical",   default=None,
                         help="Scoring vertical (e.g. epoxy_flooring, pool_maintenance, solar)")
     parser.add_argument("--seed-csv",   default=None,

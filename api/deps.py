@@ -50,7 +50,7 @@ def get_current_user(
     user_id = int(payload["sub"])
     with db.cursor() as cur:
         cur.execute(
-            "SELECT id, username, email, role, is_active FROM users WHERE id = %s",
+            "SELECT id, username, email, role, is_active, account_id FROM users WHERE id = %s",
             (user_id,),
         )
         cols = [d[0] for d in cur.description]

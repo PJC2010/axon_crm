@@ -24,7 +24,7 @@ def register_adapter(zip_prefix: str, fn):
 
 # ── Main enrichment function ──────────────────────────────────────────────────
 
-def enrich_permits(zip_code: str, csv_path: str | None = None) -> int:
+def enrich_permits(zip_code: str, account_id: int, csv_path: str | None = None) -> int:
     if csv_path:
         log.warning(
             "--permit-csv is no longer used; permit data is queried directly "
@@ -45,7 +45,7 @@ def enrich_permits(zip_code: str, csv_path: str | None = None) -> int:
         return 0
 
     conn = get_conn()
-    rows = fetch_by_zip(conn, zip_code)
+    rows = fetch_by_zip(conn, zip_code, account_id)
     updates = []
     for row in rows:
         addr_norm = hcad_store.normalize(row["address"])
@@ -58,7 +58,7 @@ def enrich_permits(zip_code: str, csv_path: str | None = None) -> int:
                 "enrichment_flags":  {"permits": "hcad"},
             })
 
-    n = upsert_properties(conn, updates)
+    n = upsert_properties(conn, updates, account_id)
     conn.close()
     log.info("Updated permit counts for %d properties in ZIP %s", n, zip_code)
     return n

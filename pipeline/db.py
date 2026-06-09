@@ -23,11 +23,12 @@ ALL_COLS = [
 ]
 
 
-def upsert_properties(conn, rows: list[dict]) -> int:
+def upsert_properties(conn, rows: list[dict], account_id: int) -> int:
     """
-    Upsert a list of property dicts into the properties table.
-    Conflict target is (address, zip). Only non-None values are written so
-    a partial enrichment step does not clobber fields set by an earlier step.
+    Upsert a list of property dicts into the properties table for one org.
+    Conflict target is (account_id, address, zip) so each org keeps its own
+    copy of a property. Only non-None values are written so a partial
+    enrichment step does not clobber fields set by an earlier step.
     Returns the number of rows affected.
     """
     if not rows:
@@ -38,23 +39,25 @@ def upsert_properties(conn, rows: list[dict]) -> int:
     with conn.cursor() as cur:
         count = 0
         for row in rows:
-            cols = [c for c in all_cols if row.get(c) is not None]
-            if not cols:
+            data_cols = [c for c in all_cols if row.get(c) is not None]
+            if not data_cols:
                 continue
-            values = [
+            # account_id is always written first and is part of the conflict key.
+            cols = ["account_id"] + data_cols
+            values = [account_id] + [
                 psycopg2.extras.Json(row[c]) if c == "enrichment_flags" and isinstance(row[c], dict) else row[c]
-                for c in cols
+                for c in data_cols
             ]
             placeholders = ", ".join(["%s"] * len(cols))
             col_names = ", ".join(cols)
             updates = ", ".join(
-                f"{c} = EXCLUDED.{c}" for c in cols
+                f"{c} = EXCLUDED.{c}" for c in data_cols
                 if c not in ("address", "zip")
             )
             # Merge enrichment_flags rather than overwrite
             flags_merge = (
                 "enrichment_flags = properties.enrichment_flags || EXCLUDED.enrichment_flags"
-                if "enrichment_flags" in cols else ""
+                if "enrichment_flags" in data_cols else ""
             )
             if flags_merge and updates:
                 updates = updates.replace(
@@ -64,7 +67,7 @@ def upsert_properties(conn, rows: list[dict]) -> int:
             sql = f"""
                 INSERT INTO properties ({col_names})
                 VALUES ({placeholders})
-                ON CONFLICT (address, zip) DO UPDATE SET {updates}
+                ON CONFLICT (account_id, address, zip) DO UPDATE SET {updates}
             """
             cur.execute(sql, values)
             count += cur.rowcount
@@ -72,23 +75,26 @@ def upsert_properties(conn, rows: list[dict]) -> int:
     return count
 
 
-def fetch_by_zip(conn, zip_code: str) -> list[dict]:
+def fetch_by_zip(conn, zip_code: str, account_id: int) -> list[dict]:
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute("SELECT * FROM properties WHERE zip = %s", (zip_code,))
+        cur.execute(
+            "SELECT * FROM properties WHERE zip = %s AND account_id = %s",
+            (zip_code, account_id),
+        )
         return [dict(r) for r in cur.fetchall()]
 
 
-def fetch_missing_field(conn, field: str, zip_code: str | None = None,
+def fetch_missing_field(conn, field: str, account_id: int, zip_code: str | None = None,
                         selected_only: bool = False) -> list[dict]:
-    """Return properties where a given field is NULL.
+    """Return this org's properties where a given field is NULL.
 
     When `selected_only` is True, restrict to rows the selection step picked for
     paid enrichment (enrichment_selected = TRUE). Used by capped/radius runs.
     """
     if field not in ALL_COLS:
         raise ValueError(f"Unknown field: {field}")
-    where = f"WHERE {field} IS NULL"
-    params = []
+    where = f"WHERE {field} IS NULL AND account_id = %s"
+    params = [account_id]
     if zip_code:
         where += " AND zip = %s"
         params.append(zip_code)
@@ -99,9 +105,9 @@ def fetch_missing_field(conn, field: str, zip_code: str | None = None,
         return [dict(r) for r in cur.fetchall()]
 
 
-def fetch_missing_any(conn, fields: list[str], zip_code: str | None = None,
+def fetch_missing_any(conn, fields: list[str], account_id: int, zip_code: str | None = None,
                       selected_only: bool = False) -> list[dict]:
-    """Return properties where AT LEAST ONE of `fields` is NULL.
+    """Return this org's properties where AT LEAST ONE of `fields` is NULL.
 
     Column names are validated against ALL_COLS before interpolation, so this is
     safe despite building SQL from `fields`.
@@ -115,8 +121,8 @@ def fetch_missing_any(conn, fields: list[str], zip_code: str | None = None,
     if not fields:
         return []
     clause = " OR ".join(f"{f} IS NULL" for f in fields)
-    where = f"WHERE ({clause})"
-    params = []
+    where = f"WHERE ({clause}) AND account_id = %s"
+    params = [account_id]
     if zip_code:
         where += " AND zip = %s"
         params.append(zip_code)

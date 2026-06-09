@@ -83,7 +83,7 @@ def _passes_grade(row: dict) -> bool:
     return _GRADE_RANK.get(row.get("score_grade"), 0) >= _GRADE_RANK.get(CONTACT_MIN_GRADE, 0)
 
 
-def enrich_contact(zip_code: str | None = None, selected_only: bool = False) -> dict:
+def enrich_contact(zip_code: str, account_id: int, selected_only: bool = False) -> dict:
     """Skip-trace owners missing a phone. Returns a source counter dict.
 
     When `selected_only` is True (capped/radius runs), only rows the selection
@@ -103,7 +103,7 @@ def enrich_contact(zip_code: str | None = None, selected_only: bool = False) -> 
 
     conn = get_conn()
     try:
-        rows = fetch_missing_field(conn, "contact_phone", zip_code,
+        rows = fetch_missing_field(conn, "contact_phone", account_id, zip_code,
                                    selected_only=selected_only)
         # Need an identity to skip-trace, and respect optional grade gate.
         rows = [r for r in rows if r.get("owner_name") and _passes_grade(r)]
@@ -123,7 +123,7 @@ def enrich_contact(zip_code: str | None = None, selected_only: bool = False) -> 
             else:
                 counter["fail"] += 1
             time.sleep(0.1)
-        counter["updated"] = upsert_properties(conn, updates)
+        counter["updated"] = upsert_properties(conn, updates, account_id)
     finally:
         conn.close()
     return counter

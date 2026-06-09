@@ -19,13 +19,13 @@ except ImportError:
     def _encode(lat, lng): return None   # geohash optional
 
 
-def enrich_geocode(zip_code: str | None = None) -> int:
+def enrich_geocode(zip_code: str, account_id: int) -> int:
     if not GOOGLE_GEOCODE_KEY:
         log.warning("GOOGLE_GEOCODE_KEY not set — skipping geocoding step.")
         return 0
 
     conn = get_conn()
-    rows = fetch_missing_field(conn, "latitude", zip_code)
+    rows = fetch_missing_field(conn, "latitude", account_id, zip_code)
     if not rows:
         log.info("No properties need geocoding.")
         conn.close()
@@ -48,7 +48,7 @@ def enrich_geocode(zip_code: str | None = None) -> int:
             })
         time.sleep(0.05)   # ~20 req/s, well under free tier limit
 
-    n = upsert_properties(conn, updates)
+    n = upsert_properties(conn, updates, account_id)
     conn.close()
     log.info("Geocoded %d properties", n)
     return n

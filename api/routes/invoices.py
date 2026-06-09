@@ -36,8 +36,8 @@ router = APIRouter()
 # Payment-state helpers (_calc_totals, _recalc_paid, _update_invoice_payment_state,
 # _load_invoice) live in api/invoice_logic.py so the Stripe webhook can reuse them.
 
-def _build_where(status, year, month, property_id):
-    conditions, params = [], []
+def _build_where(account_id, status, year, month, property_id):
+    conditions, params = ["account_id = %s"], [account_id]
     if status:
         conditions.append("status = %s"); params.append(status)
     if year:
@@ -46,8 +46,16 @@ def _build_where(status, year, month, property_id):
         conditions.append("EXTRACT(MONTH FROM issue_date) = %s"); params.append(month)
     if property_id is not None:
         conditions.append("property_id = %s"); params.append(property_id)
-    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    where = "WHERE " + " AND ".join(conditions)
     return where, params
+
+
+def _assert_invoice_account(db, invoice_id: int, account_id: int):
+    """Raise 404 unless the invoice belongs to the caller's org."""
+    with db.cursor() as cur:
+        cur.execute("SELECT 1 FROM invoices WHERE id = %s AND account_id = %s", (invoice_id, account_id))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Invoice not found")
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -55,40 +63,41 @@ def _build_where(status, year, month, property_id):
 @router.get("/invoices/summary")
 def invoice_summary(
     year: Optional[int] = Query(None),
-    _: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
     db: PGConn = Depends(get_db),
 ):
     import datetime
     today = datetime.date.today()
+    acct = user["account_id"]
     year_cond = "AND EXTRACT(YEAR FROM issue_date) = %s" if year else ""
     year_param = [year] if year else []
 
     with db.cursor() as cur:
         cur.execute(
-            f"SELECT COALESCE(SUM(total),0), COUNT(*) FROM invoices WHERE status != 'void' {year_cond}",
-            year_param,
+            f"SELECT COALESCE(SUM(total),0), COUNT(*) FROM invoices WHERE account_id = %s AND status != 'void' {year_cond}",
+            [acct] + year_param,
         )
         r = cur.fetchone()
         total_invoiced, invoice_count = float(r[0]), int(r[1])
 
         cur.execute(
-            f"SELECT COALESCE(SUM(amount_paid),0) FROM invoices WHERE status != 'void' {year_cond}",
-            year_param,
+            f"SELECT COALESCE(SUM(amount_paid),0) FROM invoices WHERE account_id = %s AND status != 'void' {year_cond}",
+            [acct] + year_param,
         )
         total_collected = float(cur.fetchone()[0])
 
         cur.execute(
             f"SELECT COALESCE(SUM(total - amount_paid),0), COUNT(*) FROM invoices "
-            f"WHERE status IN ('sent','partial','overdue') {year_cond}",
-            year_param,
+            f"WHERE account_id = %s AND status IN ('sent','partial','overdue') {year_cond}",
+            [acct] + year_param,
         )
         r = cur.fetchone()
         total_outstanding, _ = float(r[0]), int(r[1])
 
         cur.execute(
             f"SELECT COALESCE(SUM(total - amount_paid),0), COUNT(*) FROM invoices "
-            f"WHERE status IN ('sent','partial','overdue') AND due_date < %s {year_cond}",
-            [today] + year_param,
+            f"WHERE account_id = %s AND status IN ('sent','partial','overdue') AND due_date < %s {year_cond}",
+            [acct, today] + year_param,
         )
         r = cur.fetchone()
         total_overdue, overdue_count = float(r[0]), int(r[1])
@@ -104,14 +113,15 @@ def invoice_summary(
 
 
 @router.get("/invoices/aging")
-def invoice_aging(_: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+def invoice_aging(user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
     import datetime
     today = datetime.date.today()
 
     with db.cursor() as cur:
         cur.execute(
             "SELECT id, total, amount_paid, due_date FROM invoices "
-            "WHERE status IN ('sent','partial','overdue')"
+            "WHERE account_id = %s AND status IN ('sent','partial','overdue')",
+            (user["account_id"],),
         )
         rows = cur.fetchall()
 
@@ -143,10 +153,10 @@ def invoice_aging(_: dict = Depends(get_current_user), db: PGConn = Depends(get_
 def export_invoices(
     status: Optional[str] = Query(None),
     year: Optional[int] = Query(None),
-    _: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
     db: PGConn = Depends(get_db),
 ):
-    where, params = _build_where(status, year, None, None)
+    where, params = _build_where(user["account_id"], status, year, None, None)
     with db.cursor() as cur:
         cur.execute(
             f"SELECT invoice_number, client_name, issue_date, due_date, subtotal, tax_amount, total, amount_paid, "
@@ -178,10 +188,10 @@ def list_invoices(
     property_id: Optional[int] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
-    _: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
     db: PGConn = Depends(get_db),
 ):
-    where, params = _build_where(status, year, month, property_id)
+    where, params = _build_where(user["account_id"], status, year, month, property_id)
     offset = (page - 1) * page_size
 
     with db.cursor() as cur:
@@ -220,11 +230,11 @@ def create_invoice(
     with db.cursor() as cur:
         cur.execute(
             "INSERT INTO invoices (property_id, client_name, client_phone, client_email, client_address, "
-            "tax_rate, subtotal, tax_amount, total, issue_date, due_date, notes, created_by) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id, invoice_number",
+            "tax_rate, subtotal, tax_amount, total, issue_date, due_date, notes, created_by, account_id) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id, invoice_number",
             (body.property_id, body.client_name, body.client_phone, body.client_email,
              body.client_address, body.tax_rate, subtotal, tax_amount, total,
-             body.issue_date, body.due_date, body.notes, current_user["id"]),
+             body.issue_date, body.due_date, body.notes, current_user["id"], current_user["account_id"]),
         )
         inv_row = cur.fetchone()
         inv_id, inv_num = inv_row[0], inv_row[1]
@@ -242,7 +252,8 @@ def create_invoice(
 
 
 @router.get("/invoices/{invoice_id}", response_model=Invoice)
-def get_invoice(invoice_id: int, _: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+def get_invoice(invoice_id: int, user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+    _assert_invoice_account(db, invoice_id, user["account_id"])
     inv = _load_invoice(db, invoice_id)
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
@@ -253,11 +264,11 @@ def get_invoice(invoice_id: int, _: dict = Depends(get_current_user), db: PGConn
 def update_invoice(
     invoice_id: int,
     body: InvoiceUpdate,
-    _: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
     db: PGConn = Depends(get_db),
 ):
     with db.cursor() as cur:
-        cur.execute("SELECT * FROM invoices WHERE id = %s", (invoice_id,))
+        cur.execute("SELECT * FROM invoices WHERE id = %s AND account_id = %s", (invoice_id, user["account_id"]))
         existing = dict_fetchone(cur)
     if not existing:
         raise HTTPException(status_code=404, detail="Invoice not found")
@@ -308,9 +319,9 @@ def update_invoice(
 
 
 @router.delete("/invoices/{invoice_id}", status_code=204)
-def delete_invoice(invoice_id: int, _: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+def delete_invoice(invoice_id: int, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
     with db.cursor() as cur:
-        cur.execute("DELETE FROM invoices WHERE id = %s RETURNING id", (invoice_id,))
+        cur.execute("DELETE FROM invoices WHERE id = %s AND account_id = %s RETURNING id", (invoice_id, current_user["account_id"]))
         deleted = cur.fetchone()
         db.commit()
     if not deleted:
@@ -325,7 +336,8 @@ def record_payment(
     db: PGConn = Depends(get_db),
 ):
     with db.cursor() as cur:
-        cur.execute("SELECT id, total, status FROM invoices WHERE id = %s", (invoice_id,))
+        cur.execute("SELECT id, total, status FROM invoices WHERE id = %s AND account_id = %s",
+                    (invoice_id, current_user["account_id"]))
         row = cur.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Invoice not found")
@@ -352,9 +364,10 @@ def record_payment(
 def delete_payment(
     invoice_id: int,
     payment_id: int,
-    _: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
     db: PGConn = Depends(get_db),
 ):
+    _assert_invoice_account(db, invoice_id, user["account_id"])
     with db.cursor() as cur:
         cur.execute(
             "DELETE FROM invoice_payments WHERE id = %s AND invoice_id = %s RETURNING id",
@@ -377,6 +390,7 @@ def send_invoice(
     db: PGConn = Depends(get_db),
 ):
     """Deliver an invoice summary to the client by email and/or SMS."""
+    _assert_invoice_account(db, invoice_id, current_user["account_id"])
     inv = _load_invoice(db, invoice_id)
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")

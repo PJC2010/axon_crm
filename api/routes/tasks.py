@@ -57,13 +57,16 @@ class Task(BaseModel):
 
 @router.get("/tasks/counts")
 def task_counts(current_user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+    acct = current_user["account_id"]
     with db.cursor() as cur:
         cur.execute(
-            "SELECT COUNT(*) FROM tasks WHERE due_date = CURRENT_DATE AND is_complete = FALSE",
+            "SELECT COUNT(*) FROM tasks WHERE due_date = CURRENT_DATE AND is_complete = FALSE AND account_id = %s",
+            (acct,),
         )
         today = cur.fetchone()[0]
         cur.execute(
-            "SELECT COUNT(*) FROM tasks WHERE due_date < CURRENT_DATE AND is_complete = FALSE",
+            "SELECT COUNT(*) FROM tasks WHERE due_date < CURRENT_DATE AND is_complete = FALSE AND account_id = %s",
+            (acct,),
         )
         overdue = cur.fetchone()[0]
     return {"today": today, "overdue": overdue}
@@ -79,7 +82,7 @@ def list_tasks(
     current_user: dict = Depends(get_current_user),
     db: PGConn = Depends(get_db),
 ):
-    conditions, params = ["is_complete = %s"], [complete]
+    conditions, params = ["is_complete = %s", "account_id = %s"], [complete, current_user["account_id"]]
 
     if due == "today":
         conditions.append("due_date = CURRENT_DATE")
@@ -105,9 +108,10 @@ def create_task(body: TaskCreate, current_user: dict = Depends(get_current_user)
         raise HTTPException(status_code=400, detail=f"priority must be one of {PRIORITY_VALUES}")
     with db.cursor() as cur:
         cur.execute(
-            "INSERT INTO tasks (property_id, assigned_to, title, due_date, priority, created_by) "
-            "VALUES (%s, %s, %s, %s, %s, %s) RETURNING *",
-            (body.property_id, body.assigned_to, body.title, body.due_date, body.priority, current_user["id"]),
+            "INSERT INTO tasks (property_id, assigned_to, title, due_date, priority, created_by, account_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *",
+            (body.property_id, body.assigned_to, body.title, body.due_date, body.priority,
+             current_user["id"], current_user["account_id"]),
         )
         row = dict_fetchone(cur)
         db.commit()
@@ -115,9 +119,9 @@ def create_task(body: TaskCreate, current_user: dict = Depends(get_current_user)
 
 
 @router.get("/tasks/{task_id}", response_model=Task)
-def get_task(task_id: int, _: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+def get_task(task_id: int, user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
     with db.cursor() as cur:
-        cur.execute("SELECT * FROM tasks WHERE id = %s", (task_id,))
+        cur.execute("SELECT * FROM tasks WHERE id = %s AND account_id = %s", (task_id, user["account_id"]))
         row = dict_fetchone(cur)
     if not row:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -125,7 +129,7 @@ def get_task(task_id: int, _: dict = Depends(get_current_user), db: PGConn = Dep
 
 
 @router.patch("/tasks/{task_id}", response_model=Task)
-def update_task(task_id: int, body: TaskUpdate, _: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+def update_task(task_id: int, body: TaskUpdate, user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
     sets, params = ["updated_at = NOW()"], []
     if body.title is not None:
         sets.append("title = %s"); params.append(body.title)
@@ -137,10 +141,10 @@ def update_task(task_id: int, body: TaskUpdate, _: dict = Depends(get_current_us
         sets.append("priority = %s"); params.append(body.priority)
     if body.assigned_to is not None:
         sets.append("assigned_to = %s"); params.append(body.assigned_to)
-    params.append(task_id)
+    params.extend([task_id, user["account_id"]])
     with db.cursor() as cur:
         cur.execute(
-            f"UPDATE tasks SET {', '.join(sets)} WHERE id = %s RETURNING *", params
+            f"UPDATE tasks SET {', '.join(sets)} WHERE id = %s AND account_id = %s RETURNING *", params
         )
         row = dict_fetchone(cur)
         db.commit()
@@ -150,12 +154,12 @@ def update_task(task_id: int, body: TaskUpdate, _: dict = Depends(get_current_us
 
 
 @router.post("/tasks/{task_id}/complete", response_model=Task)
-def complete_task(task_id: int, _: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+def complete_task(task_id: int, user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
     with db.cursor() as cur:
         cur.execute(
             "UPDATE tasks SET is_complete = TRUE, completed_at = NOW(), updated_at = NOW() "
-            "WHERE id = %s RETURNING *",
-            (task_id,),
+            "WHERE id = %s AND account_id = %s RETURNING *",
+            (task_id, user["account_id"]),
         )
         row = dict_fetchone(cur)
         db.commit()
@@ -165,9 +169,9 @@ def complete_task(task_id: int, _: dict = Depends(get_current_user), db: PGConn 
 
 
 @router.delete("/tasks/{task_id}", status_code=204)
-def delete_task(task_id: int, _: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+def delete_task(task_id: int, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
     with db.cursor() as cur:
-        cur.execute("DELETE FROM tasks WHERE id = %s RETURNING id", (task_id,))
+        cur.execute("DELETE FROM tasks WHERE id = %s AND account_id = %s RETURNING id", (task_id, current_user["account_id"]))
         deleted = cur.fetchone()
         db.commit()
     if not deleted:
@@ -175,10 +179,10 @@ def delete_task(task_id: int, _: dict = Depends(require_owner), db: PGConn = Dep
 
 
 @router.get("/leads/{lead_id}/tasks", response_model=list[Task])
-def lead_tasks(lead_id: int, _: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+def lead_tasks(lead_id: int, user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
     with db.cursor() as cur:
         cur.execute(
-            "SELECT * FROM tasks WHERE property_id = %s ORDER BY due_date ASC NULLS LAST",
-            (lead_id,),
+            "SELECT * FROM tasks WHERE property_id = %s AND account_id = %s ORDER BY due_date ASC NULLS LAST",
+            (lead_id, user["account_id"]),
         )
         return [Task(**r) for r in dict_fetchall(cur)]
