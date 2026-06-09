@@ -11,6 +11,7 @@ import { TerritoryFilter } from './TerritoryFilter'
 import { ContactDrawer } from './ContactDrawer'
 import { ExportButton } from './ExportButton'
 import { TaskBell } from './TaskBell'
+import { ToastStack, useToast } from './Toast'
 
 const DEFAULT_FILTERS: LeadFilters = { sort: 'score', page: 1, page_size: 50 }
 
@@ -22,6 +23,7 @@ export function Dashboard() {
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState<string | null>(null)
   const [selected, setSelected] = useState<Lead | null>(null)
+  const { toasts, show: showToast, dismiss: dismissToast } = useToast()
 
   function handleSignOut() {
     clearToken()
@@ -157,6 +159,7 @@ export function Dashboard() {
           onRowClick={setSelected}
           onFiltersChange={setFilters}
           onStatusChange={handleStatusChange}
+          onToast={showToast}
         />
       </main>
 
@@ -165,6 +168,8 @@ export function Dashboard() {
         onClose={() => setSelected(null)}
         onStatusChange={handleStatusChange}
       />
+
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </div>
   )
 }

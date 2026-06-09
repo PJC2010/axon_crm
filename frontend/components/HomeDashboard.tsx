@@ -15,6 +15,7 @@ import { ScoreBadge } from './ScoreBadge'
 import { TaskBell } from './TaskBell'
 import { OnboardingWizard } from './OnboardingWizard'
 import { GettingStartedChecklist } from './GettingStartedChecklist'
+import { ToastStack, useToast } from './Toast'
 
 const CLOSED_STAGES = new Set(['won', 'lost', 'not_interested'])
 
@@ -64,6 +65,7 @@ export function HomeDashboard() {
   const [error, setError]     = useState<string | null>(null)
   const [wide, setWide]       = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const { toasts, show: showToast, dismiss: dismissToast } = useToast()
 
   useEffect(() => {
     const check = () => setWide(window.innerWidth >= 640)
@@ -280,30 +282,43 @@ export function HomeDashboard() {
         {/* ── D. Quick Actions ── */}
         <div style={{ marginBottom: 24 }}>
           <p className="t-eyebrow" style={{ margin: '0 0 10px' }}>Quick Actions</p>
-          <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
+          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+            {/* Primary CTA — solid accent, larger, visually isolated (Von Restorff) */}
+            <Link
+              href="/dashboard"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                padding: '0 22px', minHeight: 44,
+                borderRadius: 'var(--radius-pill)',
+                background: 'var(--color-accent)',
+                color: 'white',
+                fontSize: 14, fontWeight: 600,
+                textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0,
+                boxShadow: '0 1px 4px rgba(26,90,117,0.25)',
+              }}
+            >
+              <Plus size={15} strokeWidth={2} />
+              New Lead
+            </Link>
+
+            {/* Secondary actions — outlined, quieter weight */}
             {[
-              { label: 'New Lead',       icon: <Plus size={15} strokeWidth={1.5} />,     href: '/dashboard' },
-              { label: 'Create Invoice', icon: <FileText size={15} strokeWidth={1.5} />, href: '/bookkeeping' },
-              { label: 'Log Expense',    icon: <Receipt size={15} strokeWidth={1.5} />,  href: '/expenses' },
-              { label: 'View Pipeline',  icon: <Kanban size={15} strokeWidth={1.5} />,   href: '/pipeline' },
+              { label: 'View Pipeline',  icon: <Kanban size={14} strokeWidth={1.5} />,   href: '/pipeline' },
+              { label: 'Create Invoice', icon: <FileText size={14} strokeWidth={1.5} />, href: '/bookkeeping' },
+              { label: 'Log Expense',    icon: <Receipt size={14} strokeWidth={1.5} />,  href: '/expenses' },
             ].map(({ label, icon, href }) => (
               <Link
                 key={href}
                 href={href}
                 style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '0 20px',
-                  minHeight: 44,
+                  display: 'inline-flex', alignItems: 'center', gap: 8,
+                  padding: '0 16px', minHeight: 44,
                   borderRadius: 'var(--radius-pill)',
-                  background: 'var(--color-accent)',
-                  color: 'white',
-                  fontSize: 14,
-                  fontWeight: 500,
-                  textDecoration: 'none',
-                  whiteSpace: 'nowrap',
-                  flexShrink: 0,
+                  background: 'var(--color-surface)',
+                  border: '1px solid var(--color-ink-300)',
+                  color: 'var(--color-ink-800)',
+                  fontSize: 13, fontWeight: 500,
+                  textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0,
                 }}
               >
                 {icon}
@@ -395,6 +410,8 @@ export function HomeDashboard() {
         </div>
 
       </div>
+
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </div>
   )
 }
