@@ -465,7 +465,7 @@ export function HomeDashboard() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {data.recentLeads.map(lead => {
                 const sc = STATUS_COLORS[lead.status] ?? { bg: '#EDECEA', text: 'var(--color-ink-500)' }
-                const name = lead.owner_name ?? lead.address
+                const name = lead.owner_name ?? lead.address ?? lead.contact_name ?? '—'
                 const sub  = [lead.city, lead.state].filter(Boolean).join(', ')
                 return (
                   <Link
