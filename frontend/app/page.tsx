@@ -5,7 +5,6 @@ import {
   LayoutDashboard, Columns2, CheckSquare, Receipt, FileText, BookOpen, Settings,
   Layers, Star, GitBranch, TrendingUp, TrendingDown,
   Bell, Target, Map, MessageSquare,
-  Sparkles, Bot, Brain, Workflow, Clock, ShieldCheck,
 } from 'lucide-react'
 
 export const metadata = {
@@ -32,10 +31,10 @@ export default function LandingPage() {
             <span className="lp-nav-wordmark">Axon</span>
           </a>
           <ul className="lp-nav-links">
-            <li><a href="#ai">AI</a></li>
             <li><a href="#features">Features</a></li>
             <li><a href="#pipeline">Pipeline</a></li>
             <li><a href="#how">How it works</a></li>
+            <li><a href="#pricing">Pricing</a></li>
           </ul>
           <div className="lp-nav-actions">
             <Link href="/login" className="lp-btn lp-btn-ghost">Sign in</Link>
@@ -48,16 +47,14 @@ export default function LandingPage() {
       <section className="lp-hero">
         <div className="lp-container">
           <div className="lp-hero-badge">
-            <Sparkles size={12} />
-            AI-powered CRM for service contractors
+            <Zap size={12} />
+            Automated lead scoring for service businesses
           </div>
           <h1 className="lp-hero-heading">
-            Zero data entry.<br /><em>Maximum results.</em>
+            Built on data,<br /><em>focused on people.</em>
           </h1>
           <p className="lp-hero-sub">
-            Axon replaces your spreadsheets with an AI-powered CRM built for trades contractors.
-            Automated lead scoring, smart insights, invoicing, and bookkeeping — all in one app
-            you can set up in under a day.
+            Axon gives small businesses enterprise-grade intelligence — without the complexity. Surface the insights that matter, understand your customers, and make confident decisions every day.
           </p>
           <div className="lp-hero-ctas">
             <Link href="/login" className="lp-btn lp-btn-accent lp-btn-lg">
@@ -175,38 +172,30 @@ export default function LandingPage() {
                   </div>
                   <div className="lp-dash-charts">
                     <div className="lp-dash-chart-card">
-                      <div className="lp-dash-chart-label">Revenue trend</div>
-                      <div style={{ height: 80, display: 'flex', alignItems: 'center' }}>
-                        <svg viewBox="0 0 200 64" fill="none" style={{ width: '100%', height: '100%' }}>
-                          <defs>
-                            <linearGradient id="mockRevGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="var(--color-moss)" stopOpacity="0.3" />
-                              <stop offset="100%" stopColor="var(--color-moss)" stopOpacity="0.02" />
-                            </linearGradient>
-                          </defs>
-                          <path d="M0 52 C20 48 40 40 70 32 C100 24 130 18 155 14 C175 11 190 9 200 7 L200 64 L0 64Z" fill="url(#mockRevGrad)" />
-                          <path d="M0 52 C20 48 40 40 70 32 C100 24 130 18 155 14 C175 11 190 9 200 7" stroke="var(--color-moss)" strokeWidth="2" fill="none" />
-                        </svg>
+                      <div className="lp-dash-chart-label">Lead scores — this run</div>
+                      <div className="lp-chart-bars">
+                        <div className="lp-chart-bar" style={{ height: '30%' }} />
+                        <div className="lp-chart-bar" style={{ height: '55%' }} />
+                        <div className="lp-chart-bar" style={{ height: '70%' }} />
+                        <div className="lp-chart-bar" style={{ height: '65%' }} />
+                        <div className="lp-chart-bar" style={{ height: '80%' }} />
+                        <div className="lp-chart-bar" style={{ height: '72%' }} />
+                        <div className="lp-chart-bar hi" style={{ height: '90%' }} />
                       </div>
                     </div>
                     <div className="lp-dash-chart-card">
-                      <div className="lp-dash-chart-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Sparkles size={10} style={{ color: 'var(--color-accent)' }} />
-                        AI Insights
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'var(--color-moss)' }}>
-                          <div style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--color-moss)' }} />
-                          Win rate up 12% this month
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'var(--color-gold)' }}>
-                          <div style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--color-gold)' }} />
-                          3 leads going cold — follow up
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'var(--color-accent)' }}>
-                          <div style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--color-accent)' }} />
-                          5 hot leads ready to close
-                        </div>
+                      <div className="lp-dash-chart-label">Pipeline by stage</div>
+                      <div style={{ height: 80, display: 'flex', alignItems: 'center' }}>
+                        <svg viewBox="0 0 200 64" fill="none" style={{ width: '100%', height: '100%' }}>
+                          <path
+                            d="M0 52 C20 48 40 40 70 32 C100 24 130 18 155 14 C175 11 190 9 200 7"
+                            stroke="var(--color-accent)" strokeWidth="2" fill="none"
+                          />
+                          <path
+                            d="M0 52 C20 48 40 40 70 32 C100 24 130 18 155 14 C175 11 190 9 200 7 L200 64 L0 64Z"
+                            fill="var(--color-accent-50)"
+                          />
+                        </svg>
                       </div>
                     </div>
                   </div>
@@ -232,54 +221,6 @@ export default function LandingPage() {
         </div>
       </div>
 
-      {/* ── AI Features Section ── */}
-      <section className="lp-section" id="ai">
-        <div className="lp-container">
-          <div style={{ textAlign: 'center', maxWidth: 600, margin: '0 auto 48px' }}>
-            <div className="lp-section-eyebrow" style={{ justifyContent: 'center' }}>
-              <Brain size={12} />
-              AI-powered intelligence
-            </div>
-            <h2 className="lp-section-heading" style={{ textAlign: 'center' }}>
-              Your CRM works while you sleep
-            </h2>
-            <p className="lp-section-sub" style={{ margin: '0 auto', textAlign: 'center' }}>
-              55% of CRM implementations fail because of manual data entry. Axon eliminates it
-              entirely with AI that scores leads, surfaces insights, and tells you exactly who to call next.
-            </p>
-          </div>
-          <div className="lp-features-grid">
-            <div className="lp-feature-card">
-              <div className="lp-feature-icon accent"><Bot size={20} /></div>
-              <h3 className="lp-feature-name">AI lead scoring</h3>
-              <p className="lp-feature-desc">
-                Axon automatically pulls property records, enriches them with public data, and
-                scores every address using your vertical&apos;s specific signals. No manual data entry —
-                just a ranked list of who to call first.
-              </p>
-            </div>
-            <div className="lp-feature-card">
-              <div className="lp-feature-icon ocean"><Sparkles size={20} /></div>
-              <h3 className="lp-feature-name">Smart insights</h3>
-              <p className="lp-feature-desc">
-                AI analyzes your pipeline daily and flags what needs attention: stale leads going cold,
-                win rate trends, overdue invoices, and the fastest path to revenue. Proactive
-                intelligence, not another dashboard to check.
-              </p>
-            </div>
-            <div className="lp-feature-card">
-              <div className="lp-feature-icon moss"><Workflow size={20} /></div>
-              <h3 className="lp-feature-name">Workflow automation</h3>
-              <p className="lp-feature-desc">
-                Set rules once and let Axon handle the rest. When a lead moves to &ldquo;Qualified,&rdquo;
-                auto-create a follow-up task. When a quote is sent, schedule a check-in. Your
-                process runs itself — no more dropped balls.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* ── Features ── */}
       <section className="lp-features-section" id="features">
         <div className="lp-container">
@@ -288,11 +229,10 @@ export default function LandingPage() {
             What Axon does
           </div>
           <h2 className="lp-section-heading">
-            One app replaces your spreadsheets,<br />invoicing tool, and expense tracker
+            Everything a big enterprise has —<br />built for the way you actually work
           </h2>
           <p className="lp-section-sub">
-            Stop paying for 3-4 separate tools. Axon gives solopreneurs and small teams everything they need
-            to run their business — set up in under a day, not months.
+            Axon connects your data sources, learns your business patterns, and delivers intelligence that feels less like a report and more like advice from a trusted partner.
           </p>
           <div className="lp-features-grid">
             <div className="lp-feature-card">
@@ -445,16 +385,16 @@ export default function LandingPage() {
         <div className="lp-container">
           <div className="lp-proof-inner">
             <div className="lp-proof-stat">
-              <span className="lp-proof-stat-value lp-proof-stat-accent">&lt;1 day</span>
-              <span className="lp-proof-stat-label">Setup time — not<br />weeks or months</span>
+              <span className="lp-proof-stat-value lp-proof-stat-accent">50k+</span>
+              <span className="lp-proof-stat-label">Property leads<br />scored per territory</span>
             </div>
             <div className="lp-proof-stat">
-              <span className="lp-proof-stat-value">0 hrs</span>
-              <span className="lp-proof-stat-label">Manual data entry<br />per week</span>
+              <span className="lp-proof-stat-value">5 hrs</span>
+              <span className="lp-proof-stat-label">Saved per week vs.<br />manual spreadsheets</span>
             </div>
             <div className="lp-proof-stat">
               <span className="lp-proof-stat-value lp-proof-stat-accent">3.8×</span>
-              <span className="lp-proof-stat-label">Higher contact rate<br />on AI-scored leads</span>
+              <span className="lp-proof-stat-label">Higher contact rate<br />on grade-A leads</span>
             </div>
             <div className="lp-proof-stat">
               <span className="lp-proof-stat-value">1 app</span>
@@ -563,7 +503,7 @@ export default function LandingPage() {
       <section className="lp-cta-section">
         <div className="lp-container">
           <h2 className="lp-cta-heading">
-            Stop entering data.<br /><em>Start closing jobs.</em>
+            Score leads, close jobs,<br /><em>run your books.</em>
           </h2>
           <div className="lp-cta-actions">
             <Link href="/login" className="lp-btn lp-btn-paper lp-btn-lg">Open your dashboard</Link>
