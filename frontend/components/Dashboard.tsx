@@ -10,6 +10,7 @@ import { LeadTable } from './LeadTable'
 import { TerritoryFilter } from './TerritoryFilter'
 import { ContactDrawer } from './ContactDrawer'
 import { ExportButton } from './ExportButton'
+import { ImportContactsModal } from './ImportContactsModal'
 import { TaskBell } from './TaskBell'
 import { ToastStack, useToast } from './Toast'
 
@@ -114,6 +115,7 @@ export function Dashboard() {
             <span>Books</span>
           </Link>
           <TaskBell />
+          <ImportContactsModal onImported={() => fetchLeads(filters)} />
           <ExportButton filters={filters} />
           <button
             onClick={() => fetchLeads(filters)}

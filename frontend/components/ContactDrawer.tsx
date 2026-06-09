@@ -64,7 +64,7 @@ export function ContactDrawer({ lead, onClose, onStatusChange }: Props) {
 
   if (!lead) return null
 
-  const address = [lead.address, lead.city, lead.state].filter(Boolean).join(', ')
+  const address = [lead.address, lead.city, lead.state].filter(Boolean).join(', ') || lead.contact_name || '—'
 
   async function saveContact() {
     setSavingContact(true)

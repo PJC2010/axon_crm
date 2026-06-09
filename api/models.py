@@ -11,7 +11,7 @@ PAYMENT_METHODS    = ["cash", "card", "check", "zelle", "other"]
 
 class Lead(BaseModel):
     id: int
-    address: str
+    address: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
     zip: Optional[str] = None
@@ -258,6 +258,31 @@ class LeadContactUpdate(BaseModel):
     contact_phone: Optional[str] = None
     contact_email: Optional[str] = None
     contact_name: Optional[str] = None
+
+
+# ── Contact / lead import ──────────────────────────────────────────────────────
+
+class ImportPreviewResponse(BaseModel):
+    """What the UI shows after a file is uploaded but before committing."""
+    headers: list[str]
+    target_fields: list[str]
+    mapping: dict[str, str]          # csv header -> properties field
+    total_rows: int
+    usable_rows: int                 # rows with an address or a contact identifier
+    skip_rows: int                   # total_rows - usable_rows
+    sample: list[dict] = []          # first few normalized rows
+
+
+class ImportOptions(BaseModel):
+    default_vertical: Optional[str] = None
+    default_status: str = "new"
+
+
+class ImportResult(BaseModel):
+    imported: int = 0                # new rows inserted
+    updated: int = 0                 # existing rows matched and updated
+    skipped: int = 0                 # rows with no usable data
+    errors: list[str] = []
 
 
 # ── Notes ─────────────────────────────────────────────────────────────────────

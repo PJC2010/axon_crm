@@ -4,7 +4,7 @@ export type TaskPriority = 'low' | 'normal' | 'high' | 'urgent'
 
 export interface Lead {
   id: number
-  address: string
+  address: string | null
   city: string | null
   state: string | null
   zip: string | null
@@ -130,9 +130,28 @@ export interface TaskCreate {
   assigned_to?: number
 }
 
+// ── Contact / lead import ──────────────────────────────────────────────────────
+
+export interface ImportPreview {
+  headers: string[]
+  target_fields: string[]
+  mapping: Record<string, string>   // csv header -> field
+  total_rows: number
+  usable_rows: number
+  skip_rows: number
+  sample: Record<string, string | number>[]
+}
+
+export interface ImportResult {
+  imported: number
+  updated: number
+  skipped: number
+  errors: string[]
+}
+
 export interface PipelineCardLead {
   id: number
-  address: string
+  address: string | null
   owner_name: string | null
   contact_name: string | null
   contact_phone: string | null

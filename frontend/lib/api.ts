@@ -1,4 +1,4 @@
-import type { Lead, LeadPage, LeadFilters, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, WorkflowRule, WorkflowRuleCreate, ScoreExplanation } from './types'
+import type { Lead, LeadPage, LeadFilters, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, WorkflowRule, WorkflowRuleCreate, ScoreExplanation, ImportPreview, ImportResult } from './types'
 import { getToken, clearToken } from './auth'
 
 // Use 127.0.0.1 (not localhost): on macOS `localhost` resolves to IPv6 ::1
@@ -25,6 +25,27 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (res.status === 204) return undefined as T
+  return res.json()
+}
+
+// Multipart variant: do NOT set Content-Type so the browser adds the multipart
+// boundary itself. Shares the 401 + error handling shape with req().
+async function multipart<T>(path: string, form: FormData): Promise<T> {
+  const token = getToken()
+  const headers: Record<string, string> = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(`${BASE}${path}`, { method: 'POST', headers, body: form })
+
+  if (res.status === 401) {
+    clearToken()
+    if (typeof window !== 'undefined') window.location.href = '/login'
+    throw new Error('Session expired')
+  }
+  if (!res.ok) {
+    const msg = await res.text().catch(() => res.statusText)
+    throw new Error(`API ${res.status}: ${msg}`)
+  }
   return res.json()
 }
 
@@ -386,6 +407,43 @@ export function deleteWorkflow(id: number): Promise<void> {
 
 export function seedWorkflowDefaults(vertical: string): Promise<{ created: number; rules: WorkflowRule[] }> {
   return req(`/workflows/seed-defaults?vertical=${vertical}`, { method: 'POST' })
+}
+
+// ── Contact / lead import ───────────────────────────────────────────────────────
+
+export function previewContactImport(file: File): Promise<ImportPreview> {
+  const form = new FormData()
+  form.append('file', file)
+  return multipart<ImportPreview>('/imports/contacts/preview', form)
+}
+
+export function runContactImport(
+  file: File,
+  mapping: Record<string, string>,
+  opts: { default_vertical?: string; default_status?: string } = {},
+): Promise<ImportResult> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('mapping', JSON.stringify(mapping))
+  if (opts.default_vertical) form.append('default_vertical', opts.default_vertical)
+  if (opts.default_status) form.append('default_status', opts.default_status)
+  return multipart<ImportResult>('/imports/contacts', form)
+}
+
+// Fetch the sample CSV as a blob (auth header required) and trigger a download.
+export async function downloadContactTemplate(): Promise<void> {
+  const token = getToken()
+  const headers: Record<string, string> = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const res = await fetch(`${BASE}/imports/contacts/template`, { headers })
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'axon_import_template.csv'
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 // ── Export ────────────────────────────────────────────────────────────────────

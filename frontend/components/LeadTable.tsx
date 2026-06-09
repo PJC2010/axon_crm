@@ -241,7 +241,7 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
                     <Home size={13} strokeWidth={1.5} style={{ color: 'var(--color-ink-300)', flexShrink: 0 }} />
                     <div>
                       <p style={{ fontWeight: 500, color: 'var(--color-ink-900)', fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {lead.address}
+                        {lead.address || lead.contact_name || '—'}
                       </p>
                       <p style={{ fontSize: 11, color: 'var(--color-ink-500)', marginTop: 1 }}>
                         {[lead.city, lead.state, lead.zip].filter(Boolean).join(', ')}
