@@ -6,6 +6,7 @@ import type { Lead, LeadFilters, LeadStatus } from '@/lib/types'
 import { archiveBulk, archiveByFilter } from '@/lib/api'
 import { ScoreBadge } from './ScoreBadge'
 import { StatusSelect } from './StatusSelect'
+import { ConfirmModal } from './ConfirmModal'
 
 interface Props {
   leads: Lead[]
@@ -15,6 +16,7 @@ interface Props {
   onRowClick: (lead: Lead) => void
   onFiltersChange: (f: LeadFilters) => void
   onStatusChange: (id: number, s: LeadStatus) => void
+  onToast?: (msg: string, variant?: 'success' | 'error') => void
 }
 
 function fmt(d: string | null) {
@@ -42,7 +44,7 @@ const TH_STYLE: React.CSSProperties = {
   borderBottom: '1px solid var(--color-ink-200)',
 }
 
-export function LeadTable({ leads, total, filters, loading, onRowClick, onFiltersChange, onStatusChange }: Props) {
+export function LeadTable({ leads, total, filters, loading, onRowClick, onFiltersChange, onStatusChange, onToast }: Props) {
   const page      = filters.page ?? 1
   const pageSize  = filters.page_size ?? PAGE_SIZE
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
@@ -50,6 +52,7 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [archiving, setArchiving] = useState(false)
   const [showBulkMenu, setShowBulkMenu] = useState(false)
+  const [confirmArchiveAll, setConfirmArchiveAll] = useState(false)
 
   const toggleSelect = (id: number) => {
     const next = new Set(selected)
@@ -73,17 +76,25 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
       await archiveBulk(Array.from(selected))
       setSelected(new Set())
       onFiltersChange(filters)
+      onToast?.(`Archived ${selected.size} lead${selected.size !== 1 ? 's' : ''}`)
+    } catch {
+      onToast?.('Archive failed — please try again', 'error')
     } finally { setArchiving(false) }
   }
 
   async function handleArchiveAll() {
-    if (!confirm(`Archive all ${total} leads matching current filters?`)) return
     setArchiving(true)
     try {
       await archiveByFilter(filters)
       setSelected(new Set())
       onFiltersChange(filters)
-    } finally { setArchiving(false) }
+      onToast?.(`Archived all ${total} matching leads`)
+    } catch {
+      onToast?.('Archive failed — please try again', 'error')
+    } finally {
+      setArchiving(false)
+      setConfirmArchiveAll(false)
+    }
   }
 
   return (
@@ -129,7 +140,7 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
                   Archive {selected.size} selected
                 </button>
                 <button
-                  onClick={handleArchiveAll}
+                  onClick={() => { setShowBulkMenu(false); setConfirmArchiveAll(true) }}
                   disabled={archiving}
                   style={{
                     display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px',
@@ -280,42 +291,60 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
         }}
       >
         <span>{total.toLocaleString()} leads</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <button
             onClick={() => onFiltersChange({ ...filters, page: page - 1 })}
             disabled={page <= 1}
+            aria-label="Previous page"
             style={{
-              padding: 4,
-              borderRadius: 4,
-              border: 'none',
-              background: 'transparent',
+              width: 40, height: 40,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              borderRadius: 'var(--radius-button)',
+              border: '1px solid var(--color-ink-200)',
+              background: 'var(--color-surface)',
               cursor: page <= 1 ? 'not-allowed' : 'pointer',
-              opacity: page <= 1 ? 0.3 : 1,
+              opacity: page <= 1 ? 0.35 : 1,
               color: 'var(--color-ink-700)',
-              display: 'flex',
+              transition: 'border-color 150ms, background 150ms',
             }}
           >
-            <ChevronLeft size={14} strokeWidth={1.5} />
+            <ChevronLeft size={15} strokeWidth={1.5} />
           </button>
-          <span className="tabular">Page {page} of {totalPages}</span>
+          <span className="tabular" style={{ padding: '0 8px', whiteSpace: 'nowrap' }}>
+            {page} / {totalPages}
+          </span>
           <button
             onClick={() => onFiltersChange({ ...filters, page: page + 1 })}
             disabled={page >= totalPages}
+            aria-label="Next page"
             style={{
-              padding: 4,
-              borderRadius: 4,
-              border: 'none',
-              background: 'transparent',
+              width: 40, height: 40,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              borderRadius: 'var(--radius-button)',
+              border: '1px solid var(--color-ink-200)',
+              background: 'var(--color-surface)',
               cursor: page >= totalPages ? 'not-allowed' : 'pointer',
-              opacity: page >= totalPages ? 0.3 : 1,
+              opacity: page >= totalPages ? 0.35 : 1,
               color: 'var(--color-ink-700)',
-              display: 'flex',
+              transition: 'border-color 150ms, background 150ms',
             }}
           >
-            <ChevronRight size={14} strokeWidth={1.5} />
+            <ChevronRight size={15} strokeWidth={1.5} />
           </button>
         </div>
       </div>
+
+      {confirmArchiveAll && (
+        <ConfirmModal
+          title="Archive all matching leads?"
+          message={`This will archive all ${total.toLocaleString()} leads that match your current filters. You can restore them later from Settings.`}
+          confirmLabel={`Archive ${total.toLocaleString()} leads`}
+          danger
+          loading={archiving}
+          onConfirm={handleArchiveAll}
+          onCancel={() => setConfirmArchiveAll(false)}
+        />
+      )}
     </div>
   )
 }

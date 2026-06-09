@@ -204,12 +204,15 @@ select.drawer-input { cursor: pointer; }
 }
 .btn-secondary:hover { background: var(--color-paper-deep); border-color: var(--color-ink-400); }
 
-/* ── Dashboard icon button (refresh, close) ── */
+/* ── Dashboard icon button (nav items, refresh, close) ── */
+/* min 40×40px satisfies Fitts's Law for pointer and touch targets */
 .dash-icon-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 6px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0 10px;
   border-radius: var(--radius-button);
   border: 1px solid var(--color-ink-200);
   background: white;
