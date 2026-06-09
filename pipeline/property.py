@@ -41,7 +41,7 @@ _SOURCE_CONFIG = {
 }
 
 
-def enrich_property(zip_code: str | None = None, selected_only: bool = False) -> dict:
+def enrich_property(zip_code: str, account_id: int, selected_only: bool = False) -> dict:
     """Run each configured source in priority order.
 
     When `selected_only` is True (capped/radius runs), only rows the selection
@@ -67,7 +67,7 @@ def enrich_property(zip_code: str | None = None, selected_only: bool = False) ->
                             source.upper(), source)
                 continue
 
-            rows = fetch_missing_any(conn, SOURCE_FIELDS[source], zip_code,
+            rows = fetch_missing_any(conn, SOURCE_FIELDS[source], account_id, zip_code,
                                      selected_only=selected_only)
             if cfg["cap"]:
                 rows = rows[: cfg["cap"]]
@@ -86,7 +86,7 @@ def enrich_property(zip_code: str | None = None, selected_only: bool = False) ->
                 else:
                     counter["fail"] += 1
                 time.sleep(cfg["delay"])
-            counter["updated"] = upsert_properties(conn, updates)
+            counter["updated"] = upsert_properties(conn, updates, account_id)
     finally:
         conn.close()
 
@@ -115,8 +115,13 @@ def _rentcast_detail(address: str, zip_code: str) -> dict | None:
         except (ValueError, TypeError):
             pass
 
-    # Garage data lives in the nested `features` object in the records response.
+    # Garage data lives in the nested `features` object; owner name lives in the
+    # nested `owner.names` list (NOT a flat `ownerName` field — confirmed live).
     features = p.get("features") or {}
+    owner = p.get("owner") or {}
+    owner_names = owner.get("names")
+    owner_name = (owner_names[0] if isinstance(owner_names, list) and owner_names
+                  else p.get("ownerName"))
 
     return {
         "year_built":       p.get("yearBuilt"),
@@ -125,7 +130,7 @@ def _rentcast_detail(address: str, zip_code: str) -> dict | None:
         "estimated_equity": estimate_equity(value, sale_price, sale_date),
         "last_sale_date":   sale_date,
         "last_sale_price":  sale_price,
-        "owner_name":       p.get("ownerName"),
+        "owner_name":       owner_name,
         "owner_occupied":   p.get("ownerOccupied"),
         "ownership_years":  ownership_years,
         "garage_spaces":    features.get("garageSpaces"),

@@ -5,9 +5,15 @@ Inserts a new row into the ``users`` table with a bcrypt-hashed password,
 using the same hashing as the API. Handy for bootstrapping the first owner
 account, or for creating accounts without going through the HTTP API.
 
+Every user belongs to an organization (account). Choose exactly one of:
+  --new-account "<Org Name>"   create a fresh, isolated org for this user
+  --account-id <id>            add this user to an existing org (shares its leads)
+
 Usage:
-    python scripts/create_user.py --username admin --email you@example.com --role owner
-    python scripts/create_user.py -u jane -e jane@example.com -r sales_rep -p secret123
+    # Bootstrap a brand-new isolated org + its owner:
+    python scripts/create_user.py -u admin -e you@example.com -r owner --new-account "Acme Epoxy"
+    # Add a teammate to an existing org (they see that org's leads):
+    python scripts/create_user.py -u jane -e jane@example.com -r sales_rep --account-id 2
 
 If --password is omitted you will be prompted for it (input hidden).
 
@@ -27,23 +33,31 @@ import psycopg2
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from api.security import hash_password  # noqa: E402
+from api.accounts import create_account  # noqa: E402
 
 VALID_ROLES = ("owner", "sales_rep")
 
 
-def create_user(username: str, email: str, password: str, role: str) -> int:
-    """Insert the user and return the new id. Raises on conflict/error."""
+def create_user(username: str, email: str, password: str, role: str,
+                account_id: int | None, new_account: str | None) -> tuple[int, int]:
+    """Insert the user and return (user_id, account_id). Raises on conflict/error.
+
+    Exactly one of `account_id` (join existing org) or `new_account` (create a
+    fresh org, seeding its default pipeline stages) must be provided.
+    """
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     try:
+        if new_account:
+            account_id = create_account(conn, new_account)
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO users (username, email, hashed_pw, role) "
-                "VALUES (%s, %s, %s, %s) RETURNING id",
-                (username, email, hash_password(password), role),
+                "INSERT INTO users (username, email, hashed_pw, role, account_id) "
+                "VALUES (%s, %s, %s, %s, %s) RETURNING id",
+                (username, email, hash_password(password), role, account_id),
             )
             new_id = cur.fetchone()[0]
         conn.commit()
-        return new_id
+        return new_id, account_id
     finally:
         conn.close()
 
@@ -63,6 +77,15 @@ def main():
         "--password",
         help="Password (prompted securely if omitted)",
     )
+    account = parser.add_mutually_exclusive_group(required=True)
+    account.add_argument(
+        "--new-account", metavar="NAME", dest="new_account",
+        help="Create a fresh isolated org with this name and put the user in it",
+    )
+    account.add_argument(
+        "--account-id", type=int, dest="account_id",
+        help="Add the user to this existing org (shares its leads)",
+    )
     args = parser.parse_args()
 
     if "DATABASE_URL" not in os.environ:
@@ -77,7 +100,10 @@ def main():
         parser.error("Password must not be empty")
 
     try:
-        new_id = create_user(args.username, args.email, password, args.role)
+        new_id, account_id = create_user(
+            args.username, args.email, password, args.role,
+            args.account_id, args.new_account,
+        )
     except psycopg2.errors.UniqueViolation:
         print(
             f"Error: a user with that username or email already exists.",
@@ -88,7 +114,7 @@ def main():
         print(f"Error creating user: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"✓ Created user '{args.username}' (id={new_id}, role={args.role})")
+    print(f"✓ Created user '{args.username}' (id={new_id}, role={args.role}, account_id={account_id})")
 
 
 if __name__ == "__main__":

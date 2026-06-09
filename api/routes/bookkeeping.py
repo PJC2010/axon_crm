@@ -15,9 +15,10 @@ router = APIRouter()
 @router.get("/bookkeeping/pnl")
 def profit_and_loss(
     year: int = Query(..., description="Year to report"),
-    _: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
     db: PGConn = Depends(get_db),
 ):
+    acct = user["account_id"]
     with db.cursor() as cur:
         # Revenue: payments received grouped by month
         cur.execute(
@@ -29,10 +30,11 @@ def profit_and_loss(
             JOIN invoices i ON i.id = p.invoice_id
             WHERE EXTRACT(YEAR FROM p.payment_date) = %s
               AND i.status != 'void'
+              AND i.account_id = %s
             GROUP BY month
             ORDER BY month
             """,
-            (year,),
+            (year, acct),
         )
         rev_rows = {r["month"]: float(r["revenue"]) for r in dict_fetchall(cur)}
 
@@ -44,10 +46,11 @@ def profit_and_loss(
                 COALESCE(SUM(amount), 0) AS expenses
             FROM expenses
             WHERE EXTRACT(YEAR FROM expense_date) = %s
+              AND account_id = %s
             GROUP BY month
             ORDER BY month
             """,
-            (year,),
+            (year, acct),
         )
         exp_rows = {r["month"]: float(r["expenses"]) for r in dict_fetchall(cur)}
 
@@ -80,12 +83,15 @@ def profit_and_loss(
 @router.get("/bookkeeping/job-costing")
 def job_costing(
     year: Optional[int] = Query(None),
-    _: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
     db: PGConn = Depends(get_db),
 ):
+    acct = user["account_id"]
     year_inv_cond = "AND EXTRACT(YEAR FROM i.issue_date) = %s" if year else ""
     year_exp_cond = "AND EXTRACT(YEAR FROM e.expense_date) = %s" if year else ""
-    params = [year] if year else []
+    # invoice subquery params, expense subquery params, then outer properties filter
+    inv_params = [acct] + ([year] if year else [])
+    exp_params = [acct] + ([year] if year else [])
 
     with db.cursor() as cur:
         cur.execute(
@@ -103,6 +109,7 @@ def job_costing(
                        SUM(amount_paid) AS total_paid
                 FROM invoices
                 WHERE property_id IS NOT NULL AND status != 'void'
+                AND account_id = %s
                 {year_inv_cond}
                 GROUP BY property_id
             ) inv ON inv.property_id = p.id
@@ -111,13 +118,15 @@ def job_costing(
                        SUM(amount) AS total_expenses
                 FROM expenses
                 WHERE property_id IS NOT NULL
+                AND account_id = %s
                 {year_exp_cond}
                 GROUP BY property_id
             ) exp ON exp.property_id = p.id
-            WHERE inv.property_id IS NOT NULL OR exp.property_id IS NOT NULL
+            WHERE (inv.property_id IS NOT NULL OR exp.property_id IS NOT NULL)
+              AND p.account_id = %s
             ORDER BY (COALESCE(inv.total_paid, 0) - COALESCE(exp.total_expenses, 0)) DESC
             """,
-            params + params,
+            inv_params + exp_params + [acct],
         )
         rows = dict_fetchall(cur)
 

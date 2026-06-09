@@ -82,7 +82,7 @@ def _set_selected(conn, ids: list[int], value: bool) -> None:
     conn.commit()
 
 
-def select_for_enrichment(conn, zip_code: str, *, top_n: int | None = None,
+def select_for_enrichment(conn, zip_code: str, account_id: int, *, top_n: int | None = None,
                           center: tuple[float, float] | None = None,
                           radius_mi: float | None = None,
                           vertical: str | None = None) -> dict:
@@ -93,7 +93,7 @@ def select_for_enrichment(conn, zip_code: str, *, top_n: int | None = None,
     Returns counts for logging/run results.
     """
     weights = VERTICAL_WEIGHTS.get(vertical, DEFAULT_WEIGHTS) if vertical else DEFAULT_WEIGHTS
-    rows = fetch_by_zip(conn, zip_code)
+    rows = fetch_by_zip(conn, zip_code, account_id)
     candidates = len(rows)
 
     in_radius = [r for r in rows if _within_radius(r, center, radius_mi)]
@@ -124,7 +124,7 @@ def select_for_enrichment(conn, zip_code: str, *, top_n: int | None = None,
     return result
 
 
-def trim_to_top_n(conn, zip_code: str, top_n: int) -> int:
+def trim_to_top_n(conn, zip_code: str, account_id: int, top_n: int) -> int:
     """Post-scoring precision trim: keep only the top_n selected rows by real
     lead_score, deselecting the over-sampled remainder so the contact step (and
     any selected-only consumers) see exactly the final list. Returns rows kept.
@@ -132,10 +132,10 @@ def trim_to_top_n(conn, zip_code: str, top_n: int) -> int:
     with conn.cursor() as cur:
         cur.execute(
             "SELECT id FROM properties "
-            "WHERE zip = %s AND enrichment_selected = TRUE "
+            "WHERE zip = %s AND account_id = %s AND enrichment_selected = TRUE "
             "ORDER BY lead_score DESC NULLS LAST, id "
             "OFFSET %s",
-            (zip_code, top_n),
+            (zip_code, account_id, top_n),
         )
         extra_ids = [r[0] for r in cur.fetchall()]
     _set_selected(conn, extra_ids, False)
@@ -143,8 +143,8 @@ def trim_to_top_n(conn, zip_code: str, top_n: int) -> int:
     with conn.cursor() as cur:
         cur.execute(
             "SELECT COUNT(*) FROM properties "
-            "WHERE zip = %s AND enrichment_selected = TRUE",
-            (zip_code,),
+            "WHERE zip = %s AND account_id = %s AND enrichment_selected = TRUE",
+            (zip_code, account_id),
         )
         kept = cur.fetchone()[0]
     log.info("Trimmed ZIP %s to top %d (kept %d, deselected %d)",

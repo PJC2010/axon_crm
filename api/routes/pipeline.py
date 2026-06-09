@@ -78,9 +78,12 @@ class RunCreate(BaseModel):
 # ── Pipeline Stages ──────────────────────────────────────────────────────
 
 @router.get("/pipeline/stages")
-def list_stages(_: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+def list_stages(user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
     with db.cursor() as cur:
-        cur.execute("SELECT * FROM pipeline_stages ORDER BY sort_order, id")
+        cur.execute(
+            "SELECT * FROM pipeline_stages WHERE account_id = %s ORDER BY sort_order, id",
+            (user["account_id"],),
+        )
         return dict_fetchall(cur)
 
 
@@ -88,9 +91,10 @@ def list_stages(_: dict = Depends(get_current_user), db: PGConn = Depends(get_db
 def create_stage(body: StageCreate, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
     with db.cursor() as cur:
         cur.execute(
-            "INSERT INTO pipeline_stages (key, label, color, sort_order, is_terminal, created_by) "
-            "VALUES (%s, %s, %s, %s, %s, %s) RETURNING *",
-            (body.key, body.label, body.color, body.sort_order, body.is_terminal, current_user["id"]),
+            "INSERT INTO pipeline_stages (key, label, color, sort_order, is_terminal, created_by, account_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *",
+            (body.key, body.label, body.color, body.sort_order, body.is_terminal,
+             current_user["id"], current_user["account_id"]),
         )
         row = dict_fetchone(cur)
         db.commit()
@@ -98,7 +102,7 @@ def create_stage(body: StageCreate, current_user: dict = Depends(require_owner),
 
 
 @router.patch("/pipeline/stages/{stage_id}")
-def update_stage(stage_id: int, body: StageUpdate, _: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+def update_stage(stage_id: int, body: StageUpdate, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
     sets, params = [], []
     if body.label is not None:
         sets.append("label = %s"); params.append(body.label)
@@ -111,9 +115,12 @@ def update_stage(stage_id: int, body: StageUpdate, _: dict = Depends(require_own
     if not sets:
         from fastapi import HTTPException as HE
         raise HE(status_code=400, detail="Nothing to update")
-    params.append(stage_id)
+    params.extend([stage_id, current_user["account_id"]])
     with db.cursor() as cur:
-        cur.execute(f"UPDATE pipeline_stages SET {', '.join(sets)} WHERE id = %s RETURNING *", params)
+        cur.execute(
+            f"UPDATE pipeline_stages SET {', '.join(sets)} WHERE id = %s AND account_id = %s RETURNING *",
+            params,
+        )
         row = dict_fetchone(cur)
         db.commit()
     if not row:
@@ -122,19 +129,20 @@ def update_stage(stage_id: int, body: StageUpdate, _: dict = Depends(require_own
 
 
 @router.delete("/pipeline/stages/{stage_id}", status_code=204)
-def delete_stage(stage_id: int, _: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+def delete_stage(stage_id: int, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+    acct = current_user["account_id"]
     with db.cursor() as cur:
-        cur.execute("SELECT key, is_default FROM pipeline_stages WHERE id = %s", (stage_id,))
+        cur.execute("SELECT key, is_default FROM pipeline_stages WHERE id = %s AND account_id = %s", (stage_id, acct))
         stage = dict_fetchone(cur)
         if not stage:
             raise HTTPException(status_code=404, detail="Stage not found")
         if stage["is_default"]:
             raise HTTPException(status_code=400, detail="Cannot delete the default stage")
-        cur.execute("SELECT COUNT(*) FROM properties WHERE status = %s", (stage["key"],))
+        cur.execute("SELECT COUNT(*) FROM properties WHERE status = %s AND account_id = %s", (stage["key"], acct))
         count = cur.fetchone()[0]
         if count > 0:
             raise HTTPException(status_code=400, detail=f"Cannot delete — {count} leads are in this stage")
-        cur.execute("DELETE FROM pipeline_stages WHERE id = %s", (stage_id,))
+        cur.execute("DELETE FROM pipeline_stages WHERE id = %s AND account_id = %s", (stage_id, acct))
         db.commit()
 
 
@@ -144,18 +152,21 @@ def delete_stage(stage_id: int, _: dict = Depends(require_owner), db: PGConn = D
 def get_pipeline(
     vertical: str | None = Query(None),
     zip: str | None = Query(None),
-    _: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
     db: PGConn = Depends(get_db),
 ):
-    conditions, params = [], []
+    conditions, params = ["account_id = %s"], [user["account_id"]]
     if vertical:
         conditions.append("vertical = %s"); params.append(vertical)
     if zip:
         conditions.append("zip = %s"); params.append(zip)
-    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    where = "WHERE " + " AND ".join(conditions)
 
     with db.cursor() as cur:
-        cur.execute("SELECT key FROM pipeline_stages ORDER BY sort_order, id")
+        cur.execute(
+            "SELECT key FROM pipeline_stages WHERE account_id = %s ORDER BY sort_order, id",
+            (user["account_id"],),
+        )
         stage_keys = [r[0] for r in cur.fetchall()] or PIPELINE_STAGES
 
         cur.execute(
@@ -172,11 +183,12 @@ def get_pipeline(
 
 
 @router.get("/pipeline/stats")
-def pipeline_stats(_: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+def pipeline_stats(user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
     with db.cursor() as cur:
         cur.execute(
             "SELECT status, COUNT(*) AS count, COALESCE(SUM(estimated_job_value), 0) AS total_value "
-            "FROM properties GROUP BY status"
+            "FROM properties WHERE account_id = %s GROUP BY status",
+            (user["account_id"],),
         )
         rows = dict_fetchall(cur)
     return {r["status"]: {"count": r["count"], "total_value": r["total_value"]} for r in rows}
@@ -186,9 +198,10 @@ def pipeline_stats(_: dict = Depends(get_current_user), db: PGConn = Depends(get
 def pipeline_analytics(
     days: int = Query(90, ge=7, le=365),
     vertical: str | None = Query(None),
-    _: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
     db: PGConn = Depends(get_db),
 ):
+    acct = user["account_id"]
     vert_filter = "AND vertical = %s" if vertical else ""
     vert_params = [vertical] if vertical else []
 
@@ -198,8 +211,8 @@ def pipeline_analytics(
             f"SELECT "
             f"  COUNT(*) FILTER (WHERE status = 'won') AS won, "
             f"  COUNT(*) FILTER (WHERE status IN ('won','lost')) AS decided "
-            f"FROM properties WHERE stage_moved_at >= NOW() - INTERVAL '%s days' {vert_filter}",
-            [days] + vert_params,
+            f"FROM properties WHERE account_id = %s AND stage_moved_at >= NOW() - INTERVAL '%s days' {vert_filter}",
+            [acct, days] + vert_params,
         )
         wr = dict_fetchone(cur)
         win_rate = round((wr["won"] / wr["decided"] * 100) if wr["decided"] > 0 else 0, 1)
@@ -207,33 +220,37 @@ def pipeline_analytics(
         # Avg cycle time (created_at → stage_moved_at for won leads)
         cur.execute(
             f"SELECT AVG(EXTRACT(EPOCH FROM (stage_moved_at - created_at)) / 86400) AS avg_days "
-            f"FROM properties WHERE status = 'won' AND stage_moved_at IS NOT NULL AND created_at IS NOT NULL "
+            f"FROM properties WHERE account_id = %s AND status = 'won' AND stage_moved_at IS NOT NULL AND created_at IS NOT NULL "
             f"AND stage_moved_at >= NOW() - INTERVAL '%s days' {vert_filter}",
-            [days] + vert_params,
+            [acct, days] + vert_params,
         )
         ct = dict_fetchone(cur)
         avg_cycle_time = round(ct["avg_days"], 1) if ct and ct["avg_days"] else None
 
         # Leads won in period
         cur.execute(
-            f"SELECT COUNT(*) AS count FROM properties WHERE status = 'won' "
+            f"SELECT COUNT(*) AS count FROM properties WHERE account_id = %s AND status = 'won' "
             f"AND stage_moved_at >= NOW() - INTERVAL '%s days' {vert_filter}",
-            [days] + vert_params,
+            [acct, days] + vert_params,
         )
         leads_won = cur.fetchone()[0]
 
-        # Funnel: count per stage from stage_transitions
+        # Funnel: count per stage from stage_transitions (scoped to this org's leads)
+        acct_sub = (
+            "AND property_id IN (SELECT id FROM properties WHERE account_id = %s"
+            + (" AND vertical = %s)" if vertical else ")")
+        )
         cur.execute(
             f"SELECT to_status, COUNT(DISTINCT property_id) AS leads "
             f"FROM stage_transitions WHERE transitioned_at >= NOW() - INTERVAL '%s days' "
-            f"{'AND property_id IN (SELECT id FROM properties WHERE vertical = %s)' if vertical else ''} "
+            f"{acct_sub} "
             f"GROUP BY to_status",
-            [days] + vert_params,
+            [days, acct] + vert_params,
         )
         funnel_rows = dict_fetchall(cur)
         funnel = {r["to_status"]: r["leads"] for r in funnel_rows}
 
-        # Avg days per stage from transitions
+        # Avg days per stage from transitions (scoped to this org's leads)
         cur.execute(
             f"SELECT t1.from_status AS stage, "
             f"  AVG(EXTRACT(EPOCH FROM (t1.transitioned_at - t2.transitioned_at)) / 86400) AS avg_days "
@@ -244,8 +261,9 @@ def pipeline_analytics(
             f"  ORDER BY t2.transitioned_at DESC LIMIT 1"
             f") t2 ON TRUE "
             f"WHERE t1.from_status IS NOT NULL AND t1.transitioned_at >= NOW() - INTERVAL '%s days' "
+            f"AND t1.property_id IN (SELECT id FROM properties WHERE account_id = %s) "
             f"GROUP BY t1.from_status",
-            [days],
+            [days, acct],
         )
         stage_time_rows = dict_fetchall(cur)
         avg_days_per_stage = {r["stage"]: round(r["avg_days"], 1) if r["avg_days"] else None for r in stage_time_rows}
@@ -262,7 +280,7 @@ def pipeline_analytics(
 
 @router.get("/pipeline/forecast")
 def pipeline_forecast(
-    _: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
     db: PGConn = Depends(get_db),
 ):
     stage_weights = {
@@ -274,8 +292,9 @@ def pipeline_forecast(
     with db.cursor() as cur:
         cur.execute(
             "SELECT status, COUNT(*) AS count, COALESCE(SUM(estimated_job_value), 0) AS raw_value "
-            "FROM properties WHERE status IN ('new','contacted','qualified','quote_sent') "
-            "GROUP BY status"
+            "FROM properties WHERE account_id = %s AND status IN ('new','contacted','qualified','quote_sent') "
+            "GROUP BY status",
+            (user["account_id"],),
         )
         rows = dict_fetchall(cur)
 
@@ -301,11 +320,11 @@ def pipeline_forecast(
 
 
 @router.patch("/leads/{lead_id}/job-value")
-def update_job_value(lead_id: int, body: JobValueUpdate, _: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+def update_job_value(lead_id: int, body: JobValueUpdate, user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
     with db.cursor() as cur:
         cur.execute(
-            f"UPDATE properties SET estimated_job_value = %s WHERE id = %s RETURNING {CARD_COLS}",
-            (body.estimated_job_value, lead_id),
+            f"UPDATE properties SET estimated_job_value = %s WHERE id = %s AND account_id = %s RETURNING {CARD_COLS}",
+            (body.estimated_job_value, lead_id, user["account_id"]),
         )
         row = dict_fetchone(cur)
         db.commit()
@@ -317,9 +336,12 @@ def update_job_value(lead_id: int, body: JobValueUpdate, _: dict = Depends(get_c
 # ── Schedules ─────────────────────────────────────────────────────────────────
 
 @router.get("/pipeline-schedules")
-def list_schedules(_: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+def list_schedules(user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
     with db.cursor() as cur:
-        cur.execute("SELECT * FROM pipeline_schedules ORDER BY id")
+        cur.execute(
+            "SELECT * FROM pipeline_schedules WHERE account_id = %s ORDER BY id",
+            (user["account_id"],),
+        )
         return dict_fetchall(cur)
 
 
@@ -329,10 +351,10 @@ def create_schedule(body: ScheduleCreate, current_user: dict = Depends(require_o
     with db.cursor() as cur:
         cur.execute(
             "INSERT INTO pipeline_schedules "
-            "(zip, vertical, day_of_week, hour, top_n, center_address, radius_mi, created_by) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
+            "(zip, vertical, day_of_week, hour, top_n, center_address, radius_mi, created_by, account_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
             (body.zip, body.vertical, body.day_of_week, body.hour,
-             body.top_n, body.center_address, body.radius_mi, current_user["id"]),
+             body.top_n, body.center_address, body.radius_mi, current_user["id"], current_user["account_id"]),
         )
         row = dict_fetchone(cur)
         db.commit()
@@ -344,7 +366,7 @@ def create_schedule(body: ScheduleCreate, current_user: dict = Depends(require_o
 def update_schedule(
     schedule_id: int,
     body: ScheduleUpdate,
-    _: dict = Depends(require_owner),
+    current_user: dict = Depends(require_owner),
     db: PGConn = Depends(get_db),
 ):
     from api.scheduler import remove_schedule_job, add_schedule_job
@@ -363,10 +385,10 @@ def update_schedule(
         sets.append("radius_mi = %s"); params.append(body.radius_mi)
     if not sets:
         raise HTTPException(status_code=400, detail="Nothing to update")
-    params.append(schedule_id)
+    params.extend([schedule_id, current_user["account_id"]])
     with db.cursor() as cur:
         cur.execute(
-            f"UPDATE pipeline_schedules SET {', '.join(sets)} WHERE id = %s RETURNING *",
+            f"UPDATE pipeline_schedules SET {', '.join(sets)} WHERE id = %s AND account_id = %s RETURNING *",
             params,
         )
         row = dict_fetchone(cur)
@@ -380,11 +402,14 @@ def update_schedule(
 
 
 @router.delete("/pipeline-schedules/{schedule_id}", status_code=204)
-def delete_schedule(schedule_id: int, _: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+def delete_schedule(schedule_id: int, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
     from api.scheduler import remove_schedule_job
     remove_schedule_job(schedule_id)
     with db.cursor() as cur:
-        cur.execute("DELETE FROM pipeline_schedules WHERE id = %s RETURNING id", (schedule_id,))
+        cur.execute(
+            "DELETE FROM pipeline_schedules WHERE id = %s AND account_id = %s RETURNING id",
+            (schedule_id, current_user["account_id"]),
+        )
         deleted = cur.fetchone()
         db.commit()
     if not deleted:
@@ -399,28 +424,32 @@ def trigger_run(body: RunCreate, current_user: dict = Depends(require_owner), db
     with db.cursor() as cur:
         cur.execute(
             "INSERT INTO pipeline_runs "
-            "(zip, vertical, top_n, center_address, radius_mi, triggered_by) "
-            "VALUES (%s, %s, %s, %s, %s, 'manual') RETURNING *",
-            (body.zip, body.vertical, body.top_n, body.center_address, body.radius_mi),
+            "(zip, vertical, top_n, center_address, radius_mi, triggered_by, account_id) "
+            "VALUES (%s, %s, %s, %s, %s, 'manual', %s) RETURNING *",
+            (body.zip, body.vertical, body.top_n, body.center_address, body.radius_mi,
+             current_user["account_id"]),
         )
         run = dict_fetchone(cur)
         db.commit()
-    enqueue_run(run["id"], body.zip, body.vertical, top_n=body.top_n,
+    enqueue_run(run["id"], body.zip, body.vertical, current_user["account_id"], top_n=body.top_n,
                 center_address=body.center_address, radius_mi=body.radius_mi)
     return run
 
 
 @router.get("/pipeline/runs")
-def list_runs(limit: int = Query(20, ge=1, le=100), _: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+def list_runs(limit: int = Query(20, ge=1, le=100), user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
     with db.cursor() as cur:
-        cur.execute("SELECT * FROM pipeline_runs ORDER BY created_at DESC LIMIT %s", (limit,))
+        cur.execute(
+            "SELECT * FROM pipeline_runs WHERE account_id = %s ORDER BY created_at DESC LIMIT %s",
+            (user["account_id"], limit),
+        )
         return dict_fetchall(cur)
 
 
 @router.get("/pipeline/runs/{run_id}")
-def get_run(run_id: int, _: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+def get_run(run_id: int, user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
     with db.cursor() as cur:
-        cur.execute("SELECT * FROM pipeline_runs WHERE id = %s", (run_id,))
+        cur.execute("SELECT * FROM pipeline_runs WHERE id = %s AND account_id = %s", (run_id, user["account_id"]))
         row = dict_fetchone(cur)
     if not row:
         raise HTTPException(status_code=404, detail="Run not found")
@@ -428,36 +457,41 @@ def get_run(run_id: int, _: dict = Depends(get_current_user), db: PGConn = Depen
 
 
 @router.post("/pipeline/rescore")
-def rescore(body: RunCreate, _: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+def rescore(body: RunCreate, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
     """Score (or re-score) all leads in a ZIP without re-running the full pipeline."""
     import sys, os
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
     from pipeline.scorer import score_zip
-    n = score_zip(body.zip, vertical=body.vertical)
+    n = score_zip(body.zip, current_user["account_id"], vertical=body.vertical)
     return {"scored": n, "zip": body.zip, "vertical": body.vertical}
 
 
 @router.post("/pipeline/rescore-all")
-def rescore_all(_: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
-    """Score (or re-score) all leads in every ZIP."""
+def rescore_all(current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+    """Score (or re-score) all leads in every ZIP for this org."""
     import sys, os
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
     from pipeline.scorer import score_zip
+    acct = current_user["account_id"]
     with db.cursor() as cur:
-        cur.execute("SELECT DISTINCT zip FROM properties WHERE zip IS NOT NULL ORDER BY zip")
+        cur.execute(
+            "SELECT DISTINCT zip FROM properties WHERE zip IS NOT NULL AND account_id = %s ORDER BY zip",
+            (acct,),
+        )
         zips = [row[0] for row in cur.fetchall()]
     total = 0
     for z in zips:
-        total += score_zip(z, vertical=None)
+        total += score_zip(z, acct, vertical=None)
     return {"scored": total, "zips": len(zips)}
 
 
 @router.delete("/pipeline/runs/{run_id}", status_code=204)
-def cancel_run(run_id: int, _: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+def cancel_run(run_id: int, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
     """Signal a running pipeline to stop after its current step."""
     from api.scheduler import request_cancel
+    acct = current_user["account_id"]
     with db.cursor() as cur:
-        cur.execute("SELECT status FROM pipeline_runs WHERE id = %s", (run_id,))
+        cur.execute("SELECT status FROM pipeline_runs WHERE id = %s AND account_id = %s", (run_id, acct))
         row = cur.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Run not found")
@@ -467,8 +501,8 @@ def cancel_run(run_id: int, _: dict = Depends(require_owner), db: PGConn = Depen
     # Mark as cancelled immediately so the UI updates even if the thread hasn't checked yet
     with db.cursor() as cur:
         cur.execute(
-            "UPDATE pipeline_runs SET status = 'cancelled', finished_at = NOW() WHERE id = %s",
-            (run_id,),
+            "UPDATE pipeline_runs SET status = 'cancelled', finished_at = NOW() WHERE id = %s AND account_id = %s",
+            (run_id, acct),
         )
     db.commit()
     return

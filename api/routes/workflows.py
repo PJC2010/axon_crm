@@ -36,9 +36,12 @@ class WorkflowRuleUpdate(BaseModel):
 
 
 @router.get("/workflows")
-def list_workflows(db: PGConn = Depends(get_db), _: dict = Depends(get_current_user)):
+def list_workflows(db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
     with db.cursor() as cur:
-        cur.execute("SELECT * FROM workflow_rules ORDER BY created_at")
+        cur.execute(
+            "SELECT * FROM workflow_rules WHERE account_id = %s ORDER BY created_at",
+            (user["account_id"],),
+        )
         return dict_fetchall(cur)
 
 
@@ -46,10 +49,11 @@ def list_workflows(db: PGConn = Depends(get_db), _: dict = Depends(get_current_u
 def create_workflow(body: WorkflowRuleCreate, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
     with db.cursor() as cur:
         cur.execute(
-            "INSERT INTO workflow_rules (name, trigger_type, trigger_config, action_type, action_config, is_active, vertical, created_by) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
+            "INSERT INTO workflow_rules (name, trigger_type, trigger_config, action_type, action_config, is_active, vertical, created_by, account_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
             (body.name, body.trigger_type, json.dumps(body.trigger_config), body.action_type,
-             json.dumps(body.action_config), body.is_active, body.vertical, current_user["id"]),
+             json.dumps(body.action_config), body.is_active, body.vertical, current_user["id"],
+             current_user["account_id"]),
         )
         row = dict_fetchone(cur)
         db.commit()
@@ -57,7 +61,7 @@ def create_workflow(body: WorkflowRuleCreate, current_user: dict = Depends(requi
 
 
 @router.patch("/workflows/{rule_id}")
-def update_workflow(rule_id: int, body: WorkflowRuleUpdate, _: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+def update_workflow(rule_id: int, body: WorkflowRuleUpdate, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
     sets, params = [], []
     if body.name is not None:
         sets.append("name = %s"); params.append(body.name)
@@ -72,9 +76,9 @@ def update_workflow(rule_id: int, body: WorkflowRuleUpdate, _: dict = Depends(re
     if not sets:
         raise HTTPException(status_code=400, detail="Nothing to update")
     sets.append("updated_at = NOW()")
-    params.append(rule_id)
+    params.extend([rule_id, current_user["account_id"]])
     with db.cursor() as cur:
-        cur.execute(f"UPDATE workflow_rules SET {', '.join(sets)} WHERE id = %s RETURNING *", params)
+        cur.execute(f"UPDATE workflow_rules SET {', '.join(sets)} WHERE id = %s AND account_id = %s RETURNING *", params)
         row = dict_fetchone(cur)
         db.commit()
     if not row:
@@ -83,9 +87,9 @@ def update_workflow(rule_id: int, body: WorkflowRuleUpdate, _: dict = Depends(re
 
 
 @router.delete("/workflows/{rule_id}", status_code=204)
-def delete_workflow(rule_id: int, _: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+def delete_workflow(rule_id: int, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
     with db.cursor() as cur:
-        cur.execute("DELETE FROM workflow_rules WHERE id = %s RETURNING id", (rule_id,))
+        cur.execute("DELETE FROM workflow_rules WHERE id = %s AND account_id = %s RETURNING id", (rule_id, current_user["account_id"]))
         deleted = cur.fetchone()
         db.commit()
     if not deleted:
@@ -107,10 +111,10 @@ def seed_defaults(
     with db.cursor() as cur:
         for rule in defaults:
             cur.execute(
-                "INSERT INTO workflow_rules (name, trigger_type, trigger_config, action_type, action_config, vertical, created_by) "
-                "VALUES (%s, 'status_change', %s, 'create_task', %s, %s, %s) RETURNING *",
+                "INSERT INTO workflow_rules (name, trigger_type, trigger_config, action_type, action_config, vertical, created_by, account_id) "
+                "VALUES (%s, 'status_change', %s, 'create_task', %s, %s, %s, %s) RETURNING *",
                 (rule["name"], json.dumps(rule["trigger_config"]), json.dumps(rule["action_config"]),
-                 vertical, current_user["id"]),
+                 vertical, current_user["id"], current_user["account_id"]),
             )
             created.append(dict_fetchone(cur))
         db.commit()

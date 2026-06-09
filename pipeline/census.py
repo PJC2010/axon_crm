@@ -14,9 +14,9 @@ from pipeline.http import get_json
 log = logging.getLogger(__name__)
 
 
-def enrich_census(zip_code: str | None = None) -> int:
+def enrich_census(zip_code: str, account_id: int) -> int:
     conn = get_conn()
-    rows = fetch_missing_field(conn, "zip_median_income", zip_code)
+    rows = fetch_missing_field(conn, "zip_median_income", account_id, zip_code)
 
     # De-duplicate: only hit the API once per ZIP
     zips = list({r["zip"] for r in rows if r.get("zip")})
@@ -40,7 +40,7 @@ def enrich_census(zip_code: str | None = None) -> int:
                 "enrichment_flags": {"census": "acs5_2022"},
             })
 
-    n = upsert_properties(conn, updates)
+    n = upsert_properties(conn, updates, account_id)
     conn.close()
     log.info("Updated zip_median_income for %d properties", n)
     return n

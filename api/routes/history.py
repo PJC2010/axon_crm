@@ -12,8 +12,8 @@ router = APIRouter()
 
 
 @router.get("/leads/{lead_id}/history", response_model=list[HistoryEntry])
-def list_history(lead_id: int, db: PGConn = Depends(get_db), _: dict = Depends(get_current_user)):
-    _assert_lead(db, lead_id)
+def list_history(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
+    _assert_lead(db, lead_id, user["account_id"])
     with db.cursor() as cur:
         cur.execute(
             "SELECT * FROM contact_history WHERE property_id = %s ORDER BY created_at DESC",
@@ -24,7 +24,7 @@ def list_history(lead_id: int, db: PGConn = Depends(get_db), _: dict = Depends(g
 
 @router.post("/leads/{lead_id}/history", response_model=HistoryEntry, status_code=201)
 def add_history(lead_id: int, body: HistoryCreate, db: PGConn = Depends(get_db), current_user: dict = Depends(get_current_user)):
-    _assert_lead(db, lead_id)
+    _assert_lead(db, lead_id, current_user["account_id"])
     with db.cursor() as cur:
         cur.execute(
             "INSERT INTO contact_history (property_id, action, outcome, created_by) "
@@ -37,8 +37,8 @@ def add_history(lead_id: int, body: HistoryCreate, db: PGConn = Depends(get_db),
     return HistoryEntry(**row)
 
 
-def _assert_lead(db, lead_id: int):
+def _assert_lead(db, lead_id: int, account_id: int):
     with db.cursor() as cur:
-        cur.execute("SELECT id FROM properties WHERE id = %s", (lead_id,))
+        cur.execute("SELECT id FROM properties WHERE id = %s AND account_id = %s", (lead_id, account_id))
         if not cur.fetchone():
             raise HTTPException(status_code=404, detail="Lead not found")

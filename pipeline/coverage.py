@@ -36,11 +36,21 @@ def compute_fill_rates(rows: list[dict], fields: list[str] | None = None) -> dic
     return out
 
 
-def fill_rates(conn, zip_code: str, fields: list[str] | None = None) -> dict:
-    """Compute fill rates for `zip_code` straight from the DB."""
+def fill_rates(conn, zip_code: str, account_id: int | None = None,
+               fields: list[str] | None = None) -> dict:
+    """Compute fill rates for `zip_code` straight from the DB.
+
+    When `account_id` is given, restrict to that org's rows (used by the
+    pipeline). Omitting it (the admin CLI) reports across all orgs.
+    """
     fields = fields or TRACKED_FIELDS
+    sql = "SELECT * FROM properties WHERE zip = %s"
+    params = [zip_code]
+    if account_id is not None:
+        sql += " AND account_id = %s"
+        params.append(account_id)
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute("SELECT * FROM properties WHERE zip = %s", (zip_code,))
+        cur.execute(sql, params)
         rows = [dict(r) for r in cur.fetchall()]
     return compute_fill_rates(rows, fields)
 

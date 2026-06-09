@@ -12,15 +12,17 @@ from api.deps import dict_fetchall
 log = logging.getLogger(__name__)
 
 
-def execute_status_change_rules(conn, lead_id: int, old_status: str | None, new_status: str, user_id: int) -> list[dict]:
+def execute_status_change_rules(conn, lead_id: int, old_status: str | None, new_status: str, user_id: int, account_id: int) -> list[dict]:
     """Run all active status_change rules that match this transition.
 
-    Returns a list of action results (e.g., created tasks) so the caller
-    can relay feedback to the frontend.
+    Only this org's rules are evaluated, and any actions they create are
+    written under the same account. Returns a list of action results (e.g.,
+    created tasks) so the caller can relay feedback to the frontend.
     """
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT * FROM workflow_rules WHERE trigger_type = 'status_change' AND is_active = TRUE",
+            "SELECT * FROM workflow_rules WHERE trigger_type = 'status_change' AND is_active = TRUE AND account_id = %s",
+            (account_id,),
         )
         rules = dict_fetchall(cur)
 
@@ -34,7 +36,7 @@ def execute_status_change_rules(conn, lead_id: int, old_status: str | None, new_
             continue
 
         try:
-            result = _execute_action(conn, rule, lead_id, user_id)
+            result = _execute_action(conn, rule, lead_id, user_id, account_id)
             if result:
                 results.append(result)
         except Exception:
@@ -66,14 +68,14 @@ def _get_lead_vertical(conn, lead_id: int) -> str | None:
     return row[0] if row else None
 
 
-def _execute_action(conn, rule: dict, lead_id: int, user_id: int) -> dict | None:
+def _execute_action(conn, rule: dict, lead_id: int, user_id: int, account_id: int) -> dict | None:
     action_type = rule["action_type"]
     cfg = rule["action_config"]
     if isinstance(cfg, str):
         cfg = json.loads(cfg)
 
     if action_type == "create_task":
-        return _create_task(conn, cfg, lead_id, user_id, rule["name"])
+        return _create_task(conn, cfg, lead_id, user_id, rule["name"], account_id)
     if action_type == "log_history":
         return _log_history(conn, cfg, lead_id, user_id)
 
@@ -81,7 +83,7 @@ def _execute_action(conn, rule: dict, lead_id: int, user_id: int) -> dict | None
     return None
 
 
-def _create_task(conn, cfg: dict, lead_id: int, user_id: int, rule_name: str) -> dict:
+def _create_task(conn, cfg: dict, lead_id: int, user_id: int, rule_name: str, account_id: int) -> dict:
     title = cfg.get("title", rule_name)
     priority = cfg.get("priority", "normal")
     due_days = cfg.get("due_days_offset", 3)
@@ -89,9 +91,9 @@ def _create_task(conn, cfg: dict, lead_id: int, user_id: int, rule_name: str) ->
 
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO tasks (property_id, title, due_date, priority, created_by) "
-            "VALUES (%s, %s, %s, %s, %s) RETURNING id, title, due_date, priority",
-            (lead_id, title, due_date, priority, user_id),
+            "INSERT INTO tasks (property_id, title, due_date, priority, created_by, account_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id, title, due_date, priority",
+            (lead_id, title, due_date, priority, user_id, account_id),
         )
         row = cur.fetchone()
     conn.commit()

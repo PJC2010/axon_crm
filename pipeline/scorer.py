@@ -18,10 +18,10 @@ from pipeline.scoring import (
 log = logging.getLogger(__name__)
 
 
-def score_zip(zip_code: str, vertical: str | None = None) -> int:
+def score_zip(zip_code: str, account_id: int, vertical: str | None = None) -> int:
     weights = VERTICAL_WEIGHTS.get(vertical, DEFAULT_WEIGHTS) if vertical else DEFAULT_WEIGHTS
     conn = get_conn()
-    rows = fetch_by_zip(conn, zip_code)
+    rows = fetch_by_zip(conn, zip_code, account_id)
     if not rows:
         conn.close()
         return 0
@@ -40,7 +40,7 @@ def score_zip(zip_code: str, vertical: str | None = None) -> int:
             "enrichment_flags": {"scored": vertical or "default"},
         })
 
-    n = upsert_properties(conn, updates)
+    n = upsert_properties(conn, updates, account_id)
     conn.close()
     log.info("Scored %d properties in ZIP %s (grade dist: %s)", n, zip_code,
              _grade_dist(updates))
