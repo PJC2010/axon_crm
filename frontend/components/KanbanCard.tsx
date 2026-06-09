@@ -26,7 +26,7 @@ export function KanbanCard({ lead, onClick }: Props) {
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
         <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-ink-900)', lineHeight: 1.3, flex: 1 }}>
-          {lead.address}
+          {lead.address || lead.contact_name || '—'}
         </span>
         {lead.score_grade && <ScoreBadge grade={lead.score_grade} score={lead.lead_score} />}
       </div>
