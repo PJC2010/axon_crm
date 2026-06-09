@@ -50,7 +50,7 @@ export function ActivityFeed() {
             id: `lead-${lead.id}`,
             icon: <UserPlus size={13} strokeWidth={1.8} />,
             iconColor: 'var(--color-accent)',
-            title: lead.owner_name ?? lead.address,
+            title: lead.owner_name ?? lead.address ?? lead.contact_name ?? '—',
             detail: `Lead ${lead.status === 'new' ? 'added' : `moved to ${lead.status.replace('_', ' ')}`}`,
             time: lead.updated_at,
             link: '/dashboard',
