@@ -118,7 +118,7 @@ export function ExpenseTracker() {
           <Link href="/home" title="Home" className="dash-icon-btn" style={{ textDecoration: 'none', color: 'inherit' }}>
             <Home size={15} strokeWidth={1.5} />
           </Link>
-          <ReceiptText size={18} strokeWidth={1.5} color="var(--color-accent)" />
+          <ReceiptText size={18} strokeWidth={1.5} color="var(--color-accent)" className="hidden sm:block" />
           <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600, color: 'var(--color-ink-900)', margin: 0 }}>
             Expenses
           </h1>

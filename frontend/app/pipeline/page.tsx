@@ -28,6 +28,14 @@ function PipelinePage() {
   const [dragOver, setDragOver] = useState<string | null>(null)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [view, setView] = useState<'board' | 'analytics'>('board')
+  const [wide, setWide] = useState(false)
+
+  useEffect(() => {
+    const check = () => setWide(window.innerWidth >= 640)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -92,7 +100,7 @@ function PipelinePage() {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--color-paper)', display: 'flex', flexDirection: 'column' }}>
       <header style={{
-        height: 64, padding: '0 28px', display: 'flex', alignItems: 'center', gap: 16,
+        height: 64, padding: wide ? '0 28px' : '0 14px', display: 'flex', alignItems: 'center', gap: wide ? 16 : 8,
         borderBottom: '1px solid var(--color-ink-200)', background: 'var(--color-paper)',
         flexShrink: 0,
       }}>
@@ -105,13 +113,14 @@ function PipelinePage() {
         <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600, color: 'var(--color-ink-900)', margin: 0 }}>
           Pipeline
         </h1>
-        <div style={{ display: 'flex', gap: 2, background: 'var(--color-ink-100)', borderRadius: 'var(--radius-pill)', padding: 2, marginLeft: 8 }}>
+        <div style={{ display: 'flex', gap: 2, background: 'var(--color-ink-100)', borderRadius: 'var(--radius-pill)', padding: 2, marginLeft: wide ? 8 : 0 }}>
           {([['board', Kanban, 'Board'], ['analytics', BarChart3, 'Analytics']] as const).map(([key, Icon, label]) => (
             <button
               key={key}
               onClick={() => setView(key)}
+              title={label}
               style={{
-                display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px',
+                display: 'flex', alignItems: 'center', gap: 5, padding: wide ? '5px 12px' : '6px 10px',
                 fontSize: 12, fontWeight: 500, borderRadius: 'var(--radius-pill)', border: 'none', cursor: 'pointer',
                 background: view === key ? 'var(--color-paper)' : 'transparent',
                 color: view === key ? 'var(--color-ink-900)' : 'var(--color-ink-400)',
@@ -119,7 +128,7 @@ function PipelinePage() {
                 transition: 'all 0.15s',
               }}
             >
-              <Icon size={13} strokeWidth={1.5} /> {label}
+              <Icon size={13} strokeWidth={1.5} /> {wide && label}
             </button>
           ))}
         </div>
