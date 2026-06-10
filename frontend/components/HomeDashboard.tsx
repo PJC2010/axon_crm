@@ -5,7 +5,7 @@ import {
   Plus, FileText, Receipt, Kanban,
   AlertTriangle, Clock, AlertCircle,
   LogOut, Settings, BookOpen, ArrowRight,
-  BarChart3, Percent,
+  BarChart3, Percent, Menu, X,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -70,11 +70,16 @@ export function HomeDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
   const [wide, setWide]       = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const { toasts, show: showToast, dismiss: dismissToast } = useToast()
 
   useEffect(() => {
-    const check = () => setWide(window.innerWidth >= 640)
+    const check = () => {
+      const w = window.innerWidth >= 640
+      setWide(w)
+      if (w) setMenuOpen(false)
+    }
     check()
     window.addEventListener('resize', check)
     return () => window.removeEventListener('resize', check)
@@ -184,35 +189,108 @@ export function HomeDashboard() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Link href="/dashboard" title="Leads" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
-            <Users size={13} strokeWidth={1.5} />
-            {wide && <span>Leads</span>}
-          </Link>
-          <Link href="/pipeline" title="Pipeline" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
-            <Kanban size={13} strokeWidth={1.5} />
-            {wide && <span>Pipeline</span>}
-          </Link>
-          <Link href="/tasks" title="Tasks" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
-            <CheckSquare size={13} strokeWidth={1.5} />
-            {wide && <span>Tasks</span>}
-          </Link>
-          <Link href="/expenses" title="Expenses" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
-            <Receipt size={13} strokeWidth={1.5} />
-            {wide && <span>Expenses</span>}
-          </Link>
-          <Link href="/bookkeeping" title="Bookkeeping" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
-            <BookOpen size={13} strokeWidth={1.5} />
-            {wide && <span>Books</span>}
-          </Link>
-          <TaskBell />
-          <Link href="/settings" title="Settings" className="dash-icon-btn">
-            <Settings size={13} strokeWidth={1.5} />
-          </Link>
-          <button onClick={handleSignOut} title="Sign out" className="dash-icon-btn">
-            <LogOut size={13} strokeWidth={1.5} />
-          </button>
+          {wide ? (
+            <>
+              <Link href="/dashboard" title="Leads" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
+                <Users size={13} strokeWidth={1.5} />
+                <span>Leads</span>
+              </Link>
+              <Link href="/pipeline" title="Pipeline" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
+                <Kanban size={13} strokeWidth={1.5} />
+                <span>Pipeline</span>
+              </Link>
+              <Link href="/tasks" title="Tasks" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
+                <CheckSquare size={13} strokeWidth={1.5} />
+                <span>Tasks</span>
+              </Link>
+              <Link href="/expenses" title="Expenses" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
+                <Receipt size={13} strokeWidth={1.5} />
+                <span>Expenses</span>
+              </Link>
+              <Link href="/bookkeeping" title="Bookkeeping" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
+                <BookOpen size={13} strokeWidth={1.5} />
+                <span>Books</span>
+              </Link>
+              <TaskBell />
+              <Link href="/settings" title="Settings" className="dash-icon-btn">
+                <Settings size={13} strokeWidth={1.5} />
+              </Link>
+              <button onClick={handleSignOut} title="Sign out" className="dash-icon-btn">
+                <LogOut size={13} strokeWidth={1.5} />
+              </button>
+            </>
+          ) : (
+            <>
+              <TaskBell />
+              <button
+                onClick={() => setMenuOpen(o => !o)}
+                className="dash-icon-btn"
+                title="Menu"
+                aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+                aria-expanded={menuOpen}
+              >
+                {menuOpen ? <X size={16} strokeWidth={1.5} /> : <Menu size={16} strokeWidth={1.5} />}
+              </button>
+            </>
+          )}
         </div>
       </header>
+
+      {/* ── Mobile Nav Menu ── */}
+      {!wide && menuOpen && (
+        <>
+          <div
+            onClick={() => setMenuOpen(false)}
+            style={{ position: 'fixed', inset: 0, zIndex: 19, background: 'rgba(22,24,29,0.18)' }}
+          />
+          <nav style={{
+            position: 'fixed', top: 64, left: 0, right: 0, zIndex: 20,
+            background: 'var(--color-surface)',
+            borderBottom: '1px solid var(--color-ink-200)',
+            boxShadow: 'var(--shadow-pop)',
+            padding: 8,
+            display: 'flex', flexDirection: 'column', gap: 2,
+          }}>
+            {[
+              { label: 'Leads',       icon: <Users size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,       href: '/dashboard' },
+              { label: 'Pipeline',    icon: <Kanban size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,      href: '/pipeline' },
+              { label: 'Tasks',       icon: <CheckSquare size={18} strokeWidth={1.5} color="var(--color-ink-500)" />, href: '/tasks' },
+              { label: 'Expenses',    icon: <Receipt size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,     href: '/expenses' },
+              { label: 'Bookkeeping', icon: <BookOpen size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,    href: '/bookkeeping' },
+              { label: 'Settings',    icon: <Settings size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,    href: '/settings' },
+            ].map(({ label, icon, href }) => (
+              <Link
+                key={href}
+                href={href}
+                onClick={() => setMenuOpen(false)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '12px 14px', minHeight: 48,
+                  borderRadius: 'var(--radius-button)',
+                  textDecoration: 'none', color: 'var(--color-ink-800)',
+                  fontSize: 15, fontWeight: 500,
+                }}
+              >
+                {icon}
+                {label}
+              </Link>
+            ))}
+            <button
+              onClick={() => { setMenuOpen(false); handleSignOut() }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '12px 14px', minHeight: 48, width: '100%',
+                borderRadius: 'var(--radius-button)',
+                border: 'none', background: 'transparent', cursor: 'pointer',
+                color: 'var(--color-danger)', fontSize: 15, fontWeight: 500, textAlign: 'left',
+              }}
+            >
+              <LogOut size={18} strokeWidth={1.5} />
+              Sign out
+            </button>
+          </nav>
+        </>
+      )}
 
       {/* ── Error Banner ── */}
       {error && (
