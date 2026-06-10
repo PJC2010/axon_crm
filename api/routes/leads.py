@@ -4,6 +4,8 @@ GET  /api/leads/{id}      — single lead detail
 PATCH /api/leads/{id}/status — update lead status
 GET  /api/zips            — distinct ZIP codes in DB
 """
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from psycopg2.extensions import connection as PGConn
 
@@ -12,8 +14,9 @@ from api.models import (
     Lead, LeadPage, StatusUpdate, LeadContactUpdate,
     ScoreExplanation, ScoreFactor, VerticalFactor,
 )
-from config import DEFAULT_WEIGHTS, VERTICAL_WEIGHTS
+from config import DEFAULT_WEIGHTS, VERTICAL_WEIGHTS, CONTACT_PROVIDER, CONTACT_API_KEY
 from pipeline.scoring import explain_score, describe_vertical
+from pipeline.contact import PROVIDERS
 
 router = APIRouter()
 
@@ -149,6 +152,61 @@ def update_contact(lead_id: int, body: LeadContactUpdate, db: PGConn = Depends(g
     if not row:
         raise HTTPException(status_code=404, detail="Lead not found")
     return Lead(**row)
+
+
+@router.post("/leads/{lead_id}/enrich", response_model=Lead)
+def enrich_lead(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
+    """On-demand skip-trace for a single lead.
+
+    Reuses the same provider lookup as the batch pipeline (pipeline.contact).
+    Only fills contact fields that are currently empty — never overwrites
+    values a user has already entered. Returns 409 when no provider is
+    configured so the UI can surface a clear, actionable message.
+    """
+    lookup = PROVIDERS.get(CONTACT_PROVIDER)
+    if not CONTACT_PROVIDER or not CONTACT_API_KEY or lookup is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Contact enrichment isn't configured — set CONTACT_PROVIDER and CONTACT_API_KEY.",
+        )
+
+    acct = user["account_id"]
+    with db.cursor() as cur:
+        cur.execute("SELECT * FROM properties WHERE id = %s AND account_id = %s", (lead_id, acct))
+        row = dict_fetchone(cur)
+    if not row:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    if not row.get("owner_name"):
+        raise HTTPException(
+            status_code=422,
+            detail="This lead has no owner name to skip-trace against.",
+        )
+
+    data = lookup(row) or {}
+    # Only fill fields that are currently empty on the lead.
+    updates = {
+        field: data[field]
+        for field in ("contact_name", "contact_phone", "contact_email")
+        if data.get(field) and not row.get(field)
+    }
+    if not updates:
+        raise HTTPException(status_code=404, detail="No new contact details found.")
+
+    flags = dict(row.get("enrichment_flags") or {})
+    flags["contact"] = CONTACT_PROVIDER
+
+    sets = [f"{k} = %s" for k in updates]
+    params = list(updates.values()) + [json.dumps(flags), lead_id, acct]
+    with db.cursor() as cur:
+        cur.execute(
+            f"UPDATE properties SET {', '.join(sets)}, enrichment_flags = %s "
+            "WHERE id = %s AND account_id = %s RETURNING *",
+            params,
+        )
+        updated = dict_fetchone(cur)
+        db.commit()
+    return Lead(**updated)
 
 
 @router.get("/leads/{lead_id}/timeline")

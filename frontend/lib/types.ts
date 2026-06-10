@@ -22,6 +22,11 @@ export interface Lead {
   contact_phone: string | null
   contact_email: string | null
   contact_name: string | null
+  contact_phone_alt: string | null
+  contact_email_alt: string | null
+  mailing_address: string | null
+  preferred_contact_method: string | null
+  best_time_to_call: string | null
   zip_median_income: number | null
   permit_count_24mo: number | null
   has_pool: boolean | null

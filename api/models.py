@@ -36,6 +36,11 @@ class Lead(BaseModel):
     contact_phone: Optional[str] = None
     contact_email: Optional[str] = None
     contact_name: Optional[str] = None
+    contact_phone_alt: Optional[str] = None
+    contact_email_alt: Optional[str] = None
+    mailing_address: Optional[str] = None
+    preferred_contact_method: Optional[str] = None
+    best_time_to_call: Optional[str] = None
     status: str = "new"
     score_updated_at: Optional[datetime] = None
     estimated_job_value: Optional[int] = None
@@ -258,6 +263,11 @@ class LeadContactUpdate(BaseModel):
     contact_phone: Optional[str] = None
     contact_email: Optional[str] = None
     contact_name: Optional[str] = None
+    contact_phone_alt: Optional[str] = None
+    contact_email_alt: Optional[str] = None
+    mailing_address: Optional[str] = None
+    preferred_contact_method: Optional[str] = None
+    best_time_to_call: Optional[str] = None
 
 
 # ── Contact / lead import ──────────────────────────────────────────────────────

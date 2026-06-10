@@ -96,11 +96,28 @@ export function getScoreExplanation(leadId: number): Promise<ScoreExplanation> {
   return req<ScoreExplanation>(`/leads/${leadId}/score-explanation`)
 }
 
-export function updateLeadContact(id: number, body: { contact_phone?: string; contact_email?: string; contact_name?: string }): Promise<Lead> {
+export interface ContactUpdate {
+  contact_name?: string
+  contact_phone?: string
+  contact_email?: string
+  contact_phone_alt?: string
+  contact_email_alt?: string
+  mailing_address?: string
+  preferred_contact_method?: string
+  best_time_to_call?: string
+}
+
+export function updateLeadContact(id: number, body: ContactUpdate): Promise<Lead> {
   return req<Lead>(`/leads/${id}/contact`, {
     method: 'PATCH',
     body: JSON.stringify(body),
   })
+}
+
+// On-demand skip-trace for a single lead. Throws (with the backend's message)
+// when enrichment isn't configured or nothing new was found.
+export function enrichLead(id: number): Promise<Lead> {
+  return req<Lead>(`/leads/${id}/enrich`, { method: 'POST' })
 }
 
 export function archiveLead(id: number): Promise<Lead> {
