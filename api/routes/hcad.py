@@ -38,8 +38,9 @@ async def upload_hcad(
             cur.execute(
                 """INSERT INTO hcad_properties
                    (acct, site_address, site_zip, year_built, building_sqft, land_sqft,
-                    tot_appr_val, last_sale_date, owner_name, likely_owner_occupied)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    tot_appr_val, last_sale_date, owner_name, likely_owner_occupied,
+                    mail_addr, mail_city, mail_state, mail_zip)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT (acct) DO UPDATE SET
                      site_address = EXCLUDED.site_address,
                      site_zip = EXCLUDED.site_zip,
@@ -49,7 +50,11 @@ async def upload_hcad(
                      tot_appr_val = EXCLUDED.tot_appr_val,
                      last_sale_date = EXCLUDED.last_sale_date,
                      owner_name = EXCLUDED.owner_name,
-                     likely_owner_occupied = EXCLUDED.likely_owner_occupied
+                     likely_owner_occupied = EXCLUDED.likely_owner_occupied,
+                     mail_addr = EXCLUDED.mail_addr,
+                     mail_city = EXCLUDED.mail_city,
+                     mail_state = EXCLUDED.mail_state,
+                     mail_zip = EXCLUDED.mail_zip
                 """,
                 (
                     row["acct"],
@@ -62,6 +67,10 @@ async def upload_hcad(
                     row.get("last_sale_date") or None,
                     row.get("owner_name"),
                     row.get("likely_owner_occupied", "").lower() in ("true", "1", "t"),
+                    row.get("mail_addr"),
+                    row.get("mail_city"),
+                    row.get("mail_state"),
+                    row.get("mail_zip"),
                 ),
             )
             props_count += 1

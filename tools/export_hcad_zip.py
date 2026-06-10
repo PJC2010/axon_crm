@@ -29,7 +29,8 @@ def export_zip(con, zip_code: str) -> tuple[int, int]:
     con.execute(f"""
         COPY (
             SELECT acct, site_address, site_zip, year_built, building_sqft, land_sqft,
-                   tot_appr_val, last_sale_date, owner_name, likely_owner_occupied
+                   tot_appr_val, last_sale_date, owner_name, likely_owner_occupied,
+                   mail_addr, mail_city, mail_state, mail_zip
             FROM property_summary
             WHERE site_zip = '{zip_code}' AND site_address IS NOT NULL
         ) TO '{props_path}' (FORMAT CSV, HEADER TRUE)
