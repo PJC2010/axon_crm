@@ -1,18 +1,27 @@
 'use client'
 import { useState, useEffect, type FormEvent } from 'react'
 import { X } from 'lucide-react'
+import LocalGasStation from '@mui/icons-material/LocalGasStation'
+import Inventory2 from '@mui/icons-material/Inventory2'
+import Restaurant from '@mui/icons-material/Restaurant'
+import Build from '@mui/icons-material/Build'
+import Campaign from '@mui/icons-material/Campaign'
+import Engineering from '@mui/icons-material/Engineering'
+import Business from '@mui/icons-material/Business'
+import Category from '@mui/icons-material/Category'
+import type { SvgIconComponent } from '@mui/icons-material'
 import { createExpense, updateExpense } from '@/lib/api'
 import type { Expense, ExpenseCreate, ExpenseCategory, PaymentMethod } from '@/lib/types'
 
-const CATEGORIES: { value: ExpenseCategory; label: string; emoji: string }[] = [
-  { value: 'fuel',          label: 'Fuel',          emoji: '⛽' },
-  { value: 'materials',     label: 'Materials',     emoji: '📦' },
-  { value: 'meals',         label: 'Meals',         emoji: '🍽️' },
-  { value: 'tools',         label: 'Tools',         emoji: '🔧' },
-  { value: 'advertising',   label: 'Advertising',   emoji: '📣' },
-  { value: 'subcontractor', label: 'Subcontractor', emoji: '👷' },
-  { value: 'office',        label: 'Office',        emoji: '🏢' },
-  { value: 'other',         label: 'Other',         emoji: '📋' },
+const CATEGORIES: { value: ExpenseCategory; label: string; Icon: SvgIconComponent }[] = [
+  { value: 'fuel',          label: 'Fuel',          Icon: LocalGasStation },
+  { value: 'materials',     label: 'Materials',     Icon: Inventory2 },
+  { value: 'meals',         label: 'Meals',         Icon: Restaurant },
+  { value: 'tools',         label: 'Tools',         Icon: Build },
+  { value: 'advertising',   label: 'Advertising',   Icon: Campaign },
+  { value: 'subcontractor', label: 'Subcontractor', Icon: Engineering },
+  { value: 'office',        label: 'Office',        Icon: Business },
+  { value: 'other',         label: 'Other',         Icon: Category },
 ]
 
 const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
@@ -162,7 +171,7 @@ export function ExpenseForm({ expense, onSaved, onClose }: Props) {
                       fontWeight: category === c.value ? 600 : 400,
                     }}
                   >
-                    <span style={{ fontSize: 20 }}>{c.emoji}</span>
+                    <c.Icon style={{ fontSize: 20 }} />
                     <span>{c.label}</span>
                   </button>
                 ))}

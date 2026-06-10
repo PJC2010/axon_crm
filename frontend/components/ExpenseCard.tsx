@@ -1,5 +1,14 @@
 'use client'
 import { Pencil, Trash2 } from 'lucide-react'
+import LocalGasStation from '@mui/icons-material/LocalGasStation'
+import Inventory2 from '@mui/icons-material/Inventory2'
+import Restaurant from '@mui/icons-material/Restaurant'
+import Build from '@mui/icons-material/Build'
+import Campaign from '@mui/icons-material/Campaign'
+import Engineering from '@mui/icons-material/Engineering'
+import Business from '@mui/icons-material/Business'
+import Category from '@mui/icons-material/Category'
+import type { SvgIconComponent } from '@mui/icons-material'
 import { deleteExpense } from '@/lib/api'
 import type { Expense, ExpenseCategory } from '@/lib/types'
 
@@ -14,9 +23,9 @@ const CATEGORY_COLORS: Record<ExpenseCategory, string> = {
   other:         'var(--color-ink-400)',
 }
 
-const CATEGORY_EMOJI: Record<ExpenseCategory, string> = {
-  fuel: '⛽', materials: '📦', meals: '🍽️', tools: '🔧',
-  advertising: '📣', subcontractor: '👷', office: '🏢', other: '📋',
+const CATEGORY_ICON: Record<ExpenseCategory, SvgIconComponent> = {
+  fuel: LocalGasStation, materials: Inventory2, meals: Restaurant, tools: Build,
+  advertising: Campaign, subcontractor: Engineering, office: Business, other: Category,
 }
 
 const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
@@ -43,7 +52,7 @@ interface Props {
 export function ExpenseCard({ expense, onEdit, onDeleted }: Props) {
   const cat = expense.category as ExpenseCategory
   const color = CATEGORY_COLORS[cat] ?? 'var(--color-ink-400)'
-  const emoji = CATEGORY_EMOJI[cat] ?? '📋'
+  const Icon = CATEGORY_ICON[cat] ?? Category
   const label = CATEGORY_LABELS[cat] ?? cat
 
   async function handleDelete() {
@@ -65,15 +74,15 @@ export function ExpenseCard({ expense, onEdit, onDeleted }: Props) {
       borderRadius: 'var(--radius-card)',
       boxShadow: 'var(--shadow-card)',
     }}>
-      {/* Category dot / emoji */}
+      {/* Category icon */}
       <div style={{
         width: 42, height: 42, borderRadius: 10,
         background: color + '18',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        flexShrink: 0, fontSize: 20,
+        flexShrink: 0,
         border: `1.5px solid ${color}30`,
       }}>
-        {emoji}
+        <Icon style={{ fontSize: 22, color }} />
       </div>
 
       {/* Main info */}
