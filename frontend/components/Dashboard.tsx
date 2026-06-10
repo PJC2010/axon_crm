@@ -65,6 +65,11 @@ export function Dashboard() {
     if (selected?.id === id) setSelected(prev => prev ? { ...prev, status } : prev)
   }
 
+  function handleLeadChange(updated: Lead) {
+    setLeads(prev => prev.map(l => l.id === updated.id ? updated : l))
+    if (selected?.id === updated.id) setSelected(updated)
+  }
+
   return (
     <div className="flex flex-col h-screen" style={{ background: 'var(--color-paper)' }}>
       {/* Top nav — matches landing page nav height and token usage */}
@@ -270,6 +275,8 @@ export function Dashboard() {
         lead={selected}
         onClose={() => setSelected(null)}
         onStatusChange={handleStatusChange}
+        onLeadChange={handleLeadChange}
+        onToast={showToast}
       />
 
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
