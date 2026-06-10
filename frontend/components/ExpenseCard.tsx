@@ -1,14 +1,9 @@
 'use client'
-import { Pencil, Trash2 } from 'lucide-react'
-import LocalGasStation from '@mui/icons-material/LocalGasStation'
-import Inventory2 from '@mui/icons-material/Inventory2'
-import Restaurant from '@mui/icons-material/Restaurant'
-import Build from '@mui/icons-material/Build'
-import Campaign from '@mui/icons-material/Campaign'
-import Engineering from '@mui/icons-material/Engineering'
-import Business from '@mui/icons-material/Business'
-import Category from '@mui/icons-material/Category'
-import type { SvgIconComponent } from '@mui/icons-material'
+import {
+  Pencil, Trash2,
+  Fuel, Package, UtensilsCrossed, Wrench, Megaphone, HardHat, Building2, ClipboardList,
+  type LucideIcon,
+} from 'lucide-react'
 import { deleteExpense } from '@/lib/api'
 import type { Expense, ExpenseCategory } from '@/lib/types'
 
@@ -23,9 +18,9 @@ const CATEGORY_COLORS: Record<ExpenseCategory, string> = {
   other:         'var(--color-ink-400)',
 }
 
-const CATEGORY_ICON: Record<ExpenseCategory, SvgIconComponent> = {
-  fuel: LocalGasStation, materials: Inventory2, meals: Restaurant, tools: Build,
-  advertising: Campaign, subcontractor: Engineering, office: Business, other: Category,
+const CATEGORY_ICON: Record<ExpenseCategory, LucideIcon> = {
+  fuel: Fuel, materials: Package, meals: UtensilsCrossed, tools: Wrench,
+  advertising: Megaphone, subcontractor: HardHat, office: Building2, other: ClipboardList,
 }
 
 const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
@@ -52,7 +47,7 @@ interface Props {
 export function ExpenseCard({ expense, onEdit, onDeleted }: Props) {
   const cat = expense.category as ExpenseCategory
   const color = CATEGORY_COLORS[cat] ?? 'var(--color-ink-400)'
-  const Icon = CATEGORY_ICON[cat] ?? Category
+  const Icon = CATEGORY_ICON[cat] ?? ClipboardList
   const label = CATEGORY_LABELS[cat] ?? cat
 
   async function handleDelete() {
@@ -82,7 +77,7 @@ export function ExpenseCard({ expense, onEdit, onDeleted }: Props) {
         flexShrink: 0,
         border: `1.5px solid ${color}30`,
       }}>
-        <Icon style={{ fontSize: 22, color }} />
+        <Icon size={22} color={color} strokeWidth={1.5} />
       </div>
 
       {/* Main info */}
