@@ -114,16 +114,23 @@ def invoice_summary(
 
 @router.get("/invoices/aging")
 def invoice_aging(user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
-    import datetime
-    today = datetime.date.today()
-
+    # Bucket in SQL so only five rows cross the wire, however many invoices exist.
     with db.cursor() as cur:
         cur.execute(
-            "SELECT id, total, amount_paid, due_date FROM invoices "
-            "WHERE account_id = %s AND status IN ('sent','partial','overdue')",
+            "SELECT CASE "
+            "         WHEN due_date IS NULL OR due_date >= CURRENT_DATE THEN 'current' "
+            "         WHEN CURRENT_DATE - due_date <= 30 THEN '1_30' "
+            "         WHEN CURRENT_DATE - due_date <= 60 THEN '31_60' "
+            "         WHEN CURRENT_DATE - due_date <= 90 THEN '61_90' "
+            "         ELSE '90_plus' END AS bucket, "
+            "       COUNT(*) AS count, "
+            "       COALESCE(SUM(total - amount_paid), 0) AS amount "
+            "FROM invoices "
+            "WHERE account_id = %s AND status IN ('sent','partial','overdue') "
+            "GROUP BY 1",
             (user["account_id"],),
         )
-        rows = cur.fetchall()
+        rows = {bucket: (count, amount) for bucket, count, amount in cur.fetchall()}
 
     buckets = {
         "current":  {"label": "Current",   "count": 0, "amount": 0.0},
@@ -132,19 +139,9 @@ def invoice_aging(user: dict = Depends(get_current_user), db: PGConn = Depends(g
         "61_90":    {"label": "61–90 days", "count": 0, "amount": 0.0},
         "90_plus":  {"label": "90+ days",   "count": 0, "amount": 0.0},
     }
-
-    for _, total, amount_paid, due_date in rows:
-        balance = float(total) - float(amount_paid)
-        if due_date is None or due_date >= today:
-            key = "current"
-        else:
-            days = (today - due_date).days
-            if days <= 30:   key = "1_30"
-            elif days <= 60: key = "31_60"
-            elif days <= 90: key = "61_90"
-            else:            key = "90_plus"
-        buckets[key]["count"] += 1
-        buckets[key]["amount"] += balance
+    for key, (count, amount) in rows.items():
+        buckets[key]["count"] = count
+        buckets[key]["amount"] = float(amount)
 
     return list(buckets.values())
 

@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Phone, DoorOpen, Mail, MessageSquare, FileText, CheckSquare } from 'lucide-react'
+import { Plus, Phone, DoorOpen, Mail, MessageSquare, FileText, CheckSquare, Zap } from 'lucide-react'
 import type { TimelineEntry } from '@/lib/types'
 import { getTimeline, addNote, addHistory } from '@/lib/api'
 import { fmt } from './format'
@@ -116,7 +116,7 @@ export function ActivityPanel({ leadId }: { leadId: number }) {
               <li key={`${entry.type}-${entry.id}`} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12 }}>
                 <TimelineIcon entry={entry} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  {entry.type === 'history' && (
+                  {(entry.type === 'history' || entry.type === 'signal') && (
                     <>
                       <span style={{ fontWeight: 500, color: 'var(--color-ink-900)' }}>{entry.title}</span>
                       {entry.detail && <span style={{ color: 'var(--color-ink-500)' }}> · {entry.detail}</span>}
@@ -179,6 +179,8 @@ function TimelineIcon({ entry }: { entry: TimelineEntry }) {
     return <FileText size={13} strokeWidth={1.5} style={{ ...iconStyle, color: 'var(--color-plum)' }} />
   if (entry.type === 'task')
     return <CheckSquare size={13} strokeWidth={1.5} style={{ ...iconStyle, color: entry.detail === 'completed' ? 'var(--color-moss)' : 'var(--color-warning)' }} />
+  if (entry.type === 'signal')
+    return <Zap size={13} strokeWidth={1.5} style={{ ...iconStyle, color: 'var(--color-gold, #B8860B)' }} />
   const a = entry.title.toLowerCase()
   if (a.includes('call') || a.includes('voicemail'))
     return <Phone size={13} strokeWidth={1.5} style={{ ...iconStyle, color: 'var(--color-accent)' }} />

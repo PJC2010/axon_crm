@@ -5,9 +5,11 @@ PATCH /api/leads/{id}/status — update lead status
 GET  /api/zips            — distinct ZIP codes in DB
 """
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from psycopg2.extensions import connection as PGConn
+from pydantic import BaseModel, Field
 
 from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user
 from api.models import (
@@ -19,6 +21,7 @@ from pipeline.scoring import explain_score, describe_vertical
 from pipeline.contact import PROVIDERS
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 SORT_MAP = {
     "score":      "lead_score DESC NULLS LAST",
@@ -104,7 +107,7 @@ def get_score_explanation(lead_id: int, db: PGConn = Depends(get_db), user: dict
     )
 
 
-@router.patch("/leads/{lead_id}/status", response_model=Lead)
+@router.patch("/leads/{lead_id}/status")
 def update_status(lead_id: int, body: StatusUpdate, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
     body.validate_status()
     acct = user["account_id"]
@@ -131,8 +134,20 @@ def update_status(lead_id: int, body: StatusUpdate, db: PGConn = Depends(get_db)
     from api.workflow_engine import execute_status_change_rules
     workflow_results = execute_status_change_rules(db, lead_id, old_status, body.status, user["id"], acct)
 
-    lead = Lead(**row)
-    return lead
+    # Winning a job makes the surrounding street the cheapest lead source —
+    # queue a door-knock task for nearby uncontacted leads.
+    if body.status == "won" and old_status != "won":
+        from api.neighbors import create_neighbor_task
+        try:
+            neighbor_result = create_neighbor_task(db, lead_id, acct, user["id"])
+            if neighbor_result:
+                workflow_results.append(neighbor_result)
+        except Exception:
+            log.exception("Neighbor task creation failed for lead %d", lead_id)
+
+    # Lead fields plus what automation did (including failures), so the UI can
+    # tell the user when a rule's action didn't run.
+    return {**Lead(**row).model_dump(), "workflow_actions": workflow_results}
 
 
 @router.patch("/leads/{lead_id}/contact", response_model=Lead)
@@ -209,6 +224,20 @@ def enrich_lead(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depends
     return Lead(**updated)
 
 
+@router.get("/leads/{lead_id}/neighbors")
+def get_neighbors(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
+    """Uncontacted leads in the same geohash cell — door-knock targets while
+    a crew is already on the street."""
+    with db.cursor() as cur:
+        cur.execute("SELECT 1 FROM properties WHERE id = %s AND account_id = %s", (lead_id, user["account_id"]))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Lead not found")
+
+    from api.neighbors import find_neighbors
+    neighbors = find_neighbors(db, lead_id, user["account_id"])
+    return {"count": len(neighbors), "neighbors": neighbors}
+
+
 @router.get("/leads/{lead_id}/timeline")
 def get_timeline(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
     with db.cursor() as cur:
@@ -225,8 +254,15 @@ def get_timeline(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depend
             "SELECT id, property_id, 'task' AS type, title, "
             "CASE WHEN is_complete THEN 'completed' ELSE priority END AS detail, "
             "created_at FROM tasks WHERE property_id = %s "
+            "UNION ALL "
+            "SELECT id, property_id, 'signal' AS type, "
+            "CASE signal_type WHEN 'just_sold' THEN 'Property just sold' "
+            "                 WHEN 'new_permit' THEN 'New permit activity' "
+            "                 ELSE signal_type END AS title, "
+            "details->>'summary' AS detail, "
+            "detected_at AS created_at FROM signal_events WHERE property_id = %s "
             "ORDER BY created_at DESC",
-            (lead_id, lead_id, lead_id),
+            (lead_id, lead_id, lead_id, lead_id),
         )
         rows = dict_fetchall(cur)
     return rows
@@ -272,13 +308,15 @@ def unarchive_lead(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depe
     return Lead(**row)
 
 
-@router.post("/leads/archive-bulk")
-def archive_bulk(body: dict, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
-    """Bulk archive by IDs: {"ids": [1, 2, 3]}"""
-    ids = body.get("ids", [])
-    if not ids:
-        raise HTTPException(400, "No lead IDs provided")
+class BulkIds(BaseModel):
+    """Validated ID list for bulk operations — ints only, bounded size."""
+    ids: list[int] = Field(..., min_length=1, max_length=500)
 
+
+@router.post("/leads/archive-bulk")
+def archive_bulk(body: BulkIds, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
+    """Bulk archive by IDs: {"ids": [1, 2, 3]}"""
+    ids = body.ids
     placeholders = ",".join(["%s"] * len(ids))
     with db.cursor() as cur:
         cur.execute(
@@ -291,12 +329,9 @@ def archive_bulk(body: dict, db: PGConn = Depends(get_db), user: dict = Depends(
 
 
 @router.post("/leads/unarchive-bulk")
-def unarchive_bulk(body: dict, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
+def unarchive_bulk(body: BulkIds, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
     """Bulk unarchive by IDs: {"ids": [1, 2, 3]}"""
-    ids = body.get("ids", [])
-    if not ids:
-        raise HTTPException(400, "No lead IDs provided")
-
+    ids = body.ids
     placeholders = ",".join(["%s"] * len(ids))
     with db.cursor() as cur:
         cur.execute(

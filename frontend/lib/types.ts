@@ -97,7 +97,7 @@ export interface HistoryEntry {
 export interface TimelineEntry {
   id: number
   property_id: number
-  type: 'history' | 'note' | 'task'
+  type: 'history' | 'note' | 'task' | 'signal'
   title: string
   detail: string | null
   created_at: string
@@ -408,7 +408,7 @@ export interface WorkflowRule {
   id: number
   name: string
   trigger_type: string
-  trigger_config: { from_status?: string; to_status?: string }
+  trigger_config: { from_status?: string; to_status?: string; signal_type?: string }
   action_type: string
   action_config: { title?: string; due_days_offset?: number; priority?: string }
   is_active: boolean
@@ -421,7 +421,7 @@ export interface WorkflowRule {
 export interface WorkflowRuleCreate {
   name: string
   trigger_type?: string
-  trigger_config: { from_status?: string; to_status?: string }
+  trigger_config: { from_status?: string; to_status?: string; signal_type?: string }
   action_type?: string
   action_config: { title?: string; due_days_offset?: number; priority?: string }
   is_active?: boolean

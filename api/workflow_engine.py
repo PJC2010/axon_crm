@@ -26,12 +26,13 @@ def execute_status_change_rules(conn, lead_id: int, old_status: str | None, new_
         )
         rules = dict_fetchall(cur)
 
+    lead_vertical = _get_lead_vertical(conn, lead_id, account_id)
+
     results = []
     for rule in rules:
         if not _matches_trigger(rule, old_status, new_status):
             continue
 
-        lead_vertical = _get_lead_vertical(conn, lead_id)
         if rule["vertical"] and rule["vertical"] != lead_vertical:
             continue
 
@@ -39,9 +40,57 @@ def execute_status_change_rules(conn, lead_id: int, old_status: str | None, new_
             result = _execute_action(conn, rule, lead_id, user_id, account_id)
             if result:
                 results.append(result)
-        except Exception:
+        except Exception as exc:
             log.exception("Workflow rule %d failed for lead %d", rule["id"], lead_id)
+            results.append({
+                "action": "rule_failed",
+                "rule_id": rule["id"],
+                "rule_name": rule["name"],
+                "error": str(exc),
+            })
 
+    return results
+
+
+def execute_signal_event_rules(conn, account_id: int, events: list[dict]) -> list[dict]:
+    """Run active signal_event rules against pipeline-detected timing signals.
+
+    `events` are dicts with property_id, vertical, signal_type (from
+    pipeline/signals.py). Actions run as the rule's creator since there is no
+    acting user in a pipeline run. Returns action results, including failures.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM workflow_rules WHERE trigger_type = 'signal_event' AND is_active = TRUE AND account_id = %s",
+            (account_id,),
+        )
+        rules = dict_fetchall(cur)
+    if not rules or not events:
+        return []
+
+    results = []
+    for event in events:
+        for rule in rules:
+            cfg = rule["trigger_config"]
+            if isinstance(cfg, str):
+                cfg = json.loads(cfg)
+            if cfg.get("signal_type") and cfg["signal_type"] != event["signal_type"]:
+                continue
+            if rule["vertical"] and rule["vertical"] != event["vertical"]:
+                continue
+
+            try:
+                result = _execute_action(conn, rule, event["property_id"], rule["created_by"], account_id)
+                if result:
+                    results.append(result)
+            except Exception as exc:
+                log.exception("Signal rule %d failed for lead %d", rule["id"], event["property_id"])
+                results.append({
+                    "action": "rule_failed",
+                    "rule_id": rule["id"],
+                    "rule_name": rule["name"],
+                    "error": str(exc),
+                })
     return results
 
 
@@ -61,9 +110,12 @@ def _matches_trigger(rule: dict, old_status: str | None, new_status: str) -> boo
     return True
 
 
-def _get_lead_vertical(conn, lead_id: int) -> str | None:
+def _get_lead_vertical(conn, lead_id: int, account_id: int) -> str | None:
     with conn.cursor() as cur:
-        cur.execute("SELECT vertical FROM properties WHERE id = %s", (lead_id,))
+        cur.execute(
+            "SELECT vertical FROM properties WHERE id = %s AND account_id = %s",
+            (lead_id, account_id),
+        )
         row = cur.fetchone()
     return row[0] if row else None
 
@@ -167,4 +219,108 @@ VERTICAL_DEFAULTS = {
             "action_config": {"title": "Submit permit application", "due_days_offset": 3, "priority": "high"},
         },
     ],
+    "roofing": [
+        {
+            "name": "Schedule roof inspection",
+            "trigger_config": {"from_status": "new", "to_status": "contacted"},
+            "action_config": {"title": "Schedule on-roof inspection", "due_days_offset": 1, "priority": "high"},
+        },
+        {
+            "name": "Follow up on estimate",
+            "trigger_config": {"to_status": "quote_sent"},
+            "action_config": {"title": "Follow up on roofing estimate", "due_days_offset": 4, "priority": "normal"},
+        },
+        {
+            "name": "Order materials",
+            "trigger_config": {"to_status": "won"},
+            "action_config": {"title": "Order materials and schedule crew", "due_days_offset": 2, "priority": "high"},
+        },
+    ],
+    "hvac": [
+        {
+            "name": "Ask system age",
+            "trigger_config": {"from_status": "new", "to_status": "contacted"},
+            "action_config": {"title": "Confirm system age and last service date", "due_days_offset": 1, "priority": "normal"},
+        },
+        {
+            "name": "Follow up on quote",
+            "trigger_config": {"to_status": "quote_sent"},
+            "action_config": {"title": "Follow up on HVAC quote", "due_days_offset": 3, "priority": "normal"},
+        },
+        {
+            "name": "Schedule install",
+            "trigger_config": {"to_status": "won"},
+            "action_config": {"title": "Schedule installation date", "due_days_offset": 2, "priority": "high"},
+        },
+    ],
+    "fencing": [
+        {
+            "name": "Schedule measurement",
+            "trigger_config": {"from_status": "new", "to_status": "contacted"},
+            "action_config": {"title": "Schedule property line measurement", "due_days_offset": 2, "priority": "normal"},
+        },
+        {
+            "name": "Follow up on quote",
+            "trigger_config": {"to_status": "quote_sent"},
+            "action_config": {"title": "Follow up on fencing quote", "due_days_offset": 5, "priority": "normal"},
+        },
+        {
+            "name": "Check HOA/permit requirements",
+            "trigger_config": {"to_status": "won"},
+            "action_config": {"title": "Verify HOA and permit requirements before build", "due_days_offset": 2, "priority": "high"},
+        },
+    ],
+    "landscaping": [
+        {
+            "name": "Schedule walkthrough",
+            "trigger_config": {"from_status": "new", "to_status": "contacted"},
+            "action_config": {"title": "Schedule yard walkthrough", "due_days_offset": 2, "priority": "normal"},
+        },
+        {
+            "name": "Follow up on proposal",
+            "trigger_config": {"to_status": "quote_sent"},
+            "action_config": {"title": "Follow up on landscaping proposal", "due_days_offset": 5, "priority": "normal"},
+        },
+        {
+            "name": "Offer recurring plan",
+            "trigger_config": {"to_status": "won"},
+            "action_config": {"title": "Offer recurring maintenance plan", "due_days_offset": 7, "priority": "normal"},
+        },
+    ],
+    "pressure_washing": [
+        {
+            "name": "Confirm surfaces",
+            "trigger_config": {"from_status": "new", "to_status": "contacted"},
+            "action_config": {"title": "Confirm surfaces and square footage", "due_days_offset": 1, "priority": "normal"},
+        },
+        {
+            "name": "Follow up on quote",
+            "trigger_config": {"to_status": "quote_sent"},
+            "action_config": {"title": "Follow up on pressure-washing quote", "due_days_offset": 3, "priority": "normal"},
+        },
+        {
+            "name": "Schedule job",
+            "trigger_config": {"to_status": "won"},
+            "action_config": {"title": "Schedule job and confirm water access", "due_days_offset": 2, "priority": "high"},
+        },
+    ],
 }
+
+# Timing-signal automations every vertical benefits from: react when the
+# pipeline detects a sale or fresh permit activity (see pipeline/signals.py).
+_SIGNAL_DEFAULTS = [
+    {
+        "name": "New owner follow-up",
+        "trigger_type": "signal_event",
+        "trigger_config": {"signal_type": "just_sold"},
+        "action_config": {"title": "Property just sold — reach out to the new homeowner", "due_days_offset": 3, "priority": "high"},
+    },
+    {
+        "name": "Permit activity follow-up",
+        "trigger_type": "signal_event",
+        "trigger_config": {"signal_type": "new_permit"},
+        "action_config": {"title": "Owner is pulling permits — call about related work", "due_days_offset": 2, "priority": "normal"},
+    },
+]
+for _rules in VERTICAL_DEFAULTS.values():
+    _rules.extend(_SIGNAL_DEFAULTS)

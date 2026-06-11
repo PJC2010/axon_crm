@@ -11,6 +11,11 @@ const VERTICALS = [
   { key: 'epoxy_flooring', label: 'Epoxy Flooring', desc: 'Garage floor coatings & concrete finishing' },
   { key: 'pool_maintenance', label: 'Pool Maintenance', desc: 'Pool cleaning, repair & maintenance' },
   { key: 'solar', label: 'Solar', desc: 'Solar panel installation & consultation' },
+  { key: 'roofing', label: 'Roofing', desc: 'Roof replacement, repair & storm restoration' },
+  { key: 'hvac', label: 'HVAC', desc: 'Heating & cooling install, repair & service' },
+  { key: 'fencing', label: 'Fencing', desc: 'Fence installation & replacement' },
+  { key: 'landscaping', label: 'Landscaping', desc: 'Landscape design & recurring lawn care' },
+  { key: 'pressure_washing', label: 'Pressure Washing', desc: 'Exterior, driveway & pool deck cleaning' },
 ]
 
 const STEPS = ['Welcome', 'Territory', 'Automations', 'Ready']

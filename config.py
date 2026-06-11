@@ -71,6 +71,9 @@ SEED_EXPAND_TARGET    = int(os.getenv("SEED_EXPAND_TARGET", "200"))     # stop o
 SEED_EXPAND_RADIUS_MI = float(os.getenv("SEED_EXPAND_RADIUS_MI", "5"))
 SEED_EXPAND_MAX_ZIPS  = int(os.getenv("SEED_EXPAND_MAX_ZIPS", "10"))
 
+# ── CSV import guardrails ────────────────────────────────────────────────────
+IMPORT_MAX_BYTES = int(os.getenv("IMPORT_MAX_BYTES", str(5 * 1024 * 1024)))  # 5 MB
+
 # ── Invoice delivery (notifications) ─────────────────────────────────────────
 RESEND_API_KEY      = os.getenv("RESEND_API_KEY", "")
 RESEND_FROM_EMAIL   = os.getenv("RESEND_FROM_EMAIL", "")
@@ -119,6 +122,48 @@ VERTICAL_WEIGHTS = {
         "garage": 0.10,
         "income": 0.25,
         "permit": 0.05,
+    },
+    "roofing": {
+        "age":    0.30,   # roof age tracks home age — 15–30y roofs are due
+        "sale":   0.15,
+        "equity": 0.15,
+        "garage": 0.00,
+        "income": 0.15,
+        "permit": 0.25,   # active permits often follow storm/repair work
+    },
+    "hvac": {
+        "age":    0.35,   # systems hit end-of-life at 15–25 years
+        "sale":   0.15,
+        "equity": 0.15,
+        "garage": 0.00,
+        "income": 0.20,
+        "permit": 0.15,
+    },
+    "fencing": {
+        "age":    0.10,
+        "sale":   0.25,   # new owners replace fences early
+        "equity": 0.15,
+        "garage": 0.00,
+        "income": 0.15,
+        "permit": 0.10,
+        "pool":   0.25,   # pools require code-compliant fencing
+    },
+    "landscaping": {
+        "age":    0.05,
+        "sale":   0.30,   # new owners re-landscape early
+        "equity": 0.20,
+        "garage": 0.00,
+        "income": 0.35,   # recurring service — spending capacity dominates
+        "permit": 0.10,
+    },
+    "pressure_washing": {
+        "age":    0.30,   # older exteriors show the most buildup
+        "sale":   0.20,
+        "equity": 0.10,
+        "garage": 0.00,
+        "income": 0.20,
+        "permit": 0.05,
+        "pool":   0.15,   # pool decks are a core upsell surface
     },
 }
 
