@@ -15,7 +15,11 @@ export function WhyThisScore({ leadId }: { leadId: number }) {
   }, [leadId])
 
   if (!explanation || explanation.factors.length === 0) return null
-  const { factors, top_drivers, vertical, vertical_description, is_default_profile, weights_drift } = explanation
+  const { factors, top_drivers, vertical, vertical_description, is_default_profile, weights_drift, score_updated_at } = explanation
+
+  const scoredDaysAgo = score_updated_at
+    ? Math.floor((Date.now() - new Date(score_updated_at).getTime()) / 86_400_000)
+    : null
 
   const profileName = is_default_profile
     ? 'Default scoring profile'
@@ -73,6 +77,13 @@ export function WhyThisScore({ leadId }: { leadId: number }) {
       {weights_drift && (
         <p style={{ marginTop: 12, marginBottom: 0, fontSize: 11, color: 'var(--color-warning, #B07A2A)' }}>
           Scoring weights changed since this lead was last scored — re-score for an exact match.
+        </p>
+      )}
+
+      {scoredDaysAgo !== null && scoredDaysAgo > 90 && (
+        <p style={{ marginTop: 12, marginBottom: 0, fontSize: 11, color: 'var(--color-warning, #B07A2A)' }}>
+          Scored {Math.round(scoredDaysAgo / 30)} months ago —
+          signals like sale recency decay over time; re-score this ZIP for fresh grades.
         </p>
       )}
     </section>

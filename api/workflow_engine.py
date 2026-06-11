@@ -177,4 +177,89 @@ VERTICAL_DEFAULTS = {
             "action_config": {"title": "Submit permit application", "due_days_offset": 3, "priority": "high"},
         },
     ],
+    "roofing": [
+        {
+            "name": "Schedule roof inspection",
+            "trigger_config": {"from_status": "new", "to_status": "contacted"},
+            "action_config": {"title": "Schedule on-roof inspection", "due_days_offset": 1, "priority": "high"},
+        },
+        {
+            "name": "Follow up on estimate",
+            "trigger_config": {"to_status": "quote_sent"},
+            "action_config": {"title": "Follow up on roofing estimate", "due_days_offset": 4, "priority": "normal"},
+        },
+        {
+            "name": "Order materials",
+            "trigger_config": {"to_status": "won"},
+            "action_config": {"title": "Order materials and schedule crew", "due_days_offset": 2, "priority": "high"},
+        },
+    ],
+    "hvac": [
+        {
+            "name": "Ask system age",
+            "trigger_config": {"from_status": "new", "to_status": "contacted"},
+            "action_config": {"title": "Confirm system age and last service date", "due_days_offset": 1, "priority": "normal"},
+        },
+        {
+            "name": "Follow up on quote",
+            "trigger_config": {"to_status": "quote_sent"},
+            "action_config": {"title": "Follow up on HVAC quote", "due_days_offset": 3, "priority": "normal"},
+        },
+        {
+            "name": "Schedule install",
+            "trigger_config": {"to_status": "won"},
+            "action_config": {"title": "Schedule installation date", "due_days_offset": 2, "priority": "high"},
+        },
+    ],
+    "fencing": [
+        {
+            "name": "Schedule measurement",
+            "trigger_config": {"from_status": "new", "to_status": "contacted"},
+            "action_config": {"title": "Schedule property line measurement", "due_days_offset": 2, "priority": "normal"},
+        },
+        {
+            "name": "Follow up on quote",
+            "trigger_config": {"to_status": "quote_sent"},
+            "action_config": {"title": "Follow up on fencing quote", "due_days_offset": 5, "priority": "normal"},
+        },
+        {
+            "name": "Check HOA/permit requirements",
+            "trigger_config": {"to_status": "won"},
+            "action_config": {"title": "Verify HOA and permit requirements before build", "due_days_offset": 2, "priority": "high"},
+        },
+    ],
+    "landscaping": [
+        {
+            "name": "Schedule walkthrough",
+            "trigger_config": {"from_status": "new", "to_status": "contacted"},
+            "action_config": {"title": "Schedule yard walkthrough", "due_days_offset": 2, "priority": "normal"},
+        },
+        {
+            "name": "Follow up on proposal",
+            "trigger_config": {"to_status": "quote_sent"},
+            "action_config": {"title": "Follow up on landscaping proposal", "due_days_offset": 5, "priority": "normal"},
+        },
+        {
+            "name": "Offer recurring plan",
+            "trigger_config": {"to_status": "won"},
+            "action_config": {"title": "Offer recurring maintenance plan", "due_days_offset": 7, "priority": "normal"},
+        },
+    ],
+    "pressure_washing": [
+        {
+            "name": "Confirm surfaces",
+            "trigger_config": {"from_status": "new", "to_status": "contacted"},
+            "action_config": {"title": "Confirm surfaces and square footage", "due_days_offset": 1, "priority": "normal"},
+        },
+        {
+            "name": "Follow up on quote",
+            "trigger_config": {"to_status": "quote_sent"},
+            "action_config": {"title": "Follow up on pressure-washing quote", "due_days_offset": 3, "priority": "normal"},
+        },
+        {
+            "name": "Schedule job",
+            "trigger_config": {"to_status": "won"},
+            "action_config": {"title": "Schedule job and confirm water access", "due_days_offset": 2, "priority": "high"},
+        },
+    ],
 }

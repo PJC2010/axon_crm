@@ -7,7 +7,7 @@ import { AuthGuard } from '@/components/AuthGuard'
 import type { PipelineSchedule, PipelineRun, WorkflowRule } from '@/lib/types'
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
-const VERTICALS = ['', 'epoxy_flooring', 'pool_maintenance', 'solar']
+const VERTICALS = ['', 'epoxy_flooring', 'pool_maintenance', 'solar', 'roofing', 'hvac', 'fencing', 'landscaping', 'pressure_washing']
 const STATUS_COLOR: Record<string, string> = {
   queued:    'var(--color-ink-400)',
   running:   'var(--color-accent)',
@@ -328,6 +328,11 @@ function SettingsPage() {
                 <option value="epoxy_flooring">Epoxy Flooring</option>
                 <option value="pool_maintenance">Pool Maintenance</option>
                 <option value="solar">Solar</option>
+                <option value="roofing">Roofing</option>
+                <option value="hvac">HVAC</option>
+                <option value="fencing">Fencing</option>
+                <option value="landscaping">Landscaping</option>
+                <option value="pressure_washing">Pressure Washing</option>
               </select>
               <button onClick={() => setShowWfForm(!showWfForm)} className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
                 <Plus size={12} strokeWidth={1.5} /> New rule

@@ -44,6 +44,11 @@ const VERTICALS = [
   { value: 'epoxy_flooring',   label: 'Epoxy flooring' },
   { value: 'pool_maintenance', label: 'Pool maintenance' },
   { value: 'solar',            label: 'Solar' },
+  { value: 'roofing',          label: 'Roofing' },
+  { value: 'hvac',             label: 'HVAC' },
+  { value: 'fencing',          label: 'Fencing' },
+  { value: 'landscaping',      label: 'Landscaping' },
+  { value: 'pressure_washing', label: 'Pressure washing' },
 ]
 
 const SORTS = [

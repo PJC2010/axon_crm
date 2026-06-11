@@ -4,6 +4,11 @@ export const VERTICAL_LABELS: Record<string, string> = {
   epoxy_flooring:   'Epoxy flooring',
   pool_maintenance: 'Pool maintenance',
   solar:            'Solar',
+  roofing:          'Roofing',
+  hvac:             'HVAC',
+  fencing:          'Fencing',
+  landscaping:      'Landscaping',
+  pressure_washing: 'Pressure washing',
 }
 
 export function fmt(d: string | null) {
