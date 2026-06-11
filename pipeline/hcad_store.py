@@ -71,14 +71,21 @@ def query_properties(zip_code: str, db_path: str | None = None) -> dict[str, dic
                     tot_appr_val                      AS estimated_value,
                     last_sale_date,
                     owner_name,
-                    likely_owner_occupied             AS owner_occupied
+                    likely_owner_occupied             AS owner_occupied,
+                    NULLIF(CONCAT_WS(', ',
+                        NULLIF(TRIM(mail_addr), ''),
+                        NULLIF(TRIM(mail_city), ''),
+                        NULLIF(TRIM(CONCAT_WS(' ', NULLIF(TRIM(mail_state), ''),
+                                                   NULLIF(TRIM(mail_zip), ''))), '')
+                    ), '')                            AS mailing_address
                 FROM property_summary
                 WHERE site_zip = ?
                   AND site_address IS NOT NULL
             """, [zip_code]).fetchall()
 
             cols = ["address_norm", "year_built", "square_footage", "lot_size",
-                    "estimated_value", "last_sale_date", "owner_name", "owner_occupied"]
+                    "estimated_value", "last_sale_date", "owner_name", "owner_occupied",
+                    "mailing_address"]
             result = {}
             for row in rows:
                 d = dict(zip(cols, row))
@@ -219,12 +226,19 @@ def _pg_query_properties(zip_code: str) -> dict[str, dict]:
                     tot_appr_val AS estimated_value,
                     last_sale_date,
                     owner_name,
-                    likely_owner_occupied AS owner_occupied
+                    likely_owner_occupied AS owner_occupied,
+                    NULLIF(CONCAT_WS(', ',
+                        NULLIF(TRIM(mail_addr), ''),
+                        NULLIF(TRIM(mail_city), ''),
+                        NULLIF(TRIM(CONCAT_WS(' ', NULLIF(TRIM(mail_state), ''),
+                                                   NULLIF(TRIM(mail_zip), ''))), '')
+                    ), '') AS mailing_address
                 FROM hcad_properties
                 WHERE site_zip = %s AND site_address IS NOT NULL
             """, (zip_code,))
             cols = ["address_norm", "year_built", "square_footage", "lot_size",
-                    "estimated_value", "last_sale_date", "owner_name", "owner_occupied"]
+                    "estimated_value", "last_sale_date", "owner_name", "owner_occupied",
+                    "mailing_address"]
             result = {}
             for row in cur.fetchall():
                 d = dict(zip(cols, row))

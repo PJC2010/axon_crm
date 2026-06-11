@@ -6,7 +6,7 @@ and Attom return nothing. Never overwrites a value that's already set.
 
 Fields backfilled from property_summary (if null):
   year_built, square_footage, lot_size, estimated_value,
-  last_sale_date, owner_name, owner_occupied, ownership_years
+  last_sale_date, owner_name, owner_occupied, ownership_years, mailing_address
 
 Fields backfilled from extra_features (always latest HCAD truth):
   has_pool, has_cracked_slab, garage_spaces (when still null after Attom)
@@ -57,6 +57,7 @@ def enrich_hcad(zip_code: str, account_id: int) -> int:
             _backfill("last_sale_date",  hcad.get("last_sale_date"))
             _backfill("owner_name",      hcad.get("owner_name"))
             _backfill("owner_occupied",  hcad.get("owner_occupied"))
+            _backfill("mailing_address", hcad.get("mailing_address"))
 
             if row.get("ownership_years") is None:
                 sale_date = update.get("last_sale_date") or hcad.get("last_sale_date")

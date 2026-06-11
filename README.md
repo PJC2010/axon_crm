@@ -368,6 +368,24 @@ python run_pipeline.py --zip 77002 --limit 100
 
 Available verticals (defined in `config.py`): `epoxy_flooring`, `pool_maintenance`, `solar` — or pass any custom string.
 
+### Harris County (HCAD) data
+
+Step 4 (`hcad_enrichment.py`) backfills property, owner, and **owner mailing
+address** fields for free from Harris County Appraisal District data. It reads a
+local `harris_county.duckdb` (path in `PERMIT_DB_PATH`), falling back to the
+Postgres `hcad_*` tables.
+
+Build that DuckDB from HCAD's [Real property export](https://hcad.org/pdata/):
+
+```bash
+# Unzip Real_acct_owner.zip (and optionally Real_building_land.zip) into a dir
+python tools/build_hcad_duckdb.py /path/to/unzipped_hcad_dir -o harris_county.duckdb
+```
+
+For hosts without the DuckDB, mirror selected ZIPs into Postgres with
+`tools/export_hcad_zip.py` and the `/api/hcad/upload` endpoint. The full column
+mapping is documented in [`docs/hcad_real_property_mapping.md`](docs/hcad_real_property_mapping.md).
+
 ### Scheduled Pipeline Runs
 
 Pipeline runs can be scheduled from the **Settings** page in the app UI. Each schedule specifies:
