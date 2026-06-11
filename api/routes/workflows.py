@@ -112,8 +112,10 @@ def seed_defaults(
         for rule in defaults:
             cur.execute(
                 "INSERT INTO workflow_rules (name, trigger_type, trigger_config, action_type, action_config, vertical, created_by, account_id) "
-                "VALUES (%s, 'status_change', %s, 'create_task', %s, %s, %s, %s) RETURNING *",
-                (rule["name"], json.dumps(rule["trigger_config"]), json.dumps(rule["action_config"]),
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
+                (rule["name"], rule.get("trigger_type", "status_change"),
+                 json.dumps(rule["trigger_config"]),
+                 rule.get("action_type", "create_task"), json.dumps(rule["action_config"]),
                  vertical, current_user["id"], current_user["account_id"]),
             )
             created.append(dict_fetchone(cur))

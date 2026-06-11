@@ -426,7 +426,9 @@ function SettingsPage() {
                   <tr key={w.id} style={{ borderBottom: '1px solid var(--color-ink-100)' }}>
                     <td style={{ padding: '8px', fontWeight: 500 }}>{w.name}</td>
                     <td style={{ padding: '8px', color: 'var(--color-ink-500)', fontSize: 12 }}>
-                      {w.trigger_config.from_status ? `${w.trigger_config.from_status} → ` : '* → '}{w.trigger_config.to_status || '*'}
+                      {w.trigger_type === 'signal_event'
+                        ? `signal: ${w.trigger_config.signal_type || 'any'}`
+                        : <>{w.trigger_config.from_status ? `${w.trigger_config.from_status} → ` : '* → '}{w.trigger_config.to_status || '*'}</>}
                     </td>
                     <td style={{ padding: '8px', color: 'var(--color-ink-500)', fontSize: 12 }}>
                       {w.action_config.title || w.action_type}

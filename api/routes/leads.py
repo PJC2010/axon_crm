@@ -227,8 +227,15 @@ def get_timeline(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depend
             "SELECT id, property_id, 'task' AS type, title, "
             "CASE WHEN is_complete THEN 'completed' ELSE priority END AS detail, "
             "created_at FROM tasks WHERE property_id = %s "
+            "UNION ALL "
+            "SELECT id, property_id, 'signal' AS type, "
+            "CASE signal_type WHEN 'just_sold' THEN 'Property just sold' "
+            "                 WHEN 'new_permit' THEN 'New permit activity' "
+            "                 ELSE signal_type END AS title, "
+            "details->>'summary' AS detail, "
+            "detected_at AS created_at FROM signal_events WHERE property_id = %s "
             "ORDER BY created_at DESC",
-            (lead_id, lead_id, lead_id),
+            (lead_id, lead_id, lead_id, lead_id),
         )
         rows = dict_fetchall(cur)
     return rows

@@ -152,6 +152,14 @@ def run_zip(zip_code: str, args) -> None:
     else:
         log.info("[8/8] Contact: skipped")
 
+    # Timing signals run last: diff sale/permit fields against the previous
+    # run's baseline, record signal_events, fire signal_event workflow rules.
+    if "signals" not in skip:
+        from pipeline.signals import detect_signals
+        log.info("[signals] %s", detect_signals(zip_code, account_id))
+    else:
+        log.info("[signals] skipped")
+
     if "score" not in skip:
         from pipeline.coverage import fill_rates
         from pipeline.db import get_conn

@@ -158,6 +158,13 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
         sources["contact"] = enrich_contact(zip_code, account_id, selected_only=capped)
         log.info("[8/8] run=%d Contact: %s", run_id, sources["contact"])
 
+        # Step 9 — Timing signals (free): diff sale/permit fields against the
+        # previous run's baseline, record signal_events, fire signal_event rules.
+        if _check_cancel(): return
+        from pipeline.signals import detect_signals
+        sources["signals"] = detect_signals(zip_code, account_id)
+        log.info("[signals] run=%d %s", run_id, sources["signals"])
+
         # Coverage snapshot for the frontend.
         from pipeline.coverage import fill_rates
         coverage = fill_rates(conn, zip_code, account_id)

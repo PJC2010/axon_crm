@@ -52,6 +52,48 @@ def execute_status_change_rules(conn, lead_id: int, old_status: str | None, new_
     return results
 
 
+def execute_signal_event_rules(conn, account_id: int, events: list[dict]) -> list[dict]:
+    """Run active signal_event rules against pipeline-detected timing signals.
+
+    `events` are dicts with property_id, vertical, signal_type (from
+    pipeline/signals.py). Actions run as the rule's creator since there is no
+    acting user in a pipeline run. Returns action results, including failures.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM workflow_rules WHERE trigger_type = 'signal_event' AND is_active = TRUE AND account_id = %s",
+            (account_id,),
+        )
+        rules = dict_fetchall(cur)
+    if not rules or not events:
+        return []
+
+    results = []
+    for event in events:
+        for rule in rules:
+            cfg = rule["trigger_config"]
+            if isinstance(cfg, str):
+                cfg = json.loads(cfg)
+            if cfg.get("signal_type") and cfg["signal_type"] != event["signal_type"]:
+                continue
+            if rule["vertical"] and rule["vertical"] != event["vertical"]:
+                continue
+
+            try:
+                result = _execute_action(conn, rule, event["property_id"], rule["created_by"], account_id)
+                if result:
+                    results.append(result)
+            except Exception as exc:
+                log.exception("Signal rule %d failed for lead %d", rule["id"], event["property_id"])
+                results.append({
+                    "action": "rule_failed",
+                    "rule_id": rule["id"],
+                    "rule_name": rule["name"],
+                    "error": str(exc),
+                })
+    return results
+
+
 def _matches_trigger(rule: dict, old_status: str | None, new_status: str) -> bool:
     cfg = rule["trigger_config"]
     if isinstance(cfg, str):
@@ -263,3 +305,22 @@ VERTICAL_DEFAULTS = {
         },
     ],
 }
+
+# Timing-signal automations every vertical benefits from: react when the
+# pipeline detects a sale or fresh permit activity (see pipeline/signals.py).
+_SIGNAL_DEFAULTS = [
+    {
+        "name": "New owner follow-up",
+        "trigger_type": "signal_event",
+        "trigger_config": {"signal_type": "just_sold"},
+        "action_config": {"title": "Property just sold — reach out to the new homeowner", "due_days_offset": 3, "priority": "high"},
+    },
+    {
+        "name": "Permit activity follow-up",
+        "trigger_type": "signal_event",
+        "trigger_config": {"signal_type": "new_permit"},
+        "action_config": {"title": "Owner is pulling permits — call about related work", "due_days_offset": 2, "priority": "normal"},
+    },
+]
+for _rules in VERTICAL_DEFAULTS.values():
+    _rules.extend(_SIGNAL_DEFAULTS)
