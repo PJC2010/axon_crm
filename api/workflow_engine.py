@@ -26,12 +26,13 @@ def execute_status_change_rules(conn, lead_id: int, old_status: str | None, new_
         )
         rules = dict_fetchall(cur)
 
+    lead_vertical = _get_lead_vertical(conn, lead_id, account_id)
+
     results = []
     for rule in rules:
         if not _matches_trigger(rule, old_status, new_status):
             continue
 
-        lead_vertical = _get_lead_vertical(conn, lead_id)
         if rule["vertical"] and rule["vertical"] != lead_vertical:
             continue
 
@@ -39,8 +40,14 @@ def execute_status_change_rules(conn, lead_id: int, old_status: str | None, new_
             result = _execute_action(conn, rule, lead_id, user_id, account_id)
             if result:
                 results.append(result)
-        except Exception:
+        except Exception as exc:
             log.exception("Workflow rule %d failed for lead %d", rule["id"], lead_id)
+            results.append({
+                "action": "rule_failed",
+                "rule_id": rule["id"],
+                "rule_name": rule["name"],
+                "error": str(exc),
+            })
 
     return results
 
@@ -61,9 +68,12 @@ def _matches_trigger(rule: dict, old_status: str | None, new_status: str) -> boo
     return True
 
 
-def _get_lead_vertical(conn, lead_id: int) -> str | None:
+def _get_lead_vertical(conn, lead_id: int, account_id: int) -> str | None:
     with conn.cursor() as cur:
-        cur.execute("SELECT vertical FROM properties WHERE id = %s", (lead_id,))
+        cur.execute(
+            "SELECT vertical FROM properties WHERE id = %s AND account_id = %s",
+            (lead_id, account_id),
+        )
         row = cur.fetchone()
     return row[0] if row else None
 

@@ -71,6 +71,9 @@ SEED_EXPAND_TARGET    = int(os.getenv("SEED_EXPAND_TARGET", "200"))     # stop o
 SEED_EXPAND_RADIUS_MI = float(os.getenv("SEED_EXPAND_RADIUS_MI", "5"))
 SEED_EXPAND_MAX_ZIPS  = int(os.getenv("SEED_EXPAND_MAX_ZIPS", "10"))
 
+# ── CSV import guardrails ────────────────────────────────────────────────────
+IMPORT_MAX_BYTES = int(os.getenv("IMPORT_MAX_BYTES", str(5 * 1024 * 1024)))  # 5 MB
+
 # ── Invoice delivery (notifications) ─────────────────────────────────────────
 RESEND_API_KEY      = os.getenv("RESEND_API_KEY", "")
 RESEND_FROM_EMAIL   = os.getenv("RESEND_FROM_EMAIL", "")

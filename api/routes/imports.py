@@ -23,11 +23,25 @@ from psycopg2.extensions import connection as PGConn
 from api.deps import get_db, get_current_user
 from api.import_logic import TARGET_FIELDS, detect_mapping, normalize_row, row_is_usable
 from api.models import ALLOWED_STATUSES, ImportOptions, ImportPreviewResponse, ImportResult
+from api.ratelimit import import_limiter
+from config import IMPORT_MAX_BYTES
 
 log = logging.getLogger(__name__)
 router = APIRouter()
 
 SAMPLE_LIMIT = 10
+
+
+async def _read_limited(file: UploadFile) -> bytes:
+    """Read an upload, rejecting anything over IMPORT_MAX_BYTES before it can
+    exhaust worker memory."""
+    content = await file.read(IMPORT_MAX_BYTES + 1)
+    if len(content) > IMPORT_MAX_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large — imports are limited to {IMPORT_MAX_BYTES // (1024 * 1024)} MB",
+        )
+    return content
 
 # Columns an imported row may write, beyond the account_id key.
 WRITABLE = TARGET_FIELDS + ["enrichment_flags"]
@@ -43,9 +57,10 @@ def _read_csv(content: bytes) -> tuple[list[str], list[dict]]:
 @router.post("/imports/contacts/preview", response_model=ImportPreviewResponse)
 async def preview_import(
     file: UploadFile = File(...),
-    _: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
 ):
-    headers, raw_rows = _read_csv(await file.read())
+    import_limiter.check(f"acct:{user['account_id']}")
+    headers, raw_rows = _read_csv(await _read_limited(file))
     if not headers:
         raise HTTPException(status_code=400, detail="No columns found in file")
 
@@ -78,10 +93,11 @@ async def run_import(
     except (json.JSONDecodeError, TypeError):
         raise HTTPException(status_code=400, detail="mapping must be valid JSON")
 
+    import_limiter.check(f"acct:{user['account_id']}")
     opts = ImportOptions(default_vertical=default_vertical, default_status=default_status)
     status = opts.default_status if opts.default_status in ALLOWED_STATUSES else "new"
 
-    _, raw_rows = _read_csv(await file.read())
+    _, raw_rows = _read_csv(await _read_limited(file))
     result = ImportResult()
 
     with db.cursor() as cur:

@@ -420,7 +420,10 @@ def delete_schedule(schedule_id: int, current_user: dict = Depends(require_owner
 
 @router.post("/pipeline/run", status_code=201)
 def trigger_run(body: RunCreate, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+    from api.ratelimit import pipeline_run_limiter
     from api.scheduler import enqueue_run
+    # Manual runs spend real enrichment-API dollars — throttle per account.
+    pipeline_run_limiter.check(f"acct:{current_user['account_id']}")
     with db.cursor() as cur:
         cur.execute(
             "INSERT INTO pipeline_runs "

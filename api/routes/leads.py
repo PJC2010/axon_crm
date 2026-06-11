@@ -8,6 +8,7 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from psycopg2.extensions import connection as PGConn
+from pydantic import BaseModel, Field
 
 from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user
 from api.models import (
@@ -104,7 +105,7 @@ def get_score_explanation(lead_id: int, db: PGConn = Depends(get_db), user: dict
     )
 
 
-@router.patch("/leads/{lead_id}/status", response_model=Lead)
+@router.patch("/leads/{lead_id}/status")
 def update_status(lead_id: int, body: StatusUpdate, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
     body.validate_status()
     acct = user["account_id"]
@@ -131,8 +132,9 @@ def update_status(lead_id: int, body: StatusUpdate, db: PGConn = Depends(get_db)
     from api.workflow_engine import execute_status_change_rules
     workflow_results = execute_status_change_rules(db, lead_id, old_status, body.status, user["id"], acct)
 
-    lead = Lead(**row)
-    return lead
+    # Lead fields plus what automation did (including failures), so the UI can
+    # tell the user when a rule's action didn't run.
+    return {**Lead(**row).model_dump(), "workflow_actions": workflow_results}
 
 
 @router.patch("/leads/{lead_id}/contact", response_model=Lead)
@@ -272,13 +274,15 @@ def unarchive_lead(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depe
     return Lead(**row)
 
 
-@router.post("/leads/archive-bulk")
-def archive_bulk(body: dict, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
-    """Bulk archive by IDs: {"ids": [1, 2, 3]}"""
-    ids = body.get("ids", [])
-    if not ids:
-        raise HTTPException(400, "No lead IDs provided")
+class BulkIds(BaseModel):
+    """Validated ID list for bulk operations — ints only, bounded size."""
+    ids: list[int] = Field(..., min_length=1, max_length=500)
 
+
+@router.post("/leads/archive-bulk")
+def archive_bulk(body: BulkIds, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
+    """Bulk archive by IDs: {"ids": [1, 2, 3]}"""
+    ids = body.ids
     placeholders = ",".join(["%s"] * len(ids))
     with db.cursor() as cur:
         cur.execute(
@@ -291,12 +295,9 @@ def archive_bulk(body: dict, db: PGConn = Depends(get_db), user: dict = Depends(
 
 
 @router.post("/leads/unarchive-bulk")
-def unarchive_bulk(body: dict, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
+def unarchive_bulk(body: BulkIds, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
     """Bulk unarchive by IDs: {"ids": [1, 2, 3]}"""
-    ids = body.get("ids", [])
-    if not ids:
-        raise HTTPException(400, "No lead IDs provided")
-
+    ids = body.ids
     placeholders = ",".join(["%s"] * len(ids))
     with db.cursor() as cur:
         cur.execute(

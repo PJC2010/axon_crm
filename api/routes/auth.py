@@ -5,12 +5,13 @@ POST /api/users           — create team member (owner only)
 GET  /api/users           — list users (owner only)
 PATCH /api/users/{id}     — update role / deactivate (owner only)
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from psycopg2.extensions import connection as PGConn
 from pydantic import BaseModel
 from typing import Optional
 
 from api.deps import get_db, dict_fetchone, dict_fetchall
+from api.ratelimit import client_ip, login_limiter
 from api.security import hash_password, verify_password, create_access_token
 from api.deps import get_current_user, require_owner
 
@@ -54,7 +55,8 @@ class UserOut(BaseModel):
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.post("/auth/login", response_model=TokenResponse)
-def login(body: LoginRequest, db: PGConn = Depends(get_db)):
+def login(body: LoginRequest, request: Request, db: PGConn = Depends(get_db)):
+    login_limiter.check(client_ip(request))
     with db.cursor() as cur:
         cur.execute(
             "SELECT id, username, hashed_pw, role, is_active FROM users WHERE username = %s",
@@ -98,28 +100,20 @@ def complete_onboarding(current_user: dict = Depends(get_current_user), db: PGCo
 @router.get("/auth/checklist-status")
 def checklist_status(current_user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
     acct = current_user["account_id"]
+    # Single round trip; EXISTS stops at the first row instead of counting.
     with db.cursor() as cur:
-        cur.execute("SELECT COUNT(*) FROM properties WHERE account_id = %s", (acct,))
-        has_leads = cur.fetchone()[0] > 0
         cur.execute(
-            "SELECT COUNT(*) FROM contact_history ch "
-            "JOIN properties p ON p.id = ch.property_id WHERE p.account_id = %s",
-            (acct,),
+            "SELECT "
+            "  EXISTS(SELECT 1 FROM properties WHERE account_id = %s) AS has_leads, "
+            "  EXISTS(SELECT 1 FROM contact_history ch "
+            "         JOIN properties p ON p.id = ch.property_id WHERE p.account_id = %s) AS has_contact, "
+            "  EXISTS(SELECT 1 FROM invoices WHERE account_id = %s) AS has_invoice, "
+            "  EXISTS(SELECT 1 FROM workflow_rules WHERE account_id = %s) AS has_workflow, "
+            "  EXISTS(SELECT 1 FROM expenses WHERE account_id = %s) AS has_expense",
+            (acct, acct, acct, acct, acct),
         )
-        has_contact = cur.fetchone()[0] > 0
-        cur.execute("SELECT COUNT(*) FROM invoices WHERE account_id = %s", (acct,))
-        has_invoice = cur.fetchone()[0] > 0
-        cur.execute("SELECT COUNT(*) FROM workflow_rules WHERE account_id = %s", (acct,))
-        has_workflow = cur.fetchone()[0] > 0
-        cur.execute("SELECT COUNT(*) FROM expenses WHERE account_id = %s", (acct,))
-        has_expense = cur.fetchone()[0] > 0
-    return {
-        "has_leads": has_leads,
-        "has_contact": has_contact,
-        "has_invoice": has_invoice,
-        "has_workflow": has_workflow,
-        "has_expense": has_expense,
-    }
+        flags = dict_fetchone(cur)
+    return flags
 
 
 @router.post("/users", response_model=UserOut, status_code=201)
