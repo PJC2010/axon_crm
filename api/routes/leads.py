@@ -5,6 +5,7 @@ PATCH /api/leads/{id}/status — update lead status
 GET  /api/zips            — distinct ZIP codes in DB
 """
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from psycopg2.extensions import connection as PGConn
@@ -20,6 +21,7 @@ from pipeline.scoring import explain_score, describe_vertical
 from pipeline.contact import PROVIDERS
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 SORT_MAP = {
     "score":      "lead_score DESC NULLS LAST",
@@ -132,6 +134,17 @@ def update_status(lead_id: int, body: StatusUpdate, db: PGConn = Depends(get_db)
     from api.workflow_engine import execute_status_change_rules
     workflow_results = execute_status_change_rules(db, lead_id, old_status, body.status, user["id"], acct)
 
+    # Winning a job makes the surrounding street the cheapest lead source —
+    # queue a door-knock task for nearby uncontacted leads.
+    if body.status == "won" and old_status != "won":
+        from api.neighbors import create_neighbor_task
+        try:
+            neighbor_result = create_neighbor_task(db, lead_id, acct, user["id"])
+            if neighbor_result:
+                workflow_results.append(neighbor_result)
+        except Exception:
+            log.exception("Neighbor task creation failed for lead %d", lead_id)
+
     # Lead fields plus what automation did (including failures), so the UI can
     # tell the user when a rule's action didn't run.
     return {**Lead(**row).model_dump(), "workflow_actions": workflow_results}
@@ -209,6 +222,20 @@ def enrich_lead(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depends
         updated = dict_fetchone(cur)
         db.commit()
     return Lead(**updated)
+
+
+@router.get("/leads/{lead_id}/neighbors")
+def get_neighbors(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
+    """Uncontacted leads in the same geohash cell — door-knock targets while
+    a crew is already on the street."""
+    with db.cursor() as cur:
+        cur.execute("SELECT 1 FROM properties WHERE id = %s AND account_id = %s", (lead_id, user["account_id"]))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Lead not found")
+
+    from api.neighbors import find_neighbors
+    neighbors = find_neighbors(db, lead_id, user["account_id"])
+    return {"count": len(neighbors), "neighbors": neighbors}
 
 
 @router.get("/leads/{lead_id}/timeline")
