@@ -1,7 +1,7 @@
 """FastAPI dependencies: DB connection and auth."""
 import psycopg2
 import psycopg2.extras
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError
 
@@ -35,15 +35,22 @@ _bearer = HTTPBearer(auto_error=False)
 
 def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    token: str | None = Query(None),
     db=Depends(get_db),
 ) -> dict:
-    """Decode JWT and return the user row. Raises 401 if missing/invalid."""
+    """Decode JWT and return the user row. Raises 401 if missing/invalid.
+
+    The token normally arrives in the ``Authorization: Bearer`` header. As a
+    fallback it may be passed as a ``?token=`` query param, which the frontend
+    uses for ``<a download>`` CSV exports where headers can't be set.
+    """
     from api.security import decode_token  # late import avoids circular deps
 
-    if credentials is None:
+    raw_token = credentials.credentials if credentials is not None else token
+    if not raw_token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
-        payload = decode_token(credentials.credentials)
+        payload = decode_token(raw_token)
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
