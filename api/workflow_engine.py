@@ -94,6 +94,52 @@ def execute_signal_event_rules(conn, account_id: int, events: list[dict]) -> lis
     return results
 
 
+def execute_quote_event_rules(conn, account_id: int, lead_id: int | None, event: str, user_id: int) -> list[dict]:
+    """Run active quote_event rules for a quote lifecycle event.
+
+    `event` is one of: sent, accepted, declined. Rules whose trigger_config
+    names a different event are skipped. Lead-targeting actions are skipped
+    when the quote isn't linked to a lead (lead_id is None). Public-page
+    events have no acting user, so callers pass the quote's creator.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM workflow_rules WHERE trigger_type = 'quote_event' AND is_active = TRUE AND account_id = %s",
+            (account_id,),
+        )
+        rules = dict_fetchall(cur)
+    if not rules:
+        return []
+
+    lead_vertical = _get_lead_vertical(conn, lead_id, account_id) if lead_id else None
+
+    results = []
+    for rule in rules:
+        cfg = rule["trigger_config"]
+        if isinstance(cfg, str):
+            cfg = json.loads(cfg)
+        if cfg.get("event") and cfg["event"] != event:
+            continue
+        if rule["vertical"] and rule["vertical"] != lead_vertical:
+            continue
+        if lead_id is None:
+            continue  # all current actions target the linked lead
+
+        try:
+            result = _execute_action(conn, rule, lead_id, user_id, account_id)
+            if result:
+                results.append(result)
+        except Exception as exc:
+            log.exception("Quote rule %d failed for lead %s", rule["id"], lead_id)
+            results.append({
+                "action": "rule_failed",
+                "rule_id": rule["id"],
+                "rule_name": rule["name"],
+                "error": str(exc),
+            })
+    return results
+
+
 def _matches_trigger(rule: dict, old_status: str | None, new_status: str) -> bool:
     cfg = rule["trigger_config"]
     if isinstance(cfg, str):
@@ -130,9 +176,34 @@ def _execute_action(conn, rule: dict, lead_id: int, user_id: int, account_id: in
         return _create_task(conn, cfg, lead_id, user_id, rule["name"], account_id)
     if action_type == "log_history":
         return _log_history(conn, cfg, lead_id, user_id)
+    if action_type == "move_lead_status":
+        return _move_lead_status(conn, cfg, lead_id, user_id, account_id)
 
     log.warning("Unknown action_type: %s", action_type)
     return None
+
+
+def _move_lead_status(conn, cfg: dict, lead_id: int, user_id: int, account_id: int) -> dict | None:
+    """Move the linked lead to cfg["status"] with full side effects.
+
+    Chains into status_change rules (e.g. quote accepted → lead to won →
+    "Schedule job date" task), so one quote event can drive the whole
+    pipeline response. No-op when the lead is already in that status.
+    """
+    new_status = cfg.get("status")
+    if not new_status:
+        return None
+    # No-op when already there, so repeated events don't re-log transitions
+    # or re-fire chained rules.
+    with conn.cursor() as cur:
+        cur.execute("SELECT status FROM properties WHERE id = %s AND account_id = %s", (lead_id, account_id))
+        row = cur.fetchone()
+    if not row or row[0] == new_status:
+        return None
+
+    from api.lead_logic import apply_status_change
+    _, chained = apply_status_change(conn, lead_id, new_status, user_id, account_id)
+    return {"action": "lead_moved", "lead_id": lead_id, "status": new_status, "chained_actions": chained}
 
 
 def _create_task(conn, cfg: dict, lead_id: int, user_id: int, rule_name: str, account_id: int) -> dict:
@@ -322,5 +393,33 @@ _SIGNAL_DEFAULTS = [
         "action_config": {"title": "Owner is pulling permits — call about related work", "due_days_offset": 2, "priority": "normal"},
     },
 ]
+
+# Quote-event automations every vertical benefits from. Moving the lead chains
+# into the status_change rules above, so "sent" also gets the vertical's
+# follow-up task and "accepted" gets its schedule-the-job task for free.
+_QUOTE_DEFAULTS = [
+    {
+        "name": "Quote sent → move lead to Quote Sent",
+        "trigger_type": "quote_event",
+        "trigger_config": {"event": "sent"},
+        "action_type": "move_lead_status",
+        "action_config": {"status": "quote_sent"},
+    },
+    {
+        "name": "Quote accepted → move lead to Won",
+        "trigger_type": "quote_event",
+        "trigger_config": {"event": "accepted"},
+        "action_type": "move_lead_status",
+        "action_config": {"status": "won"},
+    },
+    {
+        "name": "Quote declined → ask why",
+        "trigger_type": "quote_event",
+        "trigger_config": {"event": "declined"},
+        "action_config": {"title": "Quote declined — call to ask why and salvage the job", "due_days_offset": 1, "priority": "high"},
+    },
+]
+
 for _rules in VERTICAL_DEFAULTS.values():
     _rules.extend(_SIGNAL_DEFAULTS)
+    _rules.extend(_QUOTE_DEFAULTS)

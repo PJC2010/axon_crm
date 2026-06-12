@@ -110,40 +110,12 @@ def get_score_explanation(lead_id: int, db: PGConn = Depends(get_db), user: dict
 @router.patch("/leads/{lead_id}/status")
 def update_status(lead_id: int, body: StatusUpdate, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
     body.validate_status()
-    acct = user["account_id"]
-    with db.cursor() as cur:
-        cur.execute("SELECT status FROM properties WHERE id = %s AND account_id = %s", (lead_id, acct))
-        prev = cur.fetchone()
-        old_status = prev[0] if prev else None
-
-        cur.execute(
-            "UPDATE properties SET status = %s, stage_moved_at = NOW() WHERE id = %s AND account_id = %s RETURNING *",
-            (body.status, lead_id, acct),
-        )
-        row = dict_fetchone(cur)
-        if not row:
-            raise HTTPException(status_code=404, detail="Lead not found")
-
-        cur.execute(
-            "INSERT INTO stage_transitions (property_id, from_status, to_status, transitioned_by) "
-            "VALUES (%s, %s, %s, %s)",
-            (lead_id, old_status, body.status, user["id"]),
-        )
-        db.commit()
-
-    from api.workflow_engine import execute_status_change_rules
-    workflow_results = execute_status_change_rules(db, lead_id, old_status, body.status, user["id"], acct)
-
-    # Winning a job makes the surrounding street the cheapest lead source —
-    # queue a door-knock task for nearby uncontacted leads.
-    if body.status == "won" and old_status != "won":
-        from api.neighbors import create_neighbor_task
-        try:
-            neighbor_result = create_neighbor_task(db, lead_id, acct, user["id"])
-            if neighbor_result:
-                workflow_results.append(neighbor_result)
-        except Exception:
-            log.exception("Neighbor task creation failed for lead %d", lead_id)
+    # Shared with quote-event automations (api/lead_logic.py): stage_transitions
+    # audit, status_change rules, neighbor door-knock task on a win.
+    from api.lead_logic import apply_status_change
+    row, workflow_results = apply_status_change(db, lead_id, body.status, user["id"], user["account_id"])
+    if not row:
+        raise HTTPException(status_code=404, detail="Lead not found")
 
     # Lead fields plus what automation did (including failures), so the UI can
     # tell the user when a rule's action didn't run.

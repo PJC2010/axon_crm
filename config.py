@@ -81,6 +81,9 @@ TWILIO_ACCOUNT_SID  = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN   = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_FROM_NUMBER  = os.getenv("TWILIO_FROM_NUMBER", "")
 
+# Frontend origin used to build customer-facing links (public quote pages).
+APP_BASE_URL        = os.getenv("APP_BASE_URL", "http://localhost:3000")
+
 # ── Score weights (must sum to 1.0) ──────────────────────────────────────────
 # Default weights from context - score.docx.
 # Override per vertical by passing a weights dict to the scorer.
