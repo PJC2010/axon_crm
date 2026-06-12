@@ -51,7 +51,7 @@ export default function LandingPage() {
             Automated lead scoring for service businesses
           </div>
           <h1 className="lp-hero-heading">
-            Built on data,<br /><em>focused on people.</em>
+            Built on data,<br /><em>powered by people.</em>
           </h1>
           <p className="lp-hero-sub">
             Axon gives small businesses enterprise-grade intelligence — without the complexity. Surface the insights that matter, understand your customers, and make confident decisions every day.
@@ -217,6 +217,7 @@ export default function LandingPage() {
             <span className="lp-logo-item">Epoxy Flooring</span>
             <span className="lp-logo-item">Roofing Co.</span>
             <span className="lp-logo-item">Pest Control</span>
+            <span className="lp-logo-item">& More</span>
           </div>
         </div>
       </div>
@@ -451,7 +452,7 @@ export default function LandingPage() {
       <section className="lp-cta-section">
         <div className="lp-container">
           <h2 className="lp-cta-heading">
-            Score leads, close jobs,<br /><em>run your books.</em>
+            Predictive insights, <br /><em>personal connections</em>
           </h2>
           <div className="lp-cta-actions">
             <Link href="/login" className="lp-btn lp-btn-paper lp-btn-lg">Open your dashboard</Link>
@@ -479,7 +480,7 @@ export default function LandingPage() {
                 </svg>
                 Axon
               </span>
-              <p className="lp-footer-tagline">Built on data, focused on people.</p>
+              <p className="lp-footer-tagline">Built on data, powered by people.</p>
             </div>
             <div>
               <div className="lp-footer-col-title">Product</div>
@@ -509,7 +510,7 @@ export default function LandingPage() {
           </div>
           <div className="lp-footer-bottom">
             <span>&copy; 2026 Axon Intelligence, Inc. All rights reserved.</span>
-            <span>Made with care for service contractors.</span>
+            <span>Predictive insights, personal connections</span>
           </div>
         </div>
       </footer>
