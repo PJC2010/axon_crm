@@ -1,4 +1,4 @@
-import type { Lead, LeadPage, LeadFilters, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, WorkflowRule, WorkflowRuleCreate, ScoreExplanation, ImportPreview, ImportResult } from './types'
+import type { Lead, LeadPage, LeadFilters, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, WorkflowRule, WorkflowRuleCreate, ScoreExplanation, ImportPreview, ImportResult } from './types'
 import { getToken, clearToken } from './auth'
 
 // Use 127.0.0.1 (not localhost): on macOS `localhost` resolves to IPv6 ::1
@@ -366,6 +366,64 @@ export function recordPayment(invoiceId: number, body: { amount: number; payment
 
 export function deletePayment(invoiceId: number, paymentId: number): Promise<void> {
   return req<void>(`/invoices/${invoiceId}/payments/${paymentId}`, { method: 'DELETE' })
+}
+
+// ── Quotes ────────────────────────────────────────────────────────────────────
+
+export function getQuotes(filters: QuoteFilters = {}): Promise<{ items: Quote[]; total: number; page: number; page_size: number }> {
+  const p = new URLSearchParams()
+  Object.entries(filters).forEach(([k, v]) => { if (v !== undefined && v !== '') p.set(k, String(v)) })
+  return req(`/quotes?${p}`)
+}
+
+export function getQuote(id: number): Promise<Quote> {
+  return req<Quote>(`/quotes/${id}`)
+}
+
+export function createQuote(body: QuoteCreate): Promise<Quote> {
+  return req<Quote>('/quotes', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateQuote(id: number, body: Partial<QuoteCreate> & { status?: QuoteStatus }): Promise<Quote> {
+  return req<Quote>(`/quotes/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export function deleteQuote(id: number): Promise<void> {
+  return req<void>(`/quotes/${id}`, { method: 'DELETE' })
+}
+
+export function sendQuote(id: number, channels: ('email' | 'sms')[]): Promise<Quote> {
+  return req<Quote>(`/quotes/${id}/send`, { method: 'POST', body: JSON.stringify({ channels }) })
+}
+
+export function convertQuote(id: number, dueDate?: string): Promise<Invoice> {
+  return req<Invoice>(`/quotes/${id}/convert`, { method: 'POST', body: JSON.stringify({ due_date: dueDate }) })
+}
+
+// Public quote endpoints — used by the customer-facing /q/[token] page, so no
+// auth header and no 401-redirect handling.
+async function publicReq<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    ...init,
+    headers: { 'Content-Type': 'application/json', ...init?.headers },
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.detail ?? `Request failed (${res.status})`)
+  }
+  return res.json()
+}
+
+export function getPublicQuote(token: string): Promise<PublicQuote> {
+  return publicReq<PublicQuote>(`/public/quotes/${token}`)
+}
+
+export function acceptPublicQuote(token: string): Promise<PublicQuote> {
+  return publicReq<PublicQuote>(`/public/quotes/${token}/accept`, { method: 'POST', body: '{}' })
+}
+
+export function declinePublicQuote(token: string, reason?: string): Promise<PublicQuote> {
+  return publicReq<PublicQuote>(`/public/quotes/${token}/decline`, { method: 'POST', body: JSON.stringify({ reason }) })
 }
 
 export function getARSummary(year?: number): Promise<ARSummary> {

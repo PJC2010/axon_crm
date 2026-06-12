@@ -341,6 +341,85 @@ export interface InvoiceFilters {
   page_size?: number
 }
 
+// ── Quotes ────────────────────────────────────────────────────────────────────
+
+export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'declined' | 'expired'
+
+export interface QuoteLineItem {
+  id?: number
+  quote_id?: number
+  description: string
+  quantity: number
+  unit_price: number
+  amount?: number
+  sort_order?: number
+}
+
+export interface Quote {
+  id: number
+  quote_number: string
+  property_id?: number | null
+  client_name: string
+  client_phone?: string | null
+  client_email?: string | null
+  client_address?: string | null
+  status: QuoteStatus
+  subtotal: number
+  tax_rate: number
+  tax_amount: number
+  total: number
+  issue_date: string
+  valid_until?: string | null
+  notes?: string | null
+  sent_at?: string | null
+  viewed_at?: string | null
+  accepted_at?: string | null
+  declined_at?: string | null
+  decline_reason?: string | null
+  converted_invoice_id?: number | null
+  public_token?: string | null
+  created_at: string
+  line_items: QuoteLineItem[]
+}
+
+/** Sanitized customer-facing quote served by /api/public/quotes/{token}. */
+export interface PublicQuote {
+  quote_number: string
+  business_name: string
+  client_name: string
+  status: QuoteStatus
+  subtotal: number
+  tax_rate: number
+  tax_amount: number
+  total: number
+  issue_date: string
+  valid_until?: string | null
+  notes?: string | null
+  accepted_at?: string | null
+  declined_at?: string | null
+  line_items: { description: string; quantity: number; unit_price: number; amount: number }[]
+}
+
+export interface QuoteCreate {
+  property_id?: number
+  client_name: string
+  client_phone?: string
+  client_email?: string
+  client_address?: string
+  tax_rate: number
+  issue_date: string
+  valid_until?: string
+  notes?: string
+  line_items: { description: string; quantity: number; unit_price: number; sort_order?: number }[]
+}
+
+export interface QuoteFilters {
+  status?: QuoteStatus
+  property_id?: number
+  page?: number
+  page_size?: number
+}
+
 export interface ARSummary {
   total_invoiced: number
   total_collected: number

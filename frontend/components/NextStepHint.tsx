@@ -1,8 +1,8 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ArrowRight, CheckCircle2 } from 'lucide-react'
 import Link from 'next/link'
-import { createTask } from '@/lib/api'
+import { createTask, getTasks } from '@/lib/api'
 import type { LeadStatus } from '@/lib/types'
 
 interface StepConfig {
@@ -11,6 +11,8 @@ interface StepConfig {
   actionType: 'task' | 'link'
   taskTitle?: string
   href?: string
+  /** Per-lead link target; takes precedence over `href`. */
+  leadHref?: (leadId: number) => string
 }
 
 const STEPS: Record<LeadStatus, StepConfig> = {
@@ -22,9 +24,9 @@ const STEPS: Record<LeadStatus, StepConfig> = {
   },
   contacted: {
     hint: 'You\'ve made contact — send a quote while interest is high.',
-    actionLabel: 'Remind me to send quote',
-    actionType: 'task',
-    taskTitle: 'Send quote',
+    actionLabel: 'Create quote',
+    actionType: 'link',
+    leadHref: id => `/bookkeeping?tab=quotes&lead=${id}`,
   },
   qualified: {
     hint: 'Lead is qualified — schedule a site visit or send the proposal.',
@@ -71,16 +73,49 @@ interface Props {
 }
 
 export function NextStepHint({ status, leadId, onToast }: Props) {
-  const [done, setDone] = useState(false)
+  // State is keyed by lead+status so it naturally resets when either changes,
+  // and stale async results for a previous lead/status are ignored.
+  const key = `${leadId}:${status}`
+  const [createdKey, setCreatedKey] = useState<string | null>(null)
+  const [existing, setExisting] = useState<{ key: string; exists: boolean } | null>(null)
   const [saving, setSaving] = useState(false)
 
   const step = STEPS[status]
+  const taskTitle = step?.actionType === 'task' ? step.taskTitle : undefined
+
+  // The "done" state is lost when the drawer unmounts, so re-derive it from the
+  // server: if an open task with this step's title already exists for the lead,
+  // don't offer to create it again.
+  useEffect(() => {
+    if (!taskTitle) return
+    let cancelled = false
+    getTasks({ property_id: leadId, complete: false })
+      .then(tasks => {
+        if (!cancelled) setExisting({ key, exists: tasks.some(t => t.title === taskTitle) })
+      })
+      .catch(() => {
+        // If the check fails, enable the button and rely on the create-time guard.
+        if (!cancelled) setExisting({ key, exists: false })
+      })
+    return () => { cancelled = true }
+  }, [leadId, taskTitle, key])
+
+  const checking = !!taskTitle && existing?.key !== key
+  const done = createdKey === key || (existing?.key === key && existing.exists)
+
   if (!step) return null
 
   async function handleTaskAction() {
     if (!step.taskTitle || saving || done) return
     setSaving(true)
     try {
+      // Guard against duplicates even if the mount-time check failed or raced.
+      const openTasks = await getTasks({ property_id: leadId, complete: false })
+      if (openTasks.some(t => t.title === step.taskTitle)) {
+        setCreatedKey(key)
+        onToast?.('Task already exists', 'success')
+        return
+      }
       const dueDate = new Date()
       dueDate.setDate(dueDate.getDate() + (status === 'quote_sent' ? 3 : 1))
       await createTask({
@@ -89,7 +124,7 @@ export function NextStepHint({ status, leadId, onToast }: Props) {
         priority: 'high',
         property_id: leadId,
       })
-      setDone(true)
+      setCreatedKey(key)
       onToast?.('Task created', 'success')
     } catch {
       onToast?.('Failed to create task', 'error')
@@ -123,23 +158,23 @@ export function NextStepHint({ status, leadId, onToast }: Props) {
       ) : step.actionType === 'task' ? (
         <button
           onClick={handleTaskAction}
-          disabled={saving}
+          disabled={saving || checking}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 4,
             padding: '5px 10px', flexShrink: 0,
             borderRadius: 'var(--radius-pill)',
-            background: saving ? 'var(--color-ink-300)' : 'var(--color-accent)',
+            background: saving || checking ? 'var(--color-ink-300)' : 'var(--color-accent)',
             color: 'white', border: 'none',
             fontSize: 11, fontWeight: 600,
-            cursor: saving ? 'not-allowed' : 'pointer',
+            cursor: saving || checking ? 'not-allowed' : 'pointer',
             whiteSpace: 'nowrap',
           }}
         >
           {saving ? 'Adding…' : step.actionLabel} {!saving && <ArrowRight size={10} strokeWidth={2.5} />}
         </button>
-      ) : step.href ? (
+      ) : (step.leadHref || step.href) ? (
         <Link
-          href={step.href}
+          href={step.leadHref ? step.leadHref(leadId) : step.href!}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 4,
             padding: '5px 10px', flexShrink: 0,

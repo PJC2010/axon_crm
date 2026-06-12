@@ -46,3 +46,4 @@ def client_ip(request: Request) -> str:
 login_limiter = RateLimiter(max_calls=10, per_seconds=60, name="login")
 import_limiter = RateLimiter(max_calls=20, per_seconds=3600, name="import")
 pipeline_run_limiter = RateLimiter(max_calls=10, per_seconds=3600, name="pipeline run")
+public_quote_limiter = RateLimiter(max_calls=30, per_seconds=60, name="public quote")

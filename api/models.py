@@ -207,6 +207,89 @@ class SendInvoiceRequest(BaseModel):
     channels: list[str]  # any of: "email", "sms"
 
 
+# ── Quotes ────────────────────────────────────────────────────────────────────
+
+QUOTE_STATUSES = ["draft", "sent", "accepted", "declined", "expired"]
+
+
+class QuoteLineItem(BaseModel):
+    id: int
+    quote_id: int
+    description: str
+    quantity: float
+    unit_price: float
+    amount: float
+    sort_order: int
+
+    class Config:
+        from_attributes = True
+
+
+class QuoteCreate(BaseModel):
+    property_id: Optional[int] = None
+    client_name: str
+    client_phone: Optional[str] = None
+    client_email: Optional[str] = None
+    client_address: Optional[str] = None
+    tax_rate: float = 0.0
+    issue_date: date
+    valid_until: Optional[date] = None
+    notes: Optional[str] = None
+    line_items: list[LineItemCreate]
+
+
+class QuoteUpdate(BaseModel):
+    client_name: Optional[str] = None
+    client_phone: Optional[str] = None
+    client_email: Optional[str] = None
+    client_address: Optional[str] = None
+    status: Optional[str] = None
+    tax_rate: Optional[float] = None
+    issue_date: Optional[date] = None
+    valid_until: Optional[date] = None
+    notes: Optional[str] = None
+    line_items: Optional[list[LineItemCreate]] = None
+
+
+class Quote(BaseModel):
+    id: int
+    quote_number: str
+    property_id: Optional[int] = None
+    client_name: str
+    client_phone: Optional[str] = None
+    client_email: Optional[str] = None
+    client_address: Optional[str] = None
+    status: str
+    subtotal: float
+    tax_rate: float
+    tax_amount: float
+    total: float
+    issue_date: date
+    valid_until: Optional[date] = None
+    notes: Optional[str] = None
+    sent_at: Optional[datetime] = None
+    viewed_at: Optional[datetime] = None
+    accepted_at: Optional[datetime] = None
+    declined_at: Optional[datetime] = None
+    decline_reason: Optional[str] = None
+    converted_invoice_id: Optional[int] = None
+    public_token: Optional[str] = None
+    created_by: Optional[int] = None
+    created_at: datetime
+    line_items: list[QuoteLineItem] = []
+
+    class Config:
+        from_attributes = True
+
+
+class ConvertQuoteRequest(BaseModel):
+    due_date: Optional[date] = None  # invoice due date; defaults to +30 days
+
+
+class PublicDeclineRequest(BaseModel):
+    reason: Optional[str] = None  # customer's optional note
+
+
 class LeadPage(BaseModel):
     total: int
     page: int

@@ -1,17 +1,22 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { BookOpen, ChevronDown, Home } from 'lucide-react'
 import Link from 'next/link'
 import { BookkeepingOverview } from './BookkeepingOverview'
 import { InvoiceList } from './InvoiceList'
+import { QuoteList } from './QuoteList'
 import { ARDashboard } from './ARDashboard'
 import { PnLChart } from './PnLChart'
 import { JobCostingTable } from './JobCostingTable'
+import { ToastStack, useToast } from './Toast'
+import { getLead } from '@/lib/api'
+import type { Lead } from '@/lib/types'
 
-type Tab = 'overview' | 'invoices' | 'ar' | 'pnl' | 'jobs'
+type Tab = 'overview' | 'quotes' | 'invoices' | 'ar' | 'pnl' | 'jobs'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
+  { id: 'quotes',   label: 'Quotes' },
   { id: 'invoices', label: 'Invoices' },
   { id: 'ar',       label: 'A/R' },
   { id: 'pnl',      label: 'P&L' },
@@ -21,9 +26,28 @@ const TABS: { id: Tab; label: string }[] = [
 const THIS_YEAR = new Date().getFullYear()
 const YEAR_OPTIONS = Array.from({ length: 5 }, (_, i) => THIS_YEAR - i)
 
-export function BookkeepingDashboard() {
-  const [tab, setTab]   = useState<Tab>('overview')
+interface Props {
+  /** Deep-link support: ?tab=quotes&lead=123 opens the quote builder prefilled. */
+  initialTab?: Tab
+  quoteLeadId?: number
+}
+
+export function BookkeepingDashboard({ initialTab, quoteLeadId }: Props = {}) {
+  const [tab, setTab]   = useState<Tab>(initialTab ?? 'overview')
   const [year, setYear] = useState(THIS_YEAR)
+  const [prefillLead, setPrefillLead] = useState<Lead | null>(null)
+  const [leadLoaded, setLeadLoaded] = useState(!quoteLeadId)
+  const { toasts, show: showToast, dismiss: dismissToast } = useToast()
+
+  useEffect(() => {
+    if (!quoteLeadId) return
+    let cancelled = false
+    getLead(quoteLeadId)
+      .then(lead => { if (!cancelled) setPrefillLead(lead) })
+      .catch(() => {}) // missing lead → plain quotes tab
+      .finally(() => { if (!cancelled) setLeadLoaded(true) })
+    return () => { cancelled = true }
+  }, [quoteLeadId])
 
   return (
     <div style={{ minHeight: '100dvh', background: 'var(--color-paper)' }}>
@@ -82,11 +106,14 @@ export function BookkeepingDashboard() {
       {/* Content */}
       <div style={{ maxWidth: 760, margin: '0 auto', padding: '24px 16px 48px' }}>
         {tab === 'overview' && <BookkeepingOverview year={year} />}
+        {tab === 'quotes'   && leadLoaded && <QuoteList prefillLead={prefillLead} onToast={showToast} />}
         {tab === 'invoices' && <InvoiceList year={year} />}
         {tab === 'ar'       && <ARDashboard year={year} />}
         {tab === 'pnl'      && <PnLChart year={year} />}
         {tab === 'jobs'     && <JobCostingTable year={year} />}
       </div>
+
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </div>
   )
 }
