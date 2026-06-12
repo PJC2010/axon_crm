@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { ArrowLeft, Play, Trash2, RefreshCw, Home, XCircle, Zap, Plus } from 'lucide-react'
 import { getSchedules, createSchedule, updateSchedule, deleteSchedule, triggerRun, getPipelineRuns, cancelRun, rescoreZip, rescoreAll, getWorkflows, createWorkflow, updateWorkflow, deleteWorkflow, seedWorkflowDefaults } from '@/lib/api'
 import { AuthGuard } from '@/components/AuthGuard'
+import { AutomationTemplates } from '@/components/AutomationTemplates'
 import type { PipelineSchedule, PipelineRun, WorkflowRule } from '@/lib/types'
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
@@ -339,6 +340,11 @@ function SettingsPage() {
               </button>
             </div>
           </div>
+
+          <AutomationTemplates
+            workflows={workflows}
+            onWorkflowsChange={setWorkflows}
+          />
 
           {showWfForm && (
             <form

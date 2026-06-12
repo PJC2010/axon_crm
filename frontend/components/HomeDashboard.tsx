@@ -21,6 +21,8 @@ import { AIInsightsPanel } from './AIInsightsPanel'
 import { RevenueSparkChart } from './RevenueSparkChart'
 import { PipelineRingChart } from './PipelineRingChart'
 import { ActivityFeed } from './ActivityFeed'
+import { TodayFocusSection } from './TodayFocusSection'
+import { QuickAddFAB } from './QuickAddFAB'
 
 const CLOSED_STAGES = new Set(['won', 'lost', 'not_interested'])
 
@@ -382,6 +384,14 @@ export function HomeDashboard() {
         {/* ── Getting Started Checklist ── */}
         <GettingStartedChecklist />
 
+        {/* ── Today's Focus ── */}
+        <TodayFocusSection
+          taskCounts={data.taskCounts}
+          arSummary={data.arSummary}
+          loading={loading}
+          onToast={showToast}
+        />
+
         {/* ── Quick Actions ── */}
         <div style={{ marginBottom: 24 }}>
           <p className="t-eyebrow" style={{ margin: '0 0 10px' }}>Quick Actions</p>
@@ -574,6 +584,7 @@ export function HomeDashboard() {
       </div>
 
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
+      <QuickAddFAB />
     </div>
   )
 }

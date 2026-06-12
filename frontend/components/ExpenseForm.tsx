@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { createExpense, updateExpense } from '@/lib/api'
 import type { Expense, ExpenseCreate, ExpenseCategory, PaymentMethod } from '@/lib/types'
+import { DateQuickPicks } from './DateQuickPicks'
 
 const CATEGORIES: { value: ExpenseCategory; label: string; Icon: LucideIcon }[] = [
   { value: 'fuel',          label: 'Fuel',          Icon: Fuel },
@@ -188,10 +189,11 @@ export function ExpenseForm({ expense, onSaved, onClose }: Props) {
             <div style={{ display: 'flex', gap: 12 }}>
               <div style={{ flex: 1 }}>
                 <label className="t-label" style={{ display: 'block', marginBottom: 6 }}>Date</label>
+                <DateQuickPicks value={date} onChange={setDate} />
                 <input
                   type="date" value={date} onChange={e => setDate(e.target.value)}
                   required className="drawer-input"
-                  style={{ width: '100%', boxSizing: 'border-box' }}
+                  style={{ width: '100%', boxSizing: 'border-box', marginTop: 6 }}
                 />
               </div>
               <div style={{ flex: 1 }}>

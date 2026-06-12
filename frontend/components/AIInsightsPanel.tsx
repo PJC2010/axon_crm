@@ -1,8 +1,8 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { Sparkles, TrendingUp, AlertTriangle, Target, Users, Clock, ArrowRight, Zap } from 'lucide-react'
+import { Sparkles, TrendingUp, AlertTriangle, Target, Users, Clock, ArrowRight, Zap, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react'
 import Link from 'next/link'
-import { getPipelineAnalytics, getPipelineStats, getARSummary, getTaskCounts, getLeads } from '@/lib/api'
+import { getPipelineAnalytics, getPipelineStats, getARSummary, getTaskCounts, getLeads, createTask } from '@/lib/api'
 import type { Lead } from '@/lib/types'
 
 interface Insight {
@@ -13,6 +13,7 @@ interface Insight {
   type: 'action' | 'positive' | 'warning'
   link?: string
   linkLabel?: string
+  staleLeads?: Lead[]
 }
 
 const TYPE_STYLES: Record<string, { bg: string; border: string; iconBg: string }> = {
@@ -24,6 +25,9 @@ const TYPE_STYLES: Record<string, { bg: string; border: string; iconBg: string }
 export function AIInsightsPanel() {
   const [insights, setInsights] = useState<Insight[]>([])
   const [loading, setLoading] = useState(true)
+  const [expandedInsight, setExpandedInsight] = useState<string | null>(null)
+  const [creatingTask, setCreatingTask] = useState<number | null>(null)
+  const [completedTasks, setCompletedTasks] = useState<Set<number>>(new Set())
 
   const generate = useCallback(async () => {
     setLoading(true)
@@ -87,10 +91,9 @@ export function AIInsightsPanel() {
             id: 'stale-leads',
             icon: <Users size={15} strokeWidth={1.8} />,
             title: `${stale.length} lead${stale.length !== 1 ? 's' : ''} going cold`,
-            description: `${stale.length} contacted lead${stale.length !== 1 ? 's' : ''} with no activity in 14+ days${totalValue > 0 ? ` — worth ${fmtCurrency(totalValue)} in potential revenue` : ''}. Schedule follow-ups to keep them warm.`,
+            description: `${stale.length} contacted lead${stale.length !== 1 ? 's' : ''} with no activity in 14+ days${totalValue > 0 ? ` — worth ${fmtCurrency(totalValue)} in potential revenue` : ''}. Tap to schedule follow-ups.`,
             type: 'action',
-            link: '/dashboard',
-            linkLabel: 'View leads',
+            staleLeads: stale.slice(0, 5),
           })
         }
       }
@@ -189,46 +192,131 @@ export function AIInsightsPanel() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {insights.map(insight => {
-          const style = TYPE_STYLES[insight.type]
+          const s = TYPE_STYLES[insight.type]
+          const isStale = insight.id === 'stale-leads' && insight.staleLeads && insight.staleLeads.length > 0
+          const expanded = expandedInsight === insight.id
+
+          async function handleFollowUp(lead: Lead) {
+            if (creatingTask === lead.id) return
+            setCreatingTask(lead.id)
+            try {
+              const name = lead.contact_name || lead.owner_name || lead.address || 'lead'
+              const tomorrow = new Date()
+              tomorrow.setDate(tomorrow.getDate() + 1)
+              await createTask({
+                title: `Follow up with ${name}`,
+                due_date: tomorrow.toISOString().slice(0, 10),
+                priority: 'high',
+                property_id: lead.id,
+              })
+              setCompletedTasks(prev => new Set([...prev, lead.id]))
+            } finally {
+              setCreatingTask(null)
+            }
+          }
+
           return (
             <div
               key={insight.id}
               style={{
-                display: 'flex', alignItems: 'flex-start', gap: 12,
-                padding: '14px 16px',
                 borderRadius: 'var(--radius-card)',
-                background: style.bg,
-                border: `1px solid ${style.border}`,
+                background: s.bg,
+                border: `1px solid ${s.border}`,
+                overflow: 'hidden',
               }}
             >
-              <div style={{
-                width: 30, height: 30, borderRadius: 'var(--radius-button)',
-                background: style.iconBg,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0, marginTop: 1,
-              }}>
-                <span style={{ color: 'white', display: 'flex' }}>{insight.icon}</span>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '14px 16px' }}>
+                <div style={{
+                  width: 30, height: 30, borderRadius: 'var(--radius-button)',
+                  background: s.iconBg,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0, marginTop: 1,
+                }}>
+                  <span style={{ color: 'white', display: 'flex' }}>{insight.icon}</span>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ margin: '0 0 3px', fontSize: 14, fontWeight: 600, color: 'var(--color-ink-900)', lineHeight: 1.3 }}>
+                    {insight.title}
+                  </p>
+                  <p style={{ margin: 0, fontSize: 12.5, color: 'var(--color-ink-600)', lineHeight: 1.45 }}>
+                    {insight.description}
+                  </p>
+                </div>
+                {isStale ? (
+                  <button
+                    onClick={() => setExpandedInsight(expanded ? null : insight.id)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 4,
+                      fontSize: 12, fontWeight: 500, color: s.iconBg,
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      whiteSpace: 'nowrap', flexShrink: 0, alignSelf: 'center',
+                    }}
+                  >
+                    {expanded ? 'Hide' : 'Follow up'} {expanded ? <ChevronUp size={12} strokeWidth={2} /> : <ChevronDown size={12} strokeWidth={2} />}
+                  </button>
+                ) : insight.link ? (
+                  <Link
+                    href={insight.link}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 4,
+                      fontSize: 12, fontWeight: 500, color: s.iconBg,
+                      textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0,
+                      alignSelf: 'center',
+                    }}
+                  >
+                    {insight.linkLabel} <ArrowRight size={12} strokeWidth={1.8} />
+                  </Link>
+                ) : null}
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: '0 0 3px', fontSize: 14, fontWeight: 600, color: 'var(--color-ink-900)', lineHeight: 1.3 }}>
-                  {insight.title}
-                </p>
-                <p style={{ margin: 0, fontSize: 12.5, color: 'var(--color-ink-600)', lineHeight: 1.45 }}>
-                  {insight.description}
-                </p>
-              </div>
-              {insight.link && (
-                <Link
-                  href={insight.link}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 4,
-                    fontSize: 12, fontWeight: 500, color: style.iconBg,
-                    textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0,
-                    alignSelf: 'center',
-                  }}
-                >
-                  {insight.linkLabel} <ArrowRight size={12} strokeWidth={1.8} />
-                </Link>
+
+              {isStale && expanded && insight.staleLeads && (
+                <div style={{ borderTop: `1px solid ${s.border}`, padding: '8px 16px 12px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {insight.staleLeads.map(lead => {
+                      const done = completedTasks.has(lead.id)
+                      const name = lead.contact_name || lead.owner_name || lead.address || 'Unknown lead'
+                      return (
+                        <div key={lead.id} style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          gap: 10, padding: '8px 10px',
+                          background: 'rgba(255,255,255,0.6)', borderRadius: 'var(--radius-button)',
+                        }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: 'var(--color-ink-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {name}
+                            </p>
+                            {lead.estimated_job_value != null && (
+                              <p style={{ margin: 0, fontSize: 11, color: 'var(--color-ink-400)' }}>
+                                ~{fmtCurrency(lead.estimated_job_value)} potential
+                              </p>
+                            )}
+                          </div>
+                          {done ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--color-moss)' }}>
+                              <CheckCircle2 size={14} strokeWidth={2} /> Scheduled
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => handleFollowUp(lead)}
+                              disabled={creatingTask === lead.id}
+                              style={{
+                                padding: '5px 10px',
+                                borderRadius: 'var(--radius-pill)',
+                                background: creatingTask === lead.id ? 'var(--color-ink-300)' : s.iconBg,
+                                color: 'white', border: 'none',
+                                fontSize: 11, fontWeight: 600,
+                                cursor: creatingTask === lead.id ? 'not-allowed' : 'pointer',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {creatingTask === lead.id ? 'Adding…' : 'Follow Up'}
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
               )}
             </div>
           )
