@@ -10,6 +10,7 @@ import { ContactInfoSection } from './lead/ContactInfoSection'
 import { PropertySignals } from './lead/PropertySignals'
 import { WhyThisScore } from './lead/WhyThisScore'
 import { ActivityPanel } from './lead/ActivityPanel'
+import { NextStepHint } from './NextStepHint'
 
 interface Props {
   lead: Lead | null
@@ -114,6 +115,9 @@ export function ContactDrawer({ lead, onClose, onStatusChange, onLeadChange, onT
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div style={{ padding: '0 24px' }}>
+            <NextStepHint status={lead.status} leadId={lead.id} onToast={onToast} />
+          </div>
           <ContactInfoSection lead={lead} onSaved={l => onLeadChange?.(l)} onToast={onToast} />
           <PropertySignals lead={lead} />
           <WhyThisScore leadId={lead.id} />

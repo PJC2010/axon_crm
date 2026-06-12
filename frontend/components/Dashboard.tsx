@@ -13,6 +13,7 @@ import { ExportButton } from './ExportButton'
 import { ImportContactsModal } from './ImportContactsModal'
 import { TaskBell } from './TaskBell'
 import { ToastStack, useToast } from './Toast'
+import { QuickAddFAB } from './QuickAddFAB'
 
 const DEFAULT_FILTERS: LeadFilters = { sort: 'score', page: 1, page_size: 50 }
 
@@ -280,6 +281,7 @@ export function Dashboard() {
       />
 
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
+      <QuickAddFAB />
     </div>
   )
 }

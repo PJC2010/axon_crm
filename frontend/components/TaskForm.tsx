@@ -2,6 +2,7 @@
 import { useState, FormEvent } from 'react'
 import { createTask } from '@/lib/api'
 import type { TaskPriority } from '@/lib/types'
+import { DateQuickPicks } from './DateQuickPicks'
 
 interface Props {
   leadId?: number
@@ -45,7 +46,9 @@ export function TaskForm({ leadId, onCreated }: Props) {
         style={{ width: '100%' }}
         required
       />
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <DateQuickPicks value={dueDate} onChange={setDueDate} />
+        <div style={{ display: 'flex', gap: 8 }}>
         <input
           type="date"
           value={dueDate}
@@ -64,6 +67,7 @@ export function TaskForm({ leadId, onCreated }: Props) {
           <option value="high">High</option>
           <option value="urgent">Urgent</option>
         </select>
+        </div>
       </div>
       <button
         type="submit"

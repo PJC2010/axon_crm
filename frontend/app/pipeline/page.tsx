@@ -8,6 +8,8 @@ import type { Lead, PipelineCardLead, PipelineGroup, PipelineStage, LeadStatus }
 import { KanbanCard } from '@/components/KanbanCard'
 import { ContactDrawer } from '@/components/ContactDrawer'
 import { PipelineAnalytics } from '@/components/PipelineAnalytics'
+import { QuickTaskModal } from '@/components/QuickTaskModal'
+import { ToastStack, useToast } from '@/components/Toast'
 
 const FALLBACK_STAGES: { key: string; label: string; color: string }[] = [
   { key: 'new',            label: 'New',           color: 'var(--color-ink-300)' },
@@ -29,6 +31,8 @@ function PipelinePage() {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [view, setView] = useState<'board' | 'analytics'>('board')
   const [wide, setWide] = useState(false)
+  const [quickTaskLead, setQuickTaskLead] = useState<PipelineCardLead | null>(null)
+  const { toasts, show: showToast, dismiss: dismissToast } = useToast()
 
   useEffect(() => {
     const check = () => setWide(window.innerWidth >= 640)
@@ -191,7 +195,7 @@ function PipelinePage() {
                         onDragStart={() => handleDragStart(lead)}
                         style={{ opacity: dragLead?.id === lead.id ? 0.5 : 1 }}
                       >
-                        <KanbanCard lead={lead} onClick={() => handleCardClick(lead)} />
+                        <KanbanCard lead={lead} onClick={() => handleCardClick(lead)} onQuickTask={setQuickTaskLead} />
                       </div>
                     ))}
                   </div>
@@ -207,6 +211,17 @@ function PipelinePage() {
         onClose={() => setSelectedLead(null)}
         onStatusChange={handleDrawerStatusChange}
       />
+
+      {quickTaskLead && (
+        <QuickTaskModal
+          leadId={quickTaskLead.id}
+          leadLabel={quickTaskLead.address || quickTaskLead.contact_name || String(quickTaskLead.id)}
+          onClose={() => setQuickTaskLead(null)}
+          onCreated={msg => showToast(msg, 'success')}
+        />
+      )}
+
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </div>
   )
 }
