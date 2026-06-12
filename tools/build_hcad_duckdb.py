@@ -38,8 +38,10 @@ Usage:
     python tools/build_hcad_duckdb.py /path/to/dir -o harris_county.duckdb
     python tools/build_hcad_duckdb.py /path/to/dir --encoding latin-1
 
-The HCAD files are tab-delimited with a header row. They are typically encoded
-Windows-1252/latin-1 (not UTF-8), which is the default here.
+The HCAD files are tab-delimited with a header row. They are encoded
+Windows-1252 (cp1252), not UTF-8, which is the default here. Note: DuckDB's
+"latin-1" reader rejects some real HCAD bytes (e.g. 0xA5), so cp1252 — not
+latin-1 — is the correct encoding for these files.
 """
 import argparse
 import sys
@@ -203,7 +205,7 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Build harris_county.duckdb from raw HCAD real-property files")
     p.add_argument("src_dir", help="Directory of unzipped HCAD .txt files")
     p.add_argument("-o", "--out", default=str(DEFAULT_DB), help=f"Output DuckDB path (default: {DEFAULT_DB})")
-    p.add_argument("--encoding", default="latin-1", help="Source file encoding (default: latin-1)")
+    p.add_argument("--encoding", default="cp1252", help="Source file encoding (default: cp1252)")
     args = p.parse_args()
 
     src_dir = Path(args.src_dir)
