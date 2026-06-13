@@ -37,6 +37,7 @@ export function PropertySignals({ lead }: { lead: Lead }) {
           ['Area income',    fmtCurrency(lead.zip_median_income)],
           ['Permits (24mo)', lead.permit_count_24mo ?? '—'],
           ['Owner',          lead.owner_name],
+          ['Neighborhood',   lead.hcad_neighborhood_name],
         ].map(([label, val]) => (
           <div key={String(label)}>
             <dt className="t-eyebrow" style={{ marginBottom: 2 }}>{label}</dt>

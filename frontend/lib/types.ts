@@ -34,6 +34,11 @@ export interface Lead {
   lead_score: number | null
   score_grade: ScoreGrade | null
   vertical: string | null
+  neighborhood_value_ratio: number | null
+  neighborhood_value_pctile: number | null
+  neighborhood_value_basis: string | null
+  hcad_neighborhood_code: string | null
+  hcad_neighborhood_name: string | null
   status: LeadStatus
   estimated_job_value: number | null
   stage_moved_at: string | null
@@ -108,9 +113,19 @@ export interface LeadFilters {
   grade?: string
   vertical?: string
   status?: string
+  min_value?: number
+  max_value?: number
+  neighborhood?: string
+  min_neighborhood_pctile?: number
   sort?: string
   page?: number
   page_size?: number
+}
+
+export interface Neighborhood {
+  cell: string
+  leads: number
+  median_value: number | null
 }
 
 export interface Task {

@@ -17,6 +17,7 @@ ALL_COLS = [
     "last_sale_date", "last_sale_price", "owner_name", "owner_occupied",
     "ownership_years", "zip_median_income", "permit_count_24mo",
     "has_pool", "has_cracked_slab",
+    "hcad_neighborhood_code", "hcad_neighborhood_name",
     "contact_name", "contact_phone", "contact_email", "mailing_address",
     "lead_score", "score_grade", "vertical", "score_updated_at",
     "enrichment_flags",

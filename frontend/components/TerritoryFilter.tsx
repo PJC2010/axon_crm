@@ -1,8 +1,8 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { SlidersHorizontal } from 'lucide-react'
-import { getZips } from '@/lib/api'
-import type { LeadFilters } from '@/lib/types'
+import { getZips, getNeighborhoods } from '@/lib/api'
+import type { LeadFilters, Neighborhood } from '@/lib/types'
 
 interface Props {
   filters: LeadFilters
@@ -52,21 +52,64 @@ const VERTICALS = [
 ]
 
 const SORTS = [
-  { value: 'score',     label: 'Score' },
-  { value: 'sale_date', label: 'Sale date' },
-  { value: 'address',   label: 'Address' },
+  { value: 'score',               label: 'Score' },
+  { value: 'sale_date',           label: 'Sale date' },
+  { value: 'address',             label: 'Address' },
+  { value: 'value',               label: 'Property value' },
+  { value: 'neighborhood_pctile', label: 'Neighborhood value' },
 ]
+
+// Preset property-value bands. Each sets min_value / max_value together.
+const VALUE_BANDS = [
+  { value: '',            label: 'Any value',     min: undefined, max: undefined },
+  { value: '0-200000',    label: 'Under $200k',   min: undefined, max: 200_000 },
+  { value: '200000-400000', label: '$200k–$400k', min: 200_000,   max: 400_000 },
+  { value: '400000-600000', label: '$400k–$600k', min: 400_000,   max: 600_000 },
+  { value: '600000-',     label: '$600k+',        min: 600_000,   max: undefined },
+]
+
+// "Top value within the block" — maps to the minimum neighborhood percentile.
+const NEIGHBORHOOD_TIERS = [
+  { value: '',    label: 'Any block rank' },
+  { value: '0.9', label: 'Top 10% on block' },
+  { value: '0.75', label: 'Top 25% on block' },
+  { value: '0.5', label: 'Top 50% on block' },
+]
+
+function fmtValue(v: number | null): string {
+  if (v == null) return '—'
+  return v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M` : `$${Math.round(v / 1000)}k`
+}
 
 export function TerritoryFilter({ filters, onChange }: Props) {
   const [zips, setZips] = useState<string[]>([])
+  const [neighborhoods, setNeighborhoods] = useState<Neighborhood[]>([])
 
   useEffect(() => {
     getZips().then(setZips).catch(() => {})
   }, [])
 
+  // Neighborhood options narrow with the selected ZIP. Clear any stale
+  // neighborhood selection when the ZIP changes.
+  useEffect(() => {
+    getNeighborhoods(filters.zip).then(setNeighborhoods).catch(() => setNeighborhoods([]))
+  }, [filters.zip])
+
   function set(key: keyof LeadFilters, val: string) {
     onChange({ ...filters, [key]: val || undefined, page: 1 })
   }
+
+  function setNum(key: keyof LeadFilters, val: string) {
+    onChange({ ...filters, [key]: val ? Number(val) : undefined, page: 1 })
+  }
+
+  function setBand(val: string) {
+    const band = VALUE_BANDS.find(b => b.value === val)
+    onChange({ ...filters, min_value: band?.min, max_value: band?.max, page: 1 })
+  }
+
+  const currentBand =
+    VALUE_BANDS.find(b => b.min === filters.min_value && b.max === filters.max_value)?.value ?? ''
 
   return (
     <div
@@ -129,6 +172,30 @@ export function TerritoryFilter({ filters, onChange }: Props) {
       {/* Status */}
       <select value={filters.status ?? ''} onChange={e => set('status', e.target.value)} className="select-field">
         {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+      </select>
+
+      {/* Neighborhood (geohash-6 block) — narrows with the selected ZIP */}
+      <select value={filters.neighborhood ?? ''} onChange={e => set('neighborhood', e.target.value)} className="select-field">
+        <option value="">All neighborhoods</option>
+        {neighborhoods.map(n => (
+          <option key={n.cell} value={n.cell}>
+            {n.cell} · {fmtValue(n.median_value)} med · {n.leads} leads
+          </option>
+        ))}
+      </select>
+
+      {/* Property-value band */}
+      <select value={currentBand} onChange={e => setBand(e.target.value)} className="select-field">
+        {VALUE_BANDS.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
+      </select>
+
+      {/* Top value within the block */}
+      <select
+        value={filters.min_neighborhood_pctile != null ? String(filters.min_neighborhood_pctile) : ''}
+        onChange={e => setNum('min_neighborhood_pctile', e.target.value)}
+        className="select-field"
+      >
+        {NEIGHBORHOOD_TIERS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
       </select>
 
       {/* Sort — pushed to right */}

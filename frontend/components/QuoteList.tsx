@@ -67,9 +67,9 @@ export function QuoteList({ prefillLead, onToast }: Props) {
 
   const prefill = prefillLead ? {
     property_id: prefillLead.id,
-    client_name: prefillLead.contact_name
-      || [prefillLead.address, prefillLead.city].filter(Boolean).join(', ')
-      || 'New client',
+    // Bill to the actual contact, else the assessor's owner name. Never the
+    // address — that's the property line (client_address below), not a name.
+    client_name: prefillLead.contact_name || prefillLead.owner_name || '',
     client_phone: prefillLead.contact_phone ?? undefined,
     client_email: prefillLead.contact_email ?? undefined,
     client_address: [prefillLead.address, prefillLead.city, prefillLead.state, prefillLead.zip].filter(Boolean).join(', ') || undefined,

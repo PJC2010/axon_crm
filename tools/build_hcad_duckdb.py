@@ -76,7 +76,8 @@ def _src(con: duckdb.DuckDBPyConnection, path: Path, encoding: str) -> str:
 
 def build(src_dir: Path, out_db: Path, encoding: str) -> None:
     f = {name: src_dir / f"{name}.txt" for name in
-         ("real_acct", "owners", "deeds", "permits", "extra_features", "building_res")}
+         ("real_acct", "owners", "deeds", "permits", "extra_features", "building_res",
+          "real_neighborhood_code")}
 
     real_acct = None  # set below; required
     if out_db.exists():
@@ -134,6 +135,8 @@ def build(src_dir: Path, out_db: Path, encoding: str) -> None:
                 NULLIF(TRIM(ra.mail_city), '')                        AS mail_city,
                 NULLIF(TRIM(ra.mail_state), '')                       AS mail_state,
                 NULLIF(TRIM(ra.mail_zip), '')                         AS mail_zip,
+                NULLIF(TRIM(ra.Neighborhood_Code), '')                AS neighborhood_code,
+                NULLIF(TRIM(ra.Neighborhood_Grp), '')                 AS neighborhood_grp,
                 LOWER(REGEXP_REPLACE(COALESCE(ra.site_addr_1, ''), '[^a-z0-9 ]', '', 'g')) AS site_norm,
                 LOWER(REGEXP_REPLACE(COALESCE(ra.mail_addr_1, ''), '[^a-z0-9 ]', '', 'g')) AS mail_norm
             FROM ra
@@ -145,6 +148,7 @@ def build(src_dir: Path, out_db: Path, encoding: str) -> None:
             acct, site_address, site_zip, year_built, building_sqft, land_sqft,
             tot_appr_val, last_sale_date, owner_name,
             mail_addr, mail_city, mail_state, mail_zip,
+            neighborhood_code, neighborhood_grp,
             (site_norm <> '' AND TRIM(site_norm) = TRIM(mail_norm)) AS likely_owner_occupied
         FROM norm
     """)
@@ -180,6 +184,21 @@ def build(src_dir: Path, out_db: Path, encoding: str) -> None:
     else:
         print("  (extra_features.txt absent — pool/slab/garage signals will be empty)")
 
+    # ── neighborhood_codes lookup (optional) ────────────────────────────────
+    nc_src = _src(con, f["real_neighborhood_code"], encoding)
+    if nc_src:
+        print("Building neighborhood_codes ...")
+        con.execute(f"""
+            CREATE TABLE neighborhood_codes AS
+            SELECT
+                NULLIF(TRIM(cd), '')   AS cd,
+                NULLIF(TRIM(dscr), '') AS dscr
+            FROM {nc_src}
+            WHERE cd IS NOT NULL AND TRIM(cd) <> ''
+        """)
+    else:
+        print("  (real_neighborhood_code.txt absent — neighborhood names will be empty)")
+
     # ── indexes + report ────────────────────────────────────────────────────
     con.execute("CREATE INDEX idx_ps_zip ON property_summary(site_zip)")
     con.execute("CREATE INDEX idx_ps_acct ON property_summary(acct)")
@@ -188,6 +207,8 @@ def build(src_dir: Path, out_db: Path, encoding: str) -> None:
         con.execute("CREATE INDEX idx_pm_acct ON permits(acct)")
     if "extra_features" in tables:
         con.execute("CREATE INDEX idx_ef_acct ON extra_features(acct)")
+    if "neighborhood_codes" in tables:
+        con.execute("CREATE INDEX idx_nc_cd ON neighborhood_codes(cd)")
 
     print("\nDone. Row counts:")
     for t in tables:

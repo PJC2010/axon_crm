@@ -13,6 +13,7 @@ from config import (
     SALE_RECENCY_MAX_MO, EQUITY_TARGET,
     GARAGE_TARGET, INCOME_TARGET, PERMIT_TARGET,
     POOL_SIGNAL_VALUE, SLAB_SIGNAL_VALUE,
+    NEIGHBORHOOD_RATIO_TARGET,
     FACTOR_META, DEFAULT_WEIGHTS, VERTICAL_WEIGHTS,
 )
 
@@ -31,6 +32,7 @@ def _compute_score(row: dict, weights: dict) -> float:
         weights["garage"]           * _garage_signal(row.get("garage_spaces"))    +
         weights["income"]           * _income_signal(row.get("zip_median_income"))+
         weights["permit"]           * _permit_signal(row.get("permit_count_24mo"))+
+        weights.get("neighborhood", 0) * _neighborhood_signal(row.get("neighborhood_value_ratio")) +
         weights.get("pool", 0)      * _pool_signal(row.get("has_pool"))           +
         weights.get("slab", 0)      * _slab_signal(row.get("has_cracked_slab"))
     ) * 100
@@ -99,6 +101,18 @@ def _permit_signal(count: int | None) -> float:
     return min(1.0, count / PERMIT_TARGET)
 
 
+def _neighborhood_signal(ratio: float | None) -> float:
+    """Reward homes whose value-per-sqft is strong relative to their immediate
+    neighborhood. `ratio` (precomputed in pipeline/neighborhood.py) is the home's
+    value/sqft ÷ the neighborhood median; 1.0 means exactly at the median. At or
+    below median scores 0; NEIGHBORHOOD_RATIO_TARGET× (or higher) scores 1.0.
+    This replaces ZIP-median income as the sole locality signal with a far more
+    granular one. Unbenchmarked homes (ratio None) score 0."""
+    if not ratio or ratio <= 0:
+        return 0.0
+    return min(1.0, max(0.0, (ratio - 1.0) / (NEIGHBORHOOD_RATIO_TARGET - 1.0)))
+
+
 def _pool_signal(has_pool: bool | None) -> float:
     """1.0 if property has a pool, else 0. Used by pool_maintenance vertical."""
     return POOL_SIGNAL_VALUE if has_pool else 0.0
@@ -119,6 +133,7 @@ _SIGNAL_FNS = {
     "garage": _garage_signal,
     "income": _income_signal,
     "permit": _permit_signal,
+    "neighborhood": _neighborhood_signal,
     "pool":   _pool_signal,
     "slab":   _slab_signal,
 }
