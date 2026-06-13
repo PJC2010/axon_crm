@@ -23,6 +23,7 @@ from pipeline.scoring import (
     _garage_signal,
     _income_signal,
     _permit_signal,
+    _neighborhood_signal,
     _SIGNAL_FNS,
     explain_score,
     describe_vertical,
@@ -246,6 +247,36 @@ class TestPermitSignal:
         assert _permit_signal(5) == pytest.approx(1.0)
 
 
+# ── _neighborhood_signal ──────────────────────────────────────────────────────
+
+class TestNeighborhoodSignal:
+    def test_none(self):
+        assert _neighborhood_signal(None) == 0.0
+
+    def test_zero(self):
+        assert _neighborhood_signal(0) == 0.0
+
+    def test_negative(self):
+        assert _neighborhood_signal(-0.5) == 0.0
+
+    def test_at_median_is_zero(self):
+        # Exactly at the neighborhood median carries no signal.
+        assert _neighborhood_signal(1.0) == 0.0
+
+    def test_below_median_is_zero(self):
+        assert _neighborhood_signal(0.8) == 0.0
+
+    def test_halfway_to_target(self):
+        # Target is 1.3; 1.15 is halfway above the median → 0.5.
+        assert _neighborhood_signal(1.15) == pytest.approx(0.5)
+
+    def test_at_target(self):
+        assert _neighborhood_signal(1.3) == pytest.approx(1.0)
+
+    def test_above_target_capped(self):
+        assert _neighborhood_signal(5.0) == pytest.approx(1.0)
+
+
 # ── _grade ────────────────────────────────────────────────────────────────────
 
 class TestGrade:
@@ -295,6 +326,7 @@ PERFECT_ROW = {
     "garage_spaces":    2,                    # at target → 1.0
     "zip_median_income": 75_000,              # at target → 1.0
     "permit_count_24mo": 2,                   # at target → 1.0
+    "neighborhood_value_ratio": 2.0,          # well above target ratio → 1.0
     "has_pool":          True,                # pool_maintenance signal → 1.0
     "has_cracked_slab":  True,                # epoxy_flooring slab signal → 1.0
 }

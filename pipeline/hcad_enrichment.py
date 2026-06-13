@@ -50,14 +50,16 @@ def enrich_hcad(zip_code: str, account_id: int) -> int:
                 changed = True
 
         if hcad:
-            _backfill("year_built",      hcad.get("year_built"))
-            _backfill("square_footage",  hcad.get("square_footage"))
-            _backfill("lot_size",        hcad.get("lot_size"))
-            _backfill("estimated_value", hcad.get("estimated_value"))
-            _backfill("last_sale_date",  hcad.get("last_sale_date"))
-            _backfill("owner_name",      hcad.get("owner_name"))
-            _backfill("owner_occupied",  hcad.get("owner_occupied"))
-            _backfill("mailing_address", hcad.get("mailing_address"))
+            _backfill("year_built",              hcad.get("year_built"))
+            _backfill("square_footage",          hcad.get("square_footage"))
+            _backfill("lot_size",                hcad.get("lot_size"))
+            _backfill("estimated_value",         hcad.get("estimated_value"))
+            _backfill("last_sale_date",          hcad.get("last_sale_date"))
+            _backfill("owner_name",              hcad.get("owner_name"))
+            _backfill("owner_occupied",          hcad.get("owner_occupied"))
+            _backfill("mailing_address",         hcad.get("mailing_address"))
+            _backfill("hcad_neighborhood_code",  hcad.get("neighborhood_code"))
+            _backfill("hcad_neighborhood_name",  hcad.get("neighborhood_name"))
 
             if row.get("ownership_years") is None:
                 sale_date = update.get("last_sale_date") or hcad.get("last_sale_date")

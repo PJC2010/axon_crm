@@ -475,7 +475,12 @@ def rescore_all(current_user: dict = Depends(require_owner), db: PGConn = Depend
     import sys, os
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
     from pipeline.scorer import score_zip
+    from pipeline.neighborhood import recompute_neighborhood_values
     acct = current_user["account_id"]
+    # Refresh the account-wide neighborhood value benchmark before scoring, so the
+    # neighborhood signal reads current ratios. Must run once for the whole org
+    # (geohash cells cross ZIP boundaries), not per ZIP.
+    recompute_neighborhood_values(db, acct)
     with db.cursor() as cur:
         cur.execute(
             "SELECT DISTINCT zip FROM properties WHERE zip IS NOT NULL AND account_id = %s ORDER BY zip",

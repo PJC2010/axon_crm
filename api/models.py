@@ -33,6 +33,11 @@ class Lead(BaseModel):
     lead_score: Optional[float] = None
     score_grade: Optional[str] = None
     vertical: Optional[str] = None
+    neighborhood_value_ratio: Optional[float] = None
+    neighborhood_value_pctile: Optional[float] = None
+    neighborhood_value_basis: Optional[str] = None
+    hcad_neighborhood_code: Optional[str] = None
+    hcad_neighborhood_name: Optional[str] = None
     contact_phone: Optional[str] = None
     contact_email: Optional[str] = None
     contact_name: Optional[str] = None

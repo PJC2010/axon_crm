@@ -297,6 +297,11 @@ export function getZips(): Promise<string[]> {
   return req<string[]>('/zips')
 }
 
+export function getNeighborhoods(zip?: string): Promise<import('./types').Neighborhood[]> {
+  const qs = zip ? `?zip=${encodeURIComponent(zip)}` : ''
+  return req<import('./types').Neighborhood[]>(`/neighborhoods${qs}`)
+}
+
 // ── Expenses ──────────────────────────────────────────────────────────────────
 
 export function getExpenses(filters: ExpenseFilters = {}): Promise<{ items: Expense[]; total: number; page: number; page_size: number }> {

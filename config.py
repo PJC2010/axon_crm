@@ -88,85 +88,97 @@ APP_BASE_URL        = os.getenv("APP_BASE_URL", "http://localhost:3000")
 # Default weights from context - score.docx.
 # Override per vertical by passing a weights dict to the scorer.
 DEFAULT_WEIGHTS = {
-    "age":    0.25,   # home age in renovation sweet spot (15–30 years)
-    "sale":   0.22,   # recency of last sale
-    "equity": 0.18,   # estimated equity >= $100k
-    "garage": 0.15,   # garage spaces >= 2
-    "income": 0.12,   # zip median income
-    "permit": 0.08,   # permit activity in last 24 months
+    "age":          0.25,   # home age in renovation sweet spot (15–30 years)
+    "sale":         0.22,   # recency of last sale
+    "equity":       0.18,   # estimated equity >= $100k
+    "garage":       0.15,   # garage spaces >= 2
+    "income":       0.06,   # zip median income (coarse — half its weight moved to neighborhood)
+    "neighborhood": 0.06,   # value-per-sqft vs the immediate block (granular locality)
+    "permit":       0.08,   # permit activity in last 24 months
 }
 
 # Per-vertical weight overrides. Keys match vertical names used in the DB.
 # Weights must sum to 1.0. pool/slab keys are optional — omit them (or set 0)
 # for verticals where they are irrelevant; _compute_score uses weights.get().
 VERTICAL_WEIGHTS = {
+    # Each vertical splits its former `income` budget between income and the new
+    # `neighborhood` signal; value-sensitive verticals (solar, landscaping) lean
+    # more on neighborhood. Per-profile weights still sum to 1.0.
     "epoxy_flooring": {
-        "age":    0.20,
-        "sale":   0.15,
-        "equity": 0.15,
-        "garage": 0.20,   # garage = primary work surface
-        "income": 0.10,
-        "permit": 0.05,
-        "slab":   0.15,   # cracked slab = confirmed job opportunity (from HCAD)
+        "age":          0.20,
+        "sale":         0.15,
+        "equity":       0.15,
+        "garage":       0.20,   # garage = primary work surface
+        "income":       0.05,
+        "neighborhood": 0.05,
+        "permit":       0.05,
+        "slab":         0.15,   # cracked slab = confirmed job opportunity (from HCAD)
     },
     "pool_maintenance": {
-        "age":    0.10,
-        "sale":   0.20,
-        "equity": 0.15,
-        "garage": 0.00,
-        "income": 0.20,
-        "permit": 0.05,
-        "pool":   0.30,   # has a pool = confirmed service target (from HCAD)
+        "age":          0.10,
+        "sale":         0.20,
+        "equity":       0.15,
+        "garage":       0.00,
+        "income":       0.10,
+        "neighborhood": 0.10,
+        "permit":       0.05,
+        "pool":         0.30,   # has a pool = confirmed service target (from HCAD)
     },
     "solar": {
-        "age":    0.10,
-        "sale":   0.20,
-        "equity": 0.30,
-        "garage": 0.10,
-        "income": 0.25,
-        "permit": 0.05,
+        "age":          0.10,
+        "sale":         0.20,
+        "equity":       0.30,
+        "garage":       0.10,
+        "income":       0.10,
+        "neighborhood": 0.15,   # premium homes within a block are prime solar targets
+        "permit":       0.05,
     },
     "roofing": {
-        "age":    0.30,   # roof age tracks home age — 15–30y roofs are due
-        "sale":   0.15,
-        "equity": 0.15,
-        "garage": 0.00,
-        "income": 0.15,
-        "permit": 0.25,   # active permits often follow storm/repair work
+        "age":          0.30,   # roof age tracks home age — 15–30y roofs are due
+        "sale":         0.15,
+        "equity":       0.15,
+        "garage":       0.00,
+        "income":       0.08,
+        "neighborhood": 0.07,
+        "permit":       0.25,   # active permits often follow storm/repair work
     },
     "hvac": {
-        "age":    0.35,   # systems hit end-of-life at 15–25 years
-        "sale":   0.15,
-        "equity": 0.15,
-        "garage": 0.00,
-        "income": 0.20,
-        "permit": 0.15,
+        "age":          0.35,   # systems hit end-of-life at 15–25 years
+        "sale":         0.15,
+        "equity":       0.15,
+        "garage":       0.00,
+        "income":       0.10,
+        "neighborhood": 0.10,
+        "permit":       0.15,
     },
     "fencing": {
-        "age":    0.10,
-        "sale":   0.25,   # new owners replace fences early
-        "equity": 0.15,
-        "garage": 0.00,
-        "income": 0.15,
-        "permit": 0.10,
-        "pool":   0.25,   # pools require code-compliant fencing
+        "age":          0.10,
+        "sale":         0.25,   # new owners replace fences early
+        "equity":       0.15,
+        "garage":       0.00,
+        "income":       0.08,
+        "neighborhood": 0.07,
+        "permit":       0.10,
+        "pool":         0.25,   # pools require code-compliant fencing
     },
     "landscaping": {
-        "age":    0.05,
-        "sale":   0.30,   # new owners re-landscape early
-        "equity": 0.20,
-        "garage": 0.00,
-        "income": 0.35,   # recurring service — spending capacity dominates
-        "permit": 0.10,
+        "age":          0.05,
+        "sale":         0.30,   # new owners re-landscape early
+        "equity":       0.20,
+        "garage":       0.00,
+        "income":       0.20,   # recurring service — spending capacity still matters
+        "neighborhood": 0.15,   # high-value blocks invest most in curb appeal
+        "permit":       0.10,
     },
     "pressure_washing": {
-        "age":    0.30,   # older exteriors show the most buildup
-        "sale":   0.20,
-        "equity": 0.10,
-        "garage": 0.00,
-        "income": 0.20,
-        "permit": 0.05,
-        "pool":   0.15,   # pool decks are a core upsell surface
+        "age":          0.30,   # older exteriors show the most buildup
+        "sale":         0.20,
+        "equity":       0.10,
+        "garage":       0.00,
+        "income":       0.10,
+        "neighborhood": 0.10,
+        "permit":       0.05,
+        "pool":         0.15,   # pool decks are a core upsell surface
     },
 }
 
@@ -206,6 +218,11 @@ FACTOR_META = {
         "field": "permit_count_24mo",
         "description": "Recent building permits show the owner is already investing in the home.",
     },
+    "neighborhood": {
+        "label": "Neighborhood value",
+        "field": "neighborhood_value_ratio",
+        "description": "Home value-per-sqft is strong relative to its immediate neighborhood — a sharper locality signal than ZIP-wide income.",
+    },
     "pool": {
         "label": "Pool present",
         "field": "has_pool",
@@ -226,6 +243,12 @@ EQUITY_TARGET        = 100_000   # USD
 GARAGE_TARGET        = 2     # spaces
 INCOME_TARGET        = 75_000    # zip median USD
 PERMIT_TARGET        = 2     # permits in 24 months
+
+# Neighborhood-relative value (see pipeline/neighborhood.py). A home whose
+# value-per-sqft is NEIGHBORHOOD_RATIO_TARGET× its neighborhood median (or higher)
+# scores full marks on the neighborhood signal; at/below the median scores 0.
+NEIGHBORHOOD_RATIO_TARGET = 1.3   # 30% above the block median = top signal
+NEIGHBORHOOD_MIN_MEMBERS  = 5     # geohash cells smaller than this fall back to ZIP median
 
 # Binary signal values for presence-based features (pool / cracked slab).
 # Both are 0.0–1.0 floats; set to 1.0 so the full vertical weight is applied

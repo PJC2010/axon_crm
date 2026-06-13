@@ -24,10 +24,12 @@ router = APIRouter()
 log = logging.getLogger(__name__)
 
 SORT_MAP = {
-    "score":      "lead_score DESC NULLS LAST",
-    "sale_date":  "last_sale_date DESC NULLS LAST",
-    "address":    "address ASC",
-    "grade":      "score_grade ASC",
+    "score":               "lead_score DESC NULLS LAST",
+    "sale_date":           "last_sale_date DESC NULLS LAST",
+    "address":             "address ASC",
+    "grade":               "score_grade ASC",
+    "value":               "estimated_value DESC NULLS LAST",
+    "neighborhood_pctile": "neighborhood_value_pctile DESC NULLS LAST",
 }
 
 
@@ -37,6 +39,10 @@ def list_leads(
     grade: str | None = Query(None),
     vertical: str | None = Query(None),
     status: str | None = Query(None),
+    min_value: int | None = Query(None, ge=0),
+    max_value: int | None = Query(None, ge=0),
+    neighborhood: str | None = Query(None, description="geohash-6 cell"),
+    min_neighborhood_pctile: float | None = Query(None, ge=0, le=1),
     sort: str = Query("score"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
@@ -44,7 +50,11 @@ def list_leads(
     user: dict = Depends(get_current_user),
 ):
     order = SORT_MAP.get(sort, SORT_MAP["score"])
-    conditions, params = _build_filters(user["account_id"], zip=zip, grade=grade, vertical=vertical, status=status)
+    conditions, params = _build_filters(
+        user["account_id"], zip=zip, grade=grade, vertical=vertical, status=status,
+        min_value=min_value, max_value=max_value, neighborhood=neighborhood,
+        min_neighborhood_pctile=min_neighborhood_pctile,
+    )
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     offset = (page - 1) * page_size
 
@@ -250,6 +260,45 @@ def list_zips(db: PGConn = Depends(get_db), user: dict = Depends(get_current_use
         return [r[0] for r in cur.fetchall()]
 
 
+@router.get("/neighborhoods")
+def list_neighborhoods(
+    zip: str | None = Query(None),
+    db: PGConn = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Geohash-6 neighborhoods (the same ~block cells used for value benchmarking),
+    with lead count and median value, so the UI can offer a 'pick a block' filter.
+    Only cells with enough leads to be meaningful are returned; optionally narrowed
+    to a selected ZIP."""
+    from config import NEIGHBORHOOD_MIN_MEMBERS
+    params: list = [user["account_id"]]
+    zip_clause = ""
+    if zip:
+        zip_clause = "AND zip = %s"
+        params.append(zip)
+    params.append(NEIGHBORHOOD_MIN_MEMBERS)
+    with db.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT LEFT(geohash, 6) AS cell,
+                   COUNT(*) AS leads,
+                   percentile_cont(0.5) WITHIN GROUP (ORDER BY estimated_value) AS median_value
+            FROM properties
+            WHERE account_id = %s AND geohash IS NOT NULL AND archived_at IS NULL
+              {zip_clause}
+            GROUP BY cell
+            HAVING COUNT(*) >= %s
+            ORDER BY median_value DESC NULLS LAST
+            """,
+            params,
+        )
+        return [
+            {"cell": cell, "leads": leads,
+             "median_value": int(median_value) if median_value is not None else None}
+            for cell, leads, median_value in cur.fetchall()
+        ]
+
+
 @router.post("/leads/{lead_id}/archive", response_model=Lead)
 def archive_lead(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
     """Soft-delete: mark lead as archived"""
@@ -342,11 +391,17 @@ def archive_by_filter(
 
 def _build_filters(account_id: int, **kwargs) -> tuple[list[str], list]:
     conditions, params = ["account_id = %s"], [account_id]
+    # Each entry maps a kwarg to a single-placeholder SQL fragment. Range and
+    # geohash filters fit the same shape (one %s each) as the equality filters.
     mapping = {
-        "zip":      "zip = %s",
-        "grade":    "score_grade = %s",
-        "vertical": "vertical = %s",
-        "status":   "status = %s",
+        "zip":                     "zip = %s",
+        "grade":                   "score_grade = %s",
+        "vertical":                "vertical = %s",
+        "status":                  "status = %s",
+        "min_value":               "estimated_value >= %s",
+        "max_value":               "estimated_value <= %s",
+        "neighborhood":            "LEFT(geohash, 6) = %s",
+        "min_neighborhood_pctile": "neighborhood_value_pctile >= %s",
     }
     for key, sql in mapping.items():
         val = kwargs.get(key)

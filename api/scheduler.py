@@ -138,6 +138,13 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
         n = enrich_permits(zip_code, account_id, csv_path=None)
         log.info("[6/8] run=%d Permits: %d updated", run_id, n)
 
+        # Step 6.5 — Neighborhood value benchmark. Account-wide (geohash cells
+        # cross ZIP lines) and must precede scoring so the neighborhood signal
+        # reads fresh ratios that include this ZIP's just-enriched values.
+        if _check_cancel(): return
+        from pipeline.neighborhood import recompute_neighborhood_values
+        recompute_neighborhood_values(conn, account_id)
+
         # Step 7 — Score
         if _check_cancel(): return
         from pipeline.scorer import score_zip
