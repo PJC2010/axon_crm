@@ -138,7 +138,13 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
         n = enrich_permits(zip_code, account_id, csv_path=None)
         log.info("[6/8] run=%d Permits: %d updated", run_id, n)
 
-        # Step 6.5 — Neighborhood value benchmark. Account-wide (geohash cells
+        # Step 6.5 — Storm/hail enrichment (free, needs lat/lng from step 3).
+        if _check_cancel(): return
+        from pipeline.storm import enrich_storm
+        n = enrich_storm(zip_code, account_id)
+        log.info("[6.5/8] run=%d Storm: %d matched", run_id, n)
+
+        # Step 6.75 — Neighborhood value benchmark. Account-wide (geohash cells
         # cross ZIP lines) and must precede scoring so the neighborhood signal
         # reads fresh ratios that include this ZIP's just-enriched values.
         if _check_cancel(): return
@@ -165,7 +171,13 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
         sources["contact"] = enrich_contact(zip_code, account_id, selected_only=capped)
         log.info("[8/8] run=%d Contact: %s", run_id, sources["contact"])
 
-        # Step 9 — Timing signals (free): diff sale/permit fields against the
+        # Step 8.5 — Demographics / life-events (paid, optional, grade-gated)
+        if _check_cancel(): return
+        from pipeline.demographics import enrich_demographics
+        sources["demographics"] = enrich_demographics(zip_code, account_id, selected_only=capped)
+        log.info("[8.5/8] run=%d Demographics: %s", run_id, sources["demographics"])
+
+        # Step 9 — Timing signals (free): diff sale/permit/storm fields against the
         # previous run's baseline, record signal_events, fire signal_event rules.
         if _check_cancel(): return
         from pipeline.signals import detect_signals

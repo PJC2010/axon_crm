@@ -21,6 +21,16 @@ ALL_COLS = [
     "contact_name", "contact_phone", "contact_email", "mailing_address",
     "lead_score", "score_grade", "vertical", "score_updated_at",
     "enrichment_flags",
+    # Storm/hail enrichment (migration 027)
+    "last_storm_date", "last_storm_type", "hail_size_in", "storm_count_24mo",
+    # Household demographics / life-events (migration 028)
+    "owner_age", "length_of_residence_years", "est_household_income", "life_stage",
+    # Versium Demographic Append — scoring signals (migration 029)
+    "refi_date", "home_improvement_flag", "credit_rating", "has_children", "gardening_flag",
+    # Versium Demographic Append — model features (migration 029)
+    "age_range", "estimated_net_worth", "loan_to_value", "marital_status", "occupation",
+    "senior_in_household", "pets_flag", "decorating_flag", "credit_lines_count",
+    "mortgage_rate_type",
 ]
 
 

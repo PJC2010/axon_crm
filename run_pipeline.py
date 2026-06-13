@@ -124,6 +124,14 @@ def run_zip(zip_code: str, args) -> None:
     else:
         log.info("[6/8] Permits: skipped")
 
+    # Storm/hail enrichment runs after geocode (needs lat/lng), before scoring.
+    if "storm" not in skip:
+        from pipeline.storm import enrich_storm
+        n = enrich_storm(zip_code, account_id)
+        log.info("[6.5/8] Storm: %d matched", n)
+    else:
+        log.info("[6.5/8] Storm: skipped")
+
     if "score" not in skip:
         from pipeline.scorer import score_zip
         n = score_zip(zip_code, account_id, vertical=args.vertical)
@@ -152,7 +160,16 @@ def run_zip(zip_code: str, args) -> None:
     else:
         log.info("[8/8] Contact: skipped")
 
-    # Timing signals run last: diff sale/permit fields against the previous
+    # Demographics enrichment runs after scoring so the grade gate can apply.
+    if "demographics" not in skip:
+        from pipeline.demographics import enrich_demographics
+        c = enrich_demographics(zip_code, account_id, selected_only=capped)
+        log.info("[demo] Demographics: %d filled%s", c.get("updated", 0),
+                 " (skipped: no provider)" if c.get("skipped_no_key") else "")
+    else:
+        log.info("[demo] Demographics: skipped")
+
+    # Timing signals run last: diff sale/permit/storm fields against the previous
     # run's baseline, record signal_events, fire signal_event workflow rules.
     if "signals" not in skip:
         from pipeline.signals import detect_signals
@@ -190,7 +207,7 @@ def main():
     parser.add_argument("--permit-csv", default=None,
                         help="CSV file with permit counts (address, zip, permit_count)")
     parser.add_argument("--skip",       default="",
-                        help="Comma-separated steps to skip: seed,census,geocode,hcad,select,property,permits,score,contact")
+                        help="Comma-separated steps to skip: seed,census,geocode,hcad,select,property,permits,storm,score,contact,demographics,signals")
     parser.add_argument("--limit",      type=int, default=None,
                         help="Cap the number of seeded records (useful for testing)")
     parser.add_argument("--top-n",      type=int, default=None, dest="top_n",

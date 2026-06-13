@@ -25,6 +25,28 @@ CONTACT_MAX_ROWS_PER_ZIP = int(os.getenv("CONTACT_MAX_ROWS_PER_ZIP", "200"))
 # Only skip-trace leads at or above this grade ("" = no grade filter). A is best.
 CONTACT_MIN_GRADE        = os.getenv("CONTACT_MIN_GRADE", "")
 
+# ── Household demographics / life-events enrichment ───────────────────────────
+# Provider-pluggable (e.g. "versium"); default "" = step is a no-op.
+# Supported providers: see pipeline/demographics.py PROVIDERS.
+DEMO_PROVIDER         = os.getenv("DEMO_PROVIDER", "")
+DEMO_API_KEY          = os.getenv("DEMO_API_KEY", "")
+DEMO_BASE_URL         = os.getenv("DEMO_BASE_URL", "")
+DEMO_MAX_ROWS_PER_ZIP = int(os.getenv("DEMO_MAX_ROWS_PER_ZIP", "200"))
+# Only enrich leads at or above this grade ("" = no grade filter).
+DEMO_MIN_GRADE        = os.getenv("DEMO_MIN_GRADE", "")
+
+# ── Storm / hail event enrichment (NOAA/IEM, free) ───────────────────────────
+# IEM Local Storm Report API — no key required.
+IEM_LSR_URL           = os.getenv("IEM_LSR_URL", "https://mesonet.agron.iastate.edu/geojson/lsr.php")
+# NWS Weather Forecast Office code covering Harris County (Houston/Galveston).
+STORM_WFO             = os.getenv("STORM_WFO", "HGX")
+# How far back to fetch storm reports (months). Matches the permit/sale window.
+STORM_LOOKBACK_MONTHS = int(os.getenv("STORM_LOOKBACK_MONTHS", "24"))
+# A property is considered "hit" by a storm event if it falls within this radius.
+STORM_MATCH_RADIUS_MI = float(os.getenv("STORM_MATCH_RADIUS_MI", "1.0"))
+# Hail size (inches) at which the storm signal is fully saturated (score = 1.0).
+STORM_HAIL_TARGET_IN  = float(os.getenv("STORM_HAIL_TARGET_IN", "1.5"))
+
 # ── HTTP robustness (retry/backoff for all outbound API calls) ────────────────
 HTTP_RETRIES = int(os.getenv("HTTP_RETRIES", "3"))
 HTTP_BACKOFF = float(os.getenv("HTTP_BACKOFF", "0.5"))   # seconds, exponential
@@ -101,84 +123,106 @@ DEFAULT_WEIGHTS = {
 # Weights must sum to 1.0. pool/slab keys are optional — omit them (or set 0)
 # for verticals where they are irrelevant; _compute_score uses weights.get().
 VERTICAL_WEIGHTS = {
-    # Each vertical splits its former `income` budget between income and the new
-    # `neighborhood` signal; value-sensitive verticals (solar, landscaping) lean
-    # more on neighborhood. Per-profile weights still sum to 1.0.
+    # Weights must sum to 1.0 per profile. Optional signals (pool, slab, storm,
+    # home_improvement, refi, credit, children, gardening) use weights.get() in
+    # _compute_score, so they are safe to include only in the verticals where they
+    # carry predictive value.
     "epoxy_flooring": {
-        "age":          0.20,
-        "sale":         0.15,
-        "equity":       0.15,
-        "garage":       0.20,   # garage = primary work surface
-        "income":       0.05,
-        "neighborhood": 0.05,
-        "permit":       0.05,
-        "slab":         0.15,   # cracked slab = confirmed job opportunity (from HCAD)
+        "age":              0.20,
+        "sale":             0.15,
+        "equity":           0.15,
+        "garage":           0.20,   # garage = primary work surface
+        "income":           0.03,
+        "neighborhood":     0.02,
+        "permit":           0.05,
+        "slab":             0.15,   # cracked slab = confirmed job opportunity (from HCAD)
+        "home_improvement": 0.05,   # intent signal — owner already invests in the home
     },
     "pool_maintenance": {
-        "age":          0.10,
-        "sale":         0.20,
-        "equity":       0.15,
-        "garage":       0.00,
-        "income":       0.10,
-        "neighborhood": 0.10,
-        "permit":       0.05,
-        "pool":         0.30,   # has a pool = confirmed service target (from HCAD)
+        "age":              0.10,
+        "sale":             0.15,
+        "equity":           0.10,
+        "garage":           0.00,
+        "income":           0.10,
+        "neighborhood":     0.10,
+        "permit":           0.05,
+        "pool":             0.20,   # has a pool = confirmed service target (from HCAD)
+        "children":         0.10,   # families with children = primary pool-maintenance customer
+        "credit":           0.05,   # financing eligibility for pool upgrades
+        "home_improvement": 0.05,   # intent signal — owner already invests in the home
     },
     "solar": {
-        "age":          0.10,
-        "sale":         0.20,
-        "equity":       0.30,
-        "garage":       0.10,
-        "income":       0.10,
-        "neighborhood": 0.15,   # premium homes within a block are prime solar targets
-        "permit":       0.05,
+        "age":              0.10,
+        "sale":             0.10,
+        "equity":           0.20,
+        "garage":           0.10,
+        "income":           0.05,
+        "neighborhood":     0.15,   # premium homes within a block are prime solar targets
+        "permit":           0.05,
+        "refi":             0.10,   # recent cash-out refi = capital + investment mindset
+        "credit":           0.10,   # solar financing requires credit approval
+        "home_improvement": 0.05,   # intent signal
     },
     "roofing": {
-        "age":          0.30,   # roof age tracks home age — 15–30y roofs are due
-        "sale":         0.15,
-        "equity":       0.15,
-        "garage":       0.00,
-        "income":       0.08,
-        "neighborhood": 0.07,
-        "permit":       0.25,   # active permits often follow storm/repair work
+        "age":              0.20,   # roof age tracks home age — 15–30y roofs are due
+        "sale":             0.15,
+        "equity":           0.13,
+        "garage":           0.00,
+        "income":           0.04,
+        "neighborhood":     0.03,
+        "permit":           0.15,   # active permits often follow storm/repair work
+        "storm":            0.20,   # recent hail/wind event = most direct demand driver
+        "home_improvement": 0.05,   # intent signal
+        "refi":             0.05,   # capital signal
     },
     "hvac": {
-        "age":          0.35,   # systems hit end-of-life at 15–25 years
-        "sale":         0.15,
-        "equity":       0.15,
-        "garage":       0.00,
-        "income":       0.10,
-        "neighborhood": 0.10,
-        "permit":       0.15,
+        "age":              0.28,   # systems hit end-of-life at 15–25 years
+        "sale":             0.15,
+        "equity":           0.13,
+        "garage":           0.00,
+        "income":           0.04,
+        "neighborhood":     0.04,
+        "permit":           0.10,
+        "storm":            0.10,   # freeze events drive HVAC failures
+        "home_improvement": 0.07,   # intent signal
+        "refi":             0.05,   # capital signal
+        "credit":           0.04,   # financing eligibility
     },
     "fencing": {
-        "age":          0.10,
-        "sale":         0.25,   # new owners replace fences early
-        "equity":       0.15,
-        "garage":       0.00,
-        "income":       0.08,
-        "neighborhood": 0.07,
-        "permit":       0.10,
-        "pool":         0.25,   # pools require code-compliant fencing
+        "age":              0.10,
+        "sale":             0.20,   # new owners replace fences early
+        "equity":           0.13,
+        "garage":           0.00,
+        "income":           0.04,
+        "neighborhood":     0.03,
+        "permit":           0.10,
+        "pool":             0.15,   # pools require code-compliant fencing
+        "storm":            0.10,   # hail/wind damage is a primary fence-replacement trigger
+        "children":         0.10,   # safety fencing for children
+        "home_improvement": 0.05,   # intent signal
     },
     "landscaping": {
-        "age":          0.05,
-        "sale":         0.30,   # new owners re-landscape early
-        "equity":       0.20,
-        "garage":       0.00,
-        "income":       0.20,   # recurring service — spending capacity still matters
-        "neighborhood": 0.15,   # high-value blocks invest most in curb appeal
-        "permit":       0.10,
+        "age":              0.05,
+        "sale":             0.30,   # new owners re-landscape early
+        "equity":           0.20,
+        "garage":           0.00,
+        "income":           0.15,   # recurring service — spending capacity matters
+        "neighborhood":     0.15,   # high-value blocks invest most in curb appeal
+        "permit":           0.05,
+        "home_improvement": 0.05,   # intent signal
+        "gardening":        0.05,   # direct behavioral signal for outdoor services
     },
     "pressure_washing": {
-        "age":          0.30,   # older exteriors show the most buildup
-        "sale":         0.20,
-        "equity":       0.10,
-        "garage":       0.00,
-        "income":       0.10,
-        "neighborhood": 0.10,
-        "permit":       0.05,
-        "pool":         0.15,   # pool decks are a core upsell surface
+        "age":              0.22,   # older exteriors show the most buildup
+        "sale":             0.13,
+        "equity":           0.10,
+        "garage":           0.00,
+        "income":           0.10,
+        "neighborhood":     0.10,
+        "permit":           0.05,
+        "pool":             0.15,   # pool decks are a core upsell surface
+        "storm":            0.10,   # post-storm debris/staining drives cleanup demand
+        "home_improvement": 0.05,   # intent signal
     },
 }
 
@@ -233,6 +277,36 @@ FACTOR_META = {
         "field": "has_cracked_slab",
         "description": "A cracked slab (from HCAD) is a confirmed epoxy-flooring opportunity.",
     },
+    "storm": {
+        "label": "Storm activity",
+        "field": "last_storm_date",
+        "description": "A recent storm or hail event (NOAA/IEM) signals surge demand for roofing, HVAC, fencing, and pressure-washing.",
+    },
+    "home_improvement": {
+        "label": "Home improvement",
+        "field": "home_improvement_flag",
+        "description": "Owner actively buys home-improvement products — a direct behavioral intent signal for all service verticals.",
+    },
+    "refi": {
+        "label": "Recent refinance",
+        "field": "refi_date",
+        "description": "A recent mortgage refinance (especially cash-out) indicates available capital and willingness to invest in the property.",
+    },
+    "credit": {
+        "label": "Credit quality",
+        "field": "credit_rating",
+        "description": "Higher owner credit rating (A/B) means financing eligibility for large jobs — solar, HVAC, roofing.",
+    },
+    "children": {
+        "label": "Children in home",
+        "field": "has_children",
+        "description": "Presence of children drives safety-focused spending: pool fencing, HVAC air quality, structural work.",
+    },
+    "gardening": {
+        "label": "Gardening interest",
+        "field": "gardening_flag",
+        "description": "Owner is a gardening enthusiast — a direct behavioral indicator for landscaping and outdoor services.",
+    },
 }
 
 # ── Signal thresholds ────────────────────────────────────────────────────────
@@ -249,6 +323,15 @@ PERMIT_TARGET        = 2     # permits in 24 months
 # scores full marks on the neighborhood signal; at/below the median scores 0.
 NEIGHBORHOOD_RATIO_TARGET = 1.3   # 30% above the block median = top signal
 NEIGHBORHOOD_MIN_MEMBERS  = 5     # geohash cells smaller than this fall back to ZIP median
+
+# Storm recency window — events older than this score 0 (matches SALE_RECENCY_MAX_MO).
+STORM_RECENCY_MAX_MO  = STORM_LOOKBACK_MONTHS
+
+# ── Demographic signal thresholds ────────────────────────────────────────────
+# Refinance recency window (months). A refi within this window scores towards 1.0.
+REFI_RECENCY_MAX_MO   = int(os.getenv("REFI_RECENCY_MAX_MO", "36"))
+# Credit grade-to-score mapping (ordinal A=best, D=worst).
+CREDIT_GRADE_SCORES   = {"A": 1.0, "B": 0.75, "C": 0.40, "D": 0.10}
 
 # Binary signal values for presence-based features (pool / cracked slab).
 # Both are 0.0–1.0 floats; set to 1.0 so the full vertical weight is applied

@@ -7,12 +7,13 @@ previous run (stored under `last_seen_*` keys in enrichment_flags):
 
   - last_sale_date moved forward   → `just_sold`   (new owner)
   - permit_count_24mo increased    → `new_permit`  (owner actively investing)
+  - last_storm_date moved forward  → `storm_event` (new storm hit this property)
 
 Changes are recorded as signal_events rows (surfaced on the lead timeline),
 then active `signal_event` workflow rules run so automations like
-"just sold → create follow-up task" fire without user action. The first run
-for a property only sets its baseline — no events are emitted until there is
-history to compare against.
+"just sold → create follow-up task" or "storm_event → create roofing task"
+fire without user action. The first run for a property only sets its baseline
+— no events are emitted until there is history to compare against.
 """
 import logging
 from datetime import date
@@ -35,7 +36,7 @@ def detect_signals(zip_code: str, account_id: int) -> dict:
             from api.workflow_engine import execute_signal_event_rules
             triggered = len(execute_signal_event_rules(conn, account_id, events))
 
-        counts: dict = {"just_sold": 0, "new_permit": 0, "rules_triggered": triggered}
+        counts: dict = {"just_sold": 0, "new_permit": 0, "storm_event": 0, "rules_triggered": triggered}
         for e in events:
             counts[e["signal_type"]] += 1
         return counts
@@ -47,8 +48,10 @@ def _diff_and_record(conn, zip_code: str, account_id: int) -> list[dict]:
     with conn.cursor() as cur:
         cur.execute(
             "SELECT id, vertical, address, last_sale_date, permit_count_24mo, "
+            "       last_storm_date, "
             "       enrichment_flags->>'last_seen_sale_date'    AS seen_sale, "
-            "       enrichment_flags->>'last_seen_permit_count' AS seen_permits "
+            "       enrichment_flags->>'last_seen_permit_count' AS seen_permits, "
+            "       enrichment_flags->>'last_seen_storm_date'   AS seen_storm "
             "FROM properties "
             "WHERE zip = %s AND account_id = %s AND archived_at IS NULL",
             (zip_code, account_id),
@@ -63,7 +66,7 @@ def _diff_and_record(conn, zip_code: str, account_id: int) -> list[dict]:
         events.extend(events_for_row(row))
         flags = baseline_for_row(row)
         if flags:
-            baseline_updates.append((psycopg2.extras.Json(flags), row["id"]))
+            baseline_updates.append((psycopg2.extras.Json(flags), row["id"]))  # type: ignore[arg-type]
 
     with conn.cursor() as cur:
         if events:
@@ -87,12 +90,14 @@ def _diff_and_record(conn, zip_code: str, account_id: int) -> list[dict]:
 
 
 def events_for_row(row: dict) -> list[dict]:
-    """Pure diff: compare a property row's current sale/permit values against
+    """Pure diff: compare a property row's current sale/permit/storm values against
     the `seen_*` baseline columns and return the signal events to emit."""
     sale: date | None = row["last_sale_date"]
     permits: int | None = row["permit_count_24mo"]
+    storm: date | None = row.get("last_storm_date")
     seen_sale = _parse_date(row["seen_sale"])
     seen_permits = _parse_int(row["seen_permits"])
+    seen_storm = _parse_date(row.get("seen_storm"))
 
     events: list[dict] = []
     if seen_sale and sale and sale > seen_sale:
@@ -118,6 +123,19 @@ def events_for_row(row: dict) -> list[dict]:
                 "new": permits,
             },
         })
+
+    if seen_storm and storm and storm > seen_storm:
+        events.append({
+            "property_id": row["id"],
+            "vertical": row["vertical"],
+            "signal_type": "storm_event",
+            "details": {
+                "summary": f"New storm detected {storm.isoformat()} (prev {seen_storm.isoformat()})",
+                "prev": seen_storm.isoformat(),
+                "new": storm.isoformat(),
+            },
+        })
+
     return events
 
 
@@ -128,6 +146,9 @@ def baseline_for_row(row: dict) -> dict:
         flags["last_seen_sale_date"] = row["last_sale_date"].isoformat()
     if row["permit_count_24mo"] is not None:
         flags["last_seen_permit_count"] = row["permit_count_24mo"]
+    storm: date | None = row.get("last_storm_date")
+    if storm is not None:
+        flags["last_seen_storm_date"] = storm.isoformat()
     return flags
 
 
