@@ -25,6 +25,11 @@ from pipeline.scoring import (
     _permit_signal,
     _neighborhood_signal,
     _storm_signal,
+    _home_improvement_signal,
+    _refi_signal,
+    _credit_signal,
+    _children_signal,
+    _gardening_signal,
     _SIGNAL_FNS,
     explain_score,
     describe_vertical,
@@ -321,6 +326,103 @@ class TestStormSignal:
         assert _storm_signal(12345) == 0.0
 
 
+# ── _home_improvement_signal ──────────────────────────────────────────────────
+
+class TestHomeImprovementSignal:
+    def test_true(self):
+        assert _home_improvement_signal(True) == 1.0
+
+    def test_false(self):
+        assert _home_improvement_signal(False) == 0.0
+
+    def test_none(self):
+        assert _home_improvement_signal(None) == 0.0
+
+
+# ── _refi_signal ──────────────────────────────────────────────────────────────
+
+class TestRefiSignal:
+    def test_none(self):
+        assert _refi_signal(None) == 0.0
+
+    def test_today(self):
+        assert _refi_signal(date.today()) == pytest.approx(1.0, abs=0.01)
+
+    def test_today_as_string(self):
+        assert _refi_signal(str(date.today())) == pytest.approx(1.0, abs=0.01)
+
+    def test_18_months_ago(self):
+        d = months_ago_date(18)
+        import config
+        result = _refi_signal(d)
+        assert result == pytest.approx(1.0 - 18 / config.REFI_RECENCY_MAX_MO, abs=0.02)
+
+    def test_at_limit_is_zero(self):
+        import config
+        d = months_ago_date(config.REFI_RECENCY_MAX_MO)
+        assert _refi_signal(d) == pytest.approx(0.0, abs=0.02)
+
+    def test_older_than_limit_is_zero(self):
+        assert _refi_signal(months_ago_date(48)) == 0.0
+
+    def test_malformed_string(self):
+        assert _refi_signal("not-a-date") == 0.0
+
+
+# ── _credit_signal ────────────────────────────────────────────────────────────
+
+class TestCreditSignal:
+    def test_none(self):
+        assert _credit_signal(None) == 0.0
+
+    def test_empty_string(self):
+        assert _credit_signal("") == 0.0
+
+    def test_grade_a(self):
+        assert _credit_signal("A") == pytest.approx(1.0)
+
+    def test_grade_b(self):
+        assert _credit_signal("B") == pytest.approx(0.75)
+
+    def test_grade_c(self):
+        assert _credit_signal("C") == pytest.approx(0.40)
+
+    def test_grade_d(self):
+        assert _credit_signal("D") == pytest.approx(0.10)
+
+    def test_lowercase(self):
+        assert _credit_signal("a") == pytest.approx(1.0)
+
+    def test_unknown_grade(self):
+        assert _credit_signal("Z") == 0.0
+
+
+# ── _children_signal ──────────────────────────────────────────────────────────
+
+class TestChildrenSignal:
+    def test_true(self):
+        assert _children_signal(True) == 1.0
+
+    def test_false(self):
+        assert _children_signal(False) == 0.0
+
+    def test_none(self):
+        assert _children_signal(None) == 0.0
+
+
+# ── _gardening_signal ─────────────────────────────────────────────────────────
+
+class TestGardeningSignal:
+    def test_true(self):
+        assert _gardening_signal(True) == 1.0
+
+    def test_false(self):
+        assert _gardening_signal(False) == 0.0
+
+    def test_none(self):
+        assert _gardening_signal(None) == 0.0
+
+
 # ── _grade ────────────────────────────────────────────────────────────────────
 
 class TestGrade:
@@ -364,16 +466,21 @@ class TestGrade:
 # ── _compute_score / score_property ──────────────────────────────────────────
 
 PERFECT_ROW = {
-    "year_built":       today_year() - 22,   # sweet-spot age → signal 1.0
-    "last_sale_date":   date.today(),         # just sold → signal ≈ 1.0
-    "estimated_equity": 100_000,              # at target → 1.0
-    "garage_spaces":    2,                    # at target → 1.0
-    "zip_median_income": 75_000,              # at target → 1.0
-    "permit_count_24mo": 2,                   # at target → 1.0
-    "neighborhood_value_ratio": 2.0,          # well above target ratio → 1.0
-    "has_pool":          True,                # pool_maintenance signal → 1.0
-    "has_cracked_slab":  True,                # epoxy_flooring slab signal → 1.0
-    "last_storm_date":   date.today(),        # storm today → signal ≈ 1.0
+    "year_built":            today_year() - 22,   # sweet-spot age → signal 1.0
+    "last_sale_date":        date.today(),         # just sold → signal ≈ 1.0
+    "estimated_equity":      100_000,              # at target → 1.0
+    "garage_spaces":         2,                    # at target → 1.0
+    "zip_median_income":     75_000,               # at target → 1.0
+    "permit_count_24mo":     2,                    # at target → 1.0
+    "neighborhood_value_ratio": 2.0,              # well above target ratio → 1.0
+    "has_pool":              True,                 # pool_maintenance signal → 1.0
+    "has_cracked_slab":      True,                 # epoxy_flooring slab signal → 1.0
+    "last_storm_date":       date.today(),         # storm today → signal ≈ 1.0
+    "home_improvement_flag": True,                 # home_improvement signal → 1.0
+    "refi_date":             date.today(),         # refi today → signal ≈ 1.0
+    "credit_rating":         "A",                  # credit signal → 1.0
+    "has_children":          True,                 # children signal → 1.0
+    "gardening_flag":        True,                 # gardening signal → 1.0
 }
 
 EMPTY_ROW: dict = {}
@@ -452,8 +559,9 @@ ALL_PROFILES = {
 }
 
 EXPECTED_KEYS = set(config.DEFAULT_WEIGHTS.keys())
-# pool/slab/storm are optional vertical-only signals (scored via weights.get()).
-OPTIONAL_KEYS = {"pool", "slab", "storm"}
+# Optional vertical-only signals (scored via weights.get() — not in DEFAULT_WEIGHTS).
+OPTIONAL_KEYS = {"pool", "slab", "storm", "home_improvement", "refi", "credit",
+                 "children", "gardening"}
 ALLOWED_KEYS = EXPECTED_KEYS | OPTIONAL_KEYS
 
 
@@ -553,18 +661,38 @@ class TestExplainScore:
         assert "pool" not in keys
 
     def test_storm_verticals_include_storm_signal(self):
-        storm_verticals = ["roofing", "hvac", "fencing", "pressure_washing"]
-        for v in storm_verticals:
-            weights = config.VERTICAL_WEIGHTS[v]
-            keys = {f["key"] for f in explain_score(PERFECT_ROW, weights)["factors"]}
+        for v in ["roofing", "hvac", "fencing", "pressure_washing"]:
+            keys = {f["key"] for f in explain_score(PERFECT_ROW, config.VERTICAL_WEIGHTS[v])["factors"]}
             assert "storm" in keys, f"Vertical '{v}' should include storm signal"
 
     def test_non_storm_verticals_exclude_storm_signal(self):
-        non_storm = ["epoxy_flooring", "pool_maintenance", "solar", "landscaping"]
-        for v in non_storm:
-            weights = config.VERTICAL_WEIGHTS[v]
-            keys = {f["key"] for f in explain_score(PERFECT_ROW, weights)["factors"]}
+        for v in ["epoxy_flooring", "pool_maintenance", "solar", "landscaping"]:
+            keys = {f["key"] for f in explain_score(PERFECT_ROW, config.VERTICAL_WEIGHTS[v])["factors"]}
             assert "storm" not in keys, f"Vertical '{v}' should NOT include storm signal"
+
+    def test_home_improvement_in_all_verticals(self):
+        for v, weights in config.VERTICAL_WEIGHTS.items():
+            keys = {f["key"] for f in explain_score(PERFECT_ROW, weights)["factors"]}
+            assert "home_improvement" in keys, f"Vertical '{v}' should include home_improvement signal"
+
+    def test_refi_in_solar_hvac_roofing(self):
+        for v in ["solar", "hvac", "roofing"]:
+            keys = {f["key"] for f in explain_score(PERFECT_ROW, config.VERTICAL_WEIGHTS[v])["factors"]}
+            assert "refi" in keys, f"Vertical '{v}' should include refi signal"
+
+    def test_credit_in_solar_hvac_pool(self):
+        for v in ["solar", "hvac", "pool_maintenance"]:
+            keys = {f["key"] for f in explain_score(PERFECT_ROW, config.VERTICAL_WEIGHTS[v])["factors"]}
+            assert "credit" in keys, f"Vertical '{v}' should include credit signal"
+
+    def test_children_in_fencing_and_pool(self):
+        for v in ["fencing", "pool_maintenance"]:
+            keys = {f["key"] for f in explain_score(PERFECT_ROW, config.VERTICAL_WEIGHTS[v])["factors"]}
+            assert "children" in keys, f"Vertical '{v}' should include children signal"
+
+    def test_gardening_in_landscaping(self):
+        keys = {f["key"] for f in explain_score(PERFECT_ROW, config.VERTICAL_WEIGHTS["landscaping"])["factors"]}
+        assert "gardening" in keys
 
     def test_empty_row_zero_contributions_no_top_drivers(self):
         result = explain_score(EMPTY_ROW, config.DEFAULT_WEIGHTS)

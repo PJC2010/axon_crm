@@ -15,6 +15,7 @@ from config import (
     POOL_SIGNAL_VALUE, SLAB_SIGNAL_VALUE,
     NEIGHBORHOOD_RATIO_TARGET,
     STORM_RECENCY_MAX_MO,
+    REFI_RECENCY_MAX_MO, CREDIT_GRADE_SCORES,
     FACTOR_META, DEFAULT_WEIGHTS, VERTICAL_WEIGHTS,
 )
 
@@ -34,9 +35,14 @@ def _compute_score(row: dict, weights: dict) -> float:
         weights["income"]           * _income_signal(row.get("zip_median_income"))+
         weights["permit"]           * _permit_signal(row.get("permit_count_24mo"))+
         weights.get("neighborhood", 0) * _neighborhood_signal(row.get("neighborhood_value_ratio")) +
-        weights.get("pool", 0)      * _pool_signal(row.get("has_pool"))           +
-        weights.get("slab", 0)      * _slab_signal(row.get("has_cracked_slab"))  +
-        weights.get("storm", 0)     * _storm_signal(row.get("last_storm_date"))
+        weights.get("pool", 0)              * _pool_signal(row.get("has_pool"))                  +
+        weights.get("slab", 0)              * _slab_signal(row.get("has_cracked_slab"))          +
+        weights.get("storm", 0)             * _storm_signal(row.get("last_storm_date"))          +
+        weights.get("home_improvement", 0)  * _home_improvement_signal(row.get("home_improvement_flag")) +
+        weights.get("refi", 0)              * _refi_signal(row.get("refi_date"))                +
+        weights.get("credit", 0)            * _credit_signal(row.get("credit_rating"))          +
+        weights.get("children", 0)          * _children_signal(row.get("has_children"))         +
+        weights.get("gardening", 0)         * _gardening_signal(row.get("gardening_flag"))
     ) * 100
 
 
@@ -149,20 +155,88 @@ def _storm_signal(last_storm_date) -> float:
         return 0.0
 
 
+def _home_improvement_signal(flag: bool | None) -> float:
+    """1.0 if the owner is a confirmed home-improvement buyer, else 0.
+
+    This is a direct behavioral-intent signal from Versium lifestyle data —
+    the owner already spends on home improvement, making them a pre-qualified
+    prospect for all service verticals.
+    """
+    return 1.0 if flag else 0.0
+
+
+def _refi_signal(refi_date) -> float:
+    """Recency-weighted signal for a recent mortgage refinance.
+
+    Decays linearly from 1.0 (refi today) to 0.0 (refi >= REFI_RECENCY_MAX_MO
+    months ago). A recent cash-out refi signals both available capital and an
+    investment mindset — strongest conversion predictor for solar, HVAC, roofing.
+    """
+    if not refi_date:
+        return 0.0
+    try:
+        if isinstance(refi_date, str):
+            event_date = date.fromisoformat(refi_date[:10])
+        elif isinstance(refi_date, date):
+            event_date = refi_date
+        else:
+            return 0.0
+        months_ago = (date.today() - event_date).days / 30.44
+        if months_ago >= REFI_RECENCY_MAX_MO:
+            return 0.0
+        return max(0.0, 1.0 - (months_ago / REFI_RECENCY_MAX_MO))
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _credit_signal(rating: str | None) -> float:
+    """Ordinal credit-quality signal from Versium credit grade A–D.
+
+    Maps: A → 1.0, B → 0.75, C → 0.40, D → 0.10, None → 0.0.
+    Predicts financing eligibility for large jobs (solar, HVAC, roofing).
+    """
+    if not rating:
+        return 0.0
+    return CREDIT_GRADE_SCORES.get(str(rating).upper().strip(), 0.0)
+
+
+def _children_signal(has_children: bool | None) -> float:
+    """1.0 if children are present in the household, else 0.
+
+    Families with children are the primary customer for safety-driven services:
+    pool fencing, HVAC air quality, structural work.
+    """
+    return 1.0 if has_children else 0.0
+
+
+def _gardening_signal(gardening_flag: bool | None) -> float:
+    """1.0 if the owner has a gardening/outdoor lifestyle interest, else 0.
+
+    A direct behavioral indicator for landscaping, pool maintenance, and
+    other outdoor service verticals.
+    """
+    return 1.0 if gardening_flag else 0.0
+
+
 # ── Score explanation ─────────────────────────────────────────────────────────
 # Reuse the exact production signal functions above so the breakdown can never
 # drift from the real score. Keyed by the same factor keys used in the weights.
 _SIGNAL_FNS = {
-    "age":    _age_signal,
-    "sale":   _sale_signal,
-    "equity": _equity_signal,
-    "garage": _garage_signal,
-    "income": _income_signal,
-    "permit": _permit_signal,
-    "neighborhood": _neighborhood_signal,
-    "pool":   _pool_signal,
-    "slab":   _slab_signal,
-    "storm":  _storm_signal,
+    "age":              _age_signal,
+    "sale":             _sale_signal,
+    "equity":           _equity_signal,
+    "garage":           _garage_signal,
+    "income":           _income_signal,
+    "permit":           _permit_signal,
+    "neighborhood":     _neighborhood_signal,
+    "pool":             _pool_signal,
+    "slab":             _slab_signal,
+    "storm":            _storm_signal,
+    "home_improvement": _home_improvement_signal,
+    "refi":             _refi_signal,
+    "credit":           _credit_signal,
+    "children":         _children_signal,
+    "gardening":        _gardening_signal,
 }
 
 
