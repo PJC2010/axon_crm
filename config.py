@@ -25,6 +25,28 @@ CONTACT_MAX_ROWS_PER_ZIP = int(os.getenv("CONTACT_MAX_ROWS_PER_ZIP", "200"))
 # Only skip-trace leads at or above this grade ("" = no grade filter). A is best.
 CONTACT_MIN_GRADE        = os.getenv("CONTACT_MIN_GRADE", "")
 
+# ── Household demographics / life-events enrichment ───────────────────────────
+# Provider-pluggable (e.g. "versium"); default "" = step is a no-op.
+# Supported providers: see pipeline/demographics.py PROVIDERS.
+DEMO_PROVIDER         = os.getenv("DEMO_PROVIDER", "")
+DEMO_API_KEY          = os.getenv("DEMO_API_KEY", "")
+DEMO_BASE_URL         = os.getenv("DEMO_BASE_URL", "")
+DEMO_MAX_ROWS_PER_ZIP = int(os.getenv("DEMO_MAX_ROWS_PER_ZIP", "200"))
+# Only enrich leads at or above this grade ("" = no grade filter).
+DEMO_MIN_GRADE        = os.getenv("DEMO_MIN_GRADE", "")
+
+# ── Storm / hail event enrichment (NOAA/IEM, free) ───────────────────────────
+# IEM Local Storm Report API — no key required.
+IEM_LSR_URL           = os.getenv("IEM_LSR_URL", "https://mesonet.agron.iastate.edu/geojson/lsr.php")
+# NWS Weather Forecast Office code covering Harris County (Houston/Galveston).
+STORM_WFO             = os.getenv("STORM_WFO", "HGX")
+# How far back to fetch storm reports (months). Matches the permit/sale window.
+STORM_LOOKBACK_MONTHS = int(os.getenv("STORM_LOOKBACK_MONTHS", "24"))
+# A property is considered "hit" by a storm event if it falls within this radius.
+STORM_MATCH_RADIUS_MI = float(os.getenv("STORM_MATCH_RADIUS_MI", "1.0"))
+# Hail size (inches) at which the storm signal is fully saturated (score = 1.0).
+STORM_HAIL_TARGET_IN  = float(os.getenv("STORM_HAIL_TARGET_IN", "1.5"))
+
 # ── HTTP robustness (retry/backoff for all outbound API calls) ────────────────
 HTTP_RETRIES = int(os.getenv("HTTP_RETRIES", "3"))
 HTTP_BACKOFF = float(os.getenv("HTTP_BACKOFF", "0.5"))   # seconds, exponential
@@ -134,32 +156,35 @@ VERTICAL_WEIGHTS = {
         "permit":       0.05,
     },
     "roofing": {
-        "age":          0.30,   # roof age tracks home age — 15–30y roofs are due
+        "age":          0.20,   # roof age tracks home age — 15–30y roofs are due
         "sale":         0.15,
         "equity":       0.15,
         "garage":       0.00,
         "income":       0.08,
         "neighborhood": 0.07,
-        "permit":       0.25,   # active permits often follow storm/repair work
+        "permit":       0.15,   # active permits often follow storm/repair work
+        "storm":        0.20,   # recent hail/wind event = most direct demand driver
     },
     "hvac": {
-        "age":          0.35,   # systems hit end-of-life at 15–25 years
+        "age":          0.30,   # systems hit end-of-life at 15–25 years
         "sale":         0.15,
         "equity":       0.15,
         "garage":       0.00,
         "income":       0.10,
         "neighborhood": 0.10,
-        "permit":       0.15,
+        "permit":       0.10,
+        "storm":        0.10,   # freeze events drive HVAC failures
     },
     "fencing": {
         "age":          0.10,
-        "sale":         0.25,   # new owners replace fences early
+        "sale":         0.20,   # new owners replace fences early
         "equity":       0.15,
         "garage":       0.00,
         "income":       0.08,
         "neighborhood": 0.07,
         "permit":       0.10,
-        "pool":         0.25,   # pools require code-compliant fencing
+        "pool":         0.20,   # pools require code-compliant fencing
+        "storm":        0.10,   # hail/wind damage is a primary fence-replacement trigger
     },
     "landscaping": {
         "age":          0.05,
@@ -171,14 +196,15 @@ VERTICAL_WEIGHTS = {
         "permit":       0.10,
     },
     "pressure_washing": {
-        "age":          0.30,   # older exteriors show the most buildup
-        "sale":         0.20,
+        "age":          0.25,   # older exteriors show the most buildup
+        "sale":         0.15,
         "equity":       0.10,
         "garage":       0.00,
         "income":       0.10,
         "neighborhood": 0.10,
         "permit":       0.05,
         "pool":         0.15,   # pool decks are a core upsell surface
+        "storm":        0.10,   # post-storm debris/staining drives cleanup demand
     },
 }
 
@@ -233,6 +259,11 @@ FACTOR_META = {
         "field": "has_cracked_slab",
         "description": "A cracked slab (from HCAD) is a confirmed epoxy-flooring opportunity.",
     },
+    "storm": {
+        "label": "Storm activity",
+        "field": "last_storm_date",
+        "description": "A recent storm or hail event (NOAA/IEM) signals surge demand for roofing, HVAC, fencing, and pressure-washing.",
+    },
 }
 
 # ── Signal thresholds ────────────────────────────────────────────────────────
@@ -249,6 +280,9 @@ PERMIT_TARGET        = 2     # permits in 24 months
 # scores full marks on the neighborhood signal; at/below the median scores 0.
 NEIGHBORHOOD_RATIO_TARGET = 1.3   # 30% above the block median = top signal
 NEIGHBORHOOD_MIN_MEMBERS  = 5     # geohash cells smaller than this fall back to ZIP median
+
+# Storm recency window — events older than this score 0 (matches SALE_RECENCY_MAX_MO).
+STORM_RECENCY_MAX_MO  = STORM_LOOKBACK_MONTHS
 
 # Binary signal values for presence-based features (pool / cracked slab).
 # Both are 0.0–1.0 floats; set to 1.0 so the full vertical weight is applied

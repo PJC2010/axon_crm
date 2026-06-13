@@ -11,8 +11,10 @@ def _row(**overrides):
         "address": "123 Main St",
         "last_sale_date": None,
         "permit_count_24mo": None,
+        "last_storm_date": None,
         "seen_sale": None,
         "seen_permits": None,
+        "seen_storm": None,
     }
     base.update(overrides)
     return base
@@ -80,6 +82,37 @@ class TestEventsForRow:
         )
         assert events_for_row(row) == []
 
+    def test_newer_storm_emits_storm_event(self):
+        row = _row(last_storm_date=date(2026, 5, 1), seen_storm="2024-03-01")
+        events = events_for_row(row)
+        assert len(events) == 1
+        e = events[0]
+        assert e["signal_type"] == "storm_event"
+        assert e["property_id"] == 1
+        assert e["details"]["prev"] == "2024-03-01"
+        assert e["details"]["new"] == "2026-05-01"
+
+    def test_no_storm_baseline_emits_nothing(self):
+        row = _row(last_storm_date=date(2026, 5, 1), seen_storm=None)
+        assert events_for_row(row) == []
+
+    def test_older_storm_emits_nothing(self):
+        row = _row(last_storm_date=date(2023, 1, 1), seen_storm="2024-03-01")
+        assert events_for_row(row) == []
+
+    def test_unchanged_storm_emits_nothing(self):
+        row = _row(last_storm_date=date(2026, 5, 1), seen_storm="2026-05-01")
+        assert events_for_row(row) == []
+
+    def test_all_three_signals_in_one_row(self):
+        row = _row(
+            last_sale_date=date(2026, 5, 1), seen_sale="2019-03-12",
+            permit_count_24mo=4, seen_permits="2",
+            last_storm_date=date(2026, 4, 1), seen_storm="2024-01-01",
+        )
+        types = {e["signal_type"] for e in events_for_row(row)}
+        assert types == {"just_sold", "new_permit", "storm_event"}
+
 
 class TestBaselineForRow:
     def test_baseline_captures_current_values(self):
@@ -88,6 +121,16 @@ class TestBaselineForRow:
             "last_seen_sale_date": "2026-05-01",
             "last_seen_permit_count": 3,
         }
+
+    def test_baseline_captures_storm_date(self):
+        row = _row(last_storm_date=date(2026, 4, 10))
+        flags = baseline_for_row(row)
+        assert flags.get("last_seen_storm_date") == "2026-04-10"
+
+    def test_baseline_skips_missing_storm(self):
+        row = _row()
+        flags = baseline_for_row(row)
+        assert "last_seen_storm_date" not in flags
 
     def test_baseline_skips_missing_values(self):
         assert baseline_for_row(_row()) == {}

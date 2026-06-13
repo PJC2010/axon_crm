@@ -14,6 +14,7 @@ from config import (
     GARAGE_TARGET, INCOME_TARGET, PERMIT_TARGET,
     POOL_SIGNAL_VALUE, SLAB_SIGNAL_VALUE,
     NEIGHBORHOOD_RATIO_TARGET,
+    STORM_RECENCY_MAX_MO,
     FACTOR_META, DEFAULT_WEIGHTS, VERTICAL_WEIGHTS,
 )
 
@@ -34,7 +35,8 @@ def _compute_score(row: dict, weights: dict) -> float:
         weights["permit"]           * _permit_signal(row.get("permit_count_24mo"))+
         weights.get("neighborhood", 0) * _neighborhood_signal(row.get("neighborhood_value_ratio")) +
         weights.get("pool", 0)      * _pool_signal(row.get("has_pool"))           +
-        weights.get("slab", 0)      * _slab_signal(row.get("has_cracked_slab"))
+        weights.get("slab", 0)      * _slab_signal(row.get("has_cracked_slab"))  +
+        weights.get("storm", 0)     * _storm_signal(row.get("last_storm_date"))
     ) * 100
 
 
@@ -123,6 +125,30 @@ def _slab_signal(has_cracked_slab: bool | None) -> float:
     return SLAB_SIGNAL_VALUE if has_cracked_slab else 0.0
 
 
+def _storm_signal(last_storm_date) -> float:
+    """Recency-weighted signal for a recent storm event (hail/wind/tornado).
+
+    Decays linearly from 1.0 (event today) to 0.0 (event >= STORM_RECENCY_MAX_MO
+    months ago). Same decay shape as _sale_signal. Used by roofing, hvac, fencing,
+    and pressure_washing verticals.
+    """
+    if not last_storm_date:
+        return 0.0
+    try:
+        if isinstance(last_storm_date, str):
+            event_date = date.fromisoformat(last_storm_date[:10])
+        elif isinstance(last_storm_date, date):
+            event_date = last_storm_date
+        else:
+            return 0.0
+        months_ago = (date.today() - event_date).days / 30.44
+        if months_ago >= STORM_RECENCY_MAX_MO:
+            return 0.0
+        return max(0.0, 1.0 - (months_ago / STORM_RECENCY_MAX_MO))
+    except (ValueError, TypeError):
+        return 0.0
+
+
 # ── Score explanation ─────────────────────────────────────────────────────────
 # Reuse the exact production signal functions above so the breakdown can never
 # drift from the real score. Keyed by the same factor keys used in the weights.
@@ -136,6 +162,7 @@ _SIGNAL_FNS = {
     "neighborhood": _neighborhood_signal,
     "pool":   _pool_signal,
     "slab":   _slab_signal,
+    "storm":  _storm_signal,
 }
 
 

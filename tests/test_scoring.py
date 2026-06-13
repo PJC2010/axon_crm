@@ -24,6 +24,7 @@ from pipeline.scoring import (
     _income_signal,
     _permit_signal,
     _neighborhood_signal,
+    _storm_signal,
     _SIGNAL_FNS,
     explain_score,
     describe_vertical,
@@ -277,6 +278,49 @@ class TestNeighborhoodSignal:
         assert _neighborhood_signal(5.0) == pytest.approx(1.0)
 
 
+# ── _storm_signal ─────────────────────────────────────────────────────────────
+
+class TestStormSignal:
+    def test_none(self):
+        assert _storm_signal(None) == 0.0
+
+    def test_empty_string(self):
+        assert _storm_signal("") == 0.0
+
+    def test_today_as_date(self):
+        result = _storm_signal(date.today())
+        assert result == pytest.approx(1.0, abs=0.01)
+
+    def test_today_as_string(self):
+        result = _storm_signal(str(date.today()))
+        assert result == pytest.approx(1.0, abs=0.01)
+
+    def test_12_months_ago(self):
+        d = months_ago_date(12)
+        result = _storm_signal(d)
+        assert result == pytest.approx(0.5, abs=0.02)
+
+    def test_at_lookback_limit_is_zero(self):
+        import config
+        d = months_ago_date(config.STORM_RECENCY_MAX_MO)
+        result = _storm_signal(d)
+        assert result == pytest.approx(0.0, abs=0.02)
+
+    def test_older_than_limit_is_zero(self):
+        d = months_ago_date(30)
+        assert _storm_signal(d) == 0.0
+
+    def test_date_vs_string_parity(self):
+        d = days_ago(90)
+        assert _storm_signal(d) == pytest.approx(_storm_signal(d.isoformat()))
+
+    def test_malformed_string(self):
+        assert _storm_signal("not-a-date") == 0.0
+
+    def test_wrong_type(self):
+        assert _storm_signal(12345) == 0.0
+
+
 # ── _grade ────────────────────────────────────────────────────────────────────
 
 class TestGrade:
@@ -329,6 +373,7 @@ PERFECT_ROW = {
     "neighborhood_value_ratio": 2.0,          # well above target ratio → 1.0
     "has_pool":          True,                # pool_maintenance signal → 1.0
     "has_cracked_slab":  True,                # epoxy_flooring slab signal → 1.0
+    "last_storm_date":   date.today(),        # storm today → signal ≈ 1.0
 }
 
 EMPTY_ROW: dict = {}
@@ -407,8 +452,8 @@ ALL_PROFILES = {
 }
 
 EXPECTED_KEYS = set(config.DEFAULT_WEIGHTS.keys())
-# pool/slab are optional vertical-only signals (scored via weights.get()).
-OPTIONAL_KEYS = {"pool", "slab"}
+# pool/slab/storm are optional vertical-only signals (scored via weights.get()).
+OPTIONAL_KEYS = {"pool", "slab", "storm"}
 ALLOWED_KEYS = EXPECTED_KEYS | OPTIONAL_KEYS
 
 
@@ -506,6 +551,20 @@ class TestExplainScore:
         keys = {f["key"] for f in explain_score(PERFECT_ROW, weights)["factors"]}
         assert "slab" in keys
         assert "pool" not in keys
+
+    def test_storm_verticals_include_storm_signal(self):
+        storm_verticals = ["roofing", "hvac", "fencing", "pressure_washing"]
+        for v in storm_verticals:
+            weights = config.VERTICAL_WEIGHTS[v]
+            keys = {f["key"] for f in explain_score(PERFECT_ROW, weights)["factors"]}
+            assert "storm" in keys, f"Vertical '{v}' should include storm signal"
+
+    def test_non_storm_verticals_exclude_storm_signal(self):
+        non_storm = ["epoxy_flooring", "pool_maintenance", "solar", "landscaping"]
+        for v in non_storm:
+            weights = config.VERTICAL_WEIGHTS[v]
+            keys = {f["key"] for f in explain_score(PERFECT_ROW, weights)["factors"]}
+            assert "storm" not in keys, f"Vertical '{v}' should NOT include storm signal"
 
     def test_empty_row_zero_contributions_no_top_drivers(self):
         result = explain_score(EMPTY_ROW, config.DEFAULT_WEIGHTS)
