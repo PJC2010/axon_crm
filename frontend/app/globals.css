@@ -165,6 +165,20 @@ select.drawer-input { cursor: pointer; }
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent);
 }
 
+/* ── Prevent iOS Safari auto-zoom on input focus ── */
+/* iOS zooms the viewport whenever a focused field has font-size < 16px and
+   never zooms back out. On touch devices, lift all text-entry controls to 16px
+   so the page stays fully visible. Desktop keeps the compact 13px sizing. */
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea,
+  .drawer-input,
+  .select-field {
+    font-size: 16px;
+  }
+}
+
 /* ── Buttons ── */
 .btn-primary {
   display: inline-flex;
