@@ -5,7 +5,7 @@ Pure/offline: just exercises the dict transform. Locks in that garage data is
 pulled from the nested `features` object (previously dropped on seed).
 """
 import pipeline.seed as seed
-from pipeline.seed import _normalize_rentcast, _wanted_type
+from pipeline.seed import _normalize_rentcast, _normalize_hcad, _wanted_type
 
 
 def test_normalize_extracts_garage_from_features():
@@ -48,6 +48,51 @@ def test_normalize_owner_flat_fallback():
 def test_normalize_records_origin_zip_in_flags():
     row = _normalize_rentcast({"zipCode": "77003"}, origin_zip="77002")
     assert row["enrichment_flags"]["seed_origin_zip"] == "77002"
+
+
+# ── _normalize_hcad (free DuckDB seed mapper) ─────────────────────────────────
+
+def _hcad_parcel(**over):
+    base = {
+        "site_address": "7003 PINETEX DR", "site_zip": "77396",
+        "mail_city": "HUMBLE", "year_built": 1960, "square_footage": 1849,
+        "lot_size": 7480, "estimated_value": 234193,
+        "last_sale_date": "2014-10-02", "owner_name": "CAPUCHINA LIZETTE",
+        "owner_occupied": True, "mailing_address": "7003 PINETEX DR, HUMBLE TX 77396",
+        "neighborhood_code": "8901.44", "neighborhood_name": "PINE TRAILS",
+    }
+    base.update(over)
+    return base
+
+
+def test_normalize_hcad_maps_core_fields():
+    row = _normalize_hcad(_hcad_parcel(), region_id="8901.44")
+    assert row["address"] == "7003 PINETEX DR"
+    assert row["zip"] == "77396"
+    assert row["state"] == "TX"
+    assert row["year_built"] == 1960
+    assert row["estimated_value"] == 234193
+    assert row["hcad_neighborhood_code"] == "8901.44"
+    assert row["hcad_neighborhood_name"] == "PINE TRAILS"
+
+
+def test_normalize_hcad_no_latlng_geocode_fills_later():
+    row = _normalize_hcad(_hcad_parcel(), region_id="8901.44")
+    assert row["latitude"] is None
+    assert row["longitude"] is None
+
+
+def test_normalize_hcad_flags_record_source_and_region():
+    row = _normalize_hcad(_hcad_parcel(), region_id="8901.44")
+    assert row["enrichment_flags"]["seed"] == "hcad"
+    assert row["enrichment_flags"]["hcad_region"] == "8901.44"
+
+
+def test_normalize_hcad_city_falls_back_to_mail_city():
+    # HCAD has no site-city; city mirrors the owner's mailing city (harmless —
+    # rows key on address+zip and geocode doesn't need city).
+    row = _normalize_hcad(_hcad_parcel(mail_city="ATASCOCITA"), region_id="r")
+    assert row["city"] == "ATASCOCITA"
 
 
 # ── _wanted_type (property-type filter) ───────────────────────────────────────

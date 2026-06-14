@@ -122,7 +122,7 @@ function SettingsPage() {
     if (!runZip.trim()) return
     setTriggering(true)
     try {
-      await triggerRun(runZip.trim(), runVertical || undefined,
+      await triggerRun({ zip: runZip.trim() }, runVertical || undefined,
         buildControls(runTopN, runNearAddress, runRadiusMi))
       setRunZip(''); setRunTopN(''); setRunNearAddress(''); setRunRadiusMi('')
       await getPipelineRuns().then(setRuns)

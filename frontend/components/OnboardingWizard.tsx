@@ -1,7 +1,7 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ArrowRight, ArrowLeft, Zap, MapPin, Kanban, CheckCircle2 } from 'lucide-react'
-import { completeOnboarding, triggerRun, seedWorkflowDefaults } from '@/lib/api'
+import { completeOnboarding, triggerRun, seedWorkflowDefaults, getRegions, type Region } from '@/lib/api'
 
 interface Props {
   onComplete: () => void
@@ -30,11 +30,31 @@ export function OnboardingWizard({ onComplete }: Props) {
   const [seeded, setSeeded] = useState(false)
   const [finishing, setFinishing] = useState(false)
 
+  // Region typeahead (primary territory picker). ZIP entry is the fallback below.
+  const [regionQuery, setRegionQuery] = useState('')
+  const [regions, setRegions] = useState<Region[]>([])
+  const [region, setRegion] = useState<Region | null>(null)
+  const [showZip, setShowZip] = useState(false)
+
+  // Debounced region search. Skipped once a region is chosen (query mirrors its name).
+  useEffect(() => {
+    if (region && regionQuery === region.name) return
+    const q = regionQuery.trim()
+    if (q.length < 2) { setRegions([]); return }
+    const t = setTimeout(() => {
+      getRegions(q).then(setRegions).catch(() => setRegions([]))
+    }, 250)
+    return () => clearTimeout(t)
+  }, [regionQuery, region])
+
+  const canImport = region !== null || (showZip && zip.trim().length > 0)
+
   async function handleImport() {
-    if (!zip.trim()) return
+    if (!canImport) return
     setImporting(true)
     try {
-      await triggerRun(zip.trim(), vertical || undefined)
+      await triggerRun(region ? { region_id: region.region_id } : { zip: zip.trim() },
+        vertical || undefined)
       setImported(true)
     } catch { /* allow continuing */ }
     finally { setImporting(false) }
@@ -128,30 +148,89 @@ export function OnboardingWizard({ onComplete }: Props) {
               Set your territory
             </h2>
             <p style={{ fontSize: 15, color: 'var(--color-ink-500)', margin: '0 0 24px', lineHeight: 1.5 }}>
-              Enter a ZIP code to import leads. We&apos;ll find properties in your area and score them for{' '}
+              Pick the area you serve by name — e.g. The Heights or Spring Branch. We&apos;ll find
+              properties there and score them for{' '}
               {VERTICALS.find(v => v.key === vertical)?.label?.toLowerCase() ?? 'your service'}.
             </p>
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', alignItems: 'center' }}>
+
+            {/* Region typeahead (primary) */}
+            <div style={{ position: 'relative', maxWidth: 360, margin: '0 auto' }}>
               <input
                 type="text"
-                value={zip}
-                onChange={e => setZip(e.target.value)}
-                placeholder="ZIP code (e.g. 77024)"
+                value={regionQuery}
+                onChange={e => { setRegion(null); setRegionQuery(e.target.value) }}
+                placeholder="Search a neighborhood…"
                 style={{
-                  width: 200, fontSize: 15, padding: '10px 14px',
-                  borderRadius: 'var(--radius-input)', border: '1px solid var(--color-ink-200)',
+                  width: '100%', boxSizing: 'border-box', fontSize: 15, padding: '10px 14px',
+                  borderRadius: 'var(--radius-input)',
+                  border: region ? '2px solid var(--color-accent)' : '1px solid var(--color-ink-200)',
                   background: 'white', color: 'var(--color-ink-900)', fontFamily: 'var(--font-sans)',
-                  outline: 'none', textAlign: 'center',
+                  outline: 'none', textAlign: 'left',
                 }}
               />
+              {!region && regions.length > 0 && (
+                <div style={{
+                  position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, marginTop: 4,
+                  background: 'white', border: '1px solid var(--color-ink-200)',
+                  borderRadius: 'var(--radius-card)', boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
+                  maxHeight: 240, overflowY: 'auto', textAlign: 'left',
+                }}>
+                  {regions.map(r => (
+                    <button
+                      key={r.region_id}
+                      onClick={() => { setRegion(r); setRegionQuery(r.name); setRegions([]) }}
+                      style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+                        width: '100%', padding: '10px 14px', background: 'white', border: 'none',
+                        borderBottom: '1px solid var(--color-ink-100)', cursor: 'pointer', textAlign: 'left',
+                      }}
+                    >
+                      <span style={{ fontSize: 14, color: 'var(--color-ink-900)' }}>{r.name}</span>
+                      <span style={{ fontSize: 12, color: 'var(--color-ink-400)', flexShrink: 0 }}>
+                        {r.parcel_count.toLocaleString()} properties
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ZIP fallback (advanced) */}
+            <div style={{ marginTop: 14 }}>
+              {!showZip ? (
+                <button
+                  onClick={() => setShowZip(true)}
+                  style={{ background: 'none', border: 'none', fontSize: 13, color: 'var(--color-ink-400)', cursor: 'pointer', textDecoration: 'underline' }}
+                >
+                  Enter a ZIP code instead
+                </button>
+              ) : (
+                <input
+                  type="text"
+                  value={zip}
+                  onChange={e => setZip(e.target.value)}
+                  placeholder="ZIP code (e.g. 77024)"
+                  style={{
+                    width: 200, fontSize: 15, padding: '10px 14px',
+                    borderRadius: 'var(--radius-input)', border: '1px solid var(--color-ink-200)',
+                    background: 'white', color: 'var(--color-ink-900)', fontFamily: 'var(--font-sans)',
+                    outline: 'none', textAlign: 'center',
+                  }}
+                />
+              )}
+            </div>
+
+            <div style={{ marginTop: 18 }}>
               <button
                 onClick={handleImport}
-                disabled={importing || !zip.trim()}
+                disabled={importing || !canImport}
                 style={{
                   padding: '10px 20px', borderRadius: 'var(--radius-pill)',
                   background: imported ? 'var(--color-moss)' : 'var(--color-ink-900)',
-                  color: 'white', border: 'none', fontSize: 14, fontWeight: 500, cursor: importing ? 'not-allowed' : 'pointer',
-                  display: 'flex', alignItems: 'center', gap: 6,
+                  color: 'white', border: 'none', fontSize: 14, fontWeight: 500,
+                  cursor: importing || !canImport ? 'not-allowed' : 'pointer',
+                  opacity: !canImport ? 0.5 : 1,
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
                 }}
               >
                 {imported ? (

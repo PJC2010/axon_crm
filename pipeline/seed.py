@@ -156,7 +156,40 @@ def seed_from_csv(csv_path: str, account_id: int, zip_code: str | None = None) -
     return n
 
 
-def seed(zip_code: str, account_id: int, csv_path: str | None = None, limit: int | None = None) -> int:
+def seed_from_hcad(region_id: str, zip_code: str, account_id: int,
+                   limit: int | None = None) -> int:
+    """Seed parcels for one region within one ZIP directly from the local HCAD
+    DuckDB — zero paid API calls.
+
+    This replaces the RentCast `/properties` scan for Harris County region runs:
+    every parcel already lives in the free assessor data, so we insert addresses
+    (and the HCAD fields RentCast/Attom would otherwise be paid to fetch) up
+    front. Downstream geocode/scoring run unchanged on the seeded rows.
+    """
+    from pipeline import hcad_store
+
+    parcels = hcad_store.query_properties_for_region(region_id, zip_code)
+    if not parcels:
+        log.info("HCAD seed: no parcels for region %s in ZIP %s", region_id, zip_code)
+        return 0
+
+    rows = [_normalize_hcad(p, region_id) for p in parcels.values()]
+    if limit:
+        rows = rows[:limit]
+
+    conn = get_conn()
+    try:
+        n = upsert_properties(conn, rows, account_id)
+    finally:
+        conn.close()
+    log.info("HCAD seed: %d parcels for region %s in ZIP %s", n, region_id, zip_code)
+    return n
+
+
+def seed(zip_code: str, account_id: int, csv_path: str | None = None,
+         limit: int | None = None, region_id: str | None = None) -> int:
+    if region_id:
+        return seed_from_hcad(region_id, zip_code, account_id, limit=limit)
     if csv_path:
         return seed_from_csv(csv_path, account_id, zip_code)
     return seed_from_rentcast(zip_code, account_id, limit=limit)
@@ -189,6 +222,34 @@ def _normalize_rentcast(p: dict, origin_zip: str | None = None) -> dict:
         "garage_spaces":   features.get("garageSpaces"),
         "garage_type":     features.get("garageType"),
         "enrichment_flags": flags,
+    }
+
+
+def _normalize_hcad(p: dict, region_id: str) -> dict:
+    """Map a DuckDB property_summary parcel to the upsert_properties shape.
+
+    HCAD has no site-city or lat/lng: `city` falls back to the owner's mailing
+    city (harmless — rows key on address+zip) and lat/lng stay NULL for the
+    geocode step to fill.
+    """
+    return {
+        "address":                p.get("site_address", ""),
+        "city":                   p.get("mail_city"),
+        "state":                  "TX",
+        "zip":                    p.get("site_zip", ""),
+        "latitude":               None,
+        "longitude":              None,
+        "year_built":             p.get("year_built"),
+        "square_footage":         p.get("square_footage"),
+        "lot_size":               p.get("lot_size"),
+        "estimated_value":        p.get("estimated_value"),
+        "last_sale_date":         p.get("last_sale_date"),
+        "owner_name":             p.get("owner_name"),
+        "owner_occupied":         p.get("owner_occupied"),
+        "mailing_address":        p.get("mailing_address"),
+        "hcad_neighborhood_code": p.get("neighborhood_code"),
+        "hcad_neighborhood_name": p.get("neighborhood_name"),
+        "enrichment_flags":       {"seed": "hcad", "hcad_region": region_id},
     }
 
 

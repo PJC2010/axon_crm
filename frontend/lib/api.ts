@@ -271,8 +271,12 @@ export function deleteSchedule(id: number): Promise<void> {
   return req<void>(`/pipeline-schedules/${id}`, { method: 'DELETE' })
 }
 
-export function triggerRun(zip: string, vertical?: string, controls: VolumeControls = {}): Promise<PipelineRun> {
-  return req('/pipeline/run', { method: 'POST', body: JSON.stringify({ zip, vertical, ...controls }) })
+// Target exactly one of `zip` (single ZIP) or `region_id` (HCAD named
+// neighborhood, seeded free from local HCAD data across its ZIPs).
+export type RunTarget = { zip?: string; region_id?: string }
+
+export function triggerRun(target: RunTarget, vertical?: string, controls: VolumeControls = {}): Promise<PipelineRun> {
+  return req('/pipeline/run', { method: 'POST', body: JSON.stringify({ ...target, vertical, ...controls }) })
 }
 
 export function getPipelineRuns(limit = 20): Promise<PipelineRun[]> {
@@ -295,6 +299,19 @@ export function rescoreAll(): Promise<{ scored: number; zips: number }> {
 
 export function getZips(): Promise<string[]> {
   return req<string[]>('/zips')
+}
+
+// A selectable HCAD neighborhood — a named service area spanning one or more ZIPs.
+export interface Region {
+  region_id: string
+  name: string
+  parcel_count: number
+  zips: string[]
+}
+
+export function getRegions(q?: string): Promise<Region[]> {
+  const qs = q ? `?q=${encodeURIComponent(q)}` : ''
+  return req<Region[]>(`/regions${qs}`)
 }
 
 export function getNeighborhoods(zip?: string): Promise<import('./types').Neighborhood[]> {

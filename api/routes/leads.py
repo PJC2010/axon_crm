@@ -260,6 +260,24 @@ def list_zips(db: PGConn = Depends(get_db), user: dict = Depends(get_current_use
         return [r[0] for r in cur.fetchall()]
 
 
+@router.get("/regions")
+def list_regions(
+    q: str | None = Query(None, description="Case-insensitive substring filter on region name"),
+    limit: int = Query(200, ge=1, le=500),
+    user: dict = Depends(get_current_user),
+):
+    """Named HCAD neighborhoods a user can pick as a service area, read straight
+    from the free local HCAD data (zero paid API calls). Lets users target an area
+    by name instead of guessing a ZIP. Returns [] when the HCAD data is absent so
+    the frontend falls back to manual ZIP entry."""
+    from pipeline import hcad_store
+    regions = hcad_store.list_regions()   # DuckDB, or Postgres mirror, or []
+    if q:
+        ql = q.lower()
+        regions = [r for r in regions if ql in (r["name"] or "").lower()]
+    return regions[:limit]
+
+
 @router.get("/neighborhoods")
 def list_neighborhoods(
     zip: str | None = Query(None),
