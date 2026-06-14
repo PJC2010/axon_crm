@@ -67,7 +67,10 @@ class ScheduleUpdate(BaseModel):
 
 
 class RunCreate(BaseModel):
-    zip: str
+    # Target exactly one of `zip` (single ZIP) or `region_id` (HCAD named
+    # neighborhood, seeded free from the local HCAD data across its ZIPs).
+    zip: Optional[str] = None
+    region_id: Optional[str] = None
     vertical: Optional[str] = None
     # Volume controls (optional): Top-N cap + radius-from-address narrowing.
     top_n: Optional[int] = None
@@ -421,21 +424,32 @@ def delete_schedule(schedule_id: int, current_user: dict = Depends(require_owner
 @router.post("/pipeline/run", status_code=201)
 def trigger_run(body: RunCreate, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
     from api.ratelimit import pipeline_run_limiter
-    from api.scheduler import enqueue_run
+    from api.scheduler import enqueue_run, enqueue_region_run
     # Manual runs spend real enrichment-API dollars — throttle per account.
     pipeline_run_limiter.check(f"acct:{current_user['account_id']}")
+
+    if bool(body.zip) == bool(body.region_id):
+        raise HTTPException(status_code=422, detail="Provide exactly one of `zip` or `region_id`")
+
+    # v1 stores a region run under the existing `zip` column as a "region:<id>"
+    # sentinel to avoid a schema migration; structured detail lands in result_json.
+    zip_label = body.zip if body.zip else f"region:{body.region_id}"
     with db.cursor() as cur:
         cur.execute(
             "INSERT INTO pipeline_runs "
             "(zip, vertical, top_n, center_address, radius_mi, triggered_by, account_id) "
             "VALUES (%s, %s, %s, %s, %s, 'manual', %s) RETURNING *",
-            (body.zip, body.vertical, body.top_n, body.center_address, body.radius_mi,
+            (zip_label, body.vertical, body.top_n, body.center_address, body.radius_mi,
              current_user["account_id"]),
         )
         run = dict_fetchone(cur)
         db.commit()
-    enqueue_run(run["id"], body.zip, body.vertical, current_user["account_id"], top_n=body.top_n,
-                center_address=body.center_address, radius_mi=body.radius_mi)
+    if body.region_id:
+        enqueue_region_run(run["id"], body.region_id, body.vertical, current_user["account_id"],
+                           top_n=body.top_n, center_address=body.center_address, radius_mi=body.radius_mi)
+    else:
+        enqueue_run(run["id"], body.zip, body.vertical, current_user["account_id"], top_n=body.top_n,
+                    center_address=body.center_address, radius_mi=body.radius_mi)
     return run
 
 
