@@ -77,25 +77,43 @@ def _batchdata_lookup(row: dict) -> dict | None:
 def _versium_lookup(row: dict) -> dict | None:
     """Skip-trace via the Versium Contact Append API.
 
-    Maps owner_name + address → contact_name / contact_phone / contact_email.
-    Auth is the Versium `x-versium-api-key` header (set CONTACT_API_KEY to your
-    Versium key and CONTACT_PROVIDER=versium). This is Versium's *Contact*
-    product — distinct from the *Demographic* Append used by
-    pipeline/demographics.py — so phone/email come from here while
-    age/income/credit come from the demographics step.
+    Input: owner_name (split into first/last) + address fields.
+    Output: {"contact_name", "contact_phone", "contact_email"} or None.
 
-    Response parsing is intentionally defensive: Versium key names vary across
-    API versions (spaces vs underscores, "Phone" vs "Phone 1" vs a list), so we
-    normalise keys to lowercase+underscore and accept the first value found.
+    Response parsing is intentionally defensive — Versium field names vary across
+    API versions (spaces vs underscores, numbered keys like "Phone 1"). We
+    normalise keys to lowercase+underscore, then pick the first phone/email found.
     """
+    # County owner names are messy (multi-owner, business entities, Last-First
+    # order). Build the ordered (first, last) candidates to try.
+    candidates = _owner_name_candidates(row.get("owner_name", ""))
+    if not candidates:
+        return None  # business entity or unparseable — no consumer to skip-trace
+
+    # Try each candidate ordering until one matches. The swapped ordering only
+    # costs an extra call when the first ordering misses.
+    for first, last in candidates:
+        data = _versium_query(first, last, row)
+        if data:
+            return data
+    return None
+
+
+def _versium_query(first: str, last: str, row: dict) -> dict | None:
+    """One Versium Contact Append call for a given first/last name."""
     url = CONTACT_BASE_URL or _VERSIUM_CONTACT_URL
     resp = get_json(
         url,
-        headers={"x-versium-api-key": CONTACT_API_KEY,
-                 "Accept": "application/json"},
+        headers={
+            "x-versium-api-key": CONTACT_API_KEY,
+            "Accept": "application/json",
+        },
         params={
-            "first":   _first_name(row.get("owner_name", "")),
-            "last":    _last_name(row.get("owner_name", "")),
+            # output[] is mandatory — it selects which contact fields to append.
+            # (Only one phone type per query: phone_mobile here.)
+            "output[]": ["phone_mobile", "email"],
+            "first":   first,
+            "last":    last,
             "address": row.get("address", ""),
             "city":    row.get("city", ""),
             "state":   row.get("state", ""),
@@ -106,61 +124,156 @@ def _versium_lookup(row: dict) -> dict | None:
     if not resp:
         return None
 
+    # Versium may return one result per matched contact; scan all and take the
+    # first with a phone/email rather than assuming the first record has both.
     results = resp.get("versium", {}).get("results") or resp.get("results") or []
-    if not results:
-        return None
-    rec = results[0] if isinstance(results, list) else results
+    if isinstance(results, dict):
+        results = [results]
+    phone = email = matched_name = None
+    for raw in results:
+        # Normalise keys: "Email Address" → "email_address", "Mobile Phone" → "mobile_phone".
+        p = {re.sub(r"[\s/]+", "_", k).lower(): v for k, v in raw.items()}
+        phone = phone or _first_value(p, (
+            "mobile_phone", "phone_mobile", "phone", "phone_1", "phones",
+            "phone_number", "mobile",
+        ))
+        email = email or _first_value(p, (
+            "email", "email_1", "email_address", "email_address_1", "emails",
+        ))
+        # Prefer Versium's own normalised name from the matched record.
+        matched_name = matched_name or _full_name(
+            _str(p.get("first_name")), _str(p.get("last_name")))
+        if phone and email:
+            break
 
-    # Normalise keys: "Email Address" → "email_address", "Phone 1" → "phone_1".
-    p = {re.sub(r"[\s/]+", "_", k).lower(): v for k, v in rec.items()}
-    phone = _first_value(p, ("phone", "phones", "phone_1", "phone_number"))
-    email = _first_value(p, ("email_address", "emails", "email", "email_address_1"))
     if not (phone or email):
         return None
+    # Store the cleaned, matched name — fall back to the queried name, then the
+    # raw owner_name, so contact_name is never blank.
+    name = matched_name or _full_name(first.capitalize(), last.capitalize()) \
+        or row.get("owner_name")
     return {
-        "contact_name":  row.get("owner_name"),
+        "contact_name":  name,
         "contact_phone": phone,
         "contact_email": email,
     }
 
 
+def _full_name(first: str | None, last: str | None) -> str | None:
+    """Join first/last into a display name, ignoring blanks."""
+    parts = [p for p in (first, last) if p]
+    return " ".join(parts) or None
+
+
 # provider name → lookup function
 PROVIDERS = {
     "batchdata": _batchdata_lookup,
-    "versium":   _versium_lookup,
+    "versium": _versium_lookup,
     # "endato": _endato_lookup,   # add more providers here
 }
 
 
-# ── Response parsing helpers ──────────────────────────────────────────────────
+# Tokens that mark an owner_name as a business/trust rather than a person.
+_BUSINESS_TOKENS = {
+    "LLC", "LLLP", "INC", "CORP", "CO", "COMPANY", "LP", "LLP", "LTD",
+    "TRUST", "TR", "TRUSTEE", "TTEE", "ESTATE", "EST", "REALTY", "PROPERTIES",
+    "PROPERTY", "HOLDINGS", "INVESTMENTS", "INVESTMENT", "ENTERPRISES", "GROUP",
+    "PARTNERS", "PARTNERSHIP", "ASSOCIATION", "ASSOC", "ASSN", "CHURCH", "BANK",
+    "FUND", "MANAGEMENT", "MGMT", "HOMES", "DEVELOPMENT", "FOUNDATION",
+    "MINISTRIES", "SERVICES", "RENTALS", "CITY", "COUNTY", "AUTHORITY", "DISTRICT",
+}
 
-def _first_name(full_name: str) -> str:
-    parts = (full_name or "").strip().split()
-    return parts[0] if parts else ""
+# Generational suffixes and honorifics to strip from a person's name.
+_NAME_SUFFIXES = {"JR", "SR", "II", "III", "IV", "V"}
+_NAME_TITLES = {"MR", "MRS", "MS", "DR", "REV"}
 
 
-def _last_name(full_name: str) -> str:
-    parts = (full_name or "").strip().split()
-    return parts[-1] if parts else ""
+def _is_business(owner_name: str) -> bool:
+    tokens = re.split(r"[\s.,]+", owner_name.upper())
+    return any(t in _BUSINESS_TOKENS for t in tokens)
 
 
-def _first_value(p: dict, keys: tuple) -> str | None:
-    """Return the first non-empty scalar from `p` across candidate `keys`.
+def _clean_person_tokens(name: str) -> list[str]:
+    """Reduce a single person's name to its significant word tokens.
 
-    Versium returns a phone/email either as a scalar or a list; for a list we
-    take the first element. Dict-wrapped values (e.g. {"number": "..."}) are
-    unwrapped from their first non-empty field.
+    Strips honorifics (Mr/Dr), generational suffixes (Jr/III), single-letter
+    middle initials, and any leftover punctuation — leaving the words that
+    matter for a name match. Title-cases so 'GRETA' → 'Greta'.
     """
-    for k in keys:
-        v = p.get(k)
-        if v is None:
+    raw = re.split(r"[\s.,]+", name)
+    out = []
+    for tok in raw:
+        word = re.sub(r"[^A-Za-z'\-]", "", tok)
+        if not word:
             continue
-        if isinstance(v, list):
-            v = v[0] if v else None
-        if isinstance(v, dict):
-            v = next((x for x in v.values() if x), None)
-        if v:
-            return str(v).strip()
+        upper = word.upper()
+        if upper in _NAME_TITLES or upper in _NAME_SUFFIXES:
+            continue
+        if len(word) == 1:  # middle initial
+            continue
+        out.append(word.capitalize() if word.isupper() or word.islower() else word)
+    return out
+
+
+def _owner_name_candidates(owner_name: str) -> list[tuple[str, str]]:
+    """Turn a raw county owner_name into ordered (first, last) candidates to try.
+
+    Handles the messiness of appraisal-district names:
+      - business entities (LLC, TRUST…) → return [] (no person to skip-trace)
+      - multi-owner ("A & B", "A AND B") → use only the first owner
+      - "Last, First" comma form         → respected as authoritative order
+      - honorifics / suffixes / initials → stripped
+      - ambiguous First/Last order       → return BOTH orderings to try in turn
+    """
+    name = (owner_name or "").strip()
+    if not name or _is_business(name):
+        return []
+
+    # Multiple owners are joined by '&' or ' AND ' — keep the first only.
+    name = re.split(r"\s*&\s*|\s+\bAND\b\s+", name, flags=re.IGNORECASE)[0].strip()
+
+    # "Last, First [Middle]" — the comma tells us the order unambiguously.
+    if "," in name:
+        last_part, first_part = name.split(",", 1)
+        last_toks = _clean_person_tokens(last_part)
+        first_toks = _clean_person_tokens(first_part)
+        if first_toks and last_toks:
+            return [(first_toks[0], last_toks[-1])]
+        # Fall through to positional handling if one side was empty.
+
+    tokens = _clean_person_tokens(name)
+    if len(tokens) < 2:
+        return []
+
+    a, b = tokens[0], tokens[-1]
+    # Order is ambiguous without a comma ("Greta Fisher" is First-Last,
+    # "Portela Raul" is Last-First), so try both orderings in turn.
+    return [(a, b), (b, a)]
+
+
+def _str(value) -> str | None:
+    if value is None:
+        return None
+    s = str(value).strip()
+    return s or None
+
+
+def _first_value(data: dict, keys: tuple[str, ...]) -> str | None:
+    """Return the first non-empty value among `keys`, unwrapping lists/dicts.
+
+    Handles Versium shapes where a field may be a scalar, a list of values, or a
+    list of {"number": ...} / {"address": ...} dicts.
+    """
+    for key in keys:
+        value = data.get(key)
+        if not value:
+            continue
+        if isinstance(value, list):
+            value = value[0] if value else None
+        if isinstance(value, dict):
+            value = value.get("number") or value.get("address") or value.get("value")
+        if value:
+            return str(value).strip()
     return None
 
 

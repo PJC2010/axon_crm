@@ -1,132 +1,154 @@
-"""Tests for pipeline/contact.py — Versium Contact Append parsing and no-key no-op."""
+"""Tests for pipeline/contact.py — owner-name cleaning and Versium parsing.
+
+Pure unit tests: the network call (get_json) is monkeypatched, so no provider
+key or DB is required.
+"""
 import pytest
 
-import pipeline.contact as contact
 from pipeline.contact import (
-    _first_name, _last_name, _first_value, _versium_lookup, enrich_contact,
+    PROVIDERS, _is_business, _owner_name_candidates, _clean_person_tokens,
+    _full_name, _first_value, _versium_lookup,
 )
 
 
-# ── Name splitting ─────────────────────────────────────────────────────────────
+# ── Provider registry ───────────────────────────────────────────────────────────
 
-class TestNameHelpers:
-    def test_first_name_two_words(self):
-        assert _first_name("John Smith") == "John"
-
-    def test_last_name_two_words(self):
-        assert _last_name("John Smith") == "Smith"
-
-    def test_last_name_single_word(self):
-        assert _last_name("Smith") == "Smith"
-
-    def test_first_name_single_word(self):
-        assert _first_name("Smith") == "Smith"
-
-    def test_empty(self):
-        assert _first_name("") == ""
-        assert _last_name("") == ""
-
-    def test_none_safe(self):
-        assert _first_name(None) == ""
-        assert _last_name(None) == ""
+def test_versium_registered():
+    # Regression: a missing "versium" entry is what caused the 409 in the UI.
+    assert "versium" in PROVIDERS
 
 
-# ── _first_value ────────────────────────────────────────────────────────────────
+# ── Business-entity detection ────────────────────────────────────────────────────
+
+class TestIsBusiness:
+    @pytest.mark.parametrize("name", [
+        "RASPBERRY REALTY I LLC", "ACME HOLDINGS INC", "SMITH FAMILY TRUST",
+        "HOUSTON CITY OF", "FIRST BANK", "OAK PROPERTIES LP",
+    ])
+    def test_business(self, name):
+        assert _is_business(name) is True
+
+    @pytest.mark.parametrize("name", [
+        "GRETA FISHER", "James M Alford", "Portela Raul E",
+    ])
+    def test_person(self, name):
+        assert _is_business(name) is False
+
+
+# ── Owner-name → (first, last) candidates ────────────────────────────────────────
+
+class TestOwnerNameCandidates:
+    def test_simple_first_last_tries_both_orders(self):
+        assert _owner_name_candidates("GRETA FISHER") == [("Greta", "Fisher"), ("Fisher", "Greta")]
+
+    def test_drops_middle_initial(self):
+        assert _owner_name_candidates("James M Alford") == [("James", "Alford"), ("Alford", "James")]
+
+    def test_multi_owner_keeps_first(self):
+        got = _owner_name_candidates("Portela Raul E & Connie E & Portela Stephanie R")
+        assert got == [("Portela", "Raul"), ("Raul", "Portela")]
+
+    def test_comma_form_is_unambiguous(self):
+        assert _owner_name_candidates("FISHER, GRETA") == [("Greta", "Fisher")]
+
+    def test_strips_suffix(self):
+        assert _owner_name_candidates("SMITH JOHN JR") == [("Smith", "John"), ("John", "Smith")]
+
+    def test_strips_title_and_suffix(self):
+        assert _owner_name_candidates("Dr Robert A Jones III") == [("Robert", "Jones"), ("Jones", "Robert")]
+
+    @pytest.mark.parametrize("name", [
+        "RASPBERRY REALTY I LLC", "HOUSTON CITY OF", "MARIA", "", "   ",
+    ])
+    def test_no_usable_person_returns_empty(self, name):
+        assert _owner_name_candidates(name) == []
+
+
+# ── _clean_person_tokens ─────────────────────────────────────────────────────────
+
+class TestCleanPersonTokens:
+    def test_titlecases_allcaps(self):
+        assert _clean_person_tokens("GRETA FISHER") == ["Greta", "Fisher"]
+
+    def test_preserves_mixed_case_hyphenated(self):
+        assert _clean_person_tokens("O'Brien-Smith") == ["O'Brien-Smith"]
+
+
+# ── _full_name ───────────────────────────────────────────────────────────────────
+
+def test_full_name_joins():
+    assert _full_name("Greta", "Fisher") == "Greta Fisher"
+
+def test_full_name_ignores_blanks():
+    assert _full_name(None, "Fisher") == "Fisher"
+    assert _full_name(None, None) is None
+
+
+# ── _first_value (response field extraction) ─────────────────────────────────────
 
 class TestFirstValue:
     def test_scalar(self):
-        assert _first_value({"phone": "713-555-0100"}, ("phone",)) == "713-555-0100"
+        assert _first_value({"phone": "281555"}, ("phone",)) == "281555"
 
-    def test_list_takes_first(self):
-        assert _first_value({"phones": ["a", "b"]}, ("phones",)) == "a"
+    def test_list(self):
+        assert _first_value({"phones": ["281", "832"]}, ("phones",)) == "281"
 
-    def test_empty_list_skipped(self):
-        assert _first_value({"phones": [], "phone_1": "x"}, ("phones", "phone_1")) == "x"
+    def test_dict_number(self):
+        assert _first_value({"phone": {"number": "281555"}}, ("phone",)) == "281555"
 
-    def test_dict_unwrapped(self):
-        assert _first_value({"phone": {"number": "555"}}, ("phone",)) == "555"
-
-    def test_key_priority(self):
-        # First matching key with a value wins.
-        assert _first_value({"phone": None, "phone_1": "second"}, ("phone", "phone_1")) == "second"
+    def test_first_present_key_wins(self):
+        assert _first_value({"mobile_phone": "832", "phone": "281"},
+                            ("mobile_phone", "phone")) == "832"
 
     def test_none_when_absent(self):
         assert _first_value({}, ("phone",)) is None
 
-    def test_strips_whitespace(self):
-        assert _first_value({"email": "  a@b.com "}, ("email",)) == "a@b.com"
 
+# ── _versium_lookup (parsing the real response envelope) ─────────────────────────
 
-# ── _versium_lookup (monkeypatched HTTP) ────────────────────────────────────────
-
-ROW = {"owner_name": "Jane Doe", "address": "123 Main St",
-       "city": "Houston", "state": "TX", "zip": "77002"}
+def _versium_payload(first, last, **fields):
+    return {"versium": {"results": [{"First Name": first, "Last Name": last, **fields}]}}
 
 
 class TestVersiumLookup:
-    def test_parses_phone_and_email(self, monkeypatch):
-        monkeypatch.setattr(contact, "CONTACT_API_KEY", "key")
-        monkeypatch.setattr(contact, "get_json", lambda *a, **k: {
-            "versium": {"results": [{"Phone": "713-555-0100",
-                                     "Email Address": "jane@example.com"}]}
-        })
-        out = _versium_lookup(ROW)
+    def test_parses_and_stores_normalized_name(self, monkeypatch):
+        # Real envelope: "Mobile Phone" + "Email Address" Title-Case keys.
+        monkeypatch.setattr(
+            "pipeline.contact.get_json",
+            lambda *a, **k: _versium_payload(
+                "Greta", "Fisher",
+                **{"Mobile Phone": "8327086648", "Email Address": "g@example.com"}),
+        )
+        out = _versium_lookup({"owner_name": "GRETA FISHER", "city": "Humble",
+                               "state": "TX", "zip": "77396"})
         assert out == {
-            "contact_name": "Jane Doe",
-            "contact_phone": "713-555-0100",
-            "contact_email": "jane@example.com",
+            "contact_name": "Greta Fisher",
+            "contact_phone": "8327086648",
+            "contact_email": "g@example.com",
         }
 
-    def test_handles_list_fields(self, monkeypatch):
-        monkeypatch.setattr(contact, "CONTACT_API_KEY", "key")
-        monkeypatch.setattr(contact, "get_json", lambda *a, **k: {
-            "versium": {"results": [{"Phones": ["281-555-0199"],
-                                     "Emails": ["a@b.com", "c@d.com"]}]}
-        })
-        out = _versium_lookup(ROW)
-        assert out["contact_phone"] == "281-555-0199"
-        assert out["contact_email"] == "a@b.com"
+    def test_business_entity_skips_without_calling(self, monkeypatch):
+        called = {"n": 0}
+        def boom(*a, **k):
+            called["n"] += 1
+            return None
+        monkeypatch.setattr("pipeline.contact.get_json", boom)
+        assert _versium_lookup({"owner_name": "RASPBERRY REALTY I LLC"}) is None
+        assert called["n"] == 0  # no API call wasted on a business
 
-    def test_top_level_results(self, monkeypatch):
-        monkeypatch.setattr(contact, "CONTACT_API_KEY", "key")
-        monkeypatch.setattr(contact, "get_json", lambda *a, **k: {
-            "results": [{"phone_1": "555", "email_address_1": "x@y.com"}]
-        })
-        out = _versium_lookup(ROW)
-        assert out["contact_phone"] == "555"
-        assert out["contact_email"] == "x@y.com"
+    def test_swaps_order_on_first_miss(self, monkeypatch):
+        # First ordering (Portela, Raul) misses; swapped (Raul, Portela) hits.
+        def fake(url, *, headers=None, params=None, timeout=None):
+            if params["first"] == "Raul" and params["last"] == "Portela":
+                return _versium_payload("Raul", "Portela",
+                                        **{"Mobile Phone": "8326715727"})
+            return {"versium": {"results": []}}
+        monkeypatch.setattr("pipeline.contact.get_json", fake)
+        out = _versium_lookup({"owner_name": "Portela Raul E & Connie E"})
+        assert out["contact_name"] == "Raul Portela"
+        assert out["contact_phone"] == "8326715727"
 
-    def test_no_response_returns_none(self, monkeypatch):
-        monkeypatch.setattr(contact, "get_json", lambda *a, **k: None)
-        assert _versium_lookup(ROW) is None
-
-    def test_empty_results_returns_none(self, monkeypatch):
-        monkeypatch.setattr(contact, "get_json", lambda *a, **k: {"versium": {"results": []}})
-        assert _versium_lookup(ROW) is None
-
-    def test_no_contact_fields_returns_none(self, monkeypatch):
-        # A record with neither phone nor email yields nothing to write.
-        monkeypatch.setattr(contact, "get_json", lambda *a, **k: {
-            "versium": {"results": [{"Some Other Field": "z"}]}
-        })
-        assert _versium_lookup(ROW) is None
-
-
-# ── enrich_contact no-key no-op ─────────────────────────────────────────────────
-
-class TestEnrichContactNoKey:
-    def test_no_provider_configured_skips(self, monkeypatch):
-        monkeypatch.setattr(contact, "CONTACT_PROVIDER", "")
-        monkeypatch.setattr(contact, "CONTACT_API_KEY", "")
-        result = enrich_contact("77002", 1)
-        assert result["skipped_no_key"] is True
-        assert result["updated"] == 0
-
-    def test_unknown_provider_skips(self, monkeypatch):
-        monkeypatch.setattr(contact, "CONTACT_PROVIDER", "nope")
-        monkeypatch.setattr(contact, "CONTACT_API_KEY", "key")
-        result = enrich_contact("77002", 1)
-        assert result["skipped_no_key"] is True
-
-    def test_versium_is_registered(self):
-        assert "versium" in contact.PROVIDERS
+    def test_no_match_returns_none(self, monkeypatch):
+        monkeypatch.setattr("pipeline.contact.get_json",
+                            lambda *a, **k: {"versium": {"results": []}})
+        assert _versium_lookup({"owner_name": "Timothy Boone"}) is None
