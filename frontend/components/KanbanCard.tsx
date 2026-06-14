@@ -1,5 +1,5 @@
 'use client'
-import { Plus } from 'lucide-react'
+import { Plus, Phone } from 'lucide-react'
 import type { PipelineCardLead } from '@/lib/types'
 import { ScoreBadge } from './ScoreBadge'
 
@@ -35,6 +35,13 @@ export function KanbanCard({ lead, onClick, onQuickTask }: Props) {
       </div>
       {(lead.contact_name || lead.owner_name) && (
         <span style={{ fontSize: 11, color: 'var(--color-ink-400)' }}>{lead.contact_name || lead.owner_name}</span>
+      )}
+      {/* Enriched contact info (filled by the skip-trace "Enrich" action). */}
+      {lead.contact_phone && (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--color-accent)' }}>
+          <Phone size={11} strokeWidth={1.5} />
+          {lead.contact_phone}
+        </span>
       )}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         {lead.estimated_job_value != null ? (
