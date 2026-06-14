@@ -15,6 +15,7 @@ Adding a provider = add a normalizer to PROVIDERS that maps the provider's
 response to {"contact_name", "contact_phone", "contact_email"}.
 """
 import logging
+import re
 import time
 
 from config import (
@@ -28,6 +29,9 @@ log = logging.getLogger(__name__)
 
 # Grade ordering for the optional min-grade gate (A best).
 _GRADE_RANK = {"A": 4, "B": 3, "C": 2, "D": 1}
+
+# Default Versium Contact Append endpoint — overridable via CONTACT_BASE_URL.
+_VERSIUM_CONTACT_URL = "https://api.versium.com/v2/contact"
 
 
 def _batchdata_lookup(row: dict) -> dict | None:
@@ -70,11 +74,94 @@ def _batchdata_lookup(row: dict) -> dict | None:
     }
 
 
+def _versium_lookup(row: dict) -> dict | None:
+    """Skip-trace via the Versium Contact Append API.
+
+    Maps owner_name + address → contact_name / contact_phone / contact_email.
+    Auth is the Versium `x-versium-api-key` header (set CONTACT_API_KEY to your
+    Versium key and CONTACT_PROVIDER=versium). This is Versium's *Contact*
+    product — distinct from the *Demographic* Append used by
+    pipeline/demographics.py — so phone/email come from here while
+    age/income/credit come from the demographics step.
+
+    Response parsing is intentionally defensive: Versium key names vary across
+    API versions (spaces vs underscores, "Phone" vs "Phone 1" vs a list), so we
+    normalise keys to lowercase+underscore and accept the first value found.
+    """
+    url = CONTACT_BASE_URL or _VERSIUM_CONTACT_URL
+    resp = get_json(
+        url,
+        headers={"x-versium-api-key": CONTACT_API_KEY,
+                 "Accept": "application/json"},
+        params={
+            "first":   _first_name(row.get("owner_name", "")),
+            "last":    _last_name(row.get("owner_name", "")),
+            "address": row.get("address", ""),
+            "city":    row.get("city", ""),
+            "state":   row.get("state", ""),
+            "zip":     row.get("zip", ""),
+        },
+        timeout=15,
+    )
+    if not resp:
+        return None
+
+    results = resp.get("versium", {}).get("results") or resp.get("results") or []
+    if not results:
+        return None
+    rec = results[0] if isinstance(results, list) else results
+
+    # Normalise keys: "Email Address" → "email_address", "Phone 1" → "phone_1".
+    p = {re.sub(r"[\s/]+", "_", k).lower(): v for k, v in rec.items()}
+    phone = _first_value(p, ("phone", "phones", "phone_1", "phone_number"))
+    email = _first_value(p, ("email_address", "emails", "email", "email_address_1"))
+    if not (phone or email):
+        return None
+    return {
+        "contact_name":  row.get("owner_name"),
+        "contact_phone": phone,
+        "contact_email": email,
+    }
+
+
 # provider name → lookup function
 PROVIDERS = {
     "batchdata": _batchdata_lookup,
+    "versium":   _versium_lookup,
     # "endato": _endato_lookup,   # add more providers here
 }
+
+
+# ── Response parsing helpers ──────────────────────────────────────────────────
+
+def _first_name(full_name: str) -> str:
+    parts = (full_name or "").strip().split()
+    return parts[0] if parts else ""
+
+
+def _last_name(full_name: str) -> str:
+    parts = (full_name or "").strip().split()
+    return parts[-1] if parts else ""
+
+
+def _first_value(p: dict, keys: tuple) -> str | None:
+    """Return the first non-empty scalar from `p` across candidate `keys`.
+
+    Versium returns a phone/email either as a scalar or a list; for a list we
+    take the first element. Dict-wrapped values (e.g. {"number": "..."}) are
+    unwrapped from their first non-empty field.
+    """
+    for k in keys:
+        v = p.get(k)
+        if v is None:
+            continue
+        if isinstance(v, list):
+            v = v[0] if v else None
+        if isinstance(v, dict):
+            v = next((x for x in v.values() if x), None)
+        if v:
+            return str(v).strip()
+    return None
 
 
 def _passes_grade(row: dict) -> bool:
