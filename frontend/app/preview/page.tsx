@@ -40,11 +40,11 @@ const MOCK_PNL = [
 ]
 
 const MOCK_PIPELINE = [
-  { key: 'new', label: 'New', count: 47, color: '#B8BDC8' },
-  { key: 'contacted', label: 'Contacted', count: 23, color: '#3B82F6' },
-  { key: 'qualified', label: 'Qualified', count: 12, color: '#1A5A75' },
-  { key: 'quote_sent', label: 'Quote Sent', count: 8, color: '#C29A3D' },
-  { key: 'won', label: 'Won', count: 15, color: '#4F7A4A' },
+  { key: 'new', label: 'New', count: 47, color: 'var(--ax-faint)' },
+  { key: 'contacted', label: 'Contacted', count: 23, color: 'var(--ax-blue)' },
+  { key: 'qualified', label: 'Qualified', count: 12, color: 'var(--ax-accent)' },
+  { key: 'quote_sent', label: 'Quote Sent', count: 8, color: 'var(--ax-amber)' },
+  { key: 'won', label: 'Won', count: 15, color: 'var(--ax-green)' },
 ]
 
 const STATUS_LABELS: Record<string, string> = {
@@ -52,11 +52,11 @@ const STATUS_LABELS: Record<string, string> = {
   quote_sent: 'Quote Sent', won: 'Won', lost: 'Lost',
 }
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  new:         { bg: '#EDECEA', text: 'var(--color-ink-500)' },
-  contacted:   { bg: '#DCE7ED', text: '#1F4258' },
-  qualified:   { bg: '#D6E4EB', text: 'var(--color-accent)' },
-  quote_sent:  { bg: '#F4E7CB', text: '#7A5419' },
-  won:         { bg: '#E6EEDE', text: '#3D5C39' },
+  new:         { bg: 'var(--ax-elevated-2)', text: 'var(--ax-muted)' },
+  contacted:   { bg: 'var(--ax-blue-tint)',  text: 'var(--ax-blue)' },
+  qualified:   { bg: 'var(--ax-accent-tint)', text: 'var(--ax-accent-bright)' },
+  quote_sent:  { bg: 'var(--ax-amber-tint)', text: 'var(--ax-amber)' },
+  won:         { bg: 'var(--ax-green-tint)',  text: 'var(--ax-green)' },
 }
 
 function fmtCurrency(n: number): string {
@@ -100,10 +100,10 @@ export default function PreviewPage() {
   let offset = 0
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--color-paper)', display: 'flex', flexDirection: 'column' }}>
+    <div className="ax-dark" style={{ minHeight: '100vh', background: 'var(--ax-black)', color: 'var(--ax-text)', fontFamily: 'var(--font-grotesk)', display: 'flex', flexDirection: 'column' }}>
       {/* ── Preview Banner ── */}
       <div style={{
-        background: 'linear-gradient(90deg, var(--color-accent), var(--color-ocean-d))',
+        background: 'linear-gradient(90deg, var(--ax-accent), var(--ax-blue))',
         color: 'white', textAlign: 'center', padding: '8px 16px', fontSize: 13, fontWeight: 500,
       }}>
         Preview Mode — Viewing dashboard with sample data
@@ -111,8 +111,9 @@ export default function PreviewPage() {
 
       {/* ── Top Nav ── */}
       <header style={{
-        height: 64, padding: '0 20px', background: 'var(--color-paper)',
-        borderBottom: '1px solid var(--color-ink-200)',
+        height: 64, padding: '0 20px', background: 'rgba(8,9,11,0.72)',
+        backdropFilter: 'saturate(160%) blur(14px)', WebkitBackdropFilter: 'saturate(160%) blur(14px)',
+        borderBottom: '1px solid var(--ax-line)',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         position: 'sticky', top: 0, zIndex: 10,
       }}>
@@ -124,14 +125,14 @@ export default function PreviewPage() {
                 <rect x="2" y="14.5" width="28" height="3" rx="1.5" fill="black" />
                 <rect x="14.5" y="2" width="3" height="28" rx="1.5" fill="black" />
               </mask>
-              <polygon points="16,5 27,16 16,27 5,16" fill="var(--color-accent)" mask="url(#axon-mark-preview)" />
-              <circle cx="16" cy="16" r="1.5" fill="var(--color-ink-900)" />
+              <polygon points="16,5 27,16 16,27 5,16" fill="var(--ax-accent-bright)" mask="url(#axon-mark-preview)" />
+              <circle cx="16" cy="16" r="1.5" fill="var(--ax-black)" />
             </svg>
-            <span style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em', color: 'var(--color-ink-900)' }}>
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em', color: 'var(--ax-white)' }}>
               Axon
             </span>
           </Link>
-          <span style={{ color: 'var(--color-ink-300)', fontSize: 14 }}>·</span>
+          <span style={{ color: 'var(--ax-line-strong)', fontSize: 14 }}>·</span>
           <span className="t-eyebrow">Preview</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -156,7 +157,7 @@ export default function PreviewPage() {
         {/* ── Hero Greeting ── */}
         <div style={{
           borderRadius: 'var(--radius-card)',
-          background: 'linear-gradient(135deg, var(--color-accent) 0%, var(--color-ocean-d) 100%)',
+          background: 'linear-gradient(135deg, var(--ax-accent) 0%, var(--ax-blue) 100%)',
           padding: '28px 24px', marginBottom: 20,
           position: 'relative', overflow: 'hidden',
         }}>
@@ -180,11 +181,11 @@ export default function PreviewPage() {
 
         {/* ── KPI Cards ── */}
         <div style={{ display: 'grid', gridTemplateColumns: wide ? 'repeat(5, 1fr)' : 'repeat(2, 1fr)', gap: 12, marginBottom: 20 }}>
-          <KPICard icon={<TrendingUp size={16} strokeWidth={1.5} color="var(--color-accent)" />} label="Forecast" value="$29k" sub="weighted pipeline" />
-          <KPICard icon={<Users size={16} strokeWidth={1.5} color="var(--color-accent)" />} label="Active Leads" value="90" sub="across all stages" />
-          <KPICard icon={<CheckSquare size={16} strokeWidth={1.5} color="var(--color-accent)" />} label="Due Today" value="8" sub="on track" />
+          <KPICard icon={<TrendingUp size={16} strokeWidth={1.5} color="var(--ax-accent)" />} label="Forecast" value="$29k" sub="weighted pipeline" />
+          <KPICard icon={<Users size={16} strokeWidth={1.5} color="var(--ax-accent)" />} label="Active Leads" value="90" sub="across all stages" />
+          <KPICard icon={<CheckSquare size={16} strokeWidth={1.5} color="var(--ax-accent)" />} label="Due Today" value="8" sub="on track" />
           <KPICard icon={<DollarSign size={16} strokeWidth={1.5} color="#4F7A4A" />} label="Collected YTD" value="$138k" sub="$9k outstanding" />
-          <KPICard icon={<Percent size={16} strokeWidth={1.5} color="var(--color-moss)" />} label="Win Rate" value="38%" sub="12d avg cycle" />
+          <KPICard icon={<Percent size={16} strokeWidth={1.5} color="var(--ax-green)" />} label="Win Rate" value="38%" sub="12d avg cycle" />
         </div>
 
         {/* ── Quick Actions ── */}
@@ -194,7 +195,7 @@ export default function PreviewPage() {
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: 8,
               padding: '0 22px', minHeight: 44, borderRadius: 'var(--radius-pill)',
-              background: 'var(--color-accent)', color: 'white',
+              background: 'var(--ax-accent)', color: 'white',
               fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap',
               boxShadow: '0 1px 4px rgba(26,90,117,0.25)', cursor: 'default',
             }}>
@@ -204,8 +205,8 @@ export default function PreviewPage() {
               <span key={label} style={{
                 display: 'inline-flex', alignItems: 'center', gap: 8,
                 padding: '0 16px', minHeight: 44, borderRadius: 'var(--radius-pill)',
-                background: 'var(--color-surface)', border: '1px solid var(--color-ink-300)',
-                color: 'var(--color-ink-800)', fontSize: 13, fontWeight: 500,
+                background: 'var(--ax-elevated)', border: '1px solid var(--ax-line-strong)',
+                color: 'var(--ax-text)', fontSize: 13, fontWeight: 500,
                 whiteSpace: 'nowrap', cursor: 'default',
               }}>
                 {label}
@@ -219,13 +220,13 @@ export default function PreviewPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
             <div style={{
               width: 24, height: 24, borderRadius: 'var(--radius-button)',
-              background: 'linear-gradient(135deg, var(--color-accent), var(--color-ocean-d))',
+              background: 'linear-gradient(135deg, var(--ax-accent), var(--ax-blue))',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
               <Sparkles size={13} strokeWidth={1.8} color="white" />
             </div>
             <span className="t-eyebrow" style={{ letterSpacing: '0.1em' }}>AI Insights</span>
-            <span style={{ fontSize: 10, color: 'var(--color-ink-400)', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
+            <span style={{ fontSize: 10, color: 'var(--ax-faint)', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
               Based on your pipeline data
             </span>
           </div>
@@ -237,9 +238,9 @@ export default function PreviewPage() {
               { title: '$9,450 in overdue invoices', desc: '2 invoices past due. Send reminders to improve cash flow.', type: 'warning' as const, icon: <AlertTriangle size={15} strokeWidth={1.8} />, link: 'View invoices' },
             ].map(insight => {
               const styles = {
-                action:   { bg: 'var(--color-accent-50)', border: 'var(--color-accent-300)', iconBg: 'var(--color-accent)' },
-                positive: { bg: '#E6EEDE', border: '#B8D4A8', iconBg: 'var(--color-moss)' },
-                warning:  { bg: '#FDF8EE', border: '#E8D5A8', iconBg: 'var(--color-gold)' },
+                action:   { bg: 'var(--ax-accent-tint)', border: 'var(--ax-accent-line)', iconBg: 'var(--ax-accent)' },
+                positive: { bg: 'var(--ax-green-tint)', border: 'rgba(45,212,115,0.3)', iconBg: 'var(--ax-green)' },
+                warning:  { bg: 'var(--ax-amber-tint)', border: 'rgba(245,166,35,0.3)', iconBg: 'var(--ax-amber)' },
               }[insight.type]
               return (
                 <div key={insight.title} style={{
@@ -253,8 +254,8 @@ export default function PreviewPage() {
                     <span style={{ color: 'white', display: 'flex' }}>{insight.icon}</span>
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: '0 0 3px', fontSize: 14, fontWeight: 600, color: 'var(--color-ink-900)', lineHeight: 1.3 }}>{insight.title}</p>
-                    <p style={{ margin: 0, fontSize: 12.5, color: 'var(--color-ink-600)', lineHeight: 1.45 }}>{insight.desc}</p>
+                    <p style={{ margin: '0 0 3px', fontSize: 14, fontWeight: 600, color: 'var(--ax-white)', lineHeight: 1.3 }}>{insight.title}</p>
+                    <p style={{ margin: 0, fontSize: 12.5, color: 'var(--ax-muted)', lineHeight: 1.45 }}>{insight.desc}</p>
                   </div>
                   {insight.link && (
                     <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 500, color: styles.iconBg, whiteSpace: 'nowrap', flexShrink: 0, alignSelf: 'center' }}>
@@ -271,21 +272,21 @@ export default function PreviewPage() {
         <div style={{ marginBottom: 24 }}>
           <p className="t-eyebrow" style={{ margin: '0 0 10px' }}>Needs Attention</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderRadius: 'var(--radius-card)', background: '#FDF2F1', borderLeft: '4px solid var(--color-danger)', minHeight: 44 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderRadius: 'var(--radius-card)', background: 'var(--ax-red-tint)', borderLeft: '4px solid var(--ax-red)', minHeight: 44 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <AlertTriangle size={16} strokeWidth={1.5} color="var(--color-danger)" />
-                <span style={{ fontSize: 14, color: 'var(--color-ink-900)', fontWeight: 500 }}>3 tasks overdue</span>
+                <AlertTriangle size={16} strokeWidth={1.5} color="var(--ax-red)" />
+                <span style={{ fontSize: 14, color: 'var(--ax-white)', fontWeight: 500 }}>3 tasks overdue</span>
               </div>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, color: 'var(--color-danger)', fontWeight: 500 }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, color: 'var(--ax-red)', fontWeight: 500 }}>
                 Review <ArrowRight size={13} strokeWidth={1.5} />
               </span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderRadius: 'var(--radius-card)', background: '#FDF8EE', borderLeft: '4px solid var(--color-gold)', minHeight: 44 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderRadius: 'var(--radius-card)', background: 'var(--ax-amber-tint)', borderLeft: '4px solid var(--ax-amber)', minHeight: 44 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <Clock size={16} strokeWidth={1.5} color="var(--color-gold)" />
-                <span style={{ fontSize: 14, color: 'var(--color-ink-900)', fontWeight: 500 }}>$9k in unpaid invoices</span>
+                <Clock size={16} strokeWidth={1.5} color="var(--ax-amber)" />
+                <span style={{ fontSize: 14, color: 'var(--ax-white)', fontWeight: 500 }}>$9k in unpaid invoices</span>
               </div>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, color: 'var(--color-gold)', fontWeight: 500 }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, color: 'var(--ax-amber)', fontWeight: 500 }}>
                 View <ArrowRight size={13} strokeWidth={1.5} />
               </span>
             </div>
@@ -295,17 +296,17 @@ export default function PreviewPage() {
         {/* ── Charts Row ── */}
         <div style={{ display: 'grid', gridTemplateColumns: wide ? '1.4fr 1fr' : '1fr', gap: 14, marginBottom: 24 }}>
           {/* Revenue Spark Chart */}
-          <div style={{ background: 'white', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', padding: '16px 18px', position: 'relative' }}>
+          <div style={{ background: 'var(--ax-elevated)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--ax-shadow-card)', padding: '16px 18px', position: 'relative' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
               <div>
                 <span className="t-eyebrow" style={{ marginBottom: 4, display: 'block' }}>Revenue Trend</span>
-                <span style={{ fontSize: 22, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--color-ink-900)' }}>
+                <span style={{ fontSize: 22, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--ax-white)' }}>
                   {fmtCurrency(totalRevenue)}
                 </span>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 11, color: 'var(--color-ink-400)', marginBottom: 2 }}>Net Profit</div>
-                <div style={{ fontSize: 15, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--color-moss)' }}>
+                <div style={{ fontSize: 11, color: 'var(--ax-faint)', marginBottom: 2 }}>Net Profit</div>
+                <div style={{ fontSize: 15, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--ax-green)' }}>
                   +{fmtCurrencyK(totalNet)}
                 </div>
               </div>
@@ -314,12 +315,12 @@ export default function PreviewPage() {
               onMouseLeave={() => setHoveredMonth(null)}>
               <defs>
                 <linearGradient id="prevRevGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--color-moss)" stopOpacity="0.25" />
-                  <stop offset="100%" stopColor="var(--color-moss)" stopOpacity="0.02" />
+                  <stop offset="0%" stopColor="var(--ax-green)" stopOpacity="0.25" />
+                  <stop offset="100%" stopColor="var(--ax-green)" stopOpacity="0.02" />
                 </linearGradient>
               </defs>
               {[0.25, 0.5, 0.75].map(pct => (
-                <line key={pct} x1="6" y1={12 + 70 * (1 - pct)} x2="94" y2={12 + 70 * (1 - pct)} stroke="var(--color-ink-100)" strokeWidth="0.3" />
+                <line key={pct} x1="6" y1={12 + 70 * (1 - pct)} x2="94" y2={12 + 70 * (1 - pct)} stroke="var(--ax-line)" strokeWidth="0.3" />
               ))}
               {(() => {
                 const points = MOCK_PNL.map((m, i) => ({
@@ -336,10 +337,10 @@ export default function PreviewPage() {
                 return (
                   <>
                     <path d={area} fill="url(#prevRevGrad)" />
-                    <path d={line} fill="none" stroke="var(--color-moss)" strokeWidth="1.5" strokeLinecap="round" />
-                    <path d={expLine} fill="none" stroke="var(--color-rose)" strokeWidth="1" strokeDasharray="2,2" />
+                    <path d={line} fill="none" stroke="var(--ax-green)" strokeWidth="1.5" strokeLinecap="round" />
+                    <path d={expLine} fill="none" stroke="var(--ax-red)" strokeWidth="1" strokeDasharray="2,2" />
                     {MOCK_PNL.map((m, i) => (
-                      <text key={i} x={points[i].x} y={96} textAnchor="middle" fill="var(--color-ink-400)" fontSize="3.5" fontFamily="var(--font-sans)">
+                      <text key={i} x={points[i].x} y={96} textAnchor="middle" fill="var(--ax-faint)" fontSize="3.5" fontFamily="var(--font-sans)">
                         {MONTH_ABBR[m.month - 1]}
                       </text>
                     ))}
@@ -349,9 +350,9 @@ export default function PreviewPage() {
                     ))}
                     {hoveredMonth !== null && (
                       <>
-                        <line x1={points[hoveredMonth].x} y1={12} x2={points[hoveredMonth].x} y2={82} stroke="var(--color-ink-300)" strokeWidth="0.3" strokeDasharray="1,1" />
-                        <circle cx={points[hoveredMonth].x} cy={points[hoveredMonth].y} r="2" fill="var(--color-moss)" stroke="white" strokeWidth="0.8" />
-                        <circle cx={expPts[hoveredMonth].x} cy={expPts[hoveredMonth].y} r="1.5" fill="var(--color-rose)" stroke="white" strokeWidth="0.6" />
+                        <line x1={points[hoveredMonth].x} y1={12} x2={points[hoveredMonth].x} y2={82} stroke="var(--ax-line-strong)" strokeWidth="0.3" strokeDasharray="1,1" />
+                        <circle cx={points[hoveredMonth].x} cy={points[hoveredMonth].y} r="2" fill="var(--ax-green)" stroke="white" strokeWidth="0.8" />
+                        <circle cx={expPts[hoveredMonth].x} cy={expPts[hoveredMonth].y} r="1.5" fill="var(--ax-red)" stroke="white" strokeWidth="0.6" />
                       </>
                     )}
                   </>
@@ -361,9 +362,10 @@ export default function PreviewPage() {
             {hoveredMonth !== null && (
               <div style={{
                 position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)',
-                background: 'var(--color-ink-900)', color: 'white', borderRadius: 'var(--radius-button)',
+                background: 'var(--ax-elevated-2)', color: 'white', borderRadius: 'var(--radius-button)',
+                border: '1px solid var(--ax-line-strong)',
                 padding: '5px 10px', fontSize: 11, whiteSpace: 'nowrap', display: 'flex', gap: 12,
-                boxShadow: 'var(--shadow-pop)',
+                boxShadow: 'var(--ax-shadow-pop)',
               }}>
                 <span style={{ color: '#8FC98A' }}>Rev: {fmtCurrencyK(MOCK_PNL[hoveredMonth].revenue)}</span>
                 <span style={{ color: '#E8959E' }}>Exp: {fmtCurrencyK(MOCK_PNL[hoveredMonth].expenses)}</span>
@@ -371,17 +373,17 @@ export default function PreviewPage() {
               </div>
             )}
             <div style={{ display: 'flex', gap: 14, marginTop: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--color-ink-500)' }}>
-                <div style={{ width: 14, height: 2, background: 'var(--color-moss)', borderRadius: 1 }} /> Revenue
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--ax-muted)' }}>
+                <div style={{ width: 14, height: 2, background: 'var(--ax-green)', borderRadius: 1 }} /> Revenue
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--color-ink-500)' }}>
-                <div style={{ width: 14, height: 2, background: 'var(--color-rose)', borderRadius: 1 }} /> Expenses
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--ax-muted)' }}>
+                <div style={{ width: 14, height: 2, background: 'var(--ax-red)', borderRadius: 1 }} /> Expenses
               </div>
             </div>
           </div>
 
           {/* Pipeline Ring Chart */}
-          <div style={{ background: 'white', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', padding: '16px 18px' }}>
+          <div style={{ background: 'var(--ax-elevated)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--ax-shadow-card)', padding: '16px 18px' }}>
             <span className="t-eyebrow" style={{ display: 'block', marginBottom: 12 }}>Pipeline Distribution</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
               <div style={{ position: 'relative', width: 120, height: 120, flexShrink: 0 }}>
@@ -404,8 +406,8 @@ export default function PreviewPage() {
                   })}
                 </svg>
                 <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                  <span style={{ fontSize: 22, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--color-ink-900)', lineHeight: 1 }}>{pipelineTotal}</span>
-                  <span style={{ fontSize: 10, color: 'var(--color-ink-400)', marginTop: 2 }}>leads</span>
+                  <span style={{ fontSize: 22, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--ax-white)', lineHeight: 1 }}>{pipelineTotal}</span>
+                  <span style={{ fontSize: 10, color: 'var(--ax-faint)', marginTop: 2 }}>leads</span>
                 </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minWidth: 0 }}>
@@ -416,14 +418,14 @@ export default function PreviewPage() {
                     <div key={seg.key} style={{
                       display: 'flex', alignItems: 'center', gap: 8, padding: '3px 6px',
                       borderRadius: 'var(--radius-button)',
-                      background: isHovered ? 'var(--color-paper)' : 'transparent',
+                      background: isHovered ? 'var(--ax-elevated-2)' : 'transparent',
                       cursor: 'pointer',
                     }}
                       onMouseEnter={() => setHoveredStage(seg.key)} onMouseLeave={() => setHoveredStage(null)}>
                       <div style={{ width: 8, height: 8, borderRadius: '50%', background: seg.color, flexShrink: 0 }} />
-                      <span style={{ fontSize: 12, color: 'var(--color-ink-700)', flex: 1 }}>{seg.label}</span>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-ink-900)', fontFamily: 'var(--font-mono)' }}>{seg.count}</span>
-                      <span style={{ fontSize: 10, color: 'var(--color-ink-400)', minWidth: 28, textAlign: 'right' }}>{pct}%</span>
+                      <span style={{ fontSize: 12, color: 'var(--ax-text)', flex: 1 }}>{seg.label}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ax-white)', fontFamily: 'var(--font-mono)' }}>{seg.count}</span>
+                      <span style={{ fontSize: 10, color: 'var(--ax-faint)', minWidth: 28, textAlign: 'right' }}>{pct}%</span>
                     </div>
                   )
                 })}
@@ -435,25 +437,25 @@ export default function PreviewPage() {
         {/* ── Forecast Breakdown ── */}
         <div style={{ marginBottom: 24 }}>
           <p className="t-eyebrow" style={{ margin: '0 0 12px' }}>Weighted Forecast Breakdown</p>
-          <div style={{ background: 'white', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', padding: '10px 14px', borderBottom: '1px solid var(--color-ink-100)', gap: 8 }}>
+          <div style={{ background: 'var(--ax-elevated)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--ax-shadow-card)', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', padding: '10px 14px', borderBottom: '1px solid var(--ax-line)', gap: 8 }}>
               {['Stage', 'Leads', 'Raw', 'Wt%', 'Weighted'].map((h, i) => (
-                <span key={h} style={{ flex: i === 0 ? 2 : 1, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-ink-400)', textAlign: i === 0 ? 'left' : 'right' }}>{h}</span>
+                <span key={h} style={{ flex: i === 0 ? 2 : 1, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--ax-faint)', textAlign: i === 0 ? 'left' : 'right' }}>{h}</span>
               ))}
             </div>
             {MOCK_FORECAST.by_stage.map(row => (
-              <div key={row.stage} style={{ display: 'flex', padding: '8px 14px', borderBottom: '1px solid var(--color-ink-50)', alignItems: 'center', gap: 8 }}>
-                <span style={{ flex: 2, fontSize: 13, fontWeight: 500, color: 'var(--color-ink-800)' }}>{STATUS_LABELS[row.stage] ?? row.stage}</span>
-                <span className="tabular" style={{ flex: 1, fontSize: 13, color: 'var(--color-ink-600)', textAlign: 'right' }}>{row.count}</span>
-                <span className="tabular" style={{ flex: 1, fontSize: 13, color: 'var(--color-ink-600)', textAlign: 'right' }}>{fmtCurrency(row.raw_value)}</span>
-                <span className="tabular" style={{ flex: 1, fontSize: 13, color: 'var(--color-ink-400)', textAlign: 'right' }}>{row.weight_pct}%</span>
-                <span className="tabular" style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--color-accent)', textAlign: 'right' }}>{fmtCurrency(row.weighted_value)}</span>
+              <div key={row.stage} style={{ display: 'flex', padding: '8px 14px', borderBottom: '1px solid var(--ax-line)', alignItems: 'center', gap: 8 }}>
+                <span style={{ flex: 2, fontSize: 13, fontWeight: 500, color: 'var(--ax-text)' }}>{STATUS_LABELS[row.stage] ?? row.stage}</span>
+                <span className="tabular" style={{ flex: 1, fontSize: 13, color: 'var(--ax-muted)', textAlign: 'right' }}>{row.count}</span>
+                <span className="tabular" style={{ flex: 1, fontSize: 13, color: 'var(--ax-muted)', textAlign: 'right' }}>{fmtCurrency(row.raw_value)}</span>
+                <span className="tabular" style={{ flex: 1, fontSize: 13, color: 'var(--ax-faint)', textAlign: 'right' }}>{row.weight_pct}%</span>
+                <span className="tabular" style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--ax-accent)', textAlign: 'right' }}>{fmtCurrency(row.weighted_value)}</span>
               </div>
             ))}
-            <div style={{ display: 'flex', padding: '10px 14px', background: 'var(--color-paper)', gap: 8 }}>
-              <span style={{ flex: 2, fontSize: 13, fontWeight: 700, color: 'var(--color-ink-900)' }}>Total</span>
+            <div style={{ display: 'flex', padding: '10px 14px', background: 'var(--ax-elevated-2)', gap: 8 }}>
+              <span style={{ flex: 2, fontSize: 13, fontWeight: 700, color: 'var(--ax-white)' }}>Total</span>
               <span style={{ flex: 1 }} /><span style={{ flex: 1 }} /><span style={{ flex: 1 }} />
-              <span className="tabular" style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--color-accent)', textAlign: 'right' }}>{fmtCurrency(MOCK_FORECAST.weighted_total)}</span>
+              <span className="tabular" style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--ax-accent)', textAlign: 'right' }}>{fmtCurrency(MOCK_FORECAST.weighted_total)}</span>
             </div>
           </div>
         </div>
@@ -461,20 +463,20 @@ export default function PreviewPage() {
         {/* ── Activity Feed ── */}
         <div style={{ marginBottom: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <Activity size={14} strokeWidth={1.8} color="var(--color-ink-400)" />
+            <Activity size={14} strokeWidth={1.8} color="var(--ax-faint)" />
             <span className="t-eyebrow">Recent Activity</span>
           </div>
-          <div style={{ background: 'white', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', overflow: 'hidden' }}>
+          <div style={{ background: 'var(--ax-elevated)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--ax-shadow-card)', overflow: 'hidden' }}>
             {[
-              { icon: <UserPlus size={13} strokeWidth={1.8} />, color: 'var(--color-accent)', title: 'James Mitchell', detail: 'Lead moved to qualified', time: '2h ago' },
-              { icon: <FileText size={13} strokeWidth={1.8} />, color: 'var(--color-ink-500)', title: 'Invoice #INV-042', detail: 'Patricia Nguyen · $6,200 · sent', time: '5h ago' },
-              { icon: <CheckSquare size={13} strokeWidth={1.8} />, color: 'var(--color-moss)', title: 'Follow up on quote', detail: 'Completed', time: '1d ago' },
-              { icon: <DollarSign size={13} strokeWidth={1.8} />, color: 'var(--color-moss)', title: 'Invoice #INV-038', detail: 'Robert Chen · $8,500 · paid', time: '2d ago' },
-              { icon: <UserPlus size={13} strokeWidth={1.8} />, color: 'var(--color-accent)', title: 'Maria Lopez', detail: 'Lead added', time: '3d ago' },
+              { icon: <UserPlus size={13} strokeWidth={1.8} />, color: 'var(--ax-accent)', title: 'James Mitchell', detail: 'Lead moved to qualified', time: '2h ago' },
+              { icon: <FileText size={13} strokeWidth={1.8} />, color: 'var(--ax-muted)', title: 'Invoice #INV-042', detail: 'Patricia Nguyen · $6,200 · sent', time: '5h ago' },
+              { icon: <CheckSquare size={13} strokeWidth={1.8} />, color: 'var(--ax-green)', title: 'Follow up on quote', detail: 'Completed', time: '1d ago' },
+              { icon: <DollarSign size={13} strokeWidth={1.8} />, color: 'var(--ax-green)', title: 'Invoice #INV-038', detail: 'Robert Chen · $8,500 · paid', time: '2d ago' },
+              { icon: <UserPlus size={13} strokeWidth={1.8} />, color: 'var(--ax-accent)', title: 'Maria Lopez', detail: 'Lead added', time: '3d ago' },
             ].map((item, idx) => (
               <div key={idx} style={{
                 display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
-                borderBottom: idx < 4 ? '1px solid var(--color-ink-100)' : 'none',
+                borderBottom: idx < 4 ? '1px solid var(--ax-line)' : 'none',
               }}>
                 <div style={{
                   width: 28, height: 28, borderRadius: '50%',
@@ -482,10 +484,10 @@ export default function PreviewPage() {
                   display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: item.color,
                 }}>{item.icon}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: 'var(--color-ink-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</p>
-                  <p style={{ margin: 0, fontSize: 11, color: 'var(--color-ink-400)' }}>{item.detail}</p>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: 'var(--ax-white)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</p>
+                  <p style={{ margin: 0, fontSize: 11, color: 'var(--ax-faint)' }}>{item.detail}</p>
                 </div>
-                <span style={{ fontSize: 10, color: 'var(--color-ink-400)', whiteSpace: 'nowrap', flexShrink: 0 }}>{item.time}</span>
+                <span style={{ fontSize: 10, color: 'var(--ax-faint)', whiteSpace: 'nowrap', flexShrink: 0 }}>{item.time}</span>
               </div>
             ))}
           </div>
@@ -495,25 +497,25 @@ export default function PreviewPage() {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
             <p className="t-eyebrow" style={{ margin: 0 }}>Top Scored Leads</p>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, color: 'var(--color-accent)', fontWeight: 500 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, color: 'var(--ax-accent)', fontWeight: 500 }}>
               View all <ArrowRight size={13} strokeWidth={1.5} />
             </span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {MOCK_LEADS.map(lead => {
-              const sc = STATUS_COLORS[lead.status] ?? { bg: '#EDECEA', text: 'var(--color-ink-500)' }
+              const sc = STATUS_COLORS[lead.status] ?? { bg: 'var(--ax-elevated-2)', text: 'var(--ax-muted)' }
               return (
                 <div key={lead.id} style={{
                   display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
-                  borderRadius: 'var(--radius-card)', background: 'white', boxShadow: 'var(--shadow-card)', minHeight: 56,
+                  borderRadius: 'var(--radius-card)', background: 'var(--ax-elevated)', boxShadow: 'var(--ax-shadow-card)', minHeight: 56,
                 }}>
                   <ScoreBadge grade={lead.score_grade} score={lead.lead_score} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: 'var(--color-ink-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.owner_name}</p>
-                    <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--color-ink-400)' }}>{lead.city}, {lead.state}</p>
+                    <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: 'var(--ax-white)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.owner_name}</p>
+                    <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--ax-faint)' }}>{lead.city}, {lead.state}</p>
                   </div>
                   {lead.estimated_job_value != null && lead.estimated_job_value > 0 && (
-                    <span className="tabular" style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-moss)', marginRight: 8 }}>
+                    <span className="tabular" style={{ fontSize: 13, fontWeight: 600, color: 'var(--ax-green)', marginRight: 8 }}>
                       {fmtCurrency(lead.estimated_job_value)}
                     </span>
                   )}
@@ -533,16 +535,16 @@ export default function PreviewPage() {
 function KPICard({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: string; sub: string }) {
   return (
     <div style={{
-      background: 'white', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)',
+      background: 'var(--ax-elevated)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--ax-shadow-card)',
       padding: '16px', minHeight: 88, position: 'relative', overflow: 'hidden',
     }}>
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, var(--color-accent) 0%, var(--color-accent-300) 100%)', opacity: 0.6 }} />
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, var(--ax-accent) 0%, var(--ax-accent) 100%)', opacity: 0.6 }} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
         {icon}
         <span className="t-eyebrow">{label}</span>
       </div>
-      <p className="tabular" style={{ margin: '0 0 4px', fontSize: 26, fontWeight: 700, color: 'var(--color-ink-900)', lineHeight: 1 }}>{value}</p>
-      <p style={{ margin: 0, fontSize: 12, color: 'var(--color-ink-400)' }}>{sub}</p>
+      <p className="tabular" style={{ margin: '0 0 4px', fontSize: 26, fontWeight: 700, color: 'var(--ax-white)', lineHeight: 1 }}>{value}</p>
+      <p style={{ margin: 0, fontSize: 12, color: 'var(--ax-faint)' }}>{sub}</p>
     </div>
   )
 }

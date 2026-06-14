@@ -14,7 +14,7 @@ export const metadata = {
 
 export default function LandingPage() {
   return (
-    <>
+    <div className="lp-page">
       {/* ── Navigation ── */}
       <nav className="lp-nav">
         <div className="lp-container lp-nav-inner">
@@ -25,8 +25,8 @@ export default function LandingPage() {
                 <rect x="2" y="14.5" width="28" height="3" rx="1.5" fill="black" />
                 <rect x="14.5" y="2" width="3" height="28" rx="1.5" fill="black" />
               </mask>
-              <polygon points="16,5 27,16 16,27 5,16" fill="var(--color-accent)" mask="url(#axon-mark-nav)" />
-              <circle cx="16" cy="16" r="1.5" fill="var(--color-ink-900)" />
+              <polygon points="16,5 27,16 16,27 5,16" fill="var(--ax-accent-bright)" mask="url(#axon-mark-nav)" />
+              <circle cx="16" cy="16" r="1.5" fill="var(--ax-black)" />
             </svg>
             <span className="lp-nav-wordmark">Axon</span>
           </a>
@@ -68,10 +68,10 @@ export default function LandingPage() {
           </div>
           <div className="lp-hero-trust">
             <div className="lp-hero-trust-avatars">
-              <span style={{ background: 'var(--color-moss)' }}>HC</span>
-              <span style={{ background: 'var(--color-ocean-d)' }}>PS</span>
-              <span style={{ background: 'var(--color-plum)' }}>SL</span>
-              <span style={{ background: 'var(--color-accent)' }}>RF</span>
+              <span style={{ background: 'var(--ax-green)' }}>HC</span>
+              <span style={{ background: 'var(--ax-blue)' }}>PS</span>
+              <span style={{ background: 'var(--ax-purple)' }}>SL</span>
+              <span style={{ background: 'var(--ax-accent-bright)' }}>RF</span>
             </div>
             <span>Used by HVAC, pool, solar, and flooring contractors</span>
           </div>
@@ -93,8 +93,8 @@ export default function LandingPage() {
                         <rect x="2" y="14.5" width="28" height="3" rx="1.5" fill="black" />
                         <rect x="14.5" y="2" width="3" height="28" rx="1.5" fill="black" />
                       </mask>
-                      <polygon points="16,5 27,16 16,27 5,16" fill="#4B9EC4" mask="url(#axon-mark-mockup)" />
-                      <circle cx="16" cy="16" r="1.5" fill="#F7F4EE" />
+                      <polygon points="16,5 27,16 16,27 5,16" fill="var(--ax-accent-bright)" mask="url(#axon-mark-mockup)" />
+                      <circle cx="16" cy="16" r="1.5" fill="var(--ax-black)" />
                     </svg>
                     <span>Axon</span>
                   </div>
@@ -189,11 +189,11 @@ export default function LandingPage() {
                         <svg viewBox="0 0 200 64" fill="none" style={{ width: '100%', height: '100%' }}>
                           <path
                             d="M0 52 C20 48 40 40 70 32 C100 24 130 18 155 14 C175 11 190 9 200 7"
-                            stroke="var(--color-accent)" strokeWidth="2" fill="none"
+                            stroke="var(--ax-accent-bright)" strokeWidth="2" fill="none"
                           />
                           <path
                             d="M0 52 C20 48 40 40 70 32 C100 24 130 18 155 14 C175 11 190 9 200 7 L200 64 L0 64Z"
-                            fill="var(--color-accent-50)"
+                            fill="var(--ax-accent-tint)"
                           />
                         </svg>
                       </div>
@@ -342,7 +342,7 @@ export default function LandingPage() {
                 </div>
                 <div className="lp-insight-list">
                   <div className="lp-insight-item">
-                    <div className="lp-insight-item-dot" style={{ background: 'var(--color-accent)' }} />
+                    <div className="lp-insight-item-dot" style={{ background: 'var(--ax-accent-bright)' }} />
                     <div style={{ flex: 1 }}>
                       <div className="lp-insight-item-headline">1842 Westheimer Rd — Grade A</div>
                       <div className="lp-insight-item-detail">
@@ -353,7 +353,7 @@ export default function LandingPage() {
                     <div className="lp-insight-item-metric">Score 94</div>
                   </div>
                   <div className="lp-insight-item">
-                    <div className="lp-insight-item-dot" style={{ background: 'var(--color-moss)' }} />
+                    <div className="lp-insight-item-dot" style={{ background: 'var(--ax-green)' }} />
                     <div style={{ flex: 1 }}>
                       <div className="lp-insight-item-headline">504 River Oaks Blvd — Quote sent</div>
                       <div className="lp-insight-item-detail">
@@ -364,7 +364,7 @@ export default function LandingPage() {
                     <div className="lp-insight-item-metric">$6.2k</div>
                   </div>
                   <div className="lp-insight-item">
-                    <div className="lp-insight-item-dot" style={{ background: 'var(--color-ocean-d)' }} />
+                    <div className="lp-insight-item-dot" style={{ background: 'var(--ax-amber)' }} />
                     <div style={{ flex: 1 }}>
                       <div className="lp-insight-item-headline">3 leads in &ldquo;Contacted&rdquo; past 14 days</div>
                       <div className="lp-insight-item-detail">
@@ -475,8 +475,8 @@ export default function LandingPage() {
                     <rect x="2" y="14.5" width="28" height="3" rx="1.5" fill="black" />
                     <rect x="14.5" y="2" width="3" height="28" rx="1.5" fill="black" />
                   </mask>
-                  <polygon points="16,5 27,16 16,27 5,16" fill="#4B9EC4" mask="url(#axon-mark-footer)" />
-                  <circle cx="16" cy="16" r="1.5" fill="#F7F4EE" />
+                  <polygon points="16,5 27,16 16,27 5,16" fill="var(--ax-accent-bright)" mask="url(#axon-mark-footer)" />
+                  <circle cx="16" cy="16" r="1.5" fill="var(--ax-black)" />
                 </svg>
                 Axon
               </span>
@@ -514,6 +514,6 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
-    </>
+    </div>
   )
 }
