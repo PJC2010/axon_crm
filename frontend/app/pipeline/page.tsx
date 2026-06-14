@@ -45,13 +45,19 @@ function PipelinePage() {
     setLoading(true)
     try {
       const [g, s, stg] = await Promise.all([getPipeline(), getPipelineStats(), getPipelineStages()])
-      setGroups(g)
-      setStats(s)
-      if (stg.length > 0) setStages(stg.map(st => ({ key: st.key, label: st.label, color: st.color })))
+      setGroups(g ?? {})
+      setStats(s ?? {})
+      if (Array.isArray(stg) && stg.length > 0) {
+        setStages(stg.map(st => ({ key: st.key, label: st.label, color: st.color })))
+      }
+    } catch (e) {
+      // Don't let a failed fetch become an unhandled rejection — surface it and
+      // keep the board usable with the fallback stages.
+      showToast(e instanceof Error ? e.message : 'Failed to load pipeline', 'error')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [showToast])
 
   useEffect(() => { load() }, [load])
 
