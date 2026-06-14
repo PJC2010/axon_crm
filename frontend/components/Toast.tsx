@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { CheckCircle2, AlertCircle, X } from 'lucide-react'
 
 export type ToastVariant = 'success' | 'error'
@@ -90,14 +90,18 @@ let _nextId = 1
 export function useToast() {
   const [toasts, setToasts] = useState<ToastData[]>([])
 
-  function show(message: string, variant: ToastVariant = 'success') {
+  // Stable identities: consumers feed `show`/`dismiss` into useCallback/useEffect
+  // dependency arrays (e.g. a `load` callback driven by `[load]`). Recreating
+  // these functions every render would invalidate those memos on every render,
+  // producing an infinite render+fetch loop that crashes the tab.
+  const show = useCallback((message: string, variant: ToastVariant = 'success') => {
     const id = _nextId++
     setToasts(prev => [...prev, { id, message, variant }])
-  }
+  }, [])
 
-  function dismiss(id: number) {
+  const dismiss = useCallback((id: number) => {
     setToasts(prev => prev.filter(t => t.id !== id))
-  }
+  }, [])
 
   return { toasts, show, dismiss }
 }
