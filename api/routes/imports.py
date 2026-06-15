@@ -44,7 +44,7 @@ async def _read_limited(file: UploadFile) -> bytes:
     return content
 
 # Columns an imported row may write, beyond the account_id key.
-WRITABLE = TARGET_FIELDS + ["enrichment_flags"]
+WRITABLE = TARGET_FIELDS + ["enrichment_flags", "lead_source"]
 
 
 def _read_csv(content: bytes) -> tuple[list[str], list[dict]]:
@@ -110,6 +110,7 @@ async def run_import(
             if opts.default_vertical and "vertical" not in row:
                 row["vertical"] = opts.default_vertical
             row["enrichment_flags"] = {"source": "csv_import"}
+            row["lead_source"] = "csv_import"
             # Savepoint per row so one bad row doesn't discard the whole import.
             cur.execute("SAVEPOINT import_row")
             try:

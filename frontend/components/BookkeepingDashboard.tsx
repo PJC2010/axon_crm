@@ -8,19 +8,21 @@ import { QuoteList } from './QuoteList'
 import { ARDashboard } from './ARDashboard'
 import { PnLChart } from './PnLChart'
 import { JobCostingTable } from './JobCostingTable'
+import { PerformanceBreakdown } from './PerformanceBreakdown'
 import { ToastStack, useToast } from './Toast'
 import { getLead } from '@/lib/api'
 import type { Lead } from '@/lib/types'
 
-type Tab = 'overview' | 'quotes' | 'invoices' | 'ar' | 'pnl' | 'jobs'
+type Tab = 'overview' | 'quotes' | 'invoices' | 'ar' | 'pnl' | 'jobs' | 'performance'
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'quotes',   label: 'Quotes' },
-  { id: 'invoices', label: 'Invoices' },
-  { id: 'ar',       label: 'A/R' },
-  { id: 'pnl',      label: 'P&L' },
-  { id: 'jobs',     label: 'Job Costing' },
+  { id: 'overview',    label: 'Overview' },
+  { id: 'quotes',      label: 'Quotes' },
+  { id: 'invoices',    label: 'Invoices' },
+  { id: 'ar',          label: 'A/R' },
+  { id: 'pnl',         label: 'P&L' },
+  { id: 'jobs',        label: 'Job Costing' },
+  { id: 'performance', label: 'Performance' },
 ]
 
 const THIS_YEAR = new Date().getFullYear()
@@ -112,6 +114,7 @@ export function BookkeepingDashboard({ initialTab, prefillLeadId }: Props = {}) 
         {tab === 'ar'       && <ARDashboard year={year} />}
         {tab === 'pnl'      && <PnLChart year={year} />}
         {tab === 'jobs'     && <JobCostingTable year={year} />}
+        {tab === 'performance' && <PerformanceBreakdown />}
       </div>
 
       <ToastStack toasts={toasts} onDismiss={dismissToast} />

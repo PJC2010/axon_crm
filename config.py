@@ -124,105 +124,119 @@ DEFAULT_WEIGHTS = {
 # for verticals where they are irrelevant; _compute_score uses weights.get().
 VERTICAL_WEIGHTS = {
     # Weights must sum to 1.0 per profile. Optional signals (pool, slab, storm,
-    # home_improvement, refi, credit, children, gardening) use weights.get() in
-    # _compute_score, so they are safe to include only in the verticals where they
-    # carry predictive value.
+    # home_improvement, refi, credit, children, gardening, absentee, tenure,
+    # life_stage) use weights.get() in _compute_score, so they are safe to include
+    # only in the verticals where they carry predictive value.
     "epoxy_flooring": {
         "age":              0.20,
-        "sale":             0.15,
+        "sale":             0.13,
         "equity":           0.15,
         "garage":           0.20,   # garage = primary work surface
-        "income":           0.03,
+        "income":           0.02,
         "neighborhood":     0.02,
-        "permit":           0.05,
+        "permit":           0.03,
         "slab":             0.15,   # cracked slab = confirmed job opportunity (from HCAD)
         "home_improvement": 0.05,   # intent signal — owner already invests in the home
+        "life_stage":       0.03,   # new movers finish/upgrade garages soon after moving
+        "tenure":           0.02,   # long-tenured owners finally tackle the garage floor
     },
     "pool_maintenance": {
         "age":              0.10,
         "sale":             0.15,
         "equity":           0.10,
         "garage":           0.00,
-        "income":           0.10,
+        "income":           0.08,
         "neighborhood":     0.10,
-        "permit":           0.05,
+        "permit":           0.04,
         "pool":             0.20,   # has a pool = confirmed service target (from HCAD)
         "children":         0.10,   # families with children = primary pool-maintenance customer
         "credit":           0.05,   # financing eligibility for pool upgrades
         "home_improvement": 0.05,   # intent signal — owner already invests in the home
+        "life_stage":       0.03,   # new movers with a pool start recurring service
     },
     "solar": {
         "age":              0.10,
         "sale":             0.10,
         "equity":           0.20,
-        "garage":           0.10,
-        "income":           0.05,
+        "garage":           0.08,
+        "income":           0.03,
         "neighborhood":     0.15,   # premium homes within a block are prime solar targets
-        "permit":           0.05,
+        "permit":           0.03,
         "refi":             0.10,   # recent cash-out refi = capital + investment mindset
         "credit":           0.10,   # solar financing requires credit approval
         "home_improvement": 0.05,   # intent signal
+        "tenure":           0.03,   # long-term owners invest in long-payback upgrades
+        "life_stage":       0.03,   # new movers upgrade systems early
     },
     "roofing": {
         "age":              0.20,   # roof age tracks home age — 15–30y roofs are due
-        "sale":             0.15,
+        "sale":             0.13,
         "equity":           0.13,
         "garage":           0.00,
-        "income":           0.04,
-        "neighborhood":     0.03,
-        "permit":           0.15,   # active permits often follow storm/repair work
+        "income":           0.02,
+        "neighborhood":     0.02,
+        "permit":           0.12,   # active permits often follow storm/repair work
         "storm":            0.20,   # recent hail/wind event = most direct demand driver
         "home_improvement": 0.05,   # intent signal
         "refi":             0.05,   # capital signal
+        "absentee":         0.04,   # landlords re-roof rentals to protect the asset
+        "tenure":           0.04,   # long-tenured owners are on an aging original roof
     },
     "hvac": {
-        "age":              0.28,   # systems hit end-of-life at 15–25 years
-        "sale":             0.15,
+        "age":              0.24,   # systems hit end-of-life at 15–25 years
+        "sale":             0.13,
         "equity":           0.13,
         "garage":           0.00,
-        "income":           0.04,
-        "neighborhood":     0.04,
+        "income":           0.02,
+        "neighborhood":     0.03,
         "permit":           0.10,
         "storm":            0.10,   # freeze events drive HVAC failures
         "home_improvement": 0.07,   # intent signal
         "refi":             0.05,   # capital signal
         "credit":           0.04,   # financing eligibility
+        "absentee":         0.04,   # landlords replace units to keep rentals occupied
+        "tenure":           0.05,   # long-tenured owners run an aging original system
     },
     "fencing": {
         "age":              0.10,
-        "sale":             0.20,   # new owners replace fences early
+        "sale":             0.16,   # new owners replace fences early
         "equity":           0.13,
         "garage":           0.00,
-        "income":           0.04,
+        "income":           0.02,
         "neighborhood":     0.03,
-        "permit":           0.10,
+        "permit":           0.09,
         "pool":             0.15,   # pools require code-compliant fencing
         "storm":            0.10,   # hail/wind damage is a primary fence-replacement trigger
         "children":         0.10,   # safety fencing for children
         "home_improvement": 0.05,   # intent signal
+        "life_stage":       0.04,   # new movers fence for privacy/pets/kids
+        "tenure":           0.03,   # long-tenured owners replace an aged-out fence
     },
     "landscaping": {
         "age":              0.05,
-        "sale":             0.30,   # new owners re-landscape early
+        "sale":             0.25,   # new owners re-landscape early
         "equity":           0.20,
         "garage":           0.00,
-        "income":           0.15,   # recurring service — spending capacity matters
+        "income":           0.13,   # recurring service — spending capacity matters
         "neighborhood":     0.15,   # high-value blocks invest most in curb appeal
-        "permit":           0.05,
+        "permit":           0.04,
         "home_improvement": 0.05,   # intent signal
         "gardening":        0.05,   # direct behavioral signal for outdoor services
+        "life_stage":       0.05,   # new movers re-landscape to make the home their own
+        "tenure":           0.03,   # long-tenured owners refresh tired landscaping
     },
     "pressure_washing": {
         "age":              0.22,   # older exteriors show the most buildup
         "sale":             0.13,
         "equity":           0.10,
         "garage":           0.00,
-        "income":           0.10,
-        "neighborhood":     0.10,
+        "income":           0.08,
+        "neighborhood":     0.08,
         "permit":           0.05,
         "pool":             0.15,   # pool decks are a core upsell surface
         "storm":            0.10,   # post-storm debris/staining drives cleanup demand
         "home_improvement": 0.05,   # intent signal
+        "absentee":         0.04,   # landlords pressure-wash rentals between tenants
     },
 }
 
@@ -307,6 +321,21 @@ FACTOR_META = {
         "field": "gardening_flag",
         "description": "Owner is a gardening enthusiast — a direct behavioral indicator for landscaping and outdoor services.",
     },
+    "absentee": {
+        "label": "Absentee owner",
+        "field": "owner_occupied",
+        "description": "Owner does not live at the property (investor/landlord) — reachable by mail and a strong prospect for rental turnover, exterior, and systems work.",
+    },
+    "tenure": {
+        "label": "Ownership tenure",
+        "field": "ownership_years",
+        "description": "Long-tenured owners (toward 12+ years) run aging systems that are overdue for big-ticket replacement.",
+    },
+    "life_stage": {
+        "label": "Life stage",
+        "field": "life_stage",
+        "description": "Owner life stage signals intent: recent movers renovate soon after moving; retirees invest in aging-in-place.",
+    },
 }
 
 # ── Signal thresholds ────────────────────────────────────────────────────────
@@ -332,6 +361,14 @@ STORM_RECENCY_MAX_MO  = STORM_LOOKBACK_MONTHS
 REFI_RECENCY_MAX_MO   = int(os.getenv("REFI_RECENCY_MAX_MO", "36"))
 # Credit grade-to-score mapping (ordinal A=best, D=worst).
 CREDIT_GRADE_SCORES   = {"A": 1.0, "B": 0.75, "C": 0.40, "D": 0.10}
+
+# ── Seller-intent / homeowner-motivation thresholds ──────────────────────────
+# Ownership tenure (years) at which the "due for big-ticket work" signal saturates.
+TENURE_TARGET_YEARS   = int(os.getenv("TENURE_TARGET_YEARS", "12"))
+# Ordinal life-stage motivation scores. Values match pipeline.demographics
+# (_normalize_life_stage): 'new_mover' | 'established' | 'retiree' | 'other'.
+# Recent movers renovate soonest; retirees invest in aging-in-place with equity.
+LIFE_STAGE_SCORES     = {"new_mover": 1.0, "retiree": 0.6, "established": 0.4, "other": 0.1}
 
 # Binary signal values for presence-based features (pool / cracked slab).
 # Both are 0.0–1.0 floats; set to 1.0 so the full vertical weight is applied

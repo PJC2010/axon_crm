@@ -40,6 +40,8 @@ export interface Lead {
   hcad_neighborhood_code: string | null
   hcad_neighborhood_name: string | null
   status: LeadStatus
+  assigned_to: number | null
+  lead_source: string | null
   estimated_job_value: number | null
   stage_moved_at: string | null
   score_updated_at: string | null
@@ -494,6 +496,125 @@ export interface PipelineAnalytics {
 export interface ForecastData {
   weighted_total: number
   by_stage: { stage: string; count: number; raw_value: number; weight_pct: number; weighted_value: number }[]
+}
+
+// ── Command-Center alerts ──────────────────────────────────────────────────────
+
+export interface StuckDeal {
+  id: number
+  address: string | null
+  owner_name: string | null
+  contact_name: string | null
+  contact_phone: string | null
+  lead_score: number | null
+  score_grade: string | null
+  estimated_job_value: number | null
+  status: string
+  vertical: string | null
+  zip: string | null
+  stage_moved_at: string | null
+  days_in_stage: number
+}
+
+export interface OverdueFollowup {
+  id: number
+  title: string
+  due_date: string | null
+  priority: string
+  property_id: number | null
+  assigned_to: number | null
+  address: string | null
+  owner_name: string | null
+  days_overdue: number
+}
+
+export interface CoolingLead {
+  id: number
+  address: string | null
+  owner_name: string | null
+  contact_name: string | null
+  contact_phone: string | null
+  lead_score: number | null
+  score_grade: string | null
+  estimated_job_value: number | null
+  status: string
+  vertical: string | null
+  zip: string | null
+  last_activity_at: string | null
+}
+
+export interface PipelineAlerts {
+  stuck_deals:       { count: number; items: StuckDeal[] }
+  overdue_followups: { count: number; items: OverdueFollowup[] }
+  cooling_leads:     { count: number; items: CoolingLead[] }
+  thresholds: {
+    stuck_stage_days:   Record<string, number>
+    default_stuck_days: number
+    cooling_idle_days:  number
+  }
+}
+
+// ── Team & performance attribution ─────────────────────────────────────────────
+
+export interface TeamMember {
+  id: number
+  username: string
+}
+
+export type PerformanceDimension = 'source' | 'rep' | 'vertical'
+
+export interface PerformanceBucket {
+  bucket: string
+  leads: number
+  won: number
+  decided: number
+  win_rate: number
+  revenue: number
+}
+
+export interface PerformanceBreakdown {
+  dimension: PerformanceDimension
+  buckets: PerformanceBucket[]
+}
+
+// ── Appointments ───────────────────────────────────────────────────────────────
+
+export type AppointmentStatus = 'scheduled' | 'completed' | 'cancelled' | 'no_show'
+
+export interface Appointment {
+  id: number
+  property_id: number | null
+  assigned_to: number | null
+  title: string
+  location: string | null
+  starts_at: string
+  ends_at: string
+  status: AppointmentStatus
+  notes: string | null
+  created_by: number | null
+  created_at: string
+  updated_at: string | null
+}
+
+export interface AppointmentCreate {
+  property_id?: number | null
+  assigned_to?: number | null
+  title: string
+  location?: string | null
+  starts_at: string
+  ends_at: string
+  notes?: string | null
+}
+
+export interface AppointmentUpdate {
+  property_id?: number | null
+  assigned_to?: number | null
+  title?: string
+  location?: string | null
+  starts_at?: string
+  ends_at?: string
+  status?: AppointmentStatus
+  notes?: string | null
 }
 
 // ── Workflows ────────────────────────────────────────────────────────────────

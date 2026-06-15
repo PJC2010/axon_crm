@@ -141,6 +141,21 @@ def create_user(
     return UserOut(**row)
 
 
+@router.get("/team")
+def list_team(current_user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+    """Lightweight roster (id + username) of active members in the caller's org.
+
+    Unlike GET /users (owner-only, exposes email/role), this is readable by any
+    authenticated member so assignee dropdowns (leads, appointments) can populate.
+    """
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT id, username FROM users WHERE account_id = %s AND is_active = TRUE ORDER BY username",
+            (current_user["account_id"],),
+        )
+        return [{"id": r[0], "username": r[1]} for r in cur.fetchall()]
+
+
 @router.get("/users", response_model=list[UserOut])
 def list_users(current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
     with db.cursor() as cur:

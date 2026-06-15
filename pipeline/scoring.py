@@ -16,6 +16,7 @@ from config import (
     NEIGHBORHOOD_RATIO_TARGET,
     STORM_RECENCY_MAX_MO,
     REFI_RECENCY_MAX_MO, CREDIT_GRADE_SCORES,
+    TENURE_TARGET_YEARS, LIFE_STAGE_SCORES,
     FACTOR_META, DEFAULT_WEIGHTS, VERTICAL_WEIGHTS,
 )
 
@@ -42,7 +43,10 @@ def _compute_score(row: dict, weights: dict) -> float:
         weights.get("refi", 0)              * _refi_signal(row.get("refi_date"))                +
         weights.get("credit", 0)            * _credit_signal(row.get("credit_rating"))          +
         weights.get("children", 0)          * _children_signal(row.get("has_children"))         +
-        weights.get("gardening", 0)         * _gardening_signal(row.get("gardening_flag"))
+        weights.get("gardening", 0)         * _gardening_signal(row.get("gardening_flag"))      +
+        weights.get("absentee", 0)          * _absentee_signal(row.get("owner_occupied"))       +
+        weights.get("tenure", 0)            * _tenure_signal(row.get("ownership_years"))         +
+        weights.get("life_stage", 0)        * _life_stage_signal(row.get("life_stage"))
     ) * 100
 
 
@@ -218,6 +222,41 @@ def _gardening_signal(gardening_flag: bool | None) -> float:
     return 1.0 if gardening_flag else 0.0
 
 
+def _absentee_signal(owner_occupied: bool | None) -> float:
+    """1.0 when the owner does NOT occupy the property (investor/landlord), else 0.
+
+    Absentee owners are reachable through their mailing address and are strong
+    prospects for rental turnover, exterior, and systems work. A missing
+    owner_occupied value scores 0 — unknown is not assumed to be absentee.
+    """
+    if owner_occupied is None:
+        return 0.0
+    return 1.0 if owner_occupied is False else 0.0
+
+
+def _tenure_signal(years: int | None) -> float:
+    """Long ownership tenure — aging systems overdue for big-ticket replacement.
+
+    Scales linearly to TENURE_TARGET_YEARS, then caps at 1.0. Complements the
+    home-age signal: a long-tenured owner of an older home is the most "due".
+    """
+    if not years or years <= 0:
+        return 0.0
+    return min(1.0, years / TENURE_TARGET_YEARS)
+
+
+def _life_stage_signal(stage: str | None) -> float:
+    """Ordinal life-stage motivation signal (mirrors the _credit_signal lookup).
+
+    Maps the normalized life_stage values produced by pipeline.demographics:
+    new_mover → 1.0, retiree → 0.6, established → 0.4, other → 0.1, None → 0.0.
+    Recent movers renovate soonest; retirees invest in aging-in-place with equity.
+    """
+    if not stage:
+        return 0.0
+    return LIFE_STAGE_SCORES.get(str(stage).lower().strip(), 0.0)
+
+
 # ── Score explanation ─────────────────────────────────────────────────────────
 # Reuse the exact production signal functions above so the breakdown can never
 # drift from the real score. Keyed by the same factor keys used in the weights.
@@ -237,6 +276,9 @@ _SIGNAL_FNS = {
     "credit":           _credit_signal,
     "children":         _children_signal,
     "gardening":        _gardening_signal,
+    "absentee":         _absentee_signal,
+    "tenure":           _tenure_signal,
+    "life_stage":       _life_stage_signal,
 }
 
 

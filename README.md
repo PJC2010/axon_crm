@@ -46,6 +46,7 @@ The platform is self-hosted and data-sovereign: all leads, notes, tasks, invoice
 - Pipeline value card (sum of all estimated job values in active stages)
 - KPI grid: active leads, tasks due today, revenue collected YTD
 - "Needs Attention" alerts for overdue tasks and outstanding invoices
+- Command Center pipeline-health alerts: deals stuck too long in a stage, overdue follow-ups, and high-grade leads going cold
 - Quick-action buttons: New Lead, Create Invoice, Log Expense, View Pipeline
 - Recent top-scored leads strip with one-tap navigation
 - Mobile-first, responsive 2→4 column layout
@@ -69,6 +70,13 @@ The platform is self-hosted and data-sovereign: all leads, notes, tasks, invoice
 - Overdue and due-today counts surfaced in the home dashboard
 - Task bell notification indicator in every page header
 
+### Appointments & Calendar
+- Scheduled visits/meetings with start/end time, location, and assignee
+- Optionally tied to a lead; "Book appointment" action in the lead drawer
+- Lifecycle status: scheduled → completed / cancelled / no-show
+- Send the customer a calendar invite (.ics email + SMS) via Resend/Twilio
+- Agenda calendar view grouped by day
+
 ### Expense Tracker
 - Log business expenses by category (fuel, materials, meals, tools, advertising, subcontractor, office, other)
 - Tax deductible flag per expense
@@ -88,6 +96,12 @@ The platform is self-hosted and data-sovereign: all leads, notes, tasks, invoice
 ### Bookkeeping
 - P&L report by month for any year (revenue vs. expenses vs. net profit)
 - Job costing table: revenue, expenses, profit margin per property
+
+### Performance Analytics
+- Win-rate, deals-won, and collected-revenue attribution broken down by lead
+  **source**, **rep**, or **service vertical**
+- Lead ownership: assign a rep to each lead; acquisition source captured on import
+- Surfaced as a "Performance" tab in the bookkeeping dashboard
 
 ### Pipeline Scheduler
 - Schedule pipeline runs by zip code, vertical, day of week, and hour
@@ -343,6 +357,8 @@ Each lead receives a composite score (0–100) from six weighted signals:
 | 0–34 | D |
 
 **Per-vertical weight overrides** are configurable in `config.py`. For example, epoxy flooring weights garage spaces more heavily; solar weights equity and income higher. Adding a new vertical requires only adding a key to `VERTICAL_WEIGHTS`.
+
+**Optional intent signals** are layered on per vertical (via `weights.get()`), so they only count where they predict demand: storm/hail activity, recent refinance, credit quality, children in household, gardening interest, home-improvement buying, and **seller-intent / homeowner-motivation signals** — absentee ownership (investor/landlord), long ownership tenure (aging systems overdue for replacement), and life stage (recent movers renovate soonest; retirees invest in aging-in-place). Each signal contributes a human-readable "reason to contact" surfaced in the lead's score explanation.
 
 ### Running the Pipeline
 
