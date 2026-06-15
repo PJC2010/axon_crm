@@ -1,4 +1,4 @@
-import type { Lead, LeadPage, LeadFilters, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, WorkflowRule, WorkflowRuleCreate, ScoreExplanation, ImportPreview, ImportResult } from './types'
+import type { Lead, LeadPage, LeadFilters, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, WorkflowRule, WorkflowRuleCreate, ScoreExplanation, ImportPreview, ImportResult } from './types'
 import { getToken, clearToken } from './auth'
 
 // Use 127.0.0.1 (not localhost): on macOS `localhost` resolves to IPv6 ::1
@@ -241,6 +241,11 @@ export function getPipelineAnalytics(days = 90, vertical?: string): Promise<Pipe
 
 export function getPipelineForecast(): Promise<ForecastData> {
   return req<ForecastData>('/pipeline/forecast')
+}
+
+export function getPipelineAlerts(coolingDays?: number): Promise<PipelineAlerts> {
+  const q = coolingDays ? `?cooling_days=${coolingDays}` : ''
+  return req<PipelineAlerts>(`/pipeline/alerts${q}`)
 }
 
 export function getPipelineStats(): Promise<Record<string, { count: number; total_value: number }>> {

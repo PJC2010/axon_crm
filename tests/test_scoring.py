@@ -30,6 +30,9 @@ from pipeline.scoring import (
     _credit_signal,
     _children_signal,
     _gardening_signal,
+    _absentee_signal,
+    _tenure_signal,
+    _life_stage_signal,
     _SIGNAL_FNS,
     explain_score,
     describe_vertical,
@@ -423,6 +426,73 @@ class TestGardeningSignal:
         assert _gardening_signal(None) == 0.0
 
 
+# ── _absentee_signal ──────────────────────────────────────────────────────────
+
+class TestAbsenteeSignal:
+    def test_owner_occupied_false_is_absentee(self):
+        assert _absentee_signal(False) == 1.0
+
+    def test_owner_occupied_true_is_zero(self):
+        assert _absentee_signal(True) == 0.0
+
+    def test_none_is_zero(self):
+        # Unknown occupancy is not assumed to be absentee.
+        assert _absentee_signal(None) == 0.0
+
+
+# ── _tenure_signal ────────────────────────────────────────────────────────────
+
+class TestTenureSignal:
+    def test_none(self):
+        assert _tenure_signal(None) == 0.0
+
+    def test_zero(self):
+        assert _tenure_signal(0) == 0.0
+
+    def test_negative(self):
+        assert _tenure_signal(-3) == 0.0
+
+    def test_half_target(self):
+        import config
+        assert _tenure_signal(config.TENURE_TARGET_YEARS // 2) == pytest.approx(0.5)
+
+    def test_at_target(self):
+        import config
+        assert _tenure_signal(config.TENURE_TARGET_YEARS) == pytest.approx(1.0)
+
+    def test_above_target_capped(self):
+        import config
+        assert _tenure_signal(config.TENURE_TARGET_YEARS * 3) == pytest.approx(1.0)
+
+
+# ── _life_stage_signal ────────────────────────────────────────────────────────
+
+class TestLifeStageSignal:
+    def test_none(self):
+        assert _life_stage_signal(None) == 0.0
+
+    def test_empty_string(self):
+        assert _life_stage_signal("") == 0.0
+
+    def test_new_mover(self):
+        assert _life_stage_signal("new_mover") == pytest.approx(1.0)
+
+    def test_retiree(self):
+        assert _life_stage_signal("retiree") == pytest.approx(0.6)
+
+    def test_established(self):
+        assert _life_stage_signal("established") == pytest.approx(0.4)
+
+    def test_other(self):
+        assert _life_stage_signal("other") == pytest.approx(0.1)
+
+    def test_case_insensitive(self):
+        assert _life_stage_signal("New_Mover") == pytest.approx(1.0)
+
+    def test_unknown_value(self):
+        assert _life_stage_signal("unmapped") == 0.0
+
+
 # ── _grade ────────────────────────────────────────────────────────────────────
 
 class TestGrade:
@@ -481,6 +551,9 @@ PERFECT_ROW = {
     "credit_rating":         "A",                  # credit signal → 1.0
     "has_children":          True,                 # children signal → 1.0
     "gardening_flag":        True,                 # gardening signal → 1.0
+    "owner_occupied":        False,                # absentee owner → signal 1.0
+    "ownership_years":       12,                   # at tenure target → 1.0
+    "life_stage":            "new_mover",          # highest life-stage signal → 1.0
 }
 
 EMPTY_ROW: dict = {}
@@ -561,7 +634,7 @@ ALL_PROFILES = {
 EXPECTED_KEYS = set(config.DEFAULT_WEIGHTS.keys())
 # Optional vertical-only signals (scored via weights.get() — not in DEFAULT_WEIGHTS).
 OPTIONAL_KEYS = {"pool", "slab", "storm", "home_improvement", "refi", "credit",
-                 "children", "gardening"}
+                 "children", "gardening", "absentee", "tenure", "life_stage"}
 ALLOWED_KEYS = EXPECTED_KEYS | OPTIONAL_KEYS
 
 

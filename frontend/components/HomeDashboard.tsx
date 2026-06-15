@@ -23,6 +23,7 @@ import { PipelineRingChart } from './PipelineRingChart'
 import { ActivityFeed } from './ActivityFeed'
 import { TodayFocusSection } from './TodayFocusSection'
 import { QuickAddFAB } from './QuickAddFAB'
+import { CommandCenterAlerts } from './CommandCenterAlerts'
 
 const CLOSED_STAGES = new Set(['won', 'lost', 'not_interested'])
 
@@ -476,6 +477,9 @@ export function HomeDashboard() {
             </div>
           </div>
         )}
+
+        {/* ── Command Center: pipeline-health alerts ── */}
+        <CommandCenterAlerts />
 
         {/* ── Charts Row: Revenue Trend + Pipeline Distribution ── */}
         <div style={{

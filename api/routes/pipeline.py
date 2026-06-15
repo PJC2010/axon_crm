@@ -24,6 +24,18 @@ PIPELINE_STAGES = ["new", "contacted", "qualified", "quote_sent", "won", "lost",
 
 CARD_COLS = "id, address, owner_name, contact_name, contact_phone, lead_score, score_grade, estimated_job_value, status, vertical, zip"
 
+# ── Command-Center alert thresholds ───────────────────────────────────────────
+# Stages that close a deal — excluded from "stuck"/"cooling" detection.
+TERMINAL_STATUSES = ("won", "lost", "not_interested")
+# Days a deal may sit in a stage before it is flagged as stuck (per stage).
+STUCK_STAGE_DAYS = {"new": 3, "contacted": 7, "qualified": 10, "quote_sent": 14}
+DEFAULT_STUCK_DAYS = 14          # fallback for any custom/unknown stage
+# Cooling leads: high-grade prospects still early in the pipeline with no recent touch.
+COOLING_GRADES = ("A", "B")
+COOLING_ACTIVE_STATUSES = ("new", "contacted")
+COOLING_IDLE_DAYS = 5
+ALERTS_LIMIT = 50
+
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
 
@@ -319,6 +331,84 @@ def pipeline_forecast(
     return {
         "weighted_total": weighted_total,
         "by_stage": sorted(by_stage, key=lambda x: stage_weights.get(x["stage"], 0)),
+    }
+
+
+@router.get("/pipeline/alerts")
+def pipeline_alerts(
+    cooling_days: int = Query(COOLING_IDLE_DAYS, ge=1, le=90),
+    limit: int = Query(ALERTS_LIMIT, ge=1, le=200),
+    user: dict = Depends(get_current_user),
+    db: PGConn = Depends(get_db),
+):
+    """Command-Center pipeline-health alerts.
+
+    Returns three buckets the dashboard surfaces for action:
+      • stuck_deals       — non-terminal leads sitting in a stage past its threshold
+      • overdue_followups — incomplete tasks past their due date (with lead context)
+      • cooling_leads     — A/B-grade leads still early in the pipeline with no recent touch
+    """
+    acct = user["account_id"]
+
+    # Build a per-stage interval CASE from STUCK_STAGE_DAYS (our own constants only).
+    case_parts, case_params = [], []
+    for stage, days in STUCK_STAGE_DAYS.items():
+        case_parts.append("WHEN %s THEN make_interval(days => %s)")
+        case_params.extend([stage, days])
+    stuck_case = "CASE status " + " ".join(case_parts) + " ELSE make_interval(days => %s) END"
+    case_params.append(DEFAULT_STUCK_DAYS)
+
+    with db.cursor() as cur:
+        # ── Stuck deals ──
+        cur.execute(
+            f"SELECT {CARD_COLS}, stage_moved_at, "
+            f"  EXTRACT(DAY FROM (NOW() - stage_moved_at))::int AS days_in_stage "
+            f"FROM properties "
+            f"WHERE account_id = %s AND status NOT IN %s AND stage_moved_at IS NOT NULL "
+            f"  AND NOW() - stage_moved_at > ({stuck_case}) "
+            f"ORDER BY stage_moved_at ASC LIMIT %s",
+            [acct, TERMINAL_STATUSES] + case_params + [limit],
+        )
+        stuck = dict_fetchall(cur)
+
+        # ── Overdue follow-ups ──
+        cur.execute(
+            "SELECT t.id, t.title, t.due_date, t.priority, t.property_id, t.assigned_to, "
+            "  p.address, p.owner_name, (CURRENT_DATE - t.due_date) AS days_overdue "
+            "FROM tasks t "
+            "LEFT JOIN properties p ON p.id = t.property_id AND p.account_id = t.account_id "
+            "WHERE t.account_id = %s AND t.is_complete = FALSE AND t.due_date < CURRENT_DATE "
+            "ORDER BY t.due_date ASC LIMIT %s",
+            (acct, limit),
+        )
+        overdue = dict_fetchall(cur)
+
+        # ── Cooling leads (last_activity = newest of stage move / creation / note / history) ──
+        cur.execute(
+            f"SELECT * FROM ("
+            f"  SELECT {CARD_COLS}, GREATEST("
+            f"    stage_moved_at, created_at,"
+            f"    COALESCE((SELECT MAX(created_at) FROM contact_notes   WHERE property_id = properties.id), created_at),"
+            f"    COALESCE((SELECT MAX(created_at) FROM contact_history WHERE property_id = properties.id), created_at)"
+            f"  ) AS last_activity_at "
+            f"  FROM properties "
+            f"  WHERE account_id = %s AND score_grade IN %s AND status IN %s"
+            f") s "
+            f"WHERE last_activity_at < NOW() - make_interval(days => %s) "
+            f"ORDER BY lead_score DESC NULLS LAST LIMIT %s",
+            (acct, COOLING_GRADES, COOLING_ACTIVE_STATUSES, cooling_days, limit),
+        )
+        cooling = dict_fetchall(cur)
+
+    return {
+        "stuck_deals":       {"count": len(stuck),   "items": stuck},
+        "overdue_followups": {"count": len(overdue), "items": overdue},
+        "cooling_leads":     {"count": len(cooling), "items": cooling},
+        "thresholds": {
+            "stuck_stage_days":   STUCK_STAGE_DAYS,
+            "default_stuck_days": DEFAULT_STUCK_DAYS,
+            "cooling_idle_days":  cooling_days,
+        },
     }
 
 

@@ -46,6 +46,7 @@ The platform is self-hosted and data-sovereign: all leads, notes, tasks, invoice
 - Pipeline value card (sum of all estimated job values in active stages)
 - KPI grid: active leads, tasks due today, revenue collected YTD
 - "Needs Attention" alerts for overdue tasks and outstanding invoices
+- Command Center pipeline-health alerts: deals stuck too long in a stage, overdue follow-ups, and high-grade leads going cold
 - Quick-action buttons: New Lead, Create Invoice, Log Expense, View Pipeline
 - Recent top-scored leads strip with one-tap navigation
 - Mobile-first, responsive 2→4 column layout
@@ -343,6 +344,8 @@ Each lead receives a composite score (0–100) from six weighted signals:
 | 0–34 | D |
 
 **Per-vertical weight overrides** are configurable in `config.py`. For example, epoxy flooring weights garage spaces more heavily; solar weights equity and income higher. Adding a new vertical requires only adding a key to `VERTICAL_WEIGHTS`.
+
+**Optional intent signals** are layered on per vertical (via `weights.get()`), so they only count where they predict demand: storm/hail activity, recent refinance, credit quality, children in household, gardening interest, home-improvement buying, and **seller-intent / homeowner-motivation signals** — absentee ownership (investor/landlord), long ownership tenure (aging systems overdue for replacement), and life stage (recent movers renovate soonest; retirees invest in aging-in-place). Each signal contributes a human-readable "reason to contact" surfaced in the lead's score explanation.
 
 ### Running the Pipeline
 
