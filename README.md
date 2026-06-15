@@ -70,6 +70,13 @@ The platform is self-hosted and data-sovereign: all leads, notes, tasks, invoice
 - Overdue and due-today counts surfaced in the home dashboard
 - Task bell notification indicator in every page header
 
+### Appointments & Calendar
+- Scheduled visits/meetings with start/end time, location, and assignee
+- Optionally tied to a lead; "Book appointment" action in the lead drawer
+- Lifecycle status: scheduled → completed / cancelled / no-show
+- Send the customer a calendar invite (.ics email + SMS) via Resend/Twilio
+- Agenda calendar view grouped by day
+
 ### Expense Tracker
 - Log business expenses by category (fuel, materials, meals, tools, advertising, subcontractor, office, other)
 - Tax deductible flag per expense
@@ -89,6 +96,12 @@ The platform is self-hosted and data-sovereign: all leads, notes, tasks, invoice
 ### Bookkeeping
 - P&L report by month for any year (revenue vs. expenses vs. net profit)
 - Job costing table: revenue, expenses, profit margin per property
+
+### Performance Analytics
+- Win-rate, deals-won, and collected-revenue attribution broken down by lead
+  **source**, **rep**, or **service vertical**
+- Lead ownership: assign a rep to each lead; acquisition source captured on import
+- Surfaced as a "Performance" tab in the bookkeeping dashboard
 
 ### Pipeline Scheduler
 - Schedule pipeline runs by zip code, vertical, day of week, and hour

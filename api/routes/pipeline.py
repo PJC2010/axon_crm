@@ -412,6 +412,71 @@ def pipeline_alerts(
     }
 
 
+# Whitelisted grouping dimensions for the performance breakdown. Each maps to a
+# single text bucket expression (and any join it needs) — never built from user
+# input, so it is safe to interpolate.
+PERFORMANCE_DIMENSIONS = {
+    "vertical": ("COALESCE(p.vertical, '(none)')",       ""),
+    "source":   ("COALESCE(p.lead_source, '(none)')",    ""),
+    "rep":      ("COALESCE(u.username, '(unassigned)')",  "LEFT JOIN users u ON u.id = p.assigned_to"),
+}
+
+
+@router.get("/pipeline/performance")
+def pipeline_performance(
+    dimension: str = Query("source", description="source | rep | vertical"),
+    user: dict = Depends(get_current_user),
+    db: PGConn = Depends(get_db),
+):
+    """Win-rate and collected-revenue attribution, grouped by lead source, rep,
+    or service vertical. Complements /pipeline/analytics (which is time-windowed
+    and account-wide) with a lifetime per-bucket breakdown."""
+    if dimension not in PERFORMANCE_DIMENSIONS:
+        raise HTTPException(status_code=422, detail=f"dimension must be one of {list(PERFORMANCE_DIMENSIONS)}")
+    expr, join = PERFORMANCE_DIMENSIONS[dimension]
+    acct = user["account_id"]
+
+    with db.cursor() as cur:
+        # Lead-level: counts and win/decided per bucket.
+        cur.execute(
+            f"SELECT {expr} AS bucket, "
+            f"  COUNT(*) AS leads, "
+            f"  COUNT(*) FILTER (WHERE p.status = 'won') AS won, "
+            f"  COUNT(*) FILTER (WHERE p.status IN ('won','lost')) AS decided "
+            f"FROM properties p {join} "
+            f"WHERE p.account_id = %s AND p.archived_at IS NULL "
+            f"GROUP BY bucket",
+            (acct,),
+        )
+        agg = {r["bucket"]: r for r in dict_fetchall(cur)}
+
+        # Revenue: collected payments per bucket (joined through invoices).
+        cur.execute(
+            f"SELECT {expr} AS bucket, COALESCE(SUM(pay.amount), 0) AS revenue "
+            f"FROM properties p {join} "
+            f"JOIN invoices i ON i.property_id = p.id AND i.account_id = p.account_id AND i.status <> 'void' "
+            f"JOIN invoice_payments pay ON pay.invoice_id = i.id "
+            f"WHERE p.account_id = %s AND p.archived_at IS NULL "
+            f"GROUP BY bucket",
+            (acct,),
+        )
+        revenue = {r["bucket"]: float(r["revenue"]) for r in dict_fetchall(cur)}
+
+    buckets = []
+    for name, r in agg.items():
+        decided = r["decided"] or 0
+        buckets.append({
+            "bucket":    name,
+            "leads":     r["leads"],
+            "won":       r["won"],
+            "decided":   decided,
+            "win_rate":  round(r["won"] / decided * 100, 1) if decided else 0.0,
+            "revenue":   revenue.get(name, 0.0),
+        })
+    buckets.sort(key=lambda b: (b["revenue"], b["leads"]), reverse=True)
+    return {"dimension": dimension, "buckets": buckets}
+
+
 @router.patch("/leads/{lead_id}/job-value")
 def update_job_value(lead_id: int, body: JobValueUpdate, user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
     with db.cursor() as cur:

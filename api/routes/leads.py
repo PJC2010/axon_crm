@@ -134,7 +134,9 @@ def update_status(lead_id: int, body: StatusUpdate, db: PGConn = Depends(get_db)
 
 @router.patch("/leads/{lead_id}/contact", response_model=Lead)
 def update_contact(lead_id: int, body: LeadContactUpdate, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
-    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    # exclude_unset so callers can explicitly clear a field (e.g. assigned_to=null
+    # to unassign a rep) — only fields present in the request body are touched.
+    fields = body.model_dump(exclude_unset=True)
     if not fields:
         raise HTTPException(status_code=400, detail="Nothing to update")
     sets = [f"{k} = %s" for k in fields]

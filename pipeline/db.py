@@ -21,6 +21,8 @@ ALL_COLS = [
     "contact_name", "contact_phone", "contact_email", "mailing_address",
     "lead_score", "score_grade", "vertical", "score_updated_at",
     "enrichment_flags",
+    # Lead attribution — rep ownership + acquisition source (migration 030)
+    "assigned_to", "lead_source",
     # Storm/hail enrichment (migration 027)
     "last_storm_date", "last_storm_type", "hail_size_in", "storm_count_24mo",
     # Household demographics / life-events (migration 028)

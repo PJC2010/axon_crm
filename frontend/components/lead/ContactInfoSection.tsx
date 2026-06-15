@@ -1,8 +1,8 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Phone, Mail, Pencil, Check, User, Sparkles, MapPin, Clock, Smartphone, AtSign, MessageCircle } from 'lucide-react'
-import type { Lead } from '@/lib/types'
-import { updateLeadContact, enrichLead, type ContactUpdate } from '@/lib/api'
+import { Phone, Mail, Pencil, Check, User, Sparkles, MapPin, Clock, Smartphone, AtSign, MessageCircle, UserCheck, Tag } from 'lucide-react'
+import type { Lead, TeamMember } from '@/lib/types'
+import { updateLeadContact, enrichLead, getTeam, type ContactUpdate } from '@/lib/api'
 
 const SECTION_BORDER: React.CSSProperties = { borderBottom: '1px solid var(--color-ink-100)' }
 
@@ -20,7 +20,7 @@ const INPUT_STYLE: React.CSSProperties = {
 
 // All editable text fields, in display order. preferred_contact_method is a
 // select and handled separately.
-const TEXT_FIELDS: { label: string; key: keyof ContactUpdate; placeholder: string; type: string }[] = [
+const TEXT_FIELDS: { label: string; key: DraftKey; placeholder: string; type: string }[] = [
   { label: 'Name',     key: 'contact_name',      placeholder: 'Contact name',         type: 'text'  },
   { label: 'Phone',    key: 'contact_phone',     placeholder: '(555) 123-4567',       type: 'tel'   },
   { label: 'Email',    key: 'contact_email',     placeholder: 'name@example.com',     type: 'email' },
@@ -32,7 +32,10 @@ const TEXT_FIELDS: { label: string; key: keyof ContactUpdate; placeholder: strin
 
 const METHOD_OPTIONS = ['phone', 'text', 'email']
 
-type Draft = Record<keyof ContactUpdate, string>
+// Inline-editable text fields only — assigned_to/lead_source are handled
+// separately (assignee dropdown / read-only source), not in the text draft.
+type DraftKey = Exclude<keyof ContactUpdate, 'assigned_to' | 'lead_source'>
+type Draft = Record<DraftKey, string>
 
 function draftFrom(lead: Lead): Draft {
   return {
@@ -60,6 +63,8 @@ export function ContactInfoSection({ lead, onSaved, onToast }: Props) {
   const [draft, setDraft] = useState<Draft>(() => draftFrom(lead))
   const [saving, setSaving] = useState(false)
   const [enriching, setEnriching] = useState(false)
+  const [team, setTeam] = useState<TeamMember[]>([])
+  const [assigning, setAssigning] = useState(false)
 
   // Reset the draft and leave edit mode whenever a different lead is shown.
   useEffect(() => {
@@ -67,11 +72,25 @@ export function ContactInfoSection({ lead, onSaved, onToast }: Props) {
     setEditing(false)
   }, [lead.id])
 
+  useEffect(() => {
+    getTeam().then(setTeam).catch(() => {})
+  }, [])
+
+  async function assignRep(value: string) {
+    setAssigning(true)
+    try {
+      const updated = await updateLeadContact(lead.id, { assigned_to: value ? Number(value) : null })
+      onSaved(updated)
+    } catch (e) {
+      onToast?.(e instanceof Error ? e.message : 'Failed to assign', 'error')
+    } finally { setAssigning(false) }
+  }
+
   async function save() {
     setSaving(true)
     try {
       const body: ContactUpdate = {}
-      for (const key of Object.keys(draft) as (keyof ContactUpdate)[]) {
+      for (const key of Object.keys(draft) as DraftKey[]) {
         const current = (lead[key as keyof Lead] as string | null) ?? ''
         if (draft[key] !== current) body[key] = draft[key]
       }
@@ -163,6 +182,31 @@ export function ContactInfoSection({ lead, onSaved, onToast }: Props) {
       ) : (
         <ReadView lead={lead} />
       )}
+
+      {/* Assignment & source — always editable inline (auto-saves on change). */}
+      <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--color-ink-100)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ color: 'var(--color-ink-400)', display: 'flex' }}><UserCheck size={13} strokeWidth={1.5} /></span>
+          <label className="t-eyebrow" style={{ width: 56, margin: 0 }}>Rep</label>
+          <select
+            value={lead.assigned_to ?? ''}
+            disabled={assigning}
+            onChange={e => assignRep(e.target.value)}
+            className="select-field"
+            style={{ flex: 1 }}
+          >
+            <option value="">Unassigned</option>
+            {team.map(m => <option key={m.id} value={m.id}>{m.username}</option>)}
+          </select>
+        </div>
+        {lead.lead_source && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ color: 'var(--color-ink-400)', display: 'flex' }}><Tag size={13} strokeWidth={1.5} /></span>
+            <label className="t-eyebrow" style={{ width: 56, margin: 0 }}>Source</label>
+            <span style={{ fontSize: 13, color: 'var(--color-ink-900)' }}>{lead.lead_source}</span>
+          </div>
+        )}
+      </div>
     </section>
   )
 }

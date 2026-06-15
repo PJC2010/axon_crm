@@ -5,7 +5,7 @@ import {
   Plus, FileText, Receipt, Kanban,
   AlertTriangle, Clock, AlertCircle,
   LogOut, Settings, BookOpen, ArrowRight,
-  BarChart3, Percent, Menu, X,
+  BarChart3, Percent, Menu, X, CalendarDays,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -206,6 +206,10 @@ export function HomeDashboard() {
                 <CheckSquare size={13} strokeWidth={1.5} />
                 <span>Tasks</span>
               </Link>
+              <Link href="/calendar" title="Calendar" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
+                <CalendarDays size={13} strokeWidth={1.5} />
+                <span>Calendar</span>
+              </Link>
               <Link href="/expenses" title="Expenses" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
                 <Receipt size={13} strokeWidth={1.5} />
                 <span>Expenses</span>
@@ -258,6 +262,7 @@ export function HomeDashboard() {
               { label: 'Leads',       icon: <Users size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,       href: '/dashboard' },
               { label: 'Pipeline',    icon: <Kanban size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,      href: '/pipeline' },
               { label: 'Tasks',       icon: <CheckSquare size={18} strokeWidth={1.5} color="var(--color-ink-500)" />, href: '/tasks' },
+              { label: 'Calendar',    icon: <CalendarDays size={18} strokeWidth={1.5} color="var(--color-ink-500)" />, href: '/calendar' },
               { label: 'Expenses',    icon: <Receipt size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,     href: '/expenses' },
               { label: 'Bookkeeping', icon: <BookOpen size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,    href: '/bookkeeping' },
               { label: 'Settings',    icon: <Settings size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,    href: '/settings' },
