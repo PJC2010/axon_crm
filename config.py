@@ -96,6 +96,25 @@ SEED_EXPAND_MAX_ZIPS  = int(os.getenv("SEED_EXPAND_MAX_ZIPS", "10"))
 # ── CSV import guardrails ────────────────────────────────────────────────────
 IMPORT_MAX_BYTES = int(os.getenv("IMPORT_MAX_BYTES", str(5 * 1024 * 1024)))  # 5 MB
 
+# ── Connectors / Marketing insights ──────────────────────────────────────────
+# File uploads (Meta exports) reuse IMPORT_MAX_BYTES.
+# Insight generator: "rules" (deterministic, default) | future "claude" (LLM).
+INSIGHTS_GENERATOR = os.getenv("INSIGHTS_GENERATOR", "rules")
+# Rule benchmarks — tunable without code changes.
+INSIGHTS_ENGAGEMENT_BENCHMARK = float(os.getenv("INSIGHTS_ENGAGEMENT_BENCHMARK", "0.03"))  # 3% of reach
+INSIGHTS_MIN_POSTS_PER_WEEK   = int(os.getenv("INSIGHTS_MIN_POSTS_PER_WEEK", "3"))
+INSIGHTS_TARGET_ROAS          = float(os.getenv("INSIGHTS_TARGET_ROAS", "2.0"))
+INSIGHTS_MAX_CPA              = float(os.getenv("INSIGHTS_MAX_CPA", "50"))
+INSIGHTS_MIN_CTR              = float(os.getenv("INSIGHTS_MIN_CTR", "0.01"))   # 1% of impressions
+INSIGHTS_STALE_DAYS           = int(os.getenv("INSIGHTS_STALE_DAYS", "30"))
+
+# FUTURE OAuth (unused now — placeholders so the seam is documented).
+META_APP_ID             = os.getenv("META_APP_ID", "")
+META_APP_SECRET         = os.getenv("META_APP_SECRET", "")
+META_OAUTH_REDIRECT_URI = os.getenv("META_OAUTH_REDIRECT_URI", "")
+# FUTURE LLM insights (unused now — do NOT add the SDK dependency yet).
+ANTHROPIC_API_KEY       = os.getenv("ANTHROPIC_API_KEY", "")
+
 # ── Invoice delivery (notifications) ─────────────────────────────────────────
 RESEND_API_KEY      = os.getenv("RESEND_API_KEY", "")
 RESEND_FROM_EMAIL   = os.getenv("RESEND_FROM_EMAIL", "")

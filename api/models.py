@@ -469,3 +469,66 @@ class SendAppointmentRequest(BaseModel):
     channels: list[str]              # any of: "email", "sms"
     to_email: Optional[str] = None   # defaults to the linked lead's contact email
     to_phone: Optional[str] = None   # defaults to the linked lead's contact phone
+
+
+# ── Connectors / connections ────────────────────────────────────────────────────
+
+# Providers a user can connect today (file-upload import). OAuth comes later.
+SOCIAL_PROVIDERS = {"meta_facebook", "meta_instagram"}
+
+
+class ConnectionCreate(BaseModel):
+    provider: str                    # one of SOCIAL_PROVIDERS
+    display_name: Optional[str] = None
+
+
+class ConnectionOut(BaseModel):
+    id: int
+    provider: str
+    display_name: Optional[str] = None
+    status: str
+    auth_type: str
+    last_synced_at: Optional[datetime] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class SocialImportPreview(BaseModel):
+    """What the UI shows after a Meta export is uploaded but before committing."""
+    export_kind: Optional[str] = None
+    metric_rows: int = 0
+    post_rows: int = 0
+    period_start: Optional[date] = None
+    period_end: Optional[date] = None
+    sample_metrics: list[dict] = []
+    sample_posts: list[dict] = []
+    errors: list[str] = []
+
+
+class SocialImportResult(BaseModel):
+    import_id: int
+    metrics_imported: int = 0
+    posts_imported: int = 0
+    skipped: int = 0
+    errors: list[str] = []
+
+
+# ── Marketing insights ──────────────────────────────────────────────────────────
+
+class MarketingInsight(BaseModel):
+    id: str
+    severity: str                    # positive | warning | action
+    category: str                    # content | audience | paid | cadence | conversion
+    title: str
+    message: str
+    recommended_action: str
+    supporting_metric: dict = {}     # {label, value, comparison?}
+
+
+class MarketingInsightsResponse(BaseModel):
+    insights: list[MarketingInsight] = []
+    period_days: int
+    has_data: bool = False
+    last_synced_at: Optional[datetime] = None
