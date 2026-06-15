@@ -5,6 +5,7 @@ import { ArrowLeft, Play, Trash2, RefreshCw, Home, XCircle, Zap, Plus } from 'lu
 import { getSchedules, createSchedule, updateSchedule, deleteSchedule, triggerRun, getPipelineRuns, cancelRun, rescoreZip, rescoreAll, getWorkflows, createWorkflow, updateWorkflow, deleteWorkflow, seedWorkflowDefaults } from '@/lib/api'
 import { AuthGuard } from '@/components/AuthGuard'
 import { AutomationTemplates } from '@/components/AutomationTemplates'
+import { ConnectionsSection } from '@/components/ConnectionsSection'
 import type { PipelineSchedule, PipelineRun, WorkflowRule } from '@/lib/types'
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
@@ -483,6 +484,9 @@ function SettingsPage() {
             </p>
           )}
         </section>
+
+        {/* Connected accounts / integrations */}
+        <ConnectionsSection />
 
         {/* Run log */}
         <section>

@@ -1,4 +1,4 @@
-import type { Lead, LeadPage, LeadFilters, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, Appointment, AppointmentCreate, AppointmentUpdate, WorkflowRule, WorkflowRuleCreate, ScoreExplanation, ImportPreview, ImportResult } from './types'
+import type { Lead, LeadPage, LeadFilters, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, Appointment, AppointmentCreate, AppointmentUpdate, WorkflowRule, WorkflowRuleCreate, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse } from './types'
 import { getToken, clearToken } from './auth'
 
 // Use 127.0.0.1 (not localhost): on macOS `localhost` resolves to IPv6 ::1
@@ -587,6 +587,40 @@ export async function downloadContactTemplate(): Promise<void> {
   a.download = 'axon_import_template.csv'
   a.click()
   URL.revokeObjectURL(url)
+}
+
+// ── Connectors / connections ─────────────────────────────────────────────────
+
+export function getConnections(): Promise<Connection[]> {
+  return req<Connection[]>('/connections')
+}
+
+export function createConnection(body: { provider: string; display_name?: string }): Promise<Connection> {
+  return req<Connection>('/connections', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function deleteConnection(id: number): Promise<void> {
+  return req<void>(`/connections/${id}`, { method: 'DELETE' })
+}
+
+export function previewSocialImport(connId: number, file: File): Promise<SocialImportPreview> {
+  const form = new FormData()
+  form.append('file', file)
+  return multipart<SocialImportPreview>(`/connections/${connId}/preview`, form)
+}
+
+export function runSocialImport(connId: number, file: File): Promise<SocialImportResult> {
+  const form = new FormData()
+  form.append('file', file)
+  return multipart<SocialImportResult>(`/connections/${connId}/import`, form)
+}
+
+// ── Marketing insights ───────────────────────────────────────────────────────
+
+export function getMarketingInsights(days = 90, provider?: string): Promise<MarketingInsightsResponse> {
+  const p = new URLSearchParams({ days: String(days) })
+  if (provider) p.set('provider', provider)
+  return req<MarketingInsightsResponse>(`/insights/marketing?${p}`)
 }
 
 // ── Export ────────────────────────────────────────────────────────────────────
