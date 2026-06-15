@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Plus, Download } from 'lucide-react'
 import { getInvoices, invoiceExportUrl } from '@/lib/api'
-import type { Invoice, InvoiceStatus, InvoiceFilters } from '@/lib/types'
+import type { Invoice, InvoiceStatus, InvoiceFilters, InvoiceCreate, Lead } from '@/lib/types'
 import { InvoiceForm } from './InvoiceForm'
 import { InvoiceDetail } from './InvoiceDetail'
 
@@ -39,19 +39,34 @@ function fmtDate(s: string) {
   return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m)-1]} ${parseInt(d)}`
 }
 
-interface Props { year: number }
+interface Props {
+  year: number
+  /** When set, opens the invoice builder prefilled from this lead (deep-link flow). */
+  prefillLead?: Lead | null
+  onToast?: (msg: string, v?: 'success' | 'error') => void
+}
 
-export function InvoiceList({ year }: Props) {
+export function InvoiceList({ year, prefillLead, onToast }: Props) {
   const [status, setStatus]         = useState<InvoiceStatus | ''>('')
   const [month, setMonth]           = useState(0)
   const [invoices, setInvoices]     = useState<Invoice[]>([])
   const [total, setTotal]           = useState(0)
   const [page, setPage]             = useState(1)
   const [loading, setLoading]       = useState(true)
-  const [showForm, setShowForm]     = useState(false)
+  const [showForm, setShowForm]     = useState(() => !!prefillLead)
   const [editInv, setEditInv]       = useState<Invoice | null>(null)
   const [detailInv, setDetailInv]   = useState<Invoice | null>(null)
   const PAGE_SIZE = 20
+
+  const prefill: Partial<InvoiceCreate> | null = prefillLead ? {
+    property_id: prefillLead.id,
+    // Bill to the actual contact, else the assessor's owner name. Never the
+    // address — that's the property line (client_address below), not a name.
+    client_name: prefillLead.contact_name || prefillLead.owner_name || '',
+    client_phone: prefillLead.contact_phone ?? undefined,
+    client_email: prefillLead.contact_email ?? undefined,
+    client_address: [prefillLead.address, prefillLead.city, prefillLead.state, prefillLead.zip].filter(Boolean).join(', ') || undefined,
+  } : null
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -154,7 +169,14 @@ export function InvoiceList({ year }: Props) {
         </div>
       )}
 
-      {showForm && <InvoiceForm invoice={editInv} onSaved={() => { setShowForm(false); load() }} onClose={() => setShowForm(false)} />}
+      {showForm && (
+        <InvoiceForm
+          invoice={editInv}
+          prefill={editInv ? null : prefill}
+          onSaved={() => { setShowForm(false); onToast?.(editInv ? 'Invoice updated' : 'Invoice draft created', 'success'); load() }}
+          onClose={() => setShowForm(false)}
+        />
+      )}
       {detailInv && <InvoiceDetail invoice={detailInv} onUpdate={load} onClose={() => setDetailInv(null)} />}
     </div>
   )

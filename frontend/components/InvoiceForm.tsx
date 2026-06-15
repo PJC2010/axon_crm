@@ -15,6 +15,8 @@ function fmt(n: number) { return n.toLocaleString('en-US', { style: 'currency', 
 
 interface Props {
   invoice?: Invoice | null
+  /** Seeds a fresh invoice from a lead (deep-link flow); ignored when editing. */
+  prefill?: Partial<InvoiceCreate> | null
   onSaved: () => void
   onClose: () => void
 }
@@ -23,11 +25,12 @@ type DraftItem = { description: string; quantity: string; unit_price: string }
 
 function emptyItem(): DraftItem { return { description: '', quantity: '1', unit_price: '' } }
 
-export function InvoiceForm({ invoice, onSaved, onClose }: Props) {
-  const [clientName, setClientName]   = useState('')
-  const [clientPhone, setClientPhone] = useState('')
-  const [clientEmail, setClientEmail] = useState('')
-  const [clientAddr, setClientAddr]   = useState('')
+export function InvoiceForm({ invoice, prefill, onSaved, onClose }: Props) {
+  // The form is mounted fresh per open, so prefill can seed state directly.
+  const [clientName, setClientName]   = useState(prefill?.client_name ?? '')
+  const [clientPhone, setClientPhone] = useState(prefill?.client_phone ?? '')
+  const [clientEmail, setClientEmail] = useState(prefill?.client_email ?? '')
+  const [clientAddr, setClientAddr]   = useState(prefill?.client_address ?? '')
   const [issueDate, setIssueDate]     = useState(todayStr())
   const [dueDate, setDueDate]         = useState(dueDateDefault())
   const [taxRate, setTaxRate]         = useState('0')
@@ -75,6 +78,7 @@ export function InvoiceForm({ invoice, onSaved, onClose }: Props) {
     setSaving(true); setError(null)
     try {
       const body: InvoiceCreate = {
+        property_id: invoice?.property_id ?? prefill?.property_id,
         client_name: clientName.trim(),
         client_phone: clientPhone || undefined,
         client_email: clientEmail || undefined,

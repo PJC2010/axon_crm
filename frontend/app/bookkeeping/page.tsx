@@ -11,8 +11,9 @@ export default function BookkeepingPage({
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 }) {
-  // Deep-link support: /bookkeeping?tab=quotes&lead=123 opens the quote
-  // builder prefilled from that lead (used by the pipeline's next-step hint).
+  // Deep-link support: /bookkeeping?tab=quotes&lead=123 opens the quote builder
+  // prefilled from that lead, and ?tab=invoices&lead=123 opens the invoice
+  // builder prefilled (both used by the pipeline's next-step hint).
   const params = use(searchParams)
   const tabParam = typeof params.tab === 'string' && (TABS as readonly string[]).includes(params.tab)
     ? (params.tab as Tab)
@@ -23,7 +24,7 @@ export default function BookkeepingPage({
     <AuthGuard>
       <BookkeepingDashboard
         initialTab={tabParam}
-        quoteLeadId={Number.isFinite(leadParam) ? leadParam : undefined}
+        prefillLeadId={Number.isFinite(leadParam) ? leadParam : undefined}
       />
     </AuthGuard>
   )

@@ -44,7 +44,7 @@ const STEPS: Record<LeadStatus, StepConfig> = {
     hint: 'Deal is won — create the invoice to get paid.',
     actionLabel: 'Create invoice',
     actionType: 'link',
-    href: '/bookkeeping',
+    leadHref: id => `/bookkeeping?tab=invoices&lead=${id}`,
   },
   lost: {
     hint: 'Mark as not interested or archive once you\'ve confirmed.',

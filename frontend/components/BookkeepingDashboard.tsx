@@ -27,27 +27,28 @@ const THIS_YEAR = new Date().getFullYear()
 const YEAR_OPTIONS = Array.from({ length: 5 }, (_, i) => THIS_YEAR - i)
 
 interface Props {
-  /** Deep-link support: ?tab=quotes&lead=123 opens the quote builder prefilled. */
+  /** Deep-link support: ?tab=quotes&lead=123 (or ?tab=invoices&lead=123) opens
+   *  the quote/invoice builder prefilled from that lead. */
   initialTab?: Tab
-  quoteLeadId?: number
+  prefillLeadId?: number
 }
 
-export function BookkeepingDashboard({ initialTab, quoteLeadId }: Props = {}) {
+export function BookkeepingDashboard({ initialTab, prefillLeadId }: Props = {}) {
   const [tab, setTab]   = useState<Tab>(initialTab ?? 'overview')
   const [year, setYear] = useState(THIS_YEAR)
   const [prefillLead, setPrefillLead] = useState<Lead | null>(null)
-  const [leadLoaded, setLeadLoaded] = useState(!quoteLeadId)
+  const [leadLoaded, setLeadLoaded] = useState(!prefillLeadId)
   const { toasts, show: showToast, dismiss: dismissToast } = useToast()
 
   useEffect(() => {
-    if (!quoteLeadId) return
+    if (!prefillLeadId) return
     let cancelled = false
-    getLead(quoteLeadId)
+    getLead(prefillLeadId)
       .then(lead => { if (!cancelled) setPrefillLead(lead) })
-      .catch(() => {}) // missing lead → plain quotes tab
+      .catch(() => {}) // missing lead → plain tab, no prefill
       .finally(() => { if (!cancelled) setLeadLoaded(true) })
     return () => { cancelled = true }
-  }, [quoteLeadId])
+  }, [prefillLeadId])
 
   return (
     <div style={{ minHeight: '100dvh', background: 'var(--color-paper)' }}>
@@ -107,7 +108,7 @@ export function BookkeepingDashboard({ initialTab, quoteLeadId }: Props = {}) {
       <div style={{ maxWidth: 760, margin: '0 auto', padding: '24px 16px 48px' }}>
         {tab === 'overview' && <BookkeepingOverview year={year} />}
         {tab === 'quotes'   && leadLoaded && <QuoteList prefillLead={prefillLead} onToast={showToast} />}
-        {tab === 'invoices' && <InvoiceList year={year} />}
+        {tab === 'invoices' && leadLoaded && <InvoiceList year={year} prefillLead={prefillLead} onToast={showToast} />}
         {tab === 'ar'       && <ARDashboard year={year} />}
         {tab === 'pnl'      && <PnLChart year={year} />}
         {tab === 'jobs'     && <JobCostingTable year={year} />}
