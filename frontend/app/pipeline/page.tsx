@@ -104,6 +104,32 @@ function PipelinePage() {
     load()
   }
 
+  // A contact edit or enrichment returns the full updated lead. Reflect it in
+  // the open drawer (so the new data shows immediately) and patch the matching
+  // board card so its name/phone/score stay in sync.
+  function handleDrawerLeadChange(updated: Lead) {
+    setSelectedLead(prev => prev?.id === updated.id ? updated : prev)
+    setGroups(prev => {
+      const next: PipelineGroup = {}
+      for (const key of Object.keys(prev)) {
+        next[key] = prev[key].map(card => card.id === updated.id ? {
+          ...card,
+          address: updated.address,
+          owner_name: updated.owner_name,
+          contact_name: updated.contact_name,
+          contact_phone: updated.contact_phone,
+          lead_score: updated.lead_score,
+          score_grade: updated.score_grade,
+          estimated_job_value: updated.estimated_job_value,
+          status: updated.status,
+          vertical: updated.vertical,
+          zip: updated.zip,
+        } : card)
+      }
+      return next
+    })
+  }
+
   const fmtValue = (v: number) =>
     v >= 1000 ? `$${(v / 1000).toFixed(0)}k` : `$${v}`
 
@@ -216,6 +242,8 @@ function PipelinePage() {
         lead={selectedLead}
         onClose={() => setSelectedLead(null)}
         onStatusChange={handleDrawerStatusChange}
+        onLeadChange={handleDrawerLeadChange}
+        onToast={showToast}
       />
 
       {quickTaskLead && (
