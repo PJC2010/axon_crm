@@ -302,7 +302,9 @@ def list_neighborhoods(
             f"""
             SELECT LEFT(geohash, 6) AS cell,
                    COUNT(*) AS leads,
-                   percentile_cont(0.5) WITHIN GROUP (ORDER BY estimated_value) AS median_value
+                   percentile_cont(0.5) WITHIN GROUP (ORDER BY estimated_value) AS median_value,
+                   mode() WITHIN GROUP (ORDER BY hcad_neighborhood_name)
+                     FILTER (WHERE hcad_neighborhood_name IS NOT NULL) AS name
             FROM properties
             WHERE account_id = %s AND geohash IS NOT NULL AND archived_at IS NULL
               {zip_clause}
@@ -313,9 +315,9 @@ def list_neighborhoods(
             params,
         )
         return [
-            {"cell": cell, "leads": leads,
+            {"cell": cell, "name": name, "leads": leads,
              "median_value": int(median_value) if median_value is not None else None}
-            for cell, leads, median_value in cur.fetchall()
+            for cell, leads, median_value, name in cur.fetchall()
         ]
 
 

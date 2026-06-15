@@ -126,6 +126,7 @@ export interface LeadFilters {
 
 export interface Neighborhood {
   cell: string
+  name: string | null
   leads: number
   median_value: number | null
 }

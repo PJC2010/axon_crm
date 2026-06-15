@@ -179,7 +179,7 @@ export function TerritoryFilter({ filters, onChange }: Props) {
         <option value="">All neighborhoods</option>
         {neighborhoods.map(n => (
           <option key={n.cell} value={n.cell}>
-            {n.cell} · {fmtValue(n.median_value)} med · {n.leads} leads
+            {(n.name ?? n.cell)} · {fmtValue(n.median_value)} med · {n.leads} leads
           </option>
         ))}
       </select>
