@@ -1,17 +1,17 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import {
-  TrendingUp, Users, CheckSquare, DollarSign,
+  TrendingUp, Users, CheckSquare,
   Plus, FileText, Receipt, Kanban,
-  AlertTriangle, Clock, AlertCircle,
+  AlertCircle, ArrowUpRight, ArrowDownRight,
   LogOut, Settings, BookOpen, ArrowRight,
-  BarChart3, Percent, Menu, X, CalendarDays,
+  Percent, Menu, X, CalendarDays,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { getMe, getTaskCounts, getPipelineStats, getARSummary, getLeads, getPipelineForecast, getPipelineAnalytics } from '@/lib/api'
+import { getMe, getTaskCounts, getPipelineStats, getARSummary, getLeads, getPipelineForecast, getPipelineAnalytics, getPnL, getExpenseSummary } from '@/lib/api'
 import { clearToken } from '@/lib/auth'
-import type { Lead, PipelineCounts, ARSummary, ForecastData, User, PipelineAnalytics } from '@/lib/types'
+import type { Lead, PipelineCounts, ARSummary, ForecastData, User, PipelineAnalytics, PnLReport, ExpenseSummary } from '@/lib/types'
 import { ScoreBadge } from './ScoreBadge'
 import { TaskBell } from './TaskBell'
 import { OnboardingWizard } from './OnboardingWizard'
@@ -23,7 +23,6 @@ import { PipelineRingChart } from './PipelineRingChart'
 import { ActivityFeed } from './ActivityFeed'
 import { TodayFocusSection } from './TodayFocusSection'
 import { QuickAddFAB } from './QuickAddFAB'
-import { CommandCenterAlerts } from './CommandCenterAlerts'
 
 const CLOSED_STAGES = new Set(['won', 'lost', 'not_interested'])
 
@@ -56,19 +55,23 @@ interface DashData {
   arSummary: ARSummary | null
   forecast: ForecastData | null
   analytics: PipelineAnalytics | null
+  pnl: PnLReport | null
+  expenses: ExpenseSummary | null
   recentLeads: Lead[]
 }
 
 function fmtCurrency(n: number): string {
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000)     return `$${(n / 1_000).toFixed(0)}k`
-  return `$${n.toFixed(0)}`
+  const sign = n < 0 ? '-' : ''
+  const a = Math.abs(n)
+  if (a >= 1_000_000) return `${sign}$${(a / 1_000_000).toFixed(1)}M`
+  if (a >= 1_000)     return `${sign}$${(a / 1_000).toFixed(0)}k`
+  return `${sign}$${a.toFixed(0)}`
 }
 
 export function HomeDashboard() {
   const router = useRouter()
   const [data, setData] = useState<DashData>({
-    user: null, taskCounts: null, pipelineStats: null, arSummary: null, forecast: null, analytics: null, recentLeads: [],
+    user: null, taskCounts: null, pipelineStats: null, arSummary: null, forecast: null, analytics: null, pnl: null, expenses: null, recentLeads: [],
   })
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
@@ -93,13 +96,15 @@ export function HomeDashboard() {
     setError(null)
     try {
       const year = new Date().getFullYear()
-      const [userRes, countsRes, statsRes, arRes, forecastRes, analyticsRes, leadsRes] = await Promise.allSettled([
+      const [userRes, countsRes, statsRes, arRes, forecastRes, analyticsRes, pnlRes, expRes, leadsRes] = await Promise.allSettled([
         getMe(),
         getTaskCounts(),
         getPipelineStats(),
         getARSummary(year),
         getPipelineForecast(),
         getPipelineAnalytics(30),
+        getPnL(year),
+        getExpenseSummary(year),
         getLeads({ sort: 'score', page: 1, page_size: 5 }),
       ])
       setData({
@@ -109,6 +114,8 @@ export function HomeDashboard() {
         arSummary:     arRes.status        === 'fulfilled' ? arRes.value             : null,
         forecast:      forecastRes.status  === 'fulfilled' ? forecastRes.value       : null,
         analytics:     analyticsRes.status === 'fulfilled' ? analyticsRes.value      : null,
+        pnl:           pnlRes.status       === 'fulfilled' ? pnlRes.value            : null,
+        expenses:      expRes.status       === 'fulfilled' ? expRes.value            : null,
         recentLeads:   leadsRes.status     === 'fulfilled' ? leadsRes.value.results  : [],
       })
     } catch (e: unknown) {
@@ -147,8 +154,21 @@ export function HomeDashboard() {
     : null
 
   const overdue     = data.taskCounts?.overdue ?? 0
-  const outstanding = data.arSummary?.total_outstanding ?? 0
-  const showAttention = overdue > 0 || outstanding > 0
+  const year        = now.getFullYear()
+
+  // ── Money-first derived values ──
+  const netYTD      = data.pnl?.net_profit ?? null
+  const collected   = data.arSummary?.total_collected ?? null
+  const outstanding = data.arSummary?.total_outstanding ?? null
+  const overdueAR   = data.arSummary?.total_overdue ?? 0
+  const expensesYTD = data.pnl?.total_expenses ?? data.expenses?.total ?? null
+
+  // This-month vs last-month net, computed client-side from the P&L months array.
+  const curMonth    = now.getMonth() + 1
+  const thisMonth   = data.pnl?.months.find(m => m.month === curMonth) ?? null
+  const lastMonth   = data.pnl?.months.find(m => m.month === curMonth - 1) ?? null
+  const monthNet    = thisMonth ? thisMonth.net : null
+  const monthDelta  = thisMonth && lastMonth ? thisMonth.net - lastMonth.net : null
 
   if (showOnboarding) {
     return <OnboardingWizard onComplete={() => { setShowOnboarding(false); load() }} />
@@ -311,11 +331,11 @@ export function HomeDashboard() {
       {/* ── Page Body ── */}
       <div style={{ flex: 1, maxWidth: 960, width: '100%', margin: '0 auto', padding: '24px 16px 40px' }}>
 
-        {/* ── Hero Greeting Card ── */}
+        {/* ── Money Hero (hot zone: are we okay?) ── */}
         <div style={{
           borderRadius: 'var(--radius-card)',
           background: 'linear-gradient(135deg, var(--color-accent) 0%, var(--color-ocean-d) 100%)',
-          padding: '28px 24px', marginBottom: 20,
+          padding: '24px 24px', marginBottom: 20,
           position: 'relative', overflow: 'hidden',
         }}>
           <div style={{
@@ -326,41 +346,61 @@ export function HomeDashboard() {
             position: 'absolute', bottom: -40, right: 60, width: 100, height: 100,
             borderRadius: '50%', background: 'rgba(255,255,255,0.04)',
           }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, position: 'relative' }}>
+
+          {/* Subordinate greeting */}
+          <p style={{ margin: '0 0 14px', fontSize: 13, color: 'rgba(255,255,255,0.65)', position: 'relative' }}>
+            {greeting}{data.user ? `, ${data.user.username}` : ''} · {dateStr}
+          </p>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 20, position: 'relative' }}>
+            {/* The single most important number — top-left, large & bold */}
             <div>
-              <p style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 600, color: 'white', lineHeight: 1.2 }}>
-                {greeting}{data.user ? `, ${data.user.username}` : ''}
+              <p className="t-eyebrow" style={{ color: 'rgba(255,255,255,0.55)', margin: '0 0 4px' }}>Net Profit · {year} YTD</p>
+              <p className="tabular" style={{ margin: 0, fontSize: 38, fontWeight: 700, color: 'white', lineHeight: 1 }}>
+                {loading || netYTD === null ? '—' : fmtCurrency(netYTD)}
               </p>
-              <p style={{ margin: '4px 0 0', fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>{dateStr}</p>
+              {monthNet !== null && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                  <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.75)' }}>
+                    {fmtCurrency(monthNet)} this month
+                  </span>
+                  {monthDelta !== null && monthDelta !== 0 && (
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 2,
+                      fontSize: 12, fontWeight: 600,
+                      color: monthDelta > 0 ? '#BFE3B5' : '#FFC9C2',
+                    }}>
+                      {monthDelta > 0
+                        ? <ArrowUpRight size={13} strokeWidth={2} />
+                        : <ArrowDownRight size={13} strokeWidth={2} />}
+                      {fmtCurrency(Math.abs(monthDelta))} vs last
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <p className="t-eyebrow" style={{ color: 'rgba(255,255,255,0.55)', margin: '0 0 4px' }}>Pipeline Value</p>
-              <p className="tabular" style={{ margin: 0, fontSize: 30, fontWeight: 700, color: 'white', lineHeight: 1 }}>
-                {loading || pipelineValue === null ? '—' : fmtCurrency(pipelineValue)}
-              </p>
+
+            {/* Cash triage: money in · owed to me · money out */}
+            <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap' }}>
+              <HeroStat label="Collected" value={loading || collected === null ? '—' : fmtCurrency(collected)} />
+              <HeroStat
+                label="Outstanding"
+                value={loading || outstanding === null ? '—' : fmtCurrency(outstanding)}
+                sub={overdueAR > 0 ? `${fmtCurrency(overdueAR)} overdue` : undefined}
+                subDanger={overdueAR > 0}
+              />
+              <HeroStat label="Expenses" value={loading || expensesYTD === null ? '—' : fmtCurrency(expensesYTD)} />
             </div>
           </div>
         </div>
 
-        {/* ── KPI Cards ── */}
+        {/* ── Secondary KPI strip (what needs me / how am I trending) ── */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: wide ? 'repeat(5, 1fr)' : 'repeat(2, 1fr)',
+          gridTemplateColumns: wide ? 'repeat(4, 1fr)' : 'repeat(2, 1fr)',
           gap: 12,
           marginBottom: 20,
         }}>
-          <KPICard
-            icon={<TrendingUp size={16} strokeWidth={1.5} color="var(--color-accent)" />}
-            label="Forecast"
-            value={loading || !data.forecast ? '—' : fmtCurrency(data.forecast.weighted_total)}
-            sub="weighted pipeline"
-          />
-          <KPICard
-            icon={<Users size={16} strokeWidth={1.5} color="var(--color-accent)" />}
-            label="Active Leads"
-            value={loading || activeLeads === null ? '—' : String(activeLeads)}
-            sub="across all stages"
-          />
           <KPICard
             icon={<CheckSquare size={16} strokeWidth={1.5} color={overdue > 0 ? 'var(--color-danger)' : 'var(--color-accent)'} />}
             label="Due Today"
@@ -368,14 +408,14 @@ export function HomeDashboard() {
             sub={overdue > 0
               ? <span style={{ color: 'var(--color-danger)', fontWeight: 600 }}>{overdue} overdue</span>
               : 'on track'}
+            href="/tasks"
           />
           <KPICard
-            icon={<DollarSign size={16} strokeWidth={1.5} color="#4F7A4A" />}
-            label="Collected YTD"
-            value={loading || !data.arSummary ? '—' : fmtCurrency(data.arSummary.total_collected)}
-            sub={data.arSummary
-              ? `${fmtCurrency(data.arSummary.total_outstanding)} outstanding`
-              : '—'}
+            icon={<Users size={16} strokeWidth={1.5} color="var(--color-accent)" />}
+            label="Active Leads"
+            value={loading || activeLeads === null ? '—' : String(activeLeads)}
+            sub="across all stages"
+            href="/dashboard"
           />
           <KPICard
             icon={<Percent size={16} strokeWidth={1.5} color="var(--color-moss)" />}
@@ -384,6 +424,14 @@ export function HomeDashboard() {
             sub={data.analytics?.avg_cycle_time != null
               ? `${data.analytics.avg_cycle_time}d avg cycle`
               : '30-day period'}
+            href="/pipeline"
+          />
+          <KPICard
+            icon={<TrendingUp size={16} strokeWidth={1.5} color="var(--color-accent)" />}
+            label="Forecast"
+            value={loading || !data.forecast ? '—' : fmtCurrency(data.forecast.weighted_total)}
+            sub={pipelineValue !== null ? `${fmtCurrency(pipelineValue)} pipeline` : 'weighted pipeline'}
+            href="/pipeline"
           />
         </div>
 
@@ -445,47 +493,6 @@ export function HomeDashboard() {
           </div>
         </div>
 
-        {/* ── AI Insights Panel ── */}
-        <AIInsightsPanel />
-
-        {/* ── Needs Attention ── */}
-        {showAttention && (
-          <div style={{ marginBottom: 24 }}>
-            <p className="t-eyebrow" style={{ margin: '0 0 10px' }}>Needs Attention</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {overdue > 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderRadius: 'var(--radius-card)', background: '#FDF2F1', borderLeft: '4px solid var(--color-danger)', minHeight: 44 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <AlertTriangle size={16} strokeWidth={1.5} color="var(--color-danger)" />
-                    <span style={{ fontSize: 14, color: 'var(--color-ink-900)', fontWeight: 500 }}>
-                      {overdue} task{overdue !== 1 ? 's' : ''} overdue
-                    </span>
-                  </div>
-                  <Link href="/tasks" style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, color: 'var(--color-danger)', fontWeight: 500, textDecoration: 'none' }}>
-                    Review <ArrowRight size={13} strokeWidth={1.5} />
-                  </Link>
-                </div>
-              )}
-              {outstanding > 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderRadius: 'var(--radius-card)', background: '#FDF8EE', borderLeft: '4px solid var(--color-gold)', minHeight: 44 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <Clock size={16} strokeWidth={1.5} color="var(--color-gold)" />
-                    <span style={{ fontSize: 14, color: 'var(--color-ink-900)', fontWeight: 500 }}>
-                      {fmtCurrency(outstanding)} in unpaid invoices
-                    </span>
-                  </div>
-                  <Link href="/bookkeeping" style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, color: 'var(--color-gold)', fontWeight: 500, textDecoration: 'none' }}>
-                    View <ArrowRight size={13} strokeWidth={1.5} />
-                  </Link>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ── Command Center: pipeline-health alerts ── */}
-        <CommandCenterAlerts />
-
         {/* ── Charts Row: Revenue Trend + Pipeline Distribution ── */}
         <div style={{
           display: 'grid',
@@ -493,54 +500,15 @@ export function HomeDashboard() {
           gap: 14,
           marginBottom: 24,
         }}>
-          <RevenueSparkChart year={new Date().getFullYear()} />
+          <RevenueSparkChart year={year} />
           <PipelineRingChart />
         </div>
 
-        {/* ── Forecast Breakdown ── */}
-        {data.forecast && data.forecast.by_stage.length > 0 && (
-          <div style={{ marginBottom: 24 }}>
-            <p className="t-eyebrow" style={{ margin: '0 0 12px' }}>Weighted Forecast Breakdown</p>
-            <div style={{
-              background: 'white', borderRadius: 'var(--radius-card)',
-              boxShadow: 'var(--shadow-card)', overflow: 'hidden',
-            }}>
-              <div style={{ display: 'flex', padding: '10px 14px', borderBottom: '1px solid var(--color-ink-100)', gap: 8 }}>
-                <span style={{ flex: 2, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-ink-400)' }}>Stage</span>
-                <span style={{ flex: 1, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-ink-400)', textAlign: 'right' }}>Leads</span>
-                <span style={{ flex: 1, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-ink-400)', textAlign: 'right' }}>Raw</span>
-                <span style={{ flex: 1, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-ink-400)', textAlign: 'right' }}>Wt%</span>
-                <span style={{ flex: 1, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-ink-400)', textAlign: 'right' }}>Weighted</span>
-              </div>
-              {data.forecast.by_stage.map(row => (
-                <div key={row.stage} style={{ display: 'flex', padding: '8px 14px', borderBottom: '1px solid var(--color-ink-50)', alignItems: 'center', gap: 8 }}>
-                  <span style={{ flex: 2, fontSize: 13, fontWeight: 500, color: 'var(--color-ink-800)' }}>
-                    {STATUS_LABELS[row.stage] ?? row.stage}
-                  </span>
-                  <span className="tabular" style={{ flex: 1, fontSize: 13, color: 'var(--color-ink-600)', textAlign: 'right' }}>{row.count}</span>
-                  <span className="tabular" style={{ flex: 1, fontSize: 13, color: 'var(--color-ink-600)', textAlign: 'right' }}>{fmtCurrency(row.raw_value)}</span>
-                  <span className="tabular" style={{ flex: 1, fontSize: 13, color: 'var(--color-ink-400)', textAlign: 'right' }}>{row.weight_pct}%</span>
-                  <span className="tabular" style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--color-accent)', textAlign: 'right' }}>{fmtCurrency(row.weighted_value)}</span>
-                </div>
-              ))}
-              <div style={{ display: 'flex', padding: '10px 14px', background: 'var(--color-paper)', gap: 8 }}>
-                <span style={{ flex: 2, fontSize: 13, fontWeight: 700, color: 'var(--color-ink-900)' }}>Total</span>
-                <span style={{ flex: 1 }} />
-                <span style={{ flex: 1 }} />
-                <span style={{ flex: 1 }} />
-                <span className="tabular" style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--color-accent)', textAlign: 'right' }}>
-                  {fmtCurrency(data.forecast.weighted_total)}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* ── AI Insights Panel (analytical trends, capped) ── */}
+        <AIInsightsPanel />
 
-        {/* ── Activity Feed ── */}
-        <ActivityFeed />
-
-        {/* ── Recent Leads ── */}
-        <div>
+        {/* ── Top Scored Leads ── */}
+        <div style={{ marginBottom: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
             <p className="t-eyebrow" style={{ margin: 0 }}>Top Scored Leads</p>
             <Link href="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, color: 'var(--color-accent)', textDecoration: 'none', fontWeight: 500 }}>
@@ -590,6 +558,9 @@ export function HomeDashboard() {
           )}
         </div>
 
+        {/* ── Recent Activity (demoted) ── */}
+        <ActivityFeed />
+
       </div>
 
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
@@ -598,18 +569,15 @@ export function HomeDashboard() {
   )
 }
 
-function KPICard({ icon, label, value, sub }: {
+function KPICard({ icon, label, value, sub, href }: {
   icon: React.ReactNode
   label: string
   value: string
   sub: React.ReactNode
+  href?: string
 }) {
-  return (
-    <div style={{
-      background: 'white', borderRadius: 'var(--radius-card)',
-      boxShadow: 'var(--shadow-card)', padding: '16px',
-      minHeight: 88, position: 'relative', overflow: 'hidden',
-    }}>
+  const body = (
+    <>
       <div style={{
         position: 'absolute', top: 0, left: 0, right: 0, height: 3,
         background: 'linear-gradient(90deg, var(--color-accent) 0%, var(--color-accent-300) 100%)',
@@ -621,6 +589,32 @@ function KPICard({ icon, label, value, sub }: {
       </div>
       <p className="tabular" style={{ margin: '0 0 4px', fontSize: 26, fontWeight: 700, color: 'var(--color-ink-900)', lineHeight: 1 }}>{value}</p>
       <p style={{ margin: 0, fontSize: 12, color: 'var(--color-ink-400)' }}>{sub}</p>
+    </>
+  )
+  const cardStyle: React.CSSProperties = {
+    background: 'white', borderRadius: 'var(--radius-card)',
+    boxShadow: 'var(--shadow-card)', padding: '16px',
+    minHeight: 88, position: 'relative', overflow: 'hidden',
+    display: 'block', textDecoration: 'none', color: 'inherit',
+  }
+  return href
+    ? <Link href={href} style={cardStyle}>{body}</Link>
+    : <div style={cardStyle}>{body}</div>
+}
+
+function HeroStat({ label, value, sub, subDanger }: {
+  label: string
+  value: string
+  sub?: string
+  subDanger?: boolean
+}) {
+  return (
+    <div>
+      <p className="t-eyebrow" style={{ color: 'rgba(255,255,255,0.55)', margin: '0 0 4px' }}>{label}</p>
+      <p className="tabular" style={{ margin: 0, fontSize: 20, fontWeight: 600, color: 'white', lineHeight: 1 }}>{value}</p>
+      {sub && (
+        <p style={{ margin: '3px 0 0', fontSize: 11, fontWeight: 600, color: subDanger ? '#FFC9C2' : 'rgba(255,255,255,0.6)' }}>{sub}</p>
+      )}
     </div>
   )
 }

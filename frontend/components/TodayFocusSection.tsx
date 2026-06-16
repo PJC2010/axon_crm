@@ -1,8 +1,8 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { AlertTriangle, Clock, Users, Target, CheckCircle2, ArrowRight, Zap } from 'lucide-react'
+import { AlertTriangle, Clock, Users, Target, CheckCircle2, ArrowRight, Zap, TrendingDown } from 'lucide-react'
 import Link from 'next/link'
-import { getLeads, createTask } from '@/lib/api'
+import { getLeads, createTask, getPipelineAlerts } from '@/lib/api'
 import type { Lead, PipelineCounts, ARSummary } from '@/lib/types'
 
 interface Props {
@@ -34,16 +34,18 @@ function offsetDate(days: number): string {
 export function TodayFocusSection({ taskCounts, arSummary, loading, onToast }: Props) {
   const [staleLeads, setStaleLeads] = useState<Lead[]>([])
   const [hotLeads, setHotLeads] = useState<{ qualified: number; quote_sent: number }>({ qualified: 0, quote_sent: 0 })
+  const [stuckCount, setStuckCount] = useState(0)
   const [creatingFollowUps, setCreatingFollowUps] = useState(false)
   const [staleLoading, setStaleLoading] = useState(true)
 
   const fetchContextData = useCallback(async () => {
     setStaleLoading(true)
     try {
-      const [staleRes, qualRes, quoteRes] = await Promise.allSettled([
+      const [staleRes, qualRes, quoteRes, alertsRes] = await Promise.allSettled([
         getLeads({ status: 'contacted', sort: 'updated_at', page: 1, page_size: 50 }),
         getLeads({ status: 'qualified', page: 1, page_size: 1 }),
         getLeads({ status: 'quote_sent', page: 1, page_size: 1 }),
+        getPipelineAlerts(),
       ])
       if (staleRes.status === 'fulfilled') {
         const twoWeeksAgo = new Date(Date.now() - 14 * 86400000).toISOString()
@@ -55,6 +57,7 @@ export function TodayFocusSection({ taskCounts, arSummary, loading, onToast }: P
         qualified: qualRes.status === 'fulfilled' ? qualRes.value.total : 0,
         quote_sent: quoteRes.status === 'fulfilled' ? quoteRes.value.total : 0,
       })
+      setStuckCount(alertsRes.status === 'fulfilled' ? alertsRes.value.stuck_deals.count : 0)
     } finally {
       setStaleLoading(false)
     }
@@ -91,10 +94,15 @@ export function TodayFocusSection({ taskCounts, arSummary, loading, onToast }: P
 
   const overdue = taskCounts?.overdue ?? 0
   const outstanding = arSummary?.total_outstanding ?? 0
+  const overdueAR = arSummary?.total_overdue ?? 0
+  const overdueCount = arSummary?.overdue_count ?? 0
   const hotCount = hotLeads.qualified + hotLeads.quote_sent
 
+  // Single deduplicated, priority-ordered list (problems before opportunities),
+  // capped below. Each concern appears exactly once.
   const items: FocusItem[] = []
 
+  // 1. Overdue tasks
   if (overdue > 0) {
     items.push({
       id: 'overdue',
@@ -109,6 +117,49 @@ export function TodayFocusSection({ taskCounts, arSummary, loading, onToast }: P
     })
   }
 
+  // 2. Overdue / outstanding invoices (money owed to you) — lead with the overdue slice
+  if (overdueAR > 0) {
+    items.push({
+      id: 'invoices',
+      icon: <Clock size={15} strokeWidth={1.8} />,
+      color: 'var(--color-danger)',
+      bg: '#FDF2F1',
+      border: '#FBCACA',
+      text: `${fmtMoney(overdueAR)} in overdue invoices`,
+      subtext: `${overdueCount} invoice${overdueCount !== 1 ? 's' : ''} past due — send reminders to improve cash flow.`,
+      actionLabel: 'View Invoices',
+      href: '/bookkeeping',
+    })
+  } else if (outstanding > 0) {
+    items.push({
+      id: 'invoices',
+      icon: <Clock size={15} strokeWidth={1.8} />,
+      color: 'var(--color-gold)',
+      bg: '#FDF8EE',
+      border: '#F0D99A',
+      text: `${fmtMoney(outstanding)} in unpaid invoices`,
+      subtext: 'Send reminders to improve cash flow.',
+      actionLabel: 'View Invoices',
+      href: '/bookkeeping',
+    })
+  }
+
+  // 3. Stuck deals (folded in from the old Command Center)
+  if (stuckCount > 0) {
+    items.push({
+      id: 'stuck',
+      icon: <TrendingDown size={15} strokeWidth={1.8} />,
+      color: 'var(--color-gold)',
+      bg: '#FDF8EE',
+      border: '#F0D99A',
+      text: `${stuckCount} deal${stuckCount !== 1 ? 's' : ''} stuck in stage`,
+      subtext: 'These have sat too long — nudge them forward before they go cold.',
+      actionLabel: 'View Pipeline',
+      href: '/pipeline',
+    })
+  }
+
+  // 4. Stale / cooling leads
   if (staleLeads.length > 0) {
     const totalValue = staleLeads.reduce((s, l) => s + (l.estimated_job_value ?? 0), 0)
     items.push({
@@ -118,26 +169,13 @@ export function TodayFocusSection({ taskCounts, arSummary, loading, onToast }: P
       bg: 'var(--color-accent-50)',
       border: 'var(--color-accent-200)',
       text: `${staleLeads.length} lead${staleLeads.length !== 1 ? 's' : ''} haven't heard from you in 2+ weeks`,
-      subtext: totalValue > 0 ? `Worth ~$${(totalValue / 1000).toFixed(0)}k in potential work.` : 'Schedule follow-ups to keep them warm.',
+      subtext: totalValue > 0 ? `Worth ~${fmtMoney(totalValue)} in potential work.` : 'Schedule follow-ups to keep them warm.',
       actionLabel: creatingFollowUps ? 'Scheduling…' : 'Schedule Follow-Ups',
       onAction: handleBatchFollowUp,
     })
   }
 
-  if (outstanding > 0) {
-    items.push({
-      id: 'invoices',
-      icon: <Clock size={15} strokeWidth={1.8} />,
-      color: 'var(--color-gold)',
-      bg: '#FDF8EE',
-      border: '#F0D99A',
-      text: `$${outstanding >= 1000 ? (outstanding / 1000).toFixed(0) + 'k' : outstanding.toFixed(0)} in unpaid invoices`,
-      subtext: 'Send reminders to improve cash flow.',
-      actionLabel: 'View Invoices',
-      href: '/bookkeeping',
-    })
-  }
-
+  // 5. Hot leads ready to close (opportunity — only when nothing urgent is pending)
   if (hotCount > 0 && overdue === 0 && staleLeads.length === 0) {
     items.push({
       id: 'hot',
@@ -151,6 +189,11 @@ export function TodayFocusSection({ taskCounts, arSummary, loading, onToast }: P
       href: '/pipeline',
     })
   }
+
+  // Cap the overview list; deeper detail lives on the linked pages.
+  const MAX_ITEMS = 5
+  const overflow = items.length - MAX_ITEMS
+  const visibleItems = items.slice(0, MAX_ITEMS)
 
   if (items.length === 0) {
     return (
@@ -179,10 +222,10 @@ export function TodayFocusSection({ taskCounts, arSummary, loading, onToast }: P
     <div style={{ marginBottom: 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
         <Zap size={13} strokeWidth={2} color="var(--color-accent)" />
-        <span className="t-eyebrow">Today&apos;s Focus</span>
+        <span className="t-eyebrow">Needs Attention</span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {items.map(item => (
+        {visibleItems.map(item => (
           <div
             key={item.id}
             style={{
@@ -248,7 +291,25 @@ export function TodayFocusSection({ taskCounts, arSummary, loading, onToast }: P
             )}
           </div>
         ))}
+        {overflow > 0 && (
+          <Link
+            href="/pipeline"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4, alignSelf: 'flex-start',
+              fontSize: 13, fontWeight: 500, color: 'var(--color-accent)',
+              textDecoration: 'none', padding: '2px 0',
+            }}
+          >
+            +{overflow} more to review <ArrowRight size={13} strokeWidth={1.5} />
+          </Link>
+        )}
       </div>
     </div>
   )
+}
+
+function fmtMoney(n: number): string {
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000)     return `$${(n / 1_000).toFixed(0)}k`
+  return `$${n.toFixed(0)}`
 }
