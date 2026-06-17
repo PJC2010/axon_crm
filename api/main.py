@@ -6,14 +6,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import leads, notes, history, export
 from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, hcad, workflows, imports, quotes, appointments
-from api.routes import connections, insights
+from api.routes import connections, insights, ml
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from api.scheduler import scheduler, load_active_schedules
+    from api.scheduler import scheduler, load_active_schedules, schedule_retraining
     scheduler.start()
     load_active_schedules()
+    schedule_retraining()
     yield
     scheduler.shutdown(wait=False)
 
@@ -55,6 +56,7 @@ app.include_router(imports.router,     prefix="/api", tags=["Import"])
 app.include_router(appointments.router, prefix="/api", tags=["Appointments"])
 app.include_router(connections.router, prefix="/api", tags=["Connections"])
 app.include_router(insights.router,    prefix="/api", tags=["Insights"])
+app.include_router(ml.router,          prefix="/api", tags=["ML"])
 
 
 @app.get("/api/health")

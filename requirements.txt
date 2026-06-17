@@ -22,6 +22,16 @@ duckdb>=0.10
 # Scheduling
 apscheduler>=3.10
 
+# Predictive lead scoring (pipeline/ml) ships a dependency-free pure-Python
+# logistic-regression trainer, so nothing here is required to run it. These are
+# OPTIONAL future accelerators for larger datasets (gradient-boosted models +
+# SHAP explanations); the code path that uses them is additive and the system
+# degrades to the pure trainer if they aren't installed.
+# scikit-learn>=1.4
+# numpy>=1.26
+# lightgbm>=4.0
+# shap>=0.44
+
 # Invoice delivery (email / SMS)
 resend>=2.0
 twilio>=9.0

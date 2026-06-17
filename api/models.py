@@ -55,6 +55,10 @@ class Lead(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     archived_at: Optional[datetime] = None
+    # Learned conversion probability (0–1) + the model version that produced it.
+    # Populated only when SCORER_MODE is 'shadow' or 'learned' and a model exists.
+    ml_conversion_prob: Optional[float] = None
+    ml_model_version: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -324,6 +328,13 @@ class VerticalFactor(BaseModel):
     weight: float
 
 
+class MLFactor(BaseModel):
+    """One feature's signed log-odds contribution to the learned probability."""
+    key: str
+    label: str
+    contribution: float
+
+
 class ScoreExplanation(BaseModel):
     lead_id: int
     score: Optional[float] = None
@@ -335,6 +346,13 @@ class ScoreExplanation(BaseModel):
     vertical_description: list[VerticalFactor] = []
     score_updated_at: Optional[datetime] = None
     weights_drift: bool = False
+    # Learned-model overlay (present when a model is active and SCORER_MODE != rules).
+    scorer_mode: str = "rules"
+    ml_conversion_prob: Optional[float] = None
+    ml_grade: Optional[str] = None
+    ml_model_version: Optional[int] = None
+    ml_factors: list[MLFactor] = []
+    ml_top_drivers: list[str] = []
 
 
 ALLOWED_STATUSES = {"new", "contacted", "qualified", "not_interested", "converted", "quote_sent", "won", "lost"}

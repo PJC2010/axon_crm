@@ -320,6 +320,37 @@ def enqueue_region_run(run_id: int, region_id: str, vertical: str | None, accoun
     )
 
 
+def retrain_models():
+    """Nightly: refresh outcome labels and retrain the predictive models.
+
+    Runs entirely in-process (pure-Python trainer); safe to fail without affecting
+    the rest of the app — a stale champion simply stays active until the next run.
+    """
+    from config import ML_STALE_OPEN_DAYS  # noqa: F401  (kept explicit for clarity)
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        from pipeline.ml.train import train_all
+        result = train_all(conn)
+        log.info("Model retrain finished: %s", result.get("promoted"))
+    except Exception:
+        log.exception("Model retrain job failed")
+    finally:
+        conn.close()
+
+
+def schedule_retraining():
+    """Register the daily retrain cron (idempotent — replaces any existing job)."""
+    from config import ML_RETRAIN_HOUR
+    scheduler.add_job(
+        retrain_models,
+        trigger=CronTrigger(hour=ML_RETRAIN_HOUR, minute=0, timezone="UTC"),
+        id="ml_retrain_nightly",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    log.info("Scheduled nightly model retrain at %02d:00 UTC", ML_RETRAIN_HOUR)
+
+
 def load_active_schedules():
     """Called at startup — restore all active schedules from the DB into APScheduler."""
     try:
