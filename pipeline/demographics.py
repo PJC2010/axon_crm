@@ -1,10 +1,19 @@
 """
-Step 9.5 — Household demographics / life-events enrichment (paid, optional).
+Step 9.5 — Household demographics / life-events enrichment (optional).
 
-Enriches leads with owner-level demographic data from the Versium Demographic
-Append API (or any pluggable provider). With no provider configured
-(DEMO_PROVIDER="") this step is a no-op, identical to how pipeline/contact.py
-behaves without CONTACT_PROVIDER.
+Enriches leads with owner-level life-event data through a pluggable provider.
+Two classes of provider exist:
+
+  * "derived"  — FREE baseline, no API key, no network. Computes life_stage and
+                 length_of_residence_years from `last_sale_date` already in the
+                 DB (populated by the seed / property / HCAD steps). This makes
+                 the top life-stage scoring signal work with no vendor at all.
+  * paid APIs  — e.g. Versium Demographic Append, which add owner age, income,
+                 net worth, children, credit, etc. that are not derivable from
+                 property records.
+
+With no provider configured (DEMO_PROVIDER="") this step is a no-op, identical
+to how pipeline/contact.py behaves without CONTACT_PROVIDER.
 
 Columns written (migrations 028 + 029):
 
@@ -53,6 +62,7 @@ from config import (
     DEMO_MAX_ROWS_PER_ZIP, DEMO_MIN_GRADE,
 )
 from pipeline.db import get_conn, fetch_missing_field, upsert_properties
+from pipeline.equity import _years_since
 from pipeline.http import get_json
 
 log = logging.getLogger(__name__)
@@ -157,12 +167,37 @@ def _versium_lookup(row: dict) -> dict | None:
     return result or None
 
 
+def _derived_lookup(row: dict) -> dict | None:
+    """Free baseline — derive life-stage signals from data already in the DB.
+
+    No external provider or API key required. Uses `last_sale_date` (populated
+    by the seed / property / HCAD steps) to compute length of residence and
+    infer life_stage via the same _normalize_life_stage rules used for paid
+    providers. Owner age / income / net worth etc. are not derivable from
+    property records and are left untouched for a paid provider to fill.
+    """
+    years = _years_since(row.get("last_sale_date"))
+    tenure = int(years) if years is not None else None
+    life_stage = _normalize_life_stage(None, None, tenure, None)
+
+    result = {
+        "length_of_residence_years": tenure,
+        "life_stage": life_stage,
+    }
+    result = {k: v for k, v in result.items() if v is not None}
+    return result or None
+
+
 # ── Provider registry ─────────────────────────────────────────────────────────
 
 PROVIDERS = {
+    "derived": _derived_lookup,   # free baseline — no API key, no network
     "versium": _versium_lookup,
-    # "melissa": _melissa_lookup,  # add more providers here
+    # "batchdata": _batchdata_lookup,  # paid Bucket-C top-up — add here
 }
+
+# Providers that compute from data already in the DB and need no API key.
+_KEYLESS_PROVIDERS = {"derived"}
 
 
 # ── Response parsing helpers ──────────────────────────────────────────────────
@@ -342,7 +377,8 @@ def enrich_demographics(zip_code: str, account_id: int, selected_only: bool = Fa
     counter = {"ok": 0, "fail": 0, "updated": 0, "skipped_no_key": False}
 
     lookup = PROVIDERS.get(DEMO_PROVIDER)
-    if not DEMO_PROVIDER or not DEMO_API_KEY or lookup is None:
+    keyless = DEMO_PROVIDER in _KEYLESS_PROVIDERS
+    if not DEMO_PROVIDER or lookup is None or (not keyless and not DEMO_API_KEY):
         counter["skipped_no_key"] = True
         if DEMO_PROVIDER and lookup is None:
             log.warning("Unknown DEMO_PROVIDER %r — skipping demographics enrichment.", DEMO_PROVIDER)
@@ -352,11 +388,17 @@ def enrich_demographics(zip_code: str, account_id: int, selected_only: bool = Fa
 
     conn = get_conn()
     try:
-        # Use owner_age as the sentinel — any record without it needs enrichment.
-        rows = fetch_missing_field(conn, "owner_age", account_id, zip_code,
+        # Sentinel = a field the provider fills. The derived baseline fills
+        # life_stage from last_sale_date (no owner identity needed); paid
+        # providers fill owner_age and the rest.
+        sentinel = "life_stage" if keyless else "owner_age"
+        rows = fetch_missing_field(conn, sentinel, account_id, zip_code,
                                    selected_only=selected_only)
-        rows = [r for r in rows if r.get("owner_name") and _passes_grade(r)]
-        rows = rows[:DEMO_MAX_ROWS_PER_ZIP]
+        if not keyless:
+            # Paid lookups need an owner identity and respect the grade gate and
+            # row cap (cost control). The free baseline runs on every row.
+            rows = [r for r in rows if r.get("owner_name") and _passes_grade(r)]
+            rows = rows[:DEMO_MAX_ROWS_PER_ZIP]
         if not rows:
             return counter
 
@@ -374,7 +416,8 @@ def enrich_demographics(zip_code: str, account_id: int, selected_only: bool = Fa
                 updates.append(data)
             else:
                 counter["fail"] += 1
-            time.sleep(0.1)
+            if not keyless:
+                time.sleep(0.1)   # rate-limit paid API calls only
         counter["updated"] = upsert_properties(conn, updates, account_id)
     finally:
         conn.close()

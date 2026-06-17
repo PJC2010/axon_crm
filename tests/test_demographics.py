@@ -1,5 +1,5 @@
-"""Tests for pipeline/demographics.py — Versium field parsing and no-key no-op."""
-from datetime import date
+"""Tests for pipeline/demographics.py — field parsing, derived baseline, no-op."""
+from datetime import date, timedelta
 
 import pytest
 
@@ -7,7 +7,7 @@ from pipeline.demographics import (
     _first_name, _last_name, _safe_int, _safe_float,
     _yn, _band_lower, _parse_ym_date, _credit_grade,
     _mortgage_rate_type, _age_midpoint, _normalize_life_stage,
-    enrich_demographics,
+    _derived_lookup, enrich_demographics,
 )
 
 
@@ -219,6 +219,35 @@ class TestNormalizeLifeStage:
 
     def test_raw_label_new_mover(self):
         assert _normalize_life_stage("New Mover", None, None, None) == "new_mover"
+
+
+# ── _derived_lookup (free baseline) ──────────────────────────────────────────
+
+class TestDerivedLookup:
+    def test_recent_sale_is_new_mover(self):
+        recent = (date.today() - timedelta(days=300)).isoformat()
+        out = _derived_lookup({"last_sale_date": recent})
+        assert out["life_stage"] == "new_mover"
+        assert out["length_of_residence_years"] == 0
+
+    def test_old_sale_is_established(self):
+        old = (date.today() - timedelta(days=round(365.25 * 8))).isoformat()
+        out = _derived_lookup({"last_sale_date": old})
+        assert out["life_stage"] == "established"
+        assert out["length_of_residence_years"] == 8
+
+    def test_mid_tenure_is_other(self):
+        mid = (date.today() - timedelta(days=365 * 3 + 30)).isoformat()
+        out = _derived_lookup({"last_sale_date": mid})
+        assert out["life_stage"] == "other"
+
+    def test_accepts_date_object(self):
+        out = _derived_lookup({"last_sale_date": date.today() - timedelta(days=200)})
+        assert out["life_stage"] == "new_mover"
+
+    def test_no_sale_date_returns_none(self):
+        assert _derived_lookup({"last_sale_date": None}) is None
+        assert _derived_lookup({}) is None
 
 
 # ── enrich_demographics no-key no-op ─────────────────────────────────────────
