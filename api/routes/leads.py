@@ -14,9 +14,11 @@ from pydantic import BaseModel, Field
 from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user
 from api.models import (
     Lead, LeadPage, StatusUpdate, LeadContactUpdate,
-    ScoreExplanation, ScoreFactor, VerticalFactor,
+    ScoreExplanation, ScoreFactor, VerticalFactor, MLFactor,
 )
-from config import DEFAULT_WEIGHTS, VERTICAL_WEIGHTS, CONTACT_PROVIDER, CONTACT_API_KEY
+from config import (
+    DEFAULT_WEIGHTS, VERTICAL_WEIGHTS, CONTACT_PROVIDER, CONTACT_API_KEY, SCORER_MODE,
+)
 from pipeline.scoring import explain_score, describe_vertical
 from pipeline.contact import PROVIDERS
 
@@ -103,6 +105,19 @@ def get_score_explanation(lead_id: int, db: PGConn = Depends(get_db), user: dict
     stored = row.get("lead_score")
     drift = stored is not None and abs(stored - breakdown["score"]) > 0.5
 
+    # Overlay the learned model's explanation when one is active. Kept best-effort:
+    # a missing/unbuilt model just leaves the deterministic breakdown untouched.
+    ml: dict = {}
+    if SCORER_MODE in ("shadow", "learned"):
+        try:
+            from pipeline.ml import predict
+            loaded = predict.load_model(db, user["account_id"])
+            if loaded:
+                version_id, model = loaded
+                ml = predict.explain(model, version_id, row)
+        except Exception:
+            log.exception("Learned score explanation failed for lead %s", lead_id)
+
     return ScoreExplanation(
         lead_id=lead_id,
         score=breakdown["score"],
@@ -114,6 +129,12 @@ def get_score_explanation(lead_id: int, db: PGConn = Depends(get_db), user: dict
         vertical_description=[VerticalFactor(**f) for f in vdesc["factors"]],
         score_updated_at=row.get("score_updated_at"),
         weights_drift=drift,
+        scorer_mode=SCORER_MODE,
+        ml_conversion_prob=ml.get("ml_conversion_prob"),
+        ml_grade=ml.get("ml_grade"),
+        ml_model_version=ml.get("ml_model_version"),
+        ml_factors=[MLFactor(**f) for f in ml.get("ml_factors", [])],
+        ml_top_drivers=ml.get("ml_top_drivers", []),
     )
 
 

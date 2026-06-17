@@ -7,7 +7,7 @@ Pure scoring math lives in pipeline.scoring (DB-free, testable).
 import logging
 from datetime import datetime
 
-from config import DEFAULT_WEIGHTS, VERTICAL_WEIGHTS
+from config import DEFAULT_WEIGHTS, VERTICAL_WEIGHTS, SCORER_MODE
 from pipeline.db import get_conn, fetch_by_zip, upsert_properties
 from pipeline.scoring import (
     score_property, _compute_score, _grade,
@@ -41,10 +41,36 @@ def score_zip(zip_code: str, account_id: int, vertical: str | None = None) -> in
         })
 
     n = upsert_properties(conn, updates, account_id)
+
+    # Predictive layer (best-effort — never let it break the core pipeline):
+    # capture point-in-time feature snapshots, and in shadow/learned mode also
+    # store the learned conversion probability alongside the deterministic score.
+    _apply_ml(conn, account_id, vertical, rows)
+
     conn.close()
     log.info("Scored %d properties in ZIP %s (grade dist: %s)", n, zip_code,
              _grade_dist(updates))
     return n
+
+
+def _apply_ml(conn, account_id: int, vertical: str | None, rows: list[dict]) -> None:
+    """Snapshot features for training, and (unless SCORER_MODE='rules') write the
+    learned probability. Isolated in try/except so any ML failure is non-fatal."""
+    try:
+        from pipeline.ml import snapshot
+        snapshot.write_snapshots(conn, rows, account_id, vertical)
+    except Exception:
+        log.exception("Feature snapshot capture failed (non-fatal) for account %s", account_id)
+
+    if SCORER_MODE not in ("shadow", "learned"):
+        return
+    try:
+        from pipeline.ml import predict
+        scored = predict.score_and_store(conn, account_id, rows)
+        if scored:
+            log.info("Learned scoring (%s) updated %d lead(s)", SCORER_MODE, scored)
+    except Exception:
+        log.exception("Learned scoring failed (non-fatal) for account %s", account_id)
 
 
 def _grade_dist(updates: list[dict]) -> str:
