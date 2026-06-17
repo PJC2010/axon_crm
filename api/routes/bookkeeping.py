@@ -99,6 +99,7 @@ def job_costing(
             SELECT
                 p.id          AS property_id,
                 p.address,
+                COALESCE(p.estimated_job_value, 0) AS estimated_value,
                 COALESCE(inv.total_invoiced, 0)  AS revenue,
                 COALESCE(inv.total_paid, 0)       AS amount_paid,
                 COALESCE(exp.total_expenses, 0)   AS expenses
@@ -122,9 +123,11 @@ def job_costing(
                 {year_exp_cond}
                 GROUP BY property_id
             ) exp ON exp.property_id = p.id
-            WHERE (inv.property_id IS NOT NULL OR exp.property_id IS NOT NULL)
+            WHERE (inv.property_id IS NOT NULL OR exp.property_id IS NOT NULL
+                   OR p.estimated_job_value IS NOT NULL)
               AND p.account_id = %s
-            ORDER BY (COALESCE(inv.total_paid, 0) - COALESCE(exp.total_expenses, 0)) DESC
+            ORDER BY (COALESCE(inv.total_paid, 0) - COALESCE(exp.total_expenses, 0)) DESC,
+                     COALESCE(p.estimated_job_value, 0) DESC
             """,
             inv_params + exp_params + [acct],
         )
@@ -140,6 +143,7 @@ def job_costing(
         result.append({
             "property_id": r["property_id"],
             "address": r["address"],
+            "estimated_value": float(r["estimated_value"]),
             "revenue": revenue,
             "amount_paid": amount_paid,
             "expenses": expenses,

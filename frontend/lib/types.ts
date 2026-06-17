@@ -697,6 +697,7 @@ export interface WorkflowRuleCreate {
 export interface JobCostRow {
   property_id: number
   address: string
+  estimated_value: number
   revenue: number
   amount_paid: number
   expenses: number

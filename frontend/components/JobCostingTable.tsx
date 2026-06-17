@@ -31,11 +31,12 @@ export function JobCostingTable({ year }: Props) {
   )
 
   const totals = rows.reduce((acc, r) => ({
+    estimated: acc.estimated + r.estimated_value,
     revenue: acc.revenue + r.revenue,
     amount_paid: acc.amount_paid + r.amount_paid,
     expenses: acc.expenses + r.expenses,
     profit: acc.profit + r.profit,
-  }), { revenue: 0, amount_paid: 0, expenses: 0, profit: 0 })
+  }), { estimated: 0, revenue: 0, amount_paid: 0, expenses: 0, profit: 0 })
   const overallMargin = totals.amount_paid > 0 ? (totals.profit / totals.amount_paid) * 100 : 0
 
   return (
@@ -43,6 +44,7 @@ export function JobCostingTable({ year }: Props) {
       {/* Summary row */}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         {[
+          { label: 'Total Estimated', value: totals.estimated, color: 'var(--color-gold)' },
           { label: 'Total Invoiced', value: totals.revenue, color: 'var(--color-ocean)' },
           { label: 'Total Collected', value: totals.amount_paid, color: 'var(--color-moss)' },
           { label: 'Total Expenses', value: totals.expenses, color: 'var(--color-rose)' },
@@ -82,6 +84,7 @@ export function JobCostingTable({ year }: Props) {
                 </div>
                 <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                   {[
+                    { label: 'Estimated', value: row.estimated_value, color: 'var(--color-gold)' },
                     { label: 'Invoiced', value: row.revenue, color: 'var(--color-ink-600)' },
                     { label: 'Collected', value: row.amount_paid, color: 'var(--color-moss)' },
                     { label: 'Expenses', value: row.expenses, color: 'var(--color-rose)' },
