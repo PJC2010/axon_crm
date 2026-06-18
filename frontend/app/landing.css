@@ -81,6 +81,10 @@
   --color-accent-100: #1c3a5e; /* dark blue tint */
   --color-accent-800: #aac7f7;
   --color-accent-50:  rgba(76, 144, 240, 0.15);
+  /* retint Blueprint's primary intent (buttons, tags, links) */
+  --bp-intent-primary-rest:   #2d72d2;
+  --bp-intent-primary-hover:  #215db0;
+  --bp-intent-primary-active: #184a90;
 }
 
 .lp-root[data-theme="indigo"] {
@@ -90,6 +94,9 @@
   --color-accent-100: #2b2358; /* dark indigo tint */
   --color-accent-800: #bdadff;
   --color-accent-50:  rgba(152, 129, 243, 0.15);
+  --bp-intent-primary-rest:   #7961db;
+  --bp-intent-primary-hover:  #634dbf;
+  --bp-intent-primary-active: #5642a6;
 }
 
 .lp-root[data-theme="turquoise"] {
@@ -99,6 +106,9 @@
   --color-accent-100: #0c3a37; /* dark turquoise tint */
   --color-accent-800: #7ae1d8;
   --color-accent-50:  rgba(19, 201, 186, 0.15);
+  --bp-intent-primary-rest:   #00a396;
+  --bp-intent-primary-hover:  #007067;
+  --bp-intent-primary-active: #004d46;
 }
 
 .lp-root[data-theme="cerulean"] {
@@ -108,6 +118,9 @@
   --color-accent-100: #0c3850; /* dark cerulean tint */
   --color-accent-800: #68c1ee;
   --color-accent-50:  rgba(63, 166, 218, 0.15);
+  --bp-intent-primary-rest:   #147eb3;
+  --bp-intent-primary-hover:  #0f6894;
+  --bp-intent-primary-active: #0c5174;
 }
 
 .lp-root[data-theme="violet"] {
@@ -117,6 +130,9 @@
   --color-accent-100: #3a1f3a; /* dark violet tint */
   --color-accent-800: #d69fd6;
   --color-accent-50:  rgba(189, 107, 189, 0.15);
+  --bp-intent-primary-rest:   #9d3f9d;
+  --bp-intent-primary-hover:  #7c327c;
+  --bp-intent-primary-active: #5c255c;
 }
 
 .lp-root[data-theme="rose"] {
@@ -126,6 +142,9 @@
   --color-accent-100: #4a1530; /* dark rose tint */
   --color-accent-800: #ff8fb8;
   --color-accent-50:  rgba(245, 73, 139, 0.15);
+  --bp-intent-primary-rest:   #db2c6f;
+  --bp-intent-primary-hover:  #c22762;
+  --bp-intent-primary-active: #a82255;
 }
 
 /* ── Background variants (toggle via data-bg on .lp-root) ──
@@ -160,6 +179,48 @@
 
 .lp-root[data-texture="grain"] {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+}
+
+.lp-root[data-texture="crosshatch"] {
+  background-image:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.04) 0, rgba(255, 255, 255, 0.04) 1px, transparent 1px, transparent 12px),
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.04) 0, rgba(255, 255, 255, 0.04) 1px, transparent 1px, transparent 12px);
+}
+
+.lp-root[data-texture="weave"] {
+  background-image:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%, transparent 75%, rgba(255, 255, 255, 0.03) 75%),
+    linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%, transparent 75%, rgba(255, 255, 255, 0.03) 75%);
+  background-size: 18px 18px;
+  background-position: 0 0, 9px 9px;
+}
+
+.lp-root[data-texture="rings"] {
+  background-image: radial-gradient(
+    circle at 50% 50%,
+    transparent 0,
+    transparent 8px,
+    rgba(255, 255, 255, 0.04) 8px,
+    rgba(255, 255, 255, 0.04) 9px,
+    transparent 9px
+  );
+  background-size: 24px 24px;
+}
+
+.lp-root[data-texture="zigzag"] {
+  background-image:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.035) 25%, transparent 25%),
+    linear-gradient(225deg, rgba(255, 255, 255, 0.035) 25%, transparent 25%),
+    linear-gradient(45deg, rgba(255, 255, 255, 0.035) 25%, transparent 25%),
+    linear-gradient(315deg, rgba(255, 255, 255, 0.035) 25%, transparent 25%);
+  background-position: 12px 0, 12px 0, 0 0, 0 0;
+  background-size: 24px 24px;
+}
+
+.lp-root[data-texture="carbon"] {
+  background-image:
+    repeating-linear-gradient(335deg, rgba(255, 255, 255, 0.035) 0, rgba(255, 255, 255, 0.035) 1px, transparent 1px, transparent 6px),
+    repeating-linear-gradient(155deg, rgba(255, 255, 255, 0.035) 0, rgba(255, 255, 255, 0.035) 1px, transparent 1px, transparent 6px);
 }
 
 .lp-container {
@@ -307,21 +368,8 @@
   position: relative;
 }
 
-.lp-hero-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--color-accent-100);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
-  border-radius: var(--radius-pill);
-  padding: 5px 12px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-accent-800);
-  margin-bottom: 24px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
+/* rendered as a Blueprint <Tag>; only spacing is custom */
+.lp-hero-badge.bp6-tag { margin-bottom: 24px; }
 
 .lp-hero-heading {
   font-family: var(--font-display);
@@ -387,11 +435,9 @@
 /* ── Dashboard mockup ── */
 .lp-hero-visual { margin-top: 64px; }
 
-.lp-dashboard-frame {
-  background: var(--color-surface);
-  border: 1px solid var(--color-ink-200);
-  border-radius: 6px;
-  box-shadow: var(--shadow-modal);
+/* outer frame is a Blueprint <Card elevation={4}>; zero its padding */
+.lp-dashboard-frame.bp6-card {
+  padding: 0;
   overflow: hidden;
 }
 
@@ -626,18 +672,8 @@
   margin-top: 48px;
 }
 
-.lp-feature-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-ink-100);
-  border-radius: var(--radius-card);
-  padding: 32px;
-  transition: all 100ms cubic-bezier(0.4, 1, 0.75, 0.9);
-}
-
-.lp-feature-card:hover {
-  box-shadow: var(--shadow-pop);
-  transform: translateY(-2px);
-}
+/* container is a Blueprint <Card interactive>; only set padding here */
+.lp-feature-card.bp6-card { padding: 28px; }
 
 .lp-feature-icon {
   width: 40px;
@@ -714,11 +750,9 @@
 }
 
 /* ── Insight panel ── */
-.lp-insight-panel {
-  background: var(--color-surface);
-  border: 1px solid var(--color-ink-200);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-pop);
+/* panel is a Blueprint <Card elevation={2}>; zero its padding */
+.lp-insight-panel.bp6-card {
+  padding: 0;
   overflow: hidden;
 }
 
@@ -999,8 +1033,10 @@
 
 .lp-theme-swatches {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  max-width: 220px;
 }
 
 .lp-theme-swatch {
@@ -1056,6 +1092,48 @@
 
 .lp-tex-swatch.grain {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.25'/%3E%3C/svg%3E");
+}
+
+.lp-tex-swatch.crosshatch {
+  background-image:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.4) 0, rgba(255, 255, 255, 0.4) 1px, transparent 1px, transparent 6px),
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.4) 0, rgba(255, 255, 255, 0.4) 1px, transparent 1px, transparent 6px);
+}
+
+.lp-tex-swatch.weave {
+  background-image:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.35) 25%, transparent 25%, transparent 75%, rgba(255, 255, 255, 0.35) 75%),
+    linear-gradient(45deg, rgba(255, 255, 255, 0.35) 25%, transparent 25%, transparent 75%, rgba(255, 255, 255, 0.35) 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 4px 4px;
+}
+
+.lp-tex-swatch.rings {
+  background-image: radial-gradient(
+    circle at 50% 50%,
+    transparent 0,
+    transparent 3px,
+    rgba(255, 255, 255, 0.4) 3px,
+    rgba(255, 255, 255, 0.4) 4px,
+    transparent 4px
+  );
+  background-size: 10px 10px;
+}
+
+.lp-tex-swatch.zigzag {
+  background-image:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.4) 25%, transparent 25%),
+    linear-gradient(225deg, rgba(255, 255, 255, 0.4) 25%, transparent 25%),
+    linear-gradient(45deg, rgba(255, 255, 255, 0.4) 25%, transparent 25%),
+    linear-gradient(315deg, rgba(255, 255, 255, 0.4) 25%, transparent 25%);
+  background-position: 5px 0, 5px 0, 0 0, 0 0;
+  background-size: 10px 10px;
+}
+
+.lp-tex-swatch.carbon {
+  background-image:
+    repeating-linear-gradient(335deg, rgba(255, 255, 255, 0.4) 0, rgba(255, 255, 255, 0.4) 1px, transparent 1px, transparent 4px),
+    repeating-linear-gradient(155deg, rgba(255, 255, 255, 0.4) 0, rgba(255, 255, 255, 0.4) 1px, transparent 1px, transparent 4px);
 }
 
 /* Active selection ring — kept last so it wins over idle borders */

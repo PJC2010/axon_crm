@@ -27,6 +27,11 @@ const TEXTURES = [
   { id: 'grid', label: 'Grid' },
   { id: 'diagonal', label: 'Diagonal' },
   { id: 'grain', label: 'Grain' },
+  { id: 'crosshatch', label: 'Crosshatch' },
+  { id: 'weave', label: 'Weave' },
+  { id: 'rings', label: 'Rings' },
+  { id: 'zigzag', label: 'Zigzag' },
+  { id: 'carbon', label: 'Carbon' },
 ] as const
 
 const SETTINGS = {
