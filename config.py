@@ -75,6 +75,29 @@ ATTOM_MAX_ROWS_PER_ZIP = int(os.getenv("ATTOM_MAX_ROWS_PER_ZIP", "500"))
 # Fallback fraction of value treated as equity when no mortgage/sale data exists.
 EQUITY_FALLBACK_PCT = float(os.getenv("EQUITY_FALLBACK_PCT", "0.6"))
 
+# ── Job-value estimation ──────────────────────────────────────────────────────
+# Coarse, deterministic per-vertical ballpark for estimated_job_value when a lead
+# has no manual estimate. Pure math lives in pipeline/job_value.py (testable like
+# equity). Each model contributes a flat `base` plus optional per-unit terms that
+# only apply when the underlying property field is known:
+#   per_sqft     × square_footage   per_garage   × garage_spaces
+#   per_lot_sqft × lot_size         requires_pool/pool_value (has_pool gated)
+# Numbers are rough Houston-market defaults — tune freely; they exist so the field
+# is useful instead of blank, not to produce a precise quote.
+JOB_VALUE_MODEL = {
+    "roofing":          {"base": 3000, "per_sqft": 4.5},
+    "hvac":             {"base": 6000, "per_sqft": 1.5},
+    "solar":            {"base": 12000, "per_sqft": 4.0},
+    "epoxy_flooring":   {"base": 800,  "per_garage": 1800},
+    "fencing":          {"base": 1500, "per_lot_sqft": 0.4},
+    "landscaping":      {"base": 1000, "per_lot_sqft": 0.5},
+    "pressure_washing": {"base": 350,  "per_sqft": 0.15},
+    "pool_maintenance": {"base": 0, "requires_pool": True, "pool_value": 1800},
+}
+# Generic fallback when no vertical model applies or its inputs are missing:
+# a small fraction of the home's estimated value as a rough job ticket.
+JOB_VALUE_FALLBACK_PCT = float(os.getenv("JOB_VALUE_FALLBACK_PCT", "0.04"))
+
 # ── Seed property-type filter ─────────────────────────────────────────────────
 # Only these RentCast `propertyType` values are seeded; everything else (e.g.
 # Apartment, Multi-Family, Land) is skipped at seed so paid enrichment never

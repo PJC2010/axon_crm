@@ -33,8 +33,8 @@ export function KanbanCard({ lead, onClick, onQuickTask }: Props) {
         </span>
         {lead.score_grade && <ScoreBadge grade={lead.score_grade} score={lead.lead_score} />}
       </div>
-      {(lead.contact_name || lead.owner_name) && (
-        <span style={{ fontSize: 11, color: 'var(--color-ink-400)' }}>{lead.contact_name || lead.owner_name}</span>
+      {(lead.owner_name || lead.contact_name) && (
+        <span style={{ fontSize: 11, color: 'var(--color-ink-400)' }}>{lead.owner_name || lead.contact_name}</span>
       )}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         {lead.estimated_job_value != null ? (

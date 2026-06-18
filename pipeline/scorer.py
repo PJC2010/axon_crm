@@ -9,6 +9,8 @@ from datetime import datetime
 
 from config import DEFAULT_WEIGHTS, VERTICAL_WEIGHTS, SCORER_MODE
 from pipeline.db import get_conn, fetch_by_zip, upsert_properties
+from pipeline.equity import estimate_equity
+from pipeline.job_value import estimate_job_value
 from pipeline.scoring import (
     score_property, _compute_score, _grade,
     _age_signal, _sale_signal, _equity_signal,
@@ -28,17 +30,37 @@ def score_zip(zip_code: str, account_id: int, vertical: str | None = None) -> in
 
     updates = []
     for row in rows:
-        score = _compute_score(row, weights)
-        grade = _grade(score)
-        updates.append({
+        update = {
             "address":          row["address"],
             "zip":              zip_code,
-            "lead_score":       round(score, 2),
-            "score_grade":      grade,
             "vertical":         vertical,
             "score_updated_at": datetime.utcnow().isoformat(),
             "enrichment_flags": {"scored": vertical or "default"},
-        })
+        }
+
+        # Backfill estimated_equity (never overwrite an enriched/manual value) so
+        # the field is populated even on free-only data; do it before scoring so
+        # the equity signal reflects it.
+        if row.get("estimated_equity") is None:
+            equity = estimate_equity(
+                row.get("estimated_value"),
+                last_sale_price=row.get("last_sale_price"),
+                last_sale_date=row.get("last_sale_date"),
+            )
+            if equity is not None:
+                row["estimated_equity"] = equity
+                update["estimated_equity"] = equity
+
+        # Backfill an auto job-value estimate only when the user hasn't set one.
+        if row.get("estimated_job_value") is None:
+            job_value = estimate_job_value(row, vertical)
+            if job_value is not None:
+                update["estimated_job_value"] = job_value
+
+        score = _compute_score(row, weights)
+        update["lead_score"]  = round(score, 2)
+        update["score_grade"] = _grade(score)
+        updates.append(update)
 
     n = upsert_properties(conn, updates, account_id)
 
