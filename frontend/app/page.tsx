@@ -15,7 +15,7 @@ export const metadata = {
 
 export default function LandingPage() {
   return (
-    <div className="lp-root" data-theme="cobalt">
+    <div className="lp-root" data-theme="cobalt" data-bg="dark-gray" data-texture="none">
       <ThemeSwitcher />
       {/* ── Navigation ── */}
       <nav className="lp-nav">

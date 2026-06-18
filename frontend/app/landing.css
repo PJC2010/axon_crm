@@ -64,7 +64,7 @@
   --shadow-pop:   inset 0 0 0 1px rgba(255, 255, 255, 0.2), 0 4px 6px -4px rgba(0, 0, 0, 0.5), 0 10px 30px -5px rgba(0, 0, 0, 0.5);
   --shadow-modal: inset 0 0 0 1px rgba(255, 255, 255, 0.2), 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 30px -5px rgba(0, 0, 0, 0.3);
 
-  background: var(--color-paper);
+  background-color: var(--color-paper);
   color: var(--color-ink-900);
   font-family: var(--font-sans);
   min-height: 100vh;
@@ -126,6 +126,40 @@
   --color-accent-100: #4a1530; /* dark rose tint */
   --color-accent-800: #ff8fb8;
   --color-accent-50:  rgba(245, 73, 139, 0.15);
+}
+
+/* ── Background variants (toggle via data-bg on .lp-root) ──
+   Page canvas color, drawn from Blueprint's dark-gray ramp. */
+.lp-root[data-bg="dark-gray"] { --color-paper: #1c2127; } /* dark-gray1 */
+.lp-root[data-bg="black"]     { --color-paper: #111418; } /* black */
+.lp-root[data-bg="slate"]     { --color-paper: #252a31; } /* dark-gray2 */
+
+/* ── Texture variants (toggle via data-texture on .lp-root) ──
+   Subtle white-on-dark patterns layered over the page canvas. */
+.lp-root[data-texture="dots"] {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.lp-root[data-texture="grid"] {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 26px 26px;
+}
+
+.lp-root[data-texture="diagonal"] {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.035) 0,
+    rgba(255, 255, 255, 0.035) 1px,
+    transparent 1px,
+    transparent 11px
+  );
+}
+
+.lp-root[data-texture="grain"] {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
 }
 
 .lp-container {
@@ -207,6 +241,9 @@
   transition: all 100ms cubic-bezier(0.4, 1, 0.75, 0.9);
   white-space: nowrap;
 }
+
+/* Blueprint buttons depress slightly on press */
+.lp-btn:active { transform: translateY(1px); }
 
 .lp-btn-ghost {
   background: transparent;
@@ -576,7 +613,9 @@
 
 /* ── Features ── */
 .lp-features-section {
-  background: var(--color-paper);
+  /* transparent so the page canvas texture (if any) shows through;
+     visually identical to the page background when texture is off */
+  background: transparent;
   padding: 96px 0;
 }
 
@@ -929,7 +968,7 @@
   color: rgba(255, 255, 255, 0.3);
 }
 
-/* ── Palette preview switcher (testing aid) ── */
+/* ── Design system preview switcher (testing aid) ── */
 .lp-theme-switcher {
   position: fixed;
   right: 20px;
@@ -937,11 +976,17 @@
   z-index: 200;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px;
+  gap: 14px;
+  padding: 14px 16px;
   background: var(--color-surface);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-pop);
+}
+
+.lp-switch-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .lp-theme-switcher-label {
@@ -970,8 +1015,62 @@
 
 .lp-theme-swatch:hover { transform: scale(1.12); }
 
-.lp-theme-swatch[aria-pressed="true"] {
+/* Background swatches are dark, so give them a visible idle ring */
+.lp-bg-swatch { border-color: var(--color-ink-300); }
+
+/* Texture swatches preview the pattern at small scale */
+.lp-tex-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-button);
+  border: 2px solid var(--color-ink-300);
+  padding: 0;
+  cursor: pointer;
+  background-color: var(--color-paper-deep);
+  transition: transform 100ms cubic-bezier(0.4, 1, 0.75, 0.9);
+}
+
+.lp-tex-swatch:hover { transform: scale(1.1); }
+
+.lp-tex-swatch.dots {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.55) 1.5px, transparent 1.5px);
+  background-size: 7px 7px;
+}
+
+.lp-tex-swatch.grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.45) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.45) 1px, transparent 1px);
+  background-size: 8px 8px;
+}
+
+.lp-tex-swatch.diagonal {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.45) 0,
+    rgba(255, 255, 255, 0.45) 1px,
+    transparent 1px,
+    transparent 5px
+  );
+}
+
+.lp-tex-swatch.grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.25'/%3E%3C/svg%3E");
+}
+
+/* Active selection ring — kept last so it wins over idle borders */
+.lp-theme-swatch[aria-pressed="true"],
+.lp-tex-swatch[aria-pressed="true"] {
   border-color: var(--color-ink-900);
+}
+
+@media (max-width: 600px) {
+  .lp-theme-switcher {
+    right: 10px;
+    bottom: 10px;
+    padding: 10px 12px;
+    gap: 10px;
+  }
 }
 
 /* ── Responsive ── */
