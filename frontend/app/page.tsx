@@ -1,5 +1,6 @@
 import './landing.css'
 import Link from 'next/link'
+import ThemeSwitcher from '@/components/ThemeSwitcher'
 import {
   Zap, ArrowRight, PlayCircle,
   LayoutDashboard, Columns2, CheckSquare, Receipt, FileText, BookOpen, Settings,
@@ -14,7 +15,8 @@ export const metadata = {
 
 export default function LandingPage() {
   return (
-    <div className="lp-root">
+    <div className="lp-root" data-theme="cobalt">
+      <ThemeSwitcher />
       {/* ── Navigation ── */}
       <nav className="lp-nav">
         <div className="lp-container lp-nav-inner">
@@ -93,7 +95,7 @@ export default function LandingPage() {
                         <rect x="2" y="14.5" width="28" height="3" rx="1.5" fill="black" />
                         <rect x="14.5" y="2" width="3" height="28" rx="1.5" fill="black" />
                       </mask>
-                      <polygon points="16,5 27,16 16,27 5,16" fill="#4c90f0" mask="url(#axon-mark-mockup)" />
+                      <polygon points="16,5 27,16 16,27 5,16" fill="var(--color-accent)" mask="url(#axon-mark-mockup)" />
                       <circle cx="16" cy="16" r="1.5" fill="#f6f7f9" />
                     </svg>
                     <span>Axon</span>
@@ -475,7 +477,7 @@ export default function LandingPage() {
                     <rect x="2" y="14.5" width="28" height="3" rx="1.5" fill="black" />
                     <rect x="14.5" y="2" width="3" height="28" rx="1.5" fill="black" />
                   </mask>
-                  <polygon points="16,5 27,16 16,27 5,16" fill="#4c90f0" mask="url(#axon-mark-footer)" />
+                  <polygon points="16,5 27,16 16,27 5,16" fill="var(--color-accent)" mask="url(#axon-mark-footer)" />
                   <circle cx="16" cy="16" r="1.5" fill="#f6f7f9" />
                 </svg>
                 Axon
