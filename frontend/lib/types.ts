@@ -81,6 +81,7 @@ export interface ScoreExplanation {
   is_default_profile: boolean
   factors: ScoreFactor[]
   top_drivers: string[]
+  summary: string | null
   vertical_description: VerticalFactor[]
   score_updated_at: string | null
   weights_drift: boolean

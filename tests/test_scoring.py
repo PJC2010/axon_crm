@@ -782,6 +782,21 @@ class TestExplainScore:
         result = explain_score(PERFECT_ROW, config.DEFAULT_WEIGHTS)
         assert result["grade"] == _grade(result["score"])
 
+    def test_summary_names_top_drivers(self):
+        result = explain_score(PERFECT_ROW, config.DEFAULT_WEIGHTS)
+        summary = result["summary"]
+        assert summary  # non-empty
+        assert summary.startswith(f"{result['grade']} lead")
+        # Every top driver's label is mentioned (lowercased) in the sentence.
+        labels = {f["label"] for f in result["factors"] if f["key"] in result["top_drivers"]}
+        for label in labels:
+            assert label.lower() in summary.lower()
+
+    def test_summary_fallback_when_no_positive_drivers(self):
+        result = explain_score(EMPTY_ROW, config.DEFAULT_WEIGHTS)
+        assert result["top_drivers"] == []
+        assert result["summary"] == f"{result['grade']} lead — no standout signals for this profile."
+
 
 # ── describe_vertical ─────────────────────────────────────────────────────────
 
