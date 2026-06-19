@@ -1,88 +1,99 @@
 @import "tailwindcss";
 
 @theme inline {
-  /* Paper & ink — warm neutrals */
-  --color-paper:      #F7F4EE;
-  --color-paper-deep: #EFEBE2;
-  --color-cream:      #FBF8F2;
+  /* ── Blueprint dark design system ──
+     Palette: turquoise accent · slate background. Token NAMES are unchanged
+     so every existing component restyles automatically; only values change. */
 
-  --color-ink-50:  #F1F2F5;
-  --color-ink-100: #E8EAEF;
-  --color-ink-200: #DCDFE5;
-  --color-ink-300: #B8BDC8;
-  --color-ink-400: #8B92A1;
-  --color-ink-500: #6E7585;
-  --color-ink-600: #555B68;
-  --color-ink-700: #3D424D;
-  --color-ink-800: #24272F;
-  --color-ink-900: #16181D;
+  /* Surfaces — Blueprint dark grays (slate background) */
+  --color-paper:      #252a31; /* dark-gray2 / app background (slate) */
+  --color-paper-deep: #383e47; /* dark-gray4 / hover & recessed */
+  --color-cream:      #f6f7f9; /* light text on filled accents */
 
-  /* Deep ocean — signature accent */
-  --color-accent:     #1A5A75;
-  --color-accent-700: #134A61;
-  --color-accent-800: #0E3A4D;
-  --color-accent-300: #8DB4C3;
-  --color-accent-100: #CDE0E7;
-  --color-accent-50:  #E8F1F4;
+  /* "ink" scale — inverted: text & borders for dark surfaces */
+  --color-ink-50:  #2f343c;
+  --color-ink-100: #383e47; /* faint border */
+  --color-ink-200: #404854; /* border */
+  --color-ink-300: #5f6b7c; /* faint text / dividers */
+  --color-ink-400: #8f99a8;
+  --color-ink-500: #abb3bf; /* muted text */
+  --color-ink-600: #c5cbd3;
+  --color-ink-700: #d3d8de; /* secondary body text */
+  --color-ink-800: #e5e8eb;
+  --color-ink-900: #f6f7f9; /* primary text & headings */
 
-  /* Data viz */
-  --color-moss:       #4F7A4A;
-  --color-moss-soft:  #DCE6D5;
-  --color-ocean-d:    #2E5F7A;
-  --color-ocean-soft: #D2E0E8;
-  --color-gold:       #C29A3D;
-  --color-gold-soft:  #EFE3C2;
-  --color-plum:       #7A4870;
-  --color-plum-soft:  #E5D5E0;
-  --color-rose:       #B05666;
-  --color-rose-soft:  #EED5D8;
+  /* Turquoise — signature accent */
+  --color-accent:     #00a396; /* turquoise3 (filled controls) */
+  --color-accent-700: #007067; /* turquoise2 (hover) */
+  --color-accent-800: #004d46; /* turquoise1 (active) */
+  --color-accent-300: #7ae1d8; /* turquoise5 (bright accent text) */
+  --color-accent-100: #0c3a37; /* dark turquoise chip tint */
+  --color-accent-50:  #103330; /* faint turquoise fill */
+
+  /* Data viz — Blueprint extended palette (bright on dark) */
+  --color-moss:       #32a467; /* green4 */
+  --color-moss-soft:  #1c3527;
+  --color-ocean-d:    #3fa6da; /* cerulean4 */
+  --color-ocean-soft: #16313d;
+  --color-gold:       #f0b726; /* gold4 */
+  --color-gold-soft:  #3a2f12;
+  --color-plum:       #bd6bbd; /* violet4 */
+  --color-plum-soft:  #331a33;
+  --color-rose:       #f5498b; /* rose4 */
+  --color-rose-soft:  #3a1626;
 
   /* Semantic */
-  --color-success:    #4F7A4A;
-  --color-success-bg: #E6EEDE;
-  --color-warning:    #B07A2A;
-  --color-warning-bg: #F4E7CB;
-  --color-danger:     #A84236;
-  --color-danger-bg:  #F0D9D6;
-  --color-info:       #2E5F7A;
-  --color-info-bg:    #DCE7ED;
+  --color-success:    #32a467;
+  --color-success-bg: #1c3527;
+  --color-warning:    #ec9a3c; /* orange4 */
+  --color-warning-bg: #3a2a12;
+  --color-danger:     #e76a6e; /* red4 */
+  --color-danger-bg:  #3a1d1d;
+  --color-info:       #3fa6da; /* cerulean4 */
+  --color-info-bg:    #16313d;
 
   /* Surfaces & aliases (referenced across components) */
-  --color-surface:      #FFFFFF;
-  --color-ocean:        #2E5F7A;
-  --color-gold-bg:      #F4E7CB;
-  --color-accent-tint:  #E8F1F4;
-  --color-danger-tint:  #FDF2F1;
-  --color-danger-100:   #FBE4E1;
+  --color-surface:      #2f343c; /* dark-gray3 / cards */
+  --color-ocean:        #3fa6da;
+  --color-gold-bg:      #3a2f12;
+  --color-accent-tint:  #103330;
+  --color-danger-tint:  #3a1d1d;
+  --color-danger-100:   #4a2424;
 
   /* RGB channels for translucent fills */
-  --color-gold-rgb: 194, 154, 61;
-  --color-moss-rgb:  79, 122, 74;
-  --color-rose-rgb: 176,  86, 102;
+  --color-gold-rgb: 240, 183, 38;
+  --color-moss-rgb:  50, 164, 103;
+  --color-rose-rgb: 245,  73, 139;
 
-  /* Fonts */
-  --font-display: "Roboto Slab", ui-serif, Georgia, serif;
-  --font-sans:    "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono:    "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  /* Fonts — Blueprint system stack */
+  --font-display: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Open Sans", "Helvetica Neue", sans-serif;
+  --font-sans:    -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Open Sans", "Helvetica Neue", sans-serif;
+  --font-mono:    ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  /* Radius */
+  /* Radius — Blueprint's crisp scale */
   --radius-input:  4px;
-  --radius-button: 6px;
-  --radius-card:   10px;
-  --radius-modal:  14px;
+  --radius-button: 4px;
+  --radius-card:   4px;
+  --radius-modal:  6px;
   --radius-pill:   9999px;
 
-  /* Shadows — warm-tinted */
-  --shadow-card:   0 1px 2px rgba(28,22,14,0.04), 0 2px 8px rgba(28,22,14,0.06);
-  --shadow-pop:    0 4px 12px rgba(28,22,14,0.08), 0 2px 4px rgba(28,22,14,0.04);
-  --shadow-modal:  0 12px 32px rgba(28,22,14,0.14), 0 4px 12px rgba(28,22,14,0.08);
-  --shadow-drawer: -4px 0 24px 0 rgba(22,24,29,0.12);
+  /* Shadows — Blueprint dark elevation ramp (light inset border + drop) */
+  --shadow-card:   inset 0 0 0 1px rgba(255, 255, 255, 0.2), 0 1px 10px 0 rgba(0, 0, 0, 0.2);
+  --shadow-pop:    inset 0 0 0 1px rgba(255, 255, 255, 0.2), 0 4px 6px -4px rgba(0, 0, 0, 0.5), 0 10px 30px -5px rgba(0, 0, 0, 0.5);
+  --shadow-modal:  inset 0 0 0 1px rgba(255, 255, 255, 0.2), 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 30px -5px rgba(0, 0, 0, 0.3);
+  --shadow-drawer: -4px 0 24px 0 rgba(0, 0, 0, 0.5);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
 
 body {
-  background: var(--color-paper);
+  background-color: var(--color-paper);
+  /* weave texture (user-selected) */
+  background-image:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%, transparent 75%, rgba(255, 255, 255, 0.03) 75%),
+    linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%, transparent 75%, rgba(255, 255, 255, 0.03) 75%);
+  background-size: 18px 18px;
+  background-position: 0 0, 9px 9px;
   color: var(--color-ink-900);
   font-family: var(--font-sans);
   font-size: 15px;
@@ -153,7 +164,7 @@ select.drawer-input { cursor: pointer; }
   padding: 6px 10px;
   border-radius: var(--radius-button);
   border: 1px solid var(--color-ink-200);
-  background: white;
+  background: var(--color-surface);
   color: var(--color-ink-900);
   appearance: none;
   cursor: pointer;
@@ -229,7 +240,7 @@ select.drawer-input { cursor: pointer; }
   padding: 0 10px;
   border-radius: var(--radius-button);
   border: 1px solid var(--color-ink-200);
-  background: white;
+  background: var(--color-surface);
   color: var(--color-ink-400);
   cursor: pointer;
   transition: color 180ms, border-color 180ms, background 180ms;

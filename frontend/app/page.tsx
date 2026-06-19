@@ -10,7 +10,7 @@ export const metadata = {
 
 export default function LandingPage() {
   return (
-    <div className="lp-root" data-theme="cobalt" data-bg="dark-gray" data-texture="none">
+    <div className="lp-root" data-theme="turquoise" data-bg="slate" data-texture="weave">
       <ThemeSwitcher />
       {/* Blueprint dark theme scope — Blueprint's scoped CSS targets `.lp-root .bp6-dark` */}
       <div className="bp6-dark">

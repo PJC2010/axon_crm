@@ -35,9 +35,9 @@ const TEXTURES = [
 ] as const
 
 const SETTINGS = {
-  theme: { attr: 'data-theme', key: 'lp-theme', fallback: 'cobalt' },
-  bg: { attr: 'data-bg', key: 'lp-bg', fallback: 'dark-gray' },
-  texture: { attr: 'data-texture', key: 'lp-texture', fallback: 'none' },
+  theme: { attr: 'data-theme', key: 'lp-theme', fallback: 'turquoise' },
+  bg: { attr: 'data-bg', key: 'lp-bg', fallback: 'slate' },
+  texture: { attr: 'data-texture', key: 'lp-texture', fallback: 'weave' },
 } as const
 
 type SettingName = keyof typeof SETTINGS
