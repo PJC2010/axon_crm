@@ -49,7 +49,7 @@ export default function PublicQuotePage({ params }: { params: Promise<{ token: s
 
   if (error && !quote) {
     return (
-      <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-paper)', padding: 20 }}>
+      <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', padding: 20 }}>
         <div style={{ textAlign: 'center', maxWidth: 360 }}>
           <FileText size={36} strokeWidth={1.2} color="var(--color-ink-300)" style={{ marginBottom: 12 }} />
           <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 600, color: 'var(--color-ink-900)', marginBottom: 8 }}>Quote unavailable</h1>
@@ -61,7 +61,7 @@ export default function PublicQuotePage({ params }: { params: Promise<{ token: s
 
   if (!quote) {
     return (
-      <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-paper)' }}>
+      <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent' }}>
         <span style={{ fontSize: 14, color: 'var(--color-ink-400)' }}>Loading quote…</span>
       </div>
     )

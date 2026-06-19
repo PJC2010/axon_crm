@@ -43,7 +43,7 @@ export function LeadDetail({ leadId }: { leadId: number }) {
     : ''
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--color-paper)' }}>
+    <div style={{ minHeight: '100vh', background: 'transparent' }}>
       {/* Top bar */}
       <header
         className="flex items-center"

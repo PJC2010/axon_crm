@@ -100,7 +100,7 @@ export default function PreviewPage() {
   let offset = 0
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--color-paper)', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: '100vh', background: 'transparent', display: 'flex', flexDirection: 'column' }}>
       {/* ── Preview Banner ── */}
       <div style={{
         background: 'linear-gradient(90deg, var(--color-accent), var(--color-ocean-d))',

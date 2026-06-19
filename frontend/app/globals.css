@@ -84,6 +84,14 @@
   --shadow-drawer: -4px 0 24px 0 rgba(0, 0, 0, 0.5);
 }
 
+/* Retint Blueprint's primary intent (buttons, tags, links) to turquoise
+   app-wide; loaded after blueprint-app.css so this :root override wins. */
+:root {
+  --bp-intent-primary-rest:   #00a396; /* turquoise3 */
+  --bp-intent-primary-hover:  #007067; /* turquoise2 */
+  --bp-intent-primary-active: #004d46; /* turquoise1 */
+}
+
 *, *::before, *::after { box-sizing: border-box; }
 
 body {
