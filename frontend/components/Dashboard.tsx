@@ -103,7 +103,7 @@ export function Dashboard() {
               fontSize: 20,
               fontWeight: 600,
               letterSpacing: '-0.01em',
-              color: 'var(--color-ink-900)',
+              color: '#fff',
             }}>
               Axon
             </span>

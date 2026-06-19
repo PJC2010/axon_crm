@@ -175,7 +175,7 @@ export function HomeDashboard() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--color-paper)', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: '100vh', background: 'transparent', display: 'flex', flexDirection: 'column' }}>
 
       {/* ── Top Nav ── */}
       <header

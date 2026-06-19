@@ -9,9 +9,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "scope-blueprint": "node scripts/scope-blueprint-css.mjs",
+    "build-bp-app": "node scripts/build-blueprint-app-css.mjs"
   },
   "dependencies": {
+    "@blueprintjs/core": "^6.16.0",
+    "@blueprintjs/icons": "^6.11.0",
     "enhanced-resolve": "^5.22.1",
     "lucide-react": "^1.17.0",
     "next": "16.2.6",

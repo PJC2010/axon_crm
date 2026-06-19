@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Roboto_Slab, Geist, Geist_Mono } from "next/font/google";
+import "./blueprint-app.css";
 import "./globals.css";
 
 const robotoSlab = Roboto_Slab({
@@ -26,7 +27,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${robotoSlab.variable} ${geist.variable} ${geistMono.variable}`}>
-      <body>{children}</body>
+      <body><div className="bp6-dark">{children}</div></body>
     </html>
   );
 }

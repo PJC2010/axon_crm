@@ -1,11 +1,11 @@
 import type { ScoreGrade } from '@/lib/types'
 
-/* Pill colors matched to Axon semantic palette */
+/* Pill colors mapped to semantic tokens so they adapt to the active theme */
 const GRADE_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
-  A: { bg: '#E6EEDE', text: '#3D5C39', dot: '#4F7A4A' },   /* success / moss */
-  B: { bg: '#DCE7ED', text: '#1F4258', dot: '#2E5F7A' },   /* info / ocean */
-  C: { bg: '#F4E7CB', text: '#7A5419', dot: '#B07A2A' },   /* warning / gold */
-  D: { bg: '#F0D9D6', text: '#7A2F26', dot: '#A84236' },   /* danger / rose */
+  A: { bg: 'var(--color-success-bg)', text: 'var(--color-success)', dot: 'var(--color-success)' }, /* success / moss */
+  B: { bg: 'var(--color-info-bg)',    text: 'var(--color-info)',    dot: 'var(--color-info)' },    /* info / ocean */
+  C: { bg: 'var(--color-gold-bg)',    text: 'var(--color-gold)',    dot: 'var(--color-gold)' },    /* warning / gold */
+  D: { bg: 'var(--color-danger-bg)',  text: 'var(--color-danger)',  dot: 'var(--color-danger)' },  /* danger / rose */
 }
 
 interface Props {

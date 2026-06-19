@@ -1,6 +1,7 @@
 'use client'
 import { useState, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
+import { Button, Callout, Card, Elevation, FormGroup, InputGroup } from '@blueprintjs/core'
 import { login } from '@/lib/api'
 import { setToken } from '@/lib/auth'
 
@@ -33,21 +34,13 @@ export default function LoginPage() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'var(--color-paper)',
+        background: 'transparent',
+        padding: 20,
       }}
     >
-      <div
-        style={{
-          width: 360,
-          padding: '40px 36px',
-          background: 'var(--color-surface)',
-          border: '1px solid var(--color-ink-200)',
-          borderRadius: 'var(--radius-card)',
-          boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
-        }}
-      >
+      <Card elevation={Elevation.TWO} style={{ width: 360, padding: '36px 32px' }}>
         {/* Logo */}
-        <div className="flex items-center gap-3 mb-8">
+        <div className="flex items-center gap-3" style={{ marginBottom: 28 }}>
           <svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true">
             <mask id="axon-mark-login">
               <rect width="32" height="32" fill="white" />
@@ -57,7 +50,7 @@ export default function LoginPage() {
             <polygon points="16,5 27,16 16,27 5,16" fill="var(--color-accent)" mask="url(#axon-mark-login)" />
             <circle cx="16" cy="16" r="1.5" fill="var(--color-ink-900)" />
           </svg>
-          <span style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 600, color: 'var(--color-ink-900)' }}>
+          <span style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 600, color: '#fff' }}>
             Axon
           </span>
         </div>
@@ -66,57 +59,47 @@ export default function LoginPage() {
           Sign in to your workspace
         </h1>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <label className="t-label">Username</label>
-            <input
+        <form onSubmit={handleSubmit}>
+          <FormGroup label="Username" labelFor="login-username">
+            <InputGroup
+              id="login-username"
               type="text"
               value={username}
-              onChange={e => setUsername(e.target.value)}
+              onValueChange={setUsername}
               required
               autoFocus
-              className="drawer-input"
-              style={{ width: '100%' }}
+              fill
               placeholder="admin"
             />
-          </div>
+          </FormGroup>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <label className="t-label">Password</label>
-            <input
+          <FormGroup label="Password" labelFor="login-password">
+            <InputGroup
+              id="login-password"
               type="password"
               value={password}
-              onChange={e => setPassword(e.target.value)}
+              onValueChange={setPassword}
               required
-              className="drawer-input"
-              style={{ width: '100%' }}
+              fill
             />
-          </div>
+          </FormGroup>
 
           {error && (
-            <p style={{ fontSize: 13, color: 'var(--color-danger)', margin: 0 }}>{error}</p>
+            <Callout intent="danger" style={{ marginBottom: 14 }}>
+              {error}
+            </Callout>
           )}
 
-          <button
+          <Button
             type="submit"
-            disabled={loading}
-            style={{
-              marginTop: 8,
-              padding: '10px 0',
-              background: 'var(--color-ink-900)',
-              color: 'var(--color-paper)',
-              border: 'none',
-              borderRadius: 'var(--radius-pill)',
-              fontSize: 14,
-              fontWeight: 500,
-              cursor: loading ? 'not-allowed' : 'pointer',
-              opacity: loading ? 0.7 : 1,
-            }}
-          >
-            {loading ? 'Signing in…' : 'Sign in'}
-          </button>
+            intent="primary"
+            fill
+            large
+            loading={loading}
+            text="Sign in"
+          />
         </form>
-      </div>
+      </Card>
     </div>
   )
 }

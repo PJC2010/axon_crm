@@ -15,7 +15,7 @@ function MarketingPage() {
   const [days, setDays] = useState(90)
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--color-paper)' }}>
+    <div style={{ minHeight: '100vh', background: 'transparent' }}>
       <header style={{
         height: 64, padding: '0 28px', display: 'flex', alignItems: 'center', gap: 16,
         borderBottom: '1px solid var(--color-ink-200)', background: 'var(--color-paper)',

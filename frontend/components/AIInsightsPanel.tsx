@@ -16,8 +16,8 @@ interface Insight {
 
 const TYPE_STYLES: Record<string, { bg: string; border: string; iconBg: string }> = {
   action:   { bg: 'var(--color-accent-50)',  border: 'var(--color-accent-300)', iconBg: 'var(--color-accent)' },
-  positive: { bg: '#E6EEDE',                 border: '#B8D4A8',                 iconBg: 'var(--color-moss)' },
-  warning:  { bg: '#FDF8EE',                 border: '#E8D5A8',                 iconBg: 'var(--color-gold)' },
+  positive: { bg: 'var(--color-success-bg)',                 border: 'var(--color-success)',                 iconBg: 'var(--color-moss)' },
+  warning:  { bg: 'var(--color-warning-bg)',                 border: 'var(--color-warning)',                 iconBg: 'var(--color-gold)' },
 }
 
 // Analytical/trend insights only. Action items (overdue tasks/invoices, stale &

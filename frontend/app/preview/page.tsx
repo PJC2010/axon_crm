@@ -40,11 +40,11 @@ const MOCK_PNL = [
 ]
 
 const MOCK_PIPELINE = [
-  { key: 'new', label: 'New', count: 47, color: '#B8BDC8' },
-  { key: 'contacted', label: 'Contacted', count: 23, color: '#3B82F6' },
-  { key: 'qualified', label: 'Qualified', count: 12, color: '#1A5A75' },
-  { key: 'quote_sent', label: 'Quote Sent', count: 8, color: '#C29A3D' },
-  { key: 'won', label: 'Won', count: 15, color: '#4F7A4A' },
+  { key: 'new', label: 'New', count: 47, color: 'var(--color-ink-300)' },
+  { key: 'contacted', label: 'Contacted', count: 23, color: 'var(--color-info)' },
+  { key: 'qualified', label: 'Qualified', count: 12, color: 'var(--color-accent)' },
+  { key: 'quote_sent', label: 'Quote Sent', count: 8, color: 'var(--color-gold)' },
+  { key: 'won', label: 'Won', count: 15, color: 'var(--color-moss)' },
 ]
 
 const STATUS_LABELS: Record<string, string> = {
@@ -52,11 +52,11 @@ const STATUS_LABELS: Record<string, string> = {
   quote_sent: 'Quote Sent', won: 'Won', lost: 'Lost',
 }
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  new:         { bg: '#EDECEA', text: 'var(--color-ink-500)' },
-  contacted:   { bg: '#DCE7ED', text: '#1F4258' },
-  qualified:   { bg: '#D6E4EB', text: 'var(--color-accent)' },
-  quote_sent:  { bg: '#F4E7CB', text: '#7A5419' },
-  won:         { bg: '#E6EEDE', text: '#3D5C39' },
+  new:         { bg: 'var(--color-ink-50)', text: 'var(--color-ink-500)' },
+  contacted:   { bg: 'var(--color-info-bg)', text: 'var(--color-info)' },
+  qualified:   { bg: 'var(--color-accent-50)', text: 'var(--color-accent)' },
+  quote_sent:  { bg: 'var(--color-gold-bg)', text: 'var(--color-gold)' },
+  won:         { bg: 'var(--color-success-bg)', text: 'var(--color-success)' },
 }
 
 function fmtCurrency(n: number): string {
@@ -100,7 +100,7 @@ export default function PreviewPage() {
   let offset = 0
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--color-paper)', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: '100vh', background: 'transparent', display: 'flex', flexDirection: 'column' }}>
       {/* ── Preview Banner ── */}
       <div style={{
         background: 'linear-gradient(90deg, var(--color-accent), var(--color-ocean-d))',
@@ -238,8 +238,8 @@ export default function PreviewPage() {
             ].map(insight => {
               const styles = {
                 action:   { bg: 'var(--color-accent-50)', border: 'var(--color-accent-300)', iconBg: 'var(--color-accent)' },
-                positive: { bg: '#E6EEDE', border: '#B8D4A8', iconBg: 'var(--color-moss)' },
-                warning:  { bg: '#FDF8EE', border: '#E8D5A8', iconBg: 'var(--color-gold)' },
+                positive: { bg: 'var(--color-success-bg)', border: 'var(--color-success)', iconBg: 'var(--color-moss)' },
+                warning:  { bg: 'var(--color-warning-bg)', border: 'var(--color-warning)', iconBg: 'var(--color-gold)' },
               }[insight.type]
               return (
                 <div key={insight.title} style={{
@@ -271,7 +271,7 @@ export default function PreviewPage() {
         <div style={{ marginBottom: 24 }}>
           <p className="t-eyebrow" style={{ margin: '0 0 10px' }}>Needs Attention</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderRadius: 'var(--radius-card)', background: '#FDF2F1', borderLeft: '4px solid var(--color-danger)', minHeight: 44 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderRadius: 'var(--radius-card)', background: 'var(--color-danger-bg)', borderLeft: '4px solid var(--color-danger)', minHeight: 44 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <AlertTriangle size={16} strokeWidth={1.5} color="var(--color-danger)" />
                 <span style={{ fontSize: 14, color: 'var(--color-ink-900)', fontWeight: 500 }}>3 tasks overdue</span>
@@ -280,7 +280,7 @@ export default function PreviewPage() {
                 Review <ArrowRight size={13} strokeWidth={1.5} />
               </span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderRadius: 'var(--radius-card)', background: '#FDF8EE', borderLeft: '4px solid var(--color-gold)', minHeight: 44 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderRadius: 'var(--radius-card)', background: 'var(--color-warning-bg)', borderLeft: '4px solid var(--color-gold)', minHeight: 44 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <Clock size={16} strokeWidth={1.5} color="var(--color-gold)" />
                 <span style={{ fontSize: 14, color: 'var(--color-ink-900)', fontWeight: 500 }}>$9k in unpaid invoices</span>
@@ -295,7 +295,7 @@ export default function PreviewPage() {
         {/* ── Charts Row ── */}
         <div style={{ display: 'grid', gridTemplateColumns: wide ? '1.4fr 1fr' : '1fr', gap: 14, marginBottom: 24 }}>
           {/* Revenue Spark Chart */}
-          <div style={{ background: 'white', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', padding: '16px 18px', position: 'relative' }}>
+          <div style={{ background: 'var(--color-surface)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', padding: '16px 18px', position: 'relative' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
               <div>
                 <span className="t-eyebrow" style={{ marginBottom: 4, display: 'block' }}>Revenue Trend</span>
@@ -365,8 +365,8 @@ export default function PreviewPage() {
                 padding: '5px 10px', fontSize: 11, whiteSpace: 'nowrap', display: 'flex', gap: 12,
                 boxShadow: 'var(--shadow-pop)',
               }}>
-                <span style={{ color: '#8FC98A' }}>Rev: {fmtCurrencyK(MOCK_PNL[hoveredMonth].revenue)}</span>
-                <span style={{ color: '#E8959E' }}>Exp: {fmtCurrencyK(MOCK_PNL[hoveredMonth].expenses)}</span>
+                <span style={{ color: 'var(--color-moss)' }}>Rev: {fmtCurrencyK(MOCK_PNL[hoveredMonth].revenue)}</span>
+                <span style={{ color: 'var(--color-rose)' }}>Exp: {fmtCurrencyK(MOCK_PNL[hoveredMonth].expenses)}</span>
                 <span style={{ fontWeight: 600 }}>Net: {fmtCurrencyK(MOCK_PNL[hoveredMonth].net)}</span>
               </div>
             )}
@@ -381,7 +381,7 @@ export default function PreviewPage() {
           </div>
 
           {/* Pipeline Ring Chart */}
-          <div style={{ background: 'white', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', padding: '16px 18px' }}>
+          <div style={{ background: 'var(--color-surface)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', padding: '16px 18px' }}>
             <span className="t-eyebrow" style={{ display: 'block', marginBottom: 12 }}>Pipeline Distribution</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
               <div style={{ position: 'relative', width: 120, height: 120, flexShrink: 0 }}>
@@ -435,7 +435,7 @@ export default function PreviewPage() {
         {/* ── Forecast Breakdown ── */}
         <div style={{ marginBottom: 24 }}>
           <p className="t-eyebrow" style={{ margin: '0 0 12px' }}>Weighted Forecast Breakdown</p>
-          <div style={{ background: 'white', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', overflow: 'hidden' }}>
+          <div style={{ background: 'var(--color-surface)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', overflow: 'hidden' }}>
             <div style={{ display: 'flex', padding: '10px 14px', borderBottom: '1px solid var(--color-ink-100)', gap: 8 }}>
               {['Stage', 'Leads', 'Raw', 'Wt%', 'Weighted'].map((h, i) => (
                 <span key={h} style={{ flex: i === 0 ? 2 : 1, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-ink-400)', textAlign: i === 0 ? 'left' : 'right' }}>{h}</span>
@@ -464,7 +464,7 @@ export default function PreviewPage() {
             <Activity size={14} strokeWidth={1.8} color="var(--color-ink-400)" />
             <span className="t-eyebrow">Recent Activity</span>
           </div>
-          <div style={{ background: 'white', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', overflow: 'hidden' }}>
+          <div style={{ background: 'var(--color-surface)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', overflow: 'hidden' }}>
             {[
               { icon: <UserPlus size={13} strokeWidth={1.8} />, color: 'var(--color-accent)', title: 'James Mitchell', detail: 'Lead moved to qualified', time: '2h ago' },
               { icon: <FileText size={13} strokeWidth={1.8} />, color: 'var(--color-ink-500)', title: 'Invoice #INV-042', detail: 'Patricia Nguyen · $6,200 · sent', time: '5h ago' },
@@ -501,11 +501,11 @@ export default function PreviewPage() {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {MOCK_LEADS.map(lead => {
-              const sc = STATUS_COLORS[lead.status] ?? { bg: '#EDECEA', text: 'var(--color-ink-500)' }
+              const sc = STATUS_COLORS[lead.status] ?? { bg: 'var(--color-ink-50)', text: 'var(--color-ink-500)' }
               return (
                 <div key={lead.id} style={{
                   display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
-                  borderRadius: 'var(--radius-card)', background: 'white', boxShadow: 'var(--shadow-card)', minHeight: 56,
+                  borderRadius: 'var(--radius-card)', background: 'var(--color-surface)', boxShadow: 'var(--shadow-card)', minHeight: 56,
                 }}>
                   <ScoreBadge grade={lead.score_grade} score={lead.lead_score} />
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -533,7 +533,7 @@ export default function PreviewPage() {
 function KPICard({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: string; sub: string }) {
   return (
     <div style={{
-      background: 'white', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)',
+      background: 'var(--color-surface)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)',
       padding: '16px', minHeight: 88, position: 'relative', overflow: 'hidden',
     }}>
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, var(--color-accent) 0%, var(--color-accent-300) 100%)', opacity: 0.6 }} />

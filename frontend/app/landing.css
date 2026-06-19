@@ -1,5 +1,228 @@
 /* ── Landing page styles ── */
 
+/* ── Blueprint design system tokens — DARK (scoped to the landing page) ──
+   Remaps the landing page's color, type, radius, and elevation tokens onto
+   Palantir Blueprint's dark theme: dark-gray surfaces, light text, cobalt-blue
+   accent, system font, crisp 4px radii. Kept local to .lp-root so the rest of
+   the app keeps its existing warm "paper & ink" theme. */
+.lp-root {
+  /* Neutrals — Blueprint dark grays */
+  --color-paper:      #1c2127; /* dark-gray1 / app background */
+  --color-paper-deep: #2f343c; /* dark-gray3 / subtle elevated */
+  --color-cream:      #f6f7f9;
+
+  --color-surface:      #2f343c; /* dark-gray3 / card surface */
+  --color-surface-dark: #111418; /* black / deep panels & bands */
+
+  /* "ink" scale — inverted: text & borders tuned for dark surfaces */
+  --color-ink-50:  #252a31; /* dark-gray2 */
+  --color-ink-100: #383e47; /* dark-gray4 / faint border */
+  --color-ink-200: #404854; /* dark-gray5 / border */
+  --color-ink-300: #5f6b7c; /* gray1 / faint text & dividers */
+  --color-ink-400: #8f99a8; /* gray3 */
+  --color-ink-500: #abb3bf; /* gray4 / muted text */
+  --color-ink-600: #c5cbd3; /* gray5 */
+  --color-ink-700: #d3d8de; /* light-gray1 / secondary body text */
+  --color-ink-800: #e5e8eb; /* light-gray3 */
+  --color-ink-900: #f6f7f9; /* light-gray5 / primary text & headings */
+
+  /* Accent — Blueprint cobalt blue (brightened for dark) */
+  --color-accent:     #4c90f0; /* blue4 */
+  --color-accent-700: #2d72d2; /* blue3 (hover) */
+  --color-accent-800: #aac7f7; /* light blue (chip text) */
+  --color-accent-300: #8abbff; /* blue5 (bright accent text) */
+  --color-accent-100: #1c3a5e; /* dark-blue chip tint */
+  --color-accent-50:  rgba(76, 144, 240, 0.15); /* faint blue area fill */
+
+  /* Data-viz — Blueprint extended palette (bright on dark) */
+  --color-moss:    #32a467; /* green4 */
+  --color-ocean-d: #3fa6da; /* cerulean4 */
+  --color-gold:    #f0b726; /* gold4 */
+  --color-plum:    #bd6bbd; /* violet4 */
+  --color-rose:    #f5498b; /* rose4 */
+
+  --color-success-bg: #1c3527; /* dark green chip */
+  --color-info-bg:    #16313d; /* dark cerulean chip */
+  --color-gold-soft:  #3a2f12; /* dark gold chip */
+  --color-plum-soft:  #331a33; /* dark violet chip */
+  --color-rose-soft:  #3a1626; /* dark rose chip */
+
+  /* Typography — Blueprint system font stack (no serif display) */
+  --font-display: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Open Sans", "Helvetica Neue", sans-serif;
+  --font-sans:    -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Open Sans", "Helvetica Neue", sans-serif;
+  --font-mono:    monospace;
+
+  /* Radius — Blueprint's crisp 4px scale */
+  --radius-input:  4px;
+  --radius-button: 4px;
+  --radius-card:   4px;
+  --radius-modal:  4px;
+  --radius-pill:   9999px;
+
+  /* Elevation — Blueprint dark shadow ramp (light inset border + drop) */
+  --shadow-card:  inset 0 0 0 1px rgba(255, 255, 255, 0.2), 0 1px 10px 0 rgba(0, 0, 0, 0.2);
+  --shadow-pop:   inset 0 0 0 1px rgba(255, 255, 255, 0.2), 0 4px 6px -4px rgba(0, 0, 0, 0.5), 0 10px 30px -5px rgba(0, 0, 0, 0.5);
+  --shadow-modal: inset 0 0 0 1px rgba(255, 255, 255, 0.2), 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 30px -5px rgba(0, 0, 0, 0.3);
+
+  background-color: var(--color-paper);
+  color: var(--color-ink-900);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+}
+
+/* ── Accent palette variants (toggle via data-theme on .lp-root) ──
+   Each block swaps only the cobalt-blue accent ramp for another Blueprint
+   hue, reusing its 5-step scale: step 4 for the bright accent, step 3 for
+   hover, step 5 for bright-on-dark text, a darkened step 1 for chip tints. */
+.lp-root[data-theme="cobalt"] {
+  --color-accent:     #4c90f0; /* blue4 */
+  --color-accent-700: #2d72d2; /* blue3 */
+  --color-accent-300: #8abbff; /* blue5 */
+  --color-accent-100: #1c3a5e; /* dark blue tint */
+  --color-accent-800: #aac7f7;
+  --color-accent-50:  rgba(76, 144, 240, 0.15);
+  /* retint Blueprint's primary intent (buttons, tags, links) */
+  --bp-intent-primary-rest:   #2d72d2;
+  --bp-intent-primary-hover:  #215db0;
+  --bp-intent-primary-active: #184a90;
+}
+
+.lp-root[data-theme="indigo"] {
+  --color-accent:     #9881f3; /* indigo4 */
+  --color-accent-700: #7961db; /* indigo3 */
+  --color-accent-300: #bdadff; /* indigo5 */
+  --color-accent-100: #2b2358; /* dark indigo tint */
+  --color-accent-800: #bdadff;
+  --color-accent-50:  rgba(152, 129, 243, 0.15);
+  --bp-intent-primary-rest:   #7961db;
+  --bp-intent-primary-hover:  #634dbf;
+  --bp-intent-primary-active: #5642a6;
+}
+
+.lp-root[data-theme="turquoise"] {
+  --color-accent:     #13c9ba; /* turquoise4 */
+  --color-accent-700: #00a396; /* turquoise3 */
+  --color-accent-300: #7ae1d8; /* turquoise5 */
+  --color-accent-100: #0c3a37; /* dark turquoise tint */
+  --color-accent-800: #7ae1d8;
+  --color-accent-50:  rgba(19, 201, 186, 0.15);
+  --bp-intent-primary-rest:   #00a396;
+  --bp-intent-primary-hover:  #007067;
+  --bp-intent-primary-active: #004d46;
+}
+
+.lp-root[data-theme="cerulean"] {
+  --color-accent:     #3fa6da; /* cerulean4 */
+  --color-accent-700: #147eb3; /* cerulean3 */
+  --color-accent-300: #68c1ee; /* cerulean5 */
+  --color-accent-100: #0c3850; /* dark cerulean tint */
+  --color-accent-800: #68c1ee;
+  --color-accent-50:  rgba(63, 166, 218, 0.15);
+  --bp-intent-primary-rest:   #147eb3;
+  --bp-intent-primary-hover:  #0f6894;
+  --bp-intent-primary-active: #0c5174;
+}
+
+.lp-root[data-theme="violet"] {
+  --color-accent:     #bd6bbd; /* violet4 */
+  --color-accent-700: #9d3f9d; /* violet3 */
+  --color-accent-300: #d69fd6; /* violet5 */
+  --color-accent-100: #3a1f3a; /* dark violet tint */
+  --color-accent-800: #d69fd6;
+  --color-accent-50:  rgba(189, 107, 189, 0.15);
+  --bp-intent-primary-rest:   #9d3f9d;
+  --bp-intent-primary-hover:  #7c327c;
+  --bp-intent-primary-active: #5c255c;
+}
+
+.lp-root[data-theme="rose"] {
+  --color-accent:     #f5498b; /* rose4 */
+  --color-accent-700: #db2c6f; /* rose3 */
+  --color-accent-300: #ff66a1; /* rose5 */
+  --color-accent-100: #4a1530; /* dark rose tint */
+  --color-accent-800: #ff8fb8;
+  --color-accent-50:  rgba(245, 73, 139, 0.15);
+  --bp-intent-primary-rest:   #db2c6f;
+  --bp-intent-primary-hover:  #c22762;
+  --bp-intent-primary-active: #a82255;
+}
+
+/* ── Background variants (toggle via data-bg on .lp-root) ──
+   Page canvas color, drawn from Blueprint's dark-gray ramp. */
+.lp-root[data-bg="dark-gray"] { --color-paper: #1c2127; } /* dark-gray1 */
+.lp-root[data-bg="black"]     { --color-paper: #111418; } /* black */
+.lp-root[data-bg="slate"]     { --color-paper: #252a31; } /* dark-gray2 */
+
+/* ── Texture variants (toggle via data-texture on .lp-root) ──
+   Subtle white-on-dark patterns layered over the page canvas. */
+.lp-root[data-texture="dots"] {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.lp-root[data-texture="grid"] {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 26px 26px;
+}
+
+.lp-root[data-texture="diagonal"] {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.035) 0,
+    rgba(255, 255, 255, 0.035) 1px,
+    transparent 1px,
+    transparent 11px
+  );
+}
+
+.lp-root[data-texture="grain"] {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+}
+
+.lp-root[data-texture="crosshatch"] {
+  background-image:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.04) 0, rgba(255, 255, 255, 0.04) 1px, transparent 1px, transparent 12px),
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.04) 0, rgba(255, 255, 255, 0.04) 1px, transparent 1px, transparent 12px);
+}
+
+.lp-root[data-texture="weave"] {
+  background-image:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%, transparent 75%, rgba(255, 255, 255, 0.03) 75%),
+    linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%, transparent 75%, rgba(255, 255, 255, 0.03) 75%);
+  background-size: 18px 18px;
+  background-position: 0 0, 9px 9px;
+}
+
+.lp-root[data-texture="rings"] {
+  background-image: radial-gradient(
+    circle at 50% 50%,
+    transparent 0,
+    transparent 8px,
+    rgba(255, 255, 255, 0.04) 8px,
+    rgba(255, 255, 255, 0.04) 9px,
+    transparent 9px
+  );
+  background-size: 24px 24px;
+}
+
+.lp-root[data-texture="zigzag"] {
+  background-image:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.035) 25%, transparent 25%),
+    linear-gradient(225deg, rgba(255, 255, 255, 0.035) 25%, transparent 25%),
+    linear-gradient(45deg, rgba(255, 255, 255, 0.035) 25%, transparent 25%),
+    linear-gradient(315deg, rgba(255, 255, 255, 0.035) 25%, transparent 25%);
+  background-position: 12px 0, 12px 0, 0 0, 0 0;
+  background-size: 24px 24px;
+}
+
+.lp-root[data-texture="carbon"] {
+  background-image:
+    repeating-linear-gradient(335deg, rgba(255, 255, 255, 0.035) 0, rgba(255, 255, 255, 0.035) 1px, transparent 1px, transparent 6px),
+    repeating-linear-gradient(155deg, rgba(255, 255, 255, 0.035) 0, rgba(255, 255, 255, 0.035) 1px, transparent 1px, transparent 6px);
+}
+
 .lp-container {
   max-width: 1200px;
   margin: 0 auto;
@@ -36,6 +259,7 @@
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.01em;
+  color: #fff;
 }
 
 .lp-nav-links {
@@ -52,7 +276,7 @@
   font-weight: 500;
   color: var(--color-ink-700);
   text-decoration: none;
-  transition: color 180ms cubic-bezier(.4, .1, .2, 1);
+  transition: color 100ms cubic-bezier(0.4, 1, 0.75, 0.9);
 }
 
 .lp-nav-links a:hover { color: var(--color-ink-900); }
@@ -76,9 +300,12 @@
   border: 1px solid transparent;
   cursor: pointer;
   text-decoration: none;
-  transition: all 180ms cubic-bezier(.4, .1, .2, 1);
+  transition: all 100ms cubic-bezier(0.4, 1, 0.75, 0.9);
   white-space: nowrap;
 }
+
+/* Blueprint buttons depress slightly on press */
+.lp-btn:active { transform: translateY(1px); }
 
 .lp-btn-ghost {
   background: transparent;
@@ -107,7 +334,7 @@
   border-color: var(--color-ink-900);
 }
 
-.lp-btn-dark:hover { background: #000; }
+.lp-btn-dark:hover { background: #ffffff; }
 
 .lp-btn-accent {
   background: var(--color-accent);
@@ -121,14 +348,14 @@
 }
 
 .lp-btn-paper {
-  background: var(--color-paper);
-  color: var(--color-ink-900);
+  background: var(--color-ink-900);
+  color: var(--color-paper);
   border-color: transparent;
 }
 
 .lp-btn-paper:hover {
   background: #fff;
-  box-shadow: 0 4px 20px rgba(247, 244, 238, 0.2);
+  box-shadow: 0 4px 20px rgba(255, 255, 255, 0.15);
 }
 
 .lp-btn-lg {
@@ -142,26 +369,13 @@
   position: relative;
 }
 
-.lp-hero-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--color-accent-100);
-  border: 1px solid rgba(26, 90, 117, 0.2);
-  border-radius: var(--radius-pill);
-  padding: 5px 12px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-accent-800);
-  margin-bottom: 24px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
+/* rendered as a Blueprint <Tag>; only spacing is custom */
+.lp-hero-badge.bp6-tag { margin-bottom: 24px; }
 
 .lp-hero-heading {
   font-family: var(--font-display);
   font-size: clamp(40px, 6vw, 72px);
-  font-weight: 400;
+  font-weight: 600;
   line-height: 1.05;
   letter-spacing: -0.02em;
   color: var(--color-ink-900);
@@ -170,7 +384,7 @@
 }
 
 .lp-hero-heading em {
-  font-style: italic;
+  font-style: normal;
   color: var(--color-accent);
 }
 
@@ -222,11 +436,9 @@
 /* ── Dashboard mockup ── */
 .lp-hero-visual { margin-top: 64px; }
 
-.lp-dashboard-frame {
-  background: #fff;
-  border: 1px solid var(--color-ink-200);
-  border-radius: 12px;
-  box-shadow: var(--shadow-modal);
+/* outer frame is a Blueprint <Card elevation={4}>; zero its padding */
+.lp-dashboard-frame.bp6-card {
+  padding: 0;
   overflow: hidden;
 }
 
@@ -252,7 +464,7 @@
 }
 
 .lp-dash-sidebar {
-  background: var(--color-ink-900);
+  background: var(--color-surface-dark);
   padding: 20px 0;
   display: flex;
   flex-direction: column;
@@ -322,9 +534,9 @@
 }
 
 .lp-dash-metric {
-  background: #fff;
+  background: var(--color-surface);
   border: 1px solid var(--color-ink-100);
-  border-radius: 8px;
+  border-radius: 4px;
   padding: 16px;
   box-shadow: var(--shadow-card);
 }
@@ -364,9 +576,9 @@
 }
 
 .lp-dash-chart-card {
-  background: #fff;
+  background: var(--color-surface);
   border: 1px solid var(--color-ink-100);
-  border-radius: 8px;
+  border-radius: 4px;
   padding: 16px;
   box-shadow: var(--shadow-card);
 }
@@ -432,7 +644,7 @@
 .lp-section-heading {
   font-family: var(--font-display);
   font-size: clamp(28px, 4vw, 44px);
-  font-weight: 400;
+  font-weight: 600;
   line-height: 1.1;
   letter-spacing: -0.01em;
   color: var(--color-ink-900);
@@ -448,7 +660,9 @@
 
 /* ── Features ── */
 .lp-features-section {
-  background: #fff;
+  /* transparent so the page canvas texture (if any) shows through;
+     visually identical to the page background when texture is off */
+  background: transparent;
   padding: 96px 0;
 }
 
@@ -459,23 +673,13 @@
   margin-top: 48px;
 }
 
-.lp-feature-card {
-  background: var(--color-paper);
-  border: 1px solid var(--color-ink-100);
-  border-radius: var(--radius-card);
-  padding: 32px;
-  transition: all 180ms cubic-bezier(.4, .1, .2, 1);
-}
-
-.lp-feature-card:hover {
-  box-shadow: var(--shadow-pop);
-  transform: translateY(-2px);
-}
+/* container is a Blueprint <Card interactive>; only set padding here */
+.lp-feature-card.bp6-card { padding: 28px; }
 
 .lp-feature-icon {
   width: 40px;
   height: 40px;
-  border-radius: 8px;
+  border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -547,11 +751,9 @@
 }
 
 /* ── Insight panel ── */
-.lp-insight-panel {
-  background: #fff;
-  border: 1px solid var(--color-ink-200);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-pop);
+/* panel is a Blueprint <Card elevation={2}>; zero its padding */
+.lp-insight-panel.bp6-card {
+  padding: 0;
   overflow: hidden;
 }
 
@@ -583,9 +785,9 @@
 .lp-insight-list { padding: 12px; }
 
 .lp-insight-item {
-  background: var(--color-paper);
+  background: var(--color-surface-dark);
   border: 1px solid var(--color-ink-100);
-  border-radius: 8px;
+  border-radius: 4px;
   padding: 14px 16px;
   display: flex;
   gap: 12px;
@@ -608,8 +810,8 @@
 
 /* ── Proof stats ── */
 .lp-proof-section {
-  background: var(--color-ink-900);
-  color: var(--color-paper);
+  background: var(--color-surface-dark);
+  color: var(--color-ink-900);
   padding: 96px 0;
 }
 
@@ -624,7 +826,7 @@
 }
 
 .lp-proof-stat {
-  background: var(--color-ink-900);
+  background: var(--color-surface-dark);
   padding: 40px 32px;
   text-align: center;
 }
@@ -637,7 +839,7 @@
   margin-bottom: 6px;
 }
 
-.lp-proof-stat-accent { color: var(--color-accent-100); }
+.lp-proof-stat-accent { color: var(--color-accent-300); }
 .lp-proof-stat-label  { font-size: 13px; color: rgba(255, 255, 255, 0.5); line-height: 1.4; }
 
 /* ── How it works ── */
@@ -688,7 +890,7 @@
 }
 
 .lp-testimonial-card {
-  background: #fff;
+  background: var(--color-surface);
   border: 1px solid var(--color-ink-100);
   border-radius: var(--radius-card);
   padding: 32px;
@@ -716,7 +918,7 @@
 
 /* ── CTA band ── */
 .lp-cta-section {
-  background: var(--color-ink-900);
+  background: var(--color-surface-dark);
   padding: 80px 0;
   text-align: center;
 }
@@ -724,14 +926,14 @@
 .lp-cta-heading {
   font-family: var(--font-display);
   font-size: clamp(28px, 4vw, 48px);
-  font-weight: 400;
+  font-weight: 600;
   line-height: 1.1;
   color: #fff;
   max-width: 600px;
   margin: 0 auto 32px;
 }
 
-.lp-cta-heading em { font-style: italic; color: rgba(255, 255, 255, 0.6); }
+.lp-cta-heading em { font-style: normal; color: var(--color-accent-300); }
 
 .lp-cta-actions {
   display: flex;
@@ -743,7 +945,7 @@
 
 /* ── Footer ── */
 .lp-footer {
-  background: var(--color-ink-900);
+  background: var(--color-surface-dark);
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   padding: 64px 0 48px;
 }
@@ -787,7 +989,7 @@
   font-size: 14px;
   color: rgba(255, 255, 255, 0.6);
   text-decoration: none;
-  transition: color 180ms cubic-bezier(.4, .1, .2, 1);
+  transition: color 100ms cubic-bezier(0.4, 1, 0.75, 0.9);
 }
 .lp-footer-links a:hover { color: #fff; }
 

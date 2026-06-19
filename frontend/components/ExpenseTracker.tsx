@@ -106,7 +106,7 @@ export function ExpenseTracker() {
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
   return (
-    <div style={{ minHeight: '100dvh', background: 'var(--color-paper)' }}>
+    <div style={{ minHeight: '100dvh', background: 'transparent' }}>
       {/* Header */}
       <header style={{
         height: 64, padding: '0 20px', display: 'flex', alignItems: 'center',
