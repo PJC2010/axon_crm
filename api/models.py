@@ -343,6 +343,7 @@ class ScoreExplanation(BaseModel):
     is_default_profile: bool = False
     factors: list[ScoreFactor] = []
     top_drivers: list[str] = []
+    summary: Optional[str] = None  # one-line plain-language reason for the score
     vertical_description: list[VerticalFactor] = []
     score_updated_at: Optional[datetime] = None
     weights_drift: bool = False

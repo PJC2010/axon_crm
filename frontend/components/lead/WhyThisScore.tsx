@@ -1,21 +1,24 @@
 'use client'
 import { useEffect, useState } from 'react'
-import type { ScoreExplanation } from '@/lib/types'
+import type { ScoreExplanation, ScoreFactor } from '@/lib/types'
 import { getScoreExplanation } from '@/lib/api'
 import { VERTICAL_LABELS } from './format'
 
-/** "Why this score" — per-factor breakdown + vertical weighting. Self-fetching
- *  so the drawer and the full lead page can drop it in with just a lead id. */
+/** "Why this score" — a one-line reason + the top drivers, with the full
+ *  per-factor breakdown tucked behind a toggle. Self-fetching so the drawer and
+ *  the full lead page can drop it in with just a lead id. */
 export function WhyThisScore({ leadId }: { leadId: number }) {
   const [explanation, setExplanation] = useState<ScoreExplanation | null>(null)
+  const [showAll, setShowAll] = useState(false)
 
   useEffect(() => {
     setExplanation(null)
+    setShowAll(false)
     getScoreExplanation(leadId).then(setExplanation).catch(() => {})
   }, [leadId])
 
   if (!explanation || explanation.factors.length === 0) return null
-  const { factors, top_drivers, vertical, vertical_description, is_default_profile, weights_drift, score_updated_at } = explanation
+  const { factors, top_drivers, summary, vertical, vertical_description, is_default_profile, weights_drift, score_updated_at } = explanation
 
   const scoredDaysAgo = score_updated_at
     ? Math.floor((Date.now() - new Date(score_updated_at).getTime()) / 86_400_000)
@@ -28,51 +31,79 @@ export function WhyThisScore({ leadId }: { leadId: number }) {
     .slice(0, 3)
     .map(f => `${f.label} ${Math.round(f.weight * 100)}%`)
     .join(' · ')
+  // Bar widths stay comparable across the default and expanded lists.
   const maxContribution = Math.max(...factors.map(f => f.contribution), 1)
+
+  // Show the top drivers by default; fall back to the first few factors so the
+  // panel is never empty when nothing has a positive contribution.
+  const driverFactors = factors.filter(f => top_drivers.includes(f.key))
+  const primary = driverFactors.length ? driverFactors : factors.slice(0, 3)
+  const rest = factors.filter(f => !primary.includes(f))
+
+  const renderFactor = (f: ScoreFactor) => {
+    const isTop = top_drivers.includes(f.key)
+    return (
+      <div key={f.key} title={f.description}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}>
+          <span style={{ fontSize: 12, fontWeight: isTop ? 600 : 500, color: isTop ? 'var(--color-ink-900)' : 'var(--color-ink-600)' }}>
+            {f.label}
+            {isTop && (
+              <span style={{
+                marginLeft: 6, fontSize: 9, fontWeight: 600, padding: '1px 6px',
+                borderRadius: 'var(--radius-pill)', background: 'var(--color-accent-100)',
+                color: 'var(--color-accent-800)', textTransform: 'uppercase', letterSpacing: '0.05em',
+              }}>Top driver</span>
+            )}
+          </span>
+          <span className="tabular" style={{ fontSize: 11, color: 'var(--color-ink-400)', flexShrink: 0, marginLeft: 8 }}>
+            +{f.contribution.toFixed(1)} pts · {Math.round(f.weight * 100)}%
+          </span>
+        </div>
+        <div style={{ height: 6, borderRadius: 'var(--radius-pill)', background: 'var(--color-ink-100)', overflow: 'hidden' }}>
+          <div style={{
+            height: '100%',
+            width: `${(f.contribution / maxContribution) * 100}%`,
+            background: isTop ? 'var(--color-accent)' : 'var(--color-ink-300)',
+            borderRadius: 'var(--radius-pill)',
+          }} />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <section style={{ padding: '16px 24px', borderBottom: '1px solid var(--color-ink-100)' }}>
       <p className="t-eyebrow" style={{ marginBottom: 8 }}>Why this score</p>
 
-      {/* Auto-generated description of what this vertical weighs */}
+      {/* One-line plain-language reason, plus the profile this lead was scored on */}
+      {summary && (
+        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-ink-900)', lineHeight: 1.45, margin: '0 0 4px' }}>
+          {summary}
+        </p>
+      )}
       <p style={{ fontSize: 12, color: 'var(--color-ink-500)', lineHeight: 1.5, margin: '0 0 14px' }}>
         <span style={{ fontWeight: 600, color: 'var(--color-ink-700)' }}>{profileName}</span>
         {topWeights && <> weighs {topWeights}.</>}
       </p>
 
-      {/* Per-factor breakdown — bar width ∝ point contribution */}
+      {/* Top drivers by default; full breakdown behind the toggle below */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {factors.map(f => {
-          const isTop = top_drivers.includes(f.key)
-          return (
-            <div key={f.key} title={f.description}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}>
-                <span style={{ fontSize: 12, fontWeight: isTop ? 600 : 500, color: isTop ? 'var(--color-ink-900)' : 'var(--color-ink-600)' }}>
-                  {f.label}
-                  {isTop && (
-                    <span style={{
-                      marginLeft: 6, fontSize: 9, fontWeight: 600, padding: '1px 6px',
-                      borderRadius: 'var(--radius-pill)', background: 'var(--color-accent-100)',
-                      color: 'var(--color-accent-800)', textTransform: 'uppercase', letterSpacing: '0.05em',
-                    }}>Top driver</span>
-                  )}
-                </span>
-                <span className="tabular" style={{ fontSize: 11, color: 'var(--color-ink-400)', flexShrink: 0, marginLeft: 8 }}>
-                  +{f.contribution.toFixed(1)} pts · {Math.round(f.weight * 100)}%
-                </span>
-              </div>
-              <div style={{ height: 6, borderRadius: 'var(--radius-pill)', background: 'var(--color-ink-100)', overflow: 'hidden' }}>
-                <div style={{
-                  height: '100%',
-                  width: `${(f.contribution / maxContribution) * 100}%`,
-                  background: isTop ? 'var(--color-accent)' : 'var(--color-ink-300)',
-                  borderRadius: 'var(--radius-pill)',
-                }} />
-              </div>
-            </div>
-          )
-        })}
+        {primary.map(renderFactor)}
+        {showAll && rest.map(renderFactor)}
       </div>
+
+      {rest.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowAll(v => !v)}
+          style={{
+            marginTop: 12, padding: 0, background: 'none', border: 'none', cursor: 'pointer',
+            fontSize: 11, fontWeight: 600, color: 'var(--color-accent-800)',
+          }}
+        >
+          {showAll ? 'Hide other factors ▴' : `Show all factors (${rest.length} more) ▾`}
+        </button>
+      )}
 
       {weights_drift && (
         <p style={{ marginTop: 12, marginBottom: 0, fontSize: 11, color: 'var(--color-warning, #B07A2A)' }}>

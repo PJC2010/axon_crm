@@ -126,6 +126,7 @@ def get_score_explanation(lead_id: int, db: PGConn = Depends(get_db), user: dict
         is_default_profile=vdesc["is_default"],
         factors=[ScoreFactor(**f) for f in breakdown["factors"]],
         top_drivers=breakdown["top_drivers"],
+        summary=breakdown["summary"],
         vertical_description=[VerticalFactor(**f) for f in vdesc["factors"]],
         score_updated_at=row.get("score_updated_at"),
         weights_drift=drift,

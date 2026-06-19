@@ -282,6 +282,24 @@ _SIGNAL_FNS = {
 }
 
 
+def _summarize(grade: str, factors: list[dict], top_drivers: list[str]) -> str:
+    """A one-line, plain-language reason for the score: grade + its top drivers.
+
+    Reads off the same `factors`/`top_drivers` the breakdown already computes, so
+    the sentence can never disagree with the bars. Labels are lowercased mid-
+    sentence ("storm activity" reads better than "Storm activity"). With no
+    positive drivers (low scores), say so rather than naming weak factors.
+    """
+    labels = [f["label"].lower() for f in factors if f["key"] in top_drivers]
+    if not labels:
+        return f"{grade} lead — no standout signals for this profile."
+    if len(labels) == 1:
+        phrase = labels[0]
+    else:
+        phrase = ", ".join(labels[:-1]) + ", and " + labels[-1]
+    return f"{grade} lead — driven mainly by {phrase}."
+
+
 def explain_score(row: dict, weights: dict) -> dict:
     """Break a lead's score into per-factor contributions.
 
@@ -308,11 +326,13 @@ def explain_score(row: dict, weights: dict) -> dict:
     factors.sort(key=lambda f: f["contribution"], reverse=True)
     top_drivers = [f["key"] for f in factors[:3] if f["contribution"] > 0]
     score = _compute_score(row, weights)
+    grade = _grade(score)
     return {
         "score":       round(score, 2),
-        "grade":       _grade(score),
+        "grade":       grade,
         "factors":     factors,
         "top_drivers": top_drivers,
+        "summary":     _summarize(grade, factors, top_drivers),
     }
 
 
