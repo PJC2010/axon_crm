@@ -50,7 +50,7 @@ export default function LoginPage() {
             <polygon points="16,5 27,16 16,27 5,16" fill="var(--color-accent)" mask="url(#axon-mark-login)" />
             <circle cx="16" cy="16" r="1.5" fill="var(--color-ink-900)" />
           </svg>
-          <span style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 600, color: 'var(--color-ink-900)' }}>
+          <span style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 600, color: '#fff' }}>
             Axon
           </span>
         </div>
