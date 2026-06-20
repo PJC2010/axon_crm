@@ -79,9 +79,16 @@ body {
 }
 .select-field { appearance: none; cursor: pointer; padding: 6px 10px; }
 
-/* iOS Safari auto-zoom guard — lift text controls to 16px on touch. */
+/* iOS Safari auto-zoom guard — lift text controls to 16px on touch.
+   iOS zooms the page in whenever a focused field has a font smaller than 16px;
+   with an autofocused field (e.g. the login form) that fires the moment the page
+   loads. Several controls set their font size via inline styles (the `ds/Input`
+   component, settings selects, etc.), which outrank a normal media-query rule —
+   so `!important` is required here to guarantee the 16px floor on touch and stop
+   the auto-zoom. Desktop (pointer: fine) is unaffected and keeps its designed
+   type scale. */
 @media (pointer: coarse) {
-  input, select, textarea, .drawer-input, .select-field { font-size: 16px; }
+  input, select, textarea, .drawer-input, .select-field { font-size: 16px !important; }
 }
 
 /* ── Buttons ── */
