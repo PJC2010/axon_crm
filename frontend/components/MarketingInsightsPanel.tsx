@@ -59,7 +59,7 @@ export function MarketingInsightsPanel({ days = 90 }: Props) {
       {loading ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {[1, 2, 3].map(i => (
-            <div key={i} style={{ height: 84, borderRadius: 'var(--radius-card)', background: 'white', boxShadow: 'var(--shadow-card)', opacity: 0.5 }} />
+            <div key={i} style={{ height: 84, borderRadius: 'var(--radius-card)', background: 'var(--color-surface)', boxShadow: 'var(--shadow-card)', opacity: 0.5 }} />
           ))}
         </div>
       ) : !data || !data.has_data ? (
@@ -117,7 +117,7 @@ function EmptyState() {
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, textAlign: 'center',
-      padding: '32px 20px', borderRadius: 'var(--radius-card)', background: 'white',
+      padding: '32px 20px', borderRadius: 'var(--radius-card)', background: 'var(--color-surface)',
       boxShadow: 'var(--shadow-card)', border: '1px dashed var(--color-ink-200)',
     }}>
       <Plug size={22} strokeWidth={1.5} color="var(--color-accent)" />

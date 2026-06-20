@@ -66,7 +66,7 @@ export function PerformanceBreakdown() {
           No data yet for this breakdown.
         </p>
       ) : (
-        <div style={{ background: 'white', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', overflow: 'hidden' }}>
+        <div style={{ background: 'var(--color-surface)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', overflow: 'hidden' }}>
           <div style={{ display: 'flex', padding: '10px 14px', borderBottom: '1px solid var(--color-ink-100)', gap: 8 }}>
             <span style={{ flex: 2, ...HEAD }}>{dimension === 'rep' ? 'Rep' : dimension === 'source' ? 'Source' : 'Vertical'}</span>
             <span style={{ flex: 1, ...HEAD, textAlign: 'right' }}>Leads</span>

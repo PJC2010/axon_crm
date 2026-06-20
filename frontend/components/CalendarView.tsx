@@ -6,10 +6,10 @@ import { getAppointments, updateAppointment, deleteAppointment, sendAppointment 
 import type { Appointment, AppointmentStatus } from '@/lib/types'
 
 const STATUS_STYLE: Record<AppointmentStatus, { bg: string; text: string; label: string }> = {
-  scheduled: { bg: '#D6E4EB', text: 'var(--color-accent)', label: 'Scheduled' },
-  completed: { bg: '#E6EEDE', text: '#3D5C39',             label: 'Completed' },
-  cancelled: { bg: '#F0D9D6', text: '#7A2F26',             label: 'Cancelled' },
-  no_show:   { bg: '#F4E7CB', text: '#7A5419',             label: 'No-show' },
+  scheduled: { bg: 'var(--color-info-bg)',    text: 'var(--color-info)',    label: 'Scheduled' },
+  completed: { bg: 'var(--color-success-bg)', text: 'var(--color-success)', label: 'Completed' },
+  cancelled: { bg: 'var(--color-danger-bg)',  text: 'var(--color-danger)',  label: 'Cancelled' },
+  no_show:   { bg: 'var(--color-gold-soft)',  text: 'var(--color-gold)',    label: 'No-show' },
 }
 
 function fmtTime(iso: string): string {
@@ -87,7 +87,7 @@ export function CalendarView({ reloadKey, onToast }: Props) {
             {groups[day].map(a => {
               const s = STATUS_STYLE[a.status]
               return (
-                <div key={a.id} style={{ background: 'white', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', padding: '12px 14px' }}>
+                <div key={a.id} style={{ background: 'var(--color-surface)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', padding: '12px 14px' }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>

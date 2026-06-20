@@ -60,7 +60,7 @@ export function AppointmentForm({ prefillLeadId, prefillTitle, prefillLocation, 
   }
 
   return (
-    <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 10, background: 'white', padding: 16, borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)' }}>
+    <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--color-surface)', padding: 16, borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)' }}>
       <input
         value={title}
         onChange={e => setTitle(e.target.value)}

@@ -38,7 +38,7 @@ export default function LoginPage() {
         padding: 20,
       }}
     >
-      <Card elevation={Elevation.TWO} style={{ width: 360, padding: '36px 32px' }}>
+      <Card elevation={Elevation.TWO} style={{ width: '100%', maxWidth: 360, padding: '36px 32px' }}>
         {/* Logo */}
         <div className="flex items-center gap-3" style={{ marginBottom: 28 }}>
           <svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true">

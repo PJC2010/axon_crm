@@ -43,7 +43,7 @@ export function QuickTaskModal({ leadId, leadLabel, onClose, onCreated }: Props)
       <div style={{
         position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
         zIndex: 201,
-        background: 'white', borderRadius: 'var(--radius-modal)',
+        background: 'var(--color-surface)', borderRadius: 'var(--radius-modal)',
         boxShadow: 'var(--shadow-modal)', padding: '20px 22px',
         width: 340, maxWidth: 'calc(100vw - 32px)',
       }}>
@@ -88,7 +88,7 @@ export function QuickTaskModal({ leadId, leadLabel, onClose, onCreated }: Props)
               onClick={handleSubmit}
               disabled={!title.trim() || saving}
               style={{
-                padding: '7px 16px', background: 'var(--color-ink-900)', color: 'white',
+                padding: '7px 16px', background: 'var(--color-accent)', color: 'white',
                 border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 600,
                 cursor: !title.trim() || saving ? 'not-allowed' : 'pointer',
                 opacity: !title.trim() || saving ? 0.6 : 1,
