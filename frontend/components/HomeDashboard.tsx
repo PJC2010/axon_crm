@@ -38,14 +38,14 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  new:            { bg: '#EDECEA',         text: 'var(--color-ink-500)' },
-  contacted:      { bg: '#DCE7ED',         text: '#1F4258' },
-  qualified:      { bg: '#D6E4EB',         text: 'var(--color-accent)' },
-  quote_sent:     { bg: '#F4E7CB',         text: '#7A5419' },
-  won:            { bg: '#E6EEDE',         text: '#3D5C39' },
-  lost:           { bg: '#F0D9D6',         text: '#7A2F26' },
-  not_interested: { bg: '#EDECEA',         text: 'var(--color-ink-400)' },
-  converted:      { bg: '#E6EEDE',         text: '#3D5C39' },
+  new:            { bg: 'var(--color-ink-50)',     text: 'var(--color-ink-500)' },
+  contacted:      { bg: 'var(--color-info-bg)',    text: 'var(--color-info)' },
+  qualified:      { bg: 'var(--color-accent-100)', text: 'var(--color-accent-300)' },
+  quote_sent:     { bg: 'var(--color-gold-soft)',  text: 'var(--color-gold)' },
+  won:            { bg: 'var(--color-success-bg)', text: 'var(--color-success)' },
+  lost:           { bg: 'var(--color-danger-bg)',  text: 'var(--color-danger)' },
+  not_interested: { bg: 'var(--color-ink-50)',     text: 'var(--color-ink-400)' },
+  converted:      { bg: 'var(--color-success-bg)', text: 'var(--color-success)' },
 }
 
 interface DashData {
@@ -519,7 +519,7 @@ export function HomeDashboard() {
           {loading ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {[1,2,3].map(i => (
-                <div key={i} style={{ height: 56, borderRadius: 'var(--radius-card)', background: 'white', boxShadow: 'var(--shadow-card)', opacity: 0.5 }} />
+                <div key={i} style={{ height: 56, borderRadius: 'var(--radius-card)', background: 'var(--color-surface)', boxShadow: 'var(--shadow-card)', opacity: 0.5 }} />
               ))}
             </div>
           ) : data.recentLeads.length === 0 ? (
@@ -529,14 +529,14 @@ export function HomeDashboard() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {data.recentLeads.map(lead => {
-                const sc = STATUS_COLORS[lead.status] ?? { bg: '#EDECEA', text: 'var(--color-ink-500)' }
+                const sc = STATUS_COLORS[lead.status] ?? { bg: 'var(--color-ink-50)', text: 'var(--color-ink-500)' }
                 const name = lead.owner_name ?? lead.address ?? lead.contact_name ?? '—'
                 const sub  = [lead.city, lead.state].filter(Boolean).join(', ')
                 return (
                   <Link
                     key={lead.id}
                     href="/dashboard"
-                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 'var(--radius-card)', background: 'white', boxShadow: 'var(--shadow-card)', minHeight: 56, textDecoration: 'none', color: 'inherit' }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 'var(--radius-card)', background: 'var(--color-surface)', boxShadow: 'var(--shadow-card)', minHeight: 56, textDecoration: 'none', color: 'inherit' }}
                   >
                     <ScoreBadge grade={lead.score_grade} score={lead.lead_score} />
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -592,7 +592,7 @@ function KPICard({ icon, label, value, sub, href }: {
     </>
   )
   const cardStyle: React.CSSProperties = {
-    background: 'white', borderRadius: 'var(--radius-card)',
+    background: 'var(--color-surface)', borderRadius: 'var(--radius-card)',
     boxShadow: 'var(--shadow-card)', padding: '16px',
     minHeight: 88, position: 'relative', overflow: 'hidden',
     display: 'block', textDecoration: 'none', color: 'inherit',

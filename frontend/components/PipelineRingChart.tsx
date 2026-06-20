@@ -25,7 +25,7 @@ export function PipelineRingChart() {
   useEffect(() => { load() }, [load])
 
   if (loading) {
-    return <div style={{ height: 200, borderRadius: 'var(--radius-card)', background: 'white', boxShadow: 'var(--shadow-card)', opacity: 0.5 }} />
+    return <div style={{ height: 200, borderRadius: 'var(--radius-card)', background: 'var(--color-surface)', boxShadow: 'var(--shadow-card)', opacity: 0.5 }} />
   }
   if (!stats) return null
 
@@ -44,7 +44,7 @@ export function PipelineRingChart() {
 
   return (
     <div style={{
-      background: 'white', borderRadius: 'var(--radius-card)',
+      background: 'var(--color-surface)', borderRadius: 'var(--radius-card)',
       boxShadow: 'var(--shadow-card)', padding: '16px 18px',
     }}>
       <span className="t-eyebrow" style={{ display: 'block', marginBottom: 12 }}>Pipeline Distribution</span>

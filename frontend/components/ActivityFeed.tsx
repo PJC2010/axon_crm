@@ -103,7 +103,7 @@ export function ActivityFeed() {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {[1,2,3].map(i => (
-            <div key={i} style={{ height: 44, borderRadius: 'var(--radius-card)', background: 'white', boxShadow: 'var(--shadow-card)', opacity: 0.4 }} />
+            <div key={i} style={{ height: 44, borderRadius: 'var(--radius-card)', background: 'var(--color-surface)', boxShadow: 'var(--shadow-card)', opacity: 0.4 }} />
           ))}
         </div>
       </div>
@@ -120,7 +120,7 @@ export function ActivityFeed() {
       </div>
 
       <div style={{
-        background: 'white', borderRadius: 'var(--radius-card)',
+        background: 'var(--color-surface)', borderRadius: 'var(--radius-card)',
         boxShadow: 'var(--shadow-card)', overflow: 'hidden',
       }}>
         {items.map((item, idx) => (

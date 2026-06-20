@@ -70,7 +70,7 @@ export function LeadDetail({ leadId }: { leadId: number }) {
         {lead && (
           <div
             style={{
-              background: 'white',
+              background: 'var(--color-surface)',
               border: '1px solid var(--color-ink-200)',
               borderRadius: 'var(--radius-card)',
               overflow: 'hidden',

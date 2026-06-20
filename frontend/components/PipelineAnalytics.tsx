@@ -17,19 +17,19 @@ const STAGE_LABELS: Record<string, string> = {
 }
 
 const STAGE_COLORS: Record<string, string> = {
-  new: '#B8BDC8',
-  contacted: '#3B82F6',
-  qualified: '#1A5A75',
-  quote_sent: '#C29A3D',
-  won: '#4F7A4A',
+  new: 'var(--color-ink-300)',
+  contacted: 'var(--color-ocean)',
+  qualified: 'var(--color-accent)',
+  quote_sent: 'var(--color-gold)',
+  won: 'var(--color-moss)',
 }
 
 const STAGE_BG: Record<string, string> = {
-  new: '#EDECEA',
-  contacted: '#DCE7ED',
-  qualified: '#D6E4EB',
-  quote_sent: '#F4E7CB',
-  won: '#E6EEDE',
+  new: 'var(--color-ink-50)',
+  contacted: 'var(--color-info-bg)',
+  qualified: 'var(--color-accent-100)',
+  quote_sent: 'var(--color-gold-soft)',
+  won: 'var(--color-success-bg)',
 }
 
 export function PipelineAnalytics() {
@@ -161,7 +161,7 @@ export function PipelineAnalytics() {
         <section>
           <h3 className="t-eyebrow" style={{ marginBottom: 14 }}>Average days in stage</h3>
           <div style={{
-            background: 'white', borderRadius: 'var(--radius-card)',
+            background: 'var(--color-surface)', borderRadius: 'var(--radius-card)',
             boxShadow: 'var(--shadow-card)', overflow: 'hidden',
           }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>

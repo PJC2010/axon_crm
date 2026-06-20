@@ -94,7 +94,7 @@ export function AIInsightsPanel() {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {[1,2].map(i => (
-            <div key={i} style={{ height: 72, borderRadius: 'var(--radius-card)', background: 'white', boxShadow: 'var(--shadow-card)', opacity: 0.5 }} />
+            <div key={i} style={{ height: 72, borderRadius: 'var(--radius-card)', background: 'var(--color-surface)', boxShadow: 'var(--shadow-card)', opacity: 0.5 }} />
           ))}
         </div>
       </div>

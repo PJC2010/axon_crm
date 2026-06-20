@@ -33,7 +33,7 @@ export function RevenueSparkChart({ year, height = 160 }: Props) {
 
   if (loading) {
     return (
-      <div style={{ height, borderRadius: 'var(--radius-card)', background: 'white', boxShadow: 'var(--shadow-card)', opacity: 0.5 }} />
+      <div style={{ height, borderRadius: 'var(--radius-card)', background: 'var(--color-surface)', boxShadow: 'var(--shadow-card)', opacity: 0.5 }} />
     )
   }
 
@@ -66,7 +66,7 @@ export function RevenueSparkChart({ year, height = 160 }: Props) {
 
   return (
     <div style={{
-      background: 'white', borderRadius: 'var(--radius-card)',
+      background: 'var(--color-surface)', borderRadius: 'var(--radius-card)',
       boxShadow: 'var(--shadow-card)', padding: '16px 18px',
       position: 'relative',
     }}>
@@ -157,7 +157,7 @@ export function RevenueSparkChart({ year, height = 160 }: Props) {
       {hoveredIdx !== null && (
         <div style={{
           position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)',
-          background: 'var(--color-ink-900)', color: 'white', borderRadius: 'var(--radius-button)',
+          background: 'var(--color-black)', color: 'var(--color-ink-900)', borderRadius: 'var(--radius-button)',
           padding: '5px 10px', fontSize: 11, whiteSpace: 'nowrap', display: 'flex', gap: 12,
           boxShadow: 'var(--shadow-pop)',
         }}>

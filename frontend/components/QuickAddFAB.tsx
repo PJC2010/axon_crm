@@ -100,7 +100,7 @@ export function QuickAddFAB() {
         {/* Panel */}
         {open && panel && (
           <div style={{
-            background: 'white',
+            background: 'var(--color-surface)',
             borderRadius: 'var(--radius-modal)',
             boxShadow: 'var(--shadow-modal)',
             border: '1px solid var(--color-ink-200)',
@@ -151,7 +151,7 @@ export function QuickAddFAB() {
                   onClick={submitTask}
                   disabled={!taskTitle.trim() || taskSaving}
                   style={{
-                    padding: '8px 16px', background: 'var(--color-ink-900)', color: 'white',
+                    padding: '8px 16px', background: 'var(--color-accent)', color: 'white',
                     border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 600,
                     cursor: !taskTitle.trim() || taskSaving ? 'not-allowed' : 'pointer',
                     opacity: !taskTitle.trim() || taskSaving ? 0.6 : 1,
@@ -204,7 +204,7 @@ export function QuickAddFAB() {
                   onClick={submitExpense}
                   disabled={!expAmount || !expVendor.trim() || expSaving}
                   style={{
-                    padding: '8px 16px', background: 'var(--color-ink-900)', color: 'white',
+                    padding: '8px 16px', background: 'var(--color-accent)', color: 'white',
                     border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 600,
                     cursor: !expAmount || !expVendor.trim() || expSaving ? 'not-allowed' : 'pointer',
                     opacity: !expAmount || !expVendor.trim() || expSaving ? 0.6 : 1,
@@ -221,7 +221,7 @@ export function QuickAddFAB() {
         {/* Action chooser */}
         {open && !panel && (
           <div style={{
-            background: 'white',
+            background: 'var(--color-surface)',
             borderRadius: 'var(--radius-card)',
             boxShadow: 'var(--shadow-modal)',
             border: '1px solid var(--color-ink-200)',

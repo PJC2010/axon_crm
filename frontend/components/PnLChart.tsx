@@ -45,16 +45,16 @@ export function PnLChart({ year }: Props) {
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <div style={{
           flex: '1 1 140px', padding: '18px 20px', borderRadius: 'var(--radius-card)',
-          background: 'linear-gradient(135deg, #E6EEDE 0%, #D6E4D2 100%)',
-          border: '1px solid #B8D4A8',
+          background: 'linear-gradient(135deg, var(--color-success-bg) 0%, var(--color-moss-soft) 100%)',
+          border: '1px solid color-mix(in srgb, var(--color-moss) 30%, transparent)',
         }}>
           <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-moss)', marginBottom: 6 }}>Revenue</div>
           <div style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--color-ink-900)' }}>{fmt(report.total_revenue)}</div>
         </div>
         <div style={{
           flex: '1 1 140px', padding: '18px 20px', borderRadius: 'var(--radius-card)',
-          background: 'linear-gradient(135deg, #F0D9D6 0%, #EBC8C4 100%)',
-          border: '1px solid #DEB4AD',
+          background: 'linear-gradient(135deg, var(--color-danger-bg) 0%, var(--color-rose-soft) 100%)',
+          border: '1px solid color-mix(in srgb, var(--color-rose) 30%, transparent)',
         }}>
           <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--color-rose)', marginBottom: 6 }}>Expenses</div>
           <div style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--color-ink-900)' }}>{fmt(report.total_expenses)}</div>
@@ -62,9 +62,9 @@ export function PnLChart({ year }: Props) {
         <div style={{
           flex: '1 1 140px', padding: '18px 20px', borderRadius: 'var(--radius-card)',
           background: report.net_profit >= 0
-            ? 'linear-gradient(135deg, var(--color-accent-50) 0%, #D6E8ED 100%)'
-            : 'linear-gradient(135deg, #FDF2F1 0%, #F8E4E2 100%)',
-          border: `1px solid ${report.net_profit >= 0 ? 'var(--color-accent-300)' : '#DEB4AD'}`,
+            ? 'linear-gradient(135deg, var(--color-accent-50) 0%, var(--color-ocean-soft) 100%)'
+            : 'linear-gradient(135deg, var(--color-danger-bg) 0%, var(--color-rose-soft) 100%)',
+          border: `1px solid ${report.net_profit >= 0 ? 'color-mix(in srgb, var(--color-accent) 35%, transparent)' : 'color-mix(in srgb, var(--color-rose) 30%, transparent)'}`,
         }}>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 6,
@@ -83,7 +83,7 @@ export function PnLChart({ year }: Props) {
       <div>
         <div className="t-eyebrow" style={{ marginBottom: 12 }}>Monthly Breakdown</div>
         <div style={{
-          background: 'white', borderRadius: 'var(--radius-card)',
+          background: 'var(--color-surface)', borderRadius: 'var(--radius-card)',
           boxShadow: 'var(--shadow-card)', padding: '16px 12px 8px',
           overflowX: 'auto',
         }}>
@@ -103,7 +103,7 @@ export function PnLChart({ year }: Props) {
                   {isHovered && hasData && (
                     <div style={{
                       fontSize: 9, fontWeight: 600, padding: '2px 5px',
-                      borderRadius: 'var(--radius-button)', background: 'var(--color-ink-900)', color: 'white',
+                      borderRadius: 'var(--radius-button)', background: 'var(--color-black)', color: 'var(--color-ink-900)',
                       whiteSpace: 'nowrap', marginBottom: 2,
                     }}>
                       {fmtK(m.net)}
@@ -154,7 +154,7 @@ export function PnLChart({ year }: Props) {
         <div>
           <div className="t-eyebrow" style={{ marginBottom: 8 }}>Detail</div>
           <div style={{
-            background: 'white', borderRadius: 'var(--radius-card)',
+            background: 'var(--color-surface)', borderRadius: 'var(--radius-card)',
             boxShadow: 'var(--shadow-card)', overflow: 'hidden',
           }}>
             <div style={{ overflowX: 'auto' }}>
@@ -188,7 +188,7 @@ export function PnLChart({ year }: Props) {
                             <span style={{
                               fontSize: 10, fontWeight: 600, padding: '1px 5px',
                               borderRadius: 'var(--radius-pill)',
-                              background: m.net >= 0 ? '#E6EEDE' : '#F0D9D6',
+                              background: m.net >= 0 ? 'var(--color-success-bg)' : 'var(--color-danger-bg)',
                               color: m.net >= 0 ? 'var(--color-moss)' : 'var(--color-danger)',
                             }}>
                               {m.net >= 0 ? '+' : ''}{Math.round((m.net / Math.max(m.revenue, 1)) * 100)}%

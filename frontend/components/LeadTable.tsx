@@ -123,7 +123,7 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
             {showBulkMenu && (
               <div style={{
                 position: 'absolute', top: '100%', right: 0, marginTop: 4,
-                background: 'white', border: '1px solid var(--color-ink-200)',
+                background: 'var(--color-surface)', border: '1px solid var(--color-ink-200)',
                 borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)',
                 zIndex: 100, minWidth: 200,
               }}>
@@ -220,13 +220,13 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
                 key={lead.id}
                 onClick={() => onRowClick(lead)}
                 style={{
-                  background: i % 2 === 0 ? 'white' : 'var(--color-paper)',
+                  background: i % 2 === 0 ? 'var(--color-surface)' : 'transparent',
                   borderBottom: '1px solid var(--color-ink-100)',
                   cursor: 'pointer',
                   transition: 'background 120ms',
                 }}
-                onMouseEnter={e => (e.currentTarget as HTMLTableRowElement).style.background = 'var(--color-cream)'}
-                onMouseLeave={e => (e.currentTarget as HTMLTableRowElement).style.background = i % 2 === 0 ? 'white' : 'var(--color-paper)'}
+                onMouseEnter={e => (e.currentTarget as HTMLTableRowElement).style.background = 'var(--color-surface-hi)'}
+                onMouseLeave={e => (e.currentTarget as HTMLTableRowElement).style.background = i % 2 === 0 ? 'var(--color-surface)' : 'transparent'}
               >
                 <td style={{ padding: '8px', width: 32, textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                   <input
@@ -284,7 +284,7 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
           justifyContent: 'space-between',
           padding: '10px 20px',
           borderTop: '1px solid var(--color-ink-200)',
-          background: 'white',
+          background: 'var(--color-surface)',
           fontSize: 12,
           color: 'var(--color-ink-500)',
           flexShrink: 0,

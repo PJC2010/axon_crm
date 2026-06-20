@@ -49,7 +49,7 @@ export function GettingStartedChecklist() {
     <div style={{
       marginBottom: 20,
       borderRadius: 'var(--radius-card)',
-      background: 'white',
+      background: 'var(--color-surface)',
       boxShadow: 'var(--shadow-card)',
       overflow: 'hidden',
     }}>

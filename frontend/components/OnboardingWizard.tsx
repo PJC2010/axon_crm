@@ -125,7 +125,7 @@ export function OnboardingWizard({ onComplete }: Props) {
                     display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px',
                     borderRadius: 'var(--radius-card)',
                     border: vertical === v.key ? '2px solid var(--color-accent)' : '1px solid var(--color-ink-200)',
-                    background: vertical === v.key ? 'color-mix(in srgb, var(--color-accent) 6%, white)' : 'white',
+                    background: vertical === v.key ? 'var(--color-accent-50)' : 'var(--color-surface)',
                     cursor: 'pointer', textAlign: 'left', width: '100%',
                   }}
                 >
@@ -164,14 +164,14 @@ export function OnboardingWizard({ onComplete }: Props) {
                   width: '100%', boxSizing: 'border-box', fontSize: 15, padding: '10px 14px',
                   borderRadius: 'var(--radius-input)',
                   border: region ? '2px solid var(--color-accent)' : '1px solid var(--color-ink-200)',
-                  background: 'white', color: 'var(--color-ink-900)', fontFamily: 'var(--font-sans)',
+                  background: 'var(--color-surface)', color: 'var(--color-ink-900)', fontFamily: 'var(--font-sans)',
                   outline: 'none', textAlign: 'left',
                 }}
               />
               {!region && regions.length > 0 && (
                 <div style={{
                   position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, marginTop: 4,
-                  background: 'white', border: '1px solid var(--color-ink-200)',
+                  background: 'var(--color-surface)', border: '1px solid var(--color-ink-200)',
                   borderRadius: 'var(--radius-card)', boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
                   maxHeight: 240, overflowY: 'auto', textAlign: 'left',
                 }}>
@@ -181,7 +181,7 @@ export function OnboardingWizard({ onComplete }: Props) {
                       onClick={() => { setRegion(r); setRegionQuery(r.name); setRegions([]) }}
                       style={{
                         display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
-                        width: '100%', padding: '10px 14px', background: 'white', border: 'none',
+                        width: '100%', padding: '10px 14px', background: 'var(--color-surface)', border: 'none',
                         borderBottom: '1px solid var(--color-ink-100)', cursor: 'pointer', textAlign: 'left',
                       }}
                     >
@@ -213,7 +213,7 @@ export function OnboardingWizard({ onComplete }: Props) {
                   style={{
                     width: 200, fontSize: 15, padding: '10px 14px',
                     borderRadius: 'var(--radius-input)', border: '1px solid var(--color-ink-200)',
-                    background: 'white', color: 'var(--color-ink-900)', fontFamily: 'var(--font-sans)',
+                    background: 'var(--color-surface)', color: 'var(--color-ink-900)', fontFamily: 'var(--font-sans)',
                     outline: 'none', textAlign: 'center',
                   }}
                 />
@@ -298,7 +298,7 @@ export function OnboardingWizard({ onComplete }: Props) {
               ].map(item => (
                 <div key={item.label} style={{
                   display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px',
-                  borderRadius: 'var(--radius-card)', background: 'white', border: '1px solid var(--color-ink-200)', textAlign: 'left',
+                  borderRadius: 'var(--radius-card)', background: 'var(--color-surface)', border: '1px solid var(--color-ink-200)', textAlign: 'left',
                 }}>
                   <div style={{ color: 'var(--color-accent)', flexShrink: 0 }}>{item.icon}</div>
                   <div>
@@ -333,7 +333,7 @@ export function OnboardingWizard({ onComplete }: Props) {
               disabled={step === 0 && !vertical}
               style={{
                 padding: '10px 24px', borderRadius: 'var(--radius-pill)',
-                background: 'var(--color-ink-900)', color: 'white',
+                background: 'var(--color-accent)', color: 'white',
                 border: 'none', fontSize: 14, fontWeight: 500, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', gap: 6,
                 opacity: step === 0 && !vertical ? 0.5 : 1,
