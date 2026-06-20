@@ -15,7 +15,7 @@
   --space-16: 64px;
   --space-24: 96px;
 
-  /* Radius — crisp, Blueprint-derived */
+  /* Radius — crisp 4px scale */
   --radius-input:  4px;
   --radius-button: 4px;
   --radius-card:   4px;
@@ -32,7 +32,7 @@
   /* Focus ring */
   --ring-accent: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent);
 
-  /* Motion — Blueprint's signature ease; quick & confident */
+  /* Motion — signature ease; quick & confident */
   --ease-out: cubic-bezier(0.4, 1, 0.75, 0.9);
   --dur-fast: 100ms;
   --dur-base: 180ms;
