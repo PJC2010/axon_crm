@@ -13,6 +13,7 @@ import { getMe, getTaskCounts, getPipelineStats, getARSummary, getLeads, getPipe
 import { clearToken } from '@/lib/auth'
 import type { Lead, PipelineCounts, ARSummary, ForecastData, User, PipelineAnalytics, PnLReport, ExpenseSummary } from '@/lib/types'
 import { ScoreBadge } from './ScoreBadge'
+import { KpiCard, StatusPill } from './ds'
 import { TaskBell } from './TaskBell'
 import { OnboardingWizard } from './OnboardingWizard'
 import { GettingStartedChecklist } from './GettingStartedChecklist'
@@ -25,28 +26,6 @@ import { TodayFocusSection } from './TodayFocusSection'
 import { QuickAddFAB } from './QuickAddFAB'
 
 const CLOSED_STAGES = new Set(['won', 'lost', 'not_interested'])
-
-const STATUS_LABELS: Record<string, string> = {
-  new: 'New',
-  contacted: 'Contacted',
-  qualified: 'Qualified',
-  quote_sent: 'Quote Sent',
-  won: 'Won',
-  lost: 'Lost',
-  not_interested: 'Not Interested',
-  converted: 'Converted',
-}
-
-const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  new:            { bg: 'var(--color-ink-50)',     text: 'var(--color-ink-500)' },
-  contacted:      { bg: 'var(--color-info-bg)',    text: 'var(--color-info)' },
-  qualified:      { bg: 'var(--color-accent-100)', text: 'var(--color-accent-300)' },
-  quote_sent:     { bg: 'var(--color-gold-soft)',  text: 'var(--color-gold)' },
-  won:            { bg: 'var(--color-success-bg)', text: 'var(--color-success)' },
-  lost:           { bg: 'var(--color-danger-bg)',  text: 'var(--color-danger)' },
-  not_interested: { bg: 'var(--color-ink-50)',     text: 'var(--color-ink-400)' },
-  converted:      { bg: 'var(--color-success-bg)', text: 'var(--color-success)' },
-}
 
 interface DashData {
   user: User | null
@@ -529,7 +508,6 @@ export function HomeDashboard() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {data.recentLeads.map(lead => {
-                const sc = STATUS_COLORS[lead.status] ?? { bg: 'var(--color-ink-50)', text: 'var(--color-ink-500)' }
                 const name = lead.owner_name ?? lead.address ?? lead.contact_name ?? '—'
                 const sub  = [lead.city, lead.state].filter(Boolean).join(', ')
                 return (
@@ -548,9 +526,7 @@ export function HomeDashboard() {
                         {fmtCurrency(lead.estimated_job_value)}
                       </span>
                     )}
-                    <span style={{ padding: '3px 10px', borderRadius: 'var(--radius-pill)', background: sc.bg, color: sc.text, fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                      {STATUS_LABELS[lead.status] ?? lead.status}
-                    </span>
+                    <StatusPill status={lead.status} style={{ flexShrink: 0 }} />
                   </Link>
                 )
               })}
@@ -576,30 +552,10 @@ function KPICard({ icon, label, value, sub, href }: {
   sub: React.ReactNode
   href?: string
 }) {
-  const body = (
-    <>
-      <div style={{
-        position: 'absolute', top: 0, left: 0, right: 0, height: 3,
-        background: 'linear-gradient(90deg, var(--color-accent) 0%, var(--color-accent-300) 100%)',
-        opacity: 0.6,
-      }} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-        {icon}
-        <span className="t-eyebrow">{label}</span>
-      </div>
-      <p className="tabular" style={{ margin: '0 0 4px', fontSize: 26, fontWeight: 700, color: 'var(--color-ink-900)', lineHeight: 1 }}>{value}</p>
-      <p style={{ margin: 0, fontSize: 12, color: 'var(--color-ink-400)' }}>{sub}</p>
-    </>
-  )
-  const cardStyle: React.CSSProperties = {
-    background: 'var(--color-surface)', borderRadius: 'var(--radius-card)',
-    boxShadow: 'var(--shadow-card)', padding: '16px',
-    minHeight: 88, position: 'relative', overflow: 'hidden',
-    display: 'block', textDecoration: 'none', color: 'inherit',
-  }
+  const card = <KpiCard icon={icon} label={label} value={value} sub={sub} />
   return href
-    ? <Link href={href} style={cardStyle}>{body}</Link>
-    : <div style={cardStyle}>{body}</div>
+    ? <Link href={href} style={{ display: 'block', textDecoration: 'none', color: 'inherit' }}>{card}</Link>
+    : card
 }
 
 function HeroStat({ label, value, sub, subDanger }: {
