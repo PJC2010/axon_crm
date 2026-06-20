@@ -20,7 +20,8 @@ NULL fields.
 
 ### 1. Seed — `pipeline/seed.py`
 - **Source:** RentCast `/properties` (default) — or a CSV (`seed_from_csv`) — or the local
-  HCAD DuckDB (`seed_from_hcad`, currently region-scoped).
+  HCAD data, either ZIP-level (`seed_from_hcad_zip`, free) or region-scoped
+  (`seed_from_hcad`). Choose with `SEED_SOURCE` / `--seed-source hcad`.
 - **Mechanism:** Paginated `GET /properties?zipCode=&limit=500&offset=` with
   `X-Api-Key`. Records whose `propertyType` isn't in `SEED_PROPERTY_TYPES`
   (Single Family, Condo, Townhouse, Manufactured) are dropped *before* hitting the DB so

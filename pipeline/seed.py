@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 from config import (
-    RENTCAST_API_KEY, RENTCAST_BASE_URL, SEED_PROPERTY_TYPES,
+    RENTCAST_API_KEY, RENTCAST_BASE_URL, SEED_PROPERTY_TYPES, SEED_SOURCE,
     SEED_EXPAND_ENABLED, SEED_EXPAND_THRESHOLD, SEED_EXPAND_TARGET,
     SEED_EXPAND_RADIUS_MI, SEED_EXPAND_MAX_ZIPS,
 )
@@ -186,12 +186,47 @@ def seed_from_hcad(region_id: str, zip_code: str, account_id: int,
     return n
 
 
+def seed_from_hcad_zip(zip_code: str, account_id: int, limit: int | None = None) -> int:
+    """Seed every parcel in a ZIP directly from the local HCAD data — zero paid
+    API calls. The free counterpart to seed_from_rentcast for Harris County.
+
+    Unlike seed_from_hcad (which is scoped to one HCAD neighborhood/region), this
+    seeds the whole ZIP, so it slots straight into the ZIP-based pipeline. It also
+    pre-fills the assessor fields RentCast/Attom would otherwise be paid to fetch;
+    downstream geocode/scoring run unchanged on the seeded rows.
+    """
+    from pipeline import hcad_store
+
+    parcels = hcad_store.query_parcels_for_zip(zip_code)
+    if not parcels:
+        log.info("HCAD seed: no parcels for ZIP %s (is the DuckDB built and "
+                 "PERMIT_DB_PATH set?)", zip_code)
+        return 0
+
+    rows = [_normalize_hcad(p, region_id=None) for p in parcels.values()]
+    if limit:
+        rows = rows[:limit]
+
+    conn = get_conn()
+    try:
+        n = upsert_properties(conn, rows, account_id)
+    finally:
+        conn.close()
+    log.info("HCAD seed: %d parcels for ZIP %s", n, zip_code)
+    return n
+
+
 def seed(zip_code: str, account_id: int, csv_path: str | None = None,
-         limit: int | None = None, region_id: str | None = None) -> int:
+         limit: int | None = None, region_id: str | None = None,
+         seed_source: str | None = None) -> int:
+    # Explicit selectors win over the configured default.
     if region_id:
         return seed_from_hcad(region_id, zip_code, account_id, limit=limit)
     if csv_path:
         return seed_from_csv(csv_path, account_id, zip_code)
+    source = (seed_source or SEED_SOURCE or "rentcast").strip().lower()
+    if source == "hcad":
+        return seed_from_hcad_zip(zip_code, account_id, limit=limit)
     return seed_from_rentcast(zip_code, account_id, limit=limit)
 
 
@@ -225,13 +260,16 @@ def _normalize_rentcast(p: dict, origin_zip: str | None = None) -> dict:
     }
 
 
-def _normalize_hcad(p: dict, region_id: str) -> dict:
+def _normalize_hcad(p: dict, region_id: str | None = None) -> dict:
     """Map a DuckDB property_summary parcel to the upsert_properties shape.
 
     HCAD has no site-city or lat/lng: `city` falls back to the owner's mailing
     city (harmless — rows key on address+zip) and lat/lng stay NULL for the
-    geocode step to fill.
+    geocode step to fill. `region_id` is recorded only when seeding by region.
     """
+    flags = {"seed": "hcad"}
+    if region_id:
+        flags["hcad_region"] = region_id
     return {
         "address":                p.get("site_address", ""),
         "city":                   p.get("mail_city"),
@@ -249,7 +287,7 @@ def _normalize_hcad(p: dict, region_id: str) -> dict:
         "mailing_address":        p.get("mailing_address"),
         "hcad_neighborhood_code": p.get("neighborhood_code"),
         "hcad_neighborhood_name": p.get("neighborhood_name"),
-        "enrichment_flags":       {"seed": "hcad", "hcad_region": region_id},
+        "enrichment_flags":       flags,
     }
 
 

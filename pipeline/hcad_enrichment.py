@@ -15,6 +15,7 @@ import logging
 from datetime import date
 
 from pipeline.db import get_conn, fetch_by_zip, upsert_properties
+from pipeline.equity import estimate_equity
 from pipeline import hcad_store
 
 log = logging.getLogger(__name__)
@@ -65,6 +66,18 @@ def enrich_hcad(zip_code: str, account_id: int) -> int:
                 sale_date = update.get("last_sale_date") or hcad.get("last_sale_date")
                 if isinstance(sale_date, date):
                     update["ownership_years"] = (date.today() - sale_date).days // 365
+                    changed = True
+
+            # Equity is otherwise only computed in the paid detail step, so an
+            # HCAD-only run would leave the equity signal at 0. Derive it here
+            # from the appraised value (TX is non-disclosure, so no sale price) —
+            # estimate_equity falls back to value × EQUITY_FALLBACK_PCT.
+            if row.get("estimated_equity") is None:
+                value = update.get("estimated_value") or hcad.get("estimated_value")
+                sale_date = update.get("last_sale_date") or hcad.get("last_sale_date")
+                equity = estimate_equity(value, last_sale_date=sale_date)
+                if equity is not None:
+                    update["estimated_equity"] = equity
                     changed = True
 
         if ef:

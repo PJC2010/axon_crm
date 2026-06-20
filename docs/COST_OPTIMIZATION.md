@@ -40,18 +40,18 @@ optionally, **market value/sale price** when appraised value isn't good enough.
 
 ## 2. Roadmap (highest ROI first)
 
-### Phase 1 — HCAD-first seeding (eliminates RentCast seed cost in Harris County)
-The mechanism already exists: `pipeline/seed.py::seed_from_hcad` seeds parcels straight
-from the DuckDB with **zero paid calls**, and `seed()` already accepts a `region_id`.
-It just isn't reachable from the CLI (`run_pipeline.py` has no `--region`/`--hcad` flag).
-
-- Wire an HCAD seed path into `run_pipeline.py` and add a `SEED_SOURCE`/region flag in
-  `config.py`.
-- Optionally add `seed_from_hcad_zip()` to seed **all** parcels in a ZIP (not just one
-  HCAD region), so any Harris County ZIP can be seeded for free.
-- Effect: seeding *and* most of step 5's fields come from the free DuckDB; RentCast/ATTOM
-  collapse to a thin gap-filler for the handful of paid-only fields above.
-- Files: `run_pipeline.py`, `pipeline/seed.py`, `config.py`.
+### Phase 1 — HCAD-first seeding (eliminates RentCast seed cost in Harris County) ✅ DONE
+- `pipeline/seed.py::seed_from_hcad_zip()` seeds **every parcel in a ZIP** straight from
+  the local HCAD DuckDB (Postgres `hcad_*` mirror fallback) with **zero paid calls**,
+  backed by `hcad_store.query_parcels_for_zip()`.
+- Selected via `SEED_SOURCE=hcad` (`config.py`) or `--seed-source hcad`
+  (`run_pipeline.py`); RentCast stays the default so other flows are unchanged.
+- `pipeline/hcad_enrichment.py` now also backfills `estimated_equity` from the appraised
+  value (via `estimate_equity()`), so the equity signal survives an HCAD-only run.
+- Effect: seeding *and* most of step 5's fields come from the free data; with RentCast/ATTOM
+  keys blank the paid detail step is a no-op. Re-enable RentCast for testing by setting
+  `RENTCAST_API_KEY` — it rejoins step 5 as a pure gap-filler.
+- Run it: `python run_pipeline.py --zip 77002 --account-id 1 --seed-source hcad`.
 
 ### Phase 2 — Versium spend discipline (your biggest live per-record cost)
 - Turn on grade gating now: set `CONTACT_MIN_GRADE` / `DEMO_MIN_GRADE` to `B` (or `A`) so

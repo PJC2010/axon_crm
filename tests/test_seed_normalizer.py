@@ -88,6 +88,14 @@ def test_normalize_hcad_flags_record_source_and_region():
     assert row["enrichment_flags"]["hcad_region"] == "8901.44"
 
 
+def test_normalize_hcad_zip_seed_omits_region_flag():
+    # ZIP-level free seed (seed_from_hcad_zip) passes no region_id: the source is
+    # still flagged "hcad" but no hcad_region key is written.
+    row = _normalize_hcad(_hcad_parcel())
+    assert row["enrichment_flags"]["seed"] == "hcad"
+    assert "hcad_region" not in row["enrichment_flags"]
+
+
 def test_normalize_hcad_city_falls_back_to_mail_city():
     # HCAD has no site-city; city mirrors the owner's mailing city (harmless —
     # rows key on address+zip and geocode doesn't need city).
