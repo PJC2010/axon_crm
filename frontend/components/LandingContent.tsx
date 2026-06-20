@@ -1,8 +1,9 @@
 'use client'
 
+import { useEffect, useRef, type CSSProperties } from 'react'
 import {
-  ArrowRight, BookOpen, Settings, Columns3, LayoutDashboard, FileText, DollarSign,
-  GitBranch, Layers, Zap, Crosshair, Map, Bell, Play, Star, Check, TrendingDown, TrendingUp,
+  ArrowRight, BookOpen, Columns3, FileText, DollarSign, GitBranch, Layers, Zap,
+  Crosshair, Map, Bell, Play, Star, Check, Users, HardHat, Wrench,
 } from 'lucide-react'
 
 const AxonMark = ({ size = 28, maskId }: { size?: number; maskId: string }) => (
@@ -18,21 +19,145 @@ const AxonMark = ({ size = 28, maskId }: { size?: number; maskId: string }) => (
 )
 
 export default function LandingContent() {
+  const rootRef = useRef<HTMLDivElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const posterRef = useRef<HTMLDivElement>(null)
+
+  // ── Video poster: only hide it once a real clip actually starts playing. ──
+  useEffect(() => {
+    const v = videoRef.current
+    const poster = posterRef.current
+    if (!v || !poster) return
+    const reveal = () => { if (v.readyState >= 3 && !v.paused) poster.classList.add('hidden') }
+    v.addEventListener('playing', reveal)
+    v.addEventListener('loadeddata', reveal)
+    return () => {
+      v.removeEventListener('playing', reveal)
+      v.removeEventListener('loadeddata', reveal)
+    }
+  }, [])
+
+  // ── Scroll/entrance animations (ported from the marketing kit). ──
+  useEffect(() => {
+    const root = rootRef.current
+    if (!root) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return // CSS leaves everything visible
+
+    root.classList.add('lp-anim')
+    const cleanups: Array<() => void> = []
+
+    // Auto-tag reveal targets + their staggered children.
+    const groups: Array<[string, string | null]> = [
+      ['#features .lp-eyebrow', null], ['#features .lp-h2', null], ['#features .lp-section-sub', null],
+      ['.lp-features', '.lp-feature'],
+      ['#pipeline .lp-split > div:first-child', null],
+      ['#pipeline .lp-panel', null],
+      ['.lp-proof-grid', '.lp-stat'],
+      ['.lp-strip-row', 'span'],
+      ['.lp-cta h2', null], ['.lp-cta-actions', null],
+      ['.lp-footer-inner', '> div'],
+    ]
+    groups.forEach(([sel, childSel]) => {
+      root.querySelectorAll<HTMLElement>(sel).forEach((el) => {
+        el.setAttribute('data-reveal', '')
+        if (childSel) {
+          const kids = childSel.startsWith('>')
+            ? [...el.children]
+            : el.querySelectorAll(childSel)
+          ;[...kids].forEach((k, i) => {
+            k.setAttribute('data-stagger', '')
+            ;(k as HTMLElement).style.setProperty('--i', String(i))
+          })
+        }
+      })
+    })
+
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (e.isIntersecting) { e.target.classList.add('is-in'); io.unobserve(e.target) }
+      })
+    }, { threshold: 0.15, rootMargin: '0px 0px -8% 0px' })
+    root.querySelectorAll('[data-reveal]').forEach((el) => io.observe(el))
+    cleanups.push(() => io.disconnect())
+
+    // Count-up on the proof stats (parses the leading number, keeps suffix).
+    const cio = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (!e.isIntersecting) return
+        const el = e.target as HTMLElement
+        cio.unobserve(el)
+        const raw = (el.textContent || '').trim()
+        const m = raw.match(/^([\d.]+)(.*)$/)
+        if (!m) return
+        const target = parseFloat(m[1]); const suffix = m[2]
+        const decimals = (m[1].split('.')[1] || '').length
+        const dur = 1100; const t0 = performance.now()
+        const tick = (now: number) => {
+          const p = Math.min(1, (now - t0) / dur)
+          const eased = 1 - Math.pow(1 - p, 3) // easeOutCubic
+          el.textContent = (target * eased).toFixed(decimals) + suffix
+          if (p < 1) requestAnimationFrame(tick)
+          else el.textContent = m[1] + suffix
+        }
+        requestAnimationFrame(tick)
+      })
+    }, { threshold: 0.5 })
+    root.querySelectorAll('.lp-stat-v').forEach((el) => cio.observe(el))
+    cleanups.push(() => cio.disconnect())
+
+    // Scroll-pinned process — activate the step straddling the viewport center.
+    const pSteps = [...root.querySelectorAll<HTMLElement>('.lp-pstep')]
+    const pVis = [...root.querySelectorAll<HTMLElement>('.lp-pvis')]
+    if (pSteps.length && pVis.length) {
+      let current = -1
+      const setActive = (idx: number) => {
+        if (idx === current) return
+        current = idx
+        pSteps.forEach((s, i) => s.classList.toggle('is-active', i === idx))
+        pVis.forEach((vEl, i) => vEl.classList.toggle('is-active', i === idx))
+      }
+      const pick = () => {
+        const cy = window.innerHeight / 2
+        let idx = pSteps.findIndex((s) => { const b = s.getBoundingClientRect(); return b.top <= cy && b.bottom >= cy })
+        if (idx < 0) idx = pSteps.reduce((best, s, i) => {
+          const b = s.getBoundingClientRect(); const d = Math.abs((b.top + b.bottom) / 2 - cy)
+          return d < best.d ? { d, i } : best
+        }, { d: Infinity, i: 0 }).i
+        setActive(idx)
+      }
+      let ticking = false
+      const onScroll = () => { if (!ticking) { ticking = true; requestAnimationFrame(() => { pick(); ticking = false }) } }
+      window.addEventListener('scroll', onScroll, { passive: true })
+      window.addEventListener('resize', onScroll, { passive: true })
+      pick()
+      cleanups.push(() => {
+        window.removeEventListener('scroll', onScroll)
+        window.removeEventListener('resize', onScroll)
+      })
+    }
+
+    // Hero entrance — fire on next frame so transitions run.
+    const raf = requestAnimationFrame(() => requestAnimationFrame(() => root.classList.add('lp-ready')))
+    cleanups.push(() => cancelAnimationFrame(raf))
+
+    return () => cleanups.forEach((fn) => fn())
+  }, [])
+
   return (
-    <>
-      {/* ── Navigation ── */}
+    <div ref={rootRef}>
+      {/* ── Nav ── */}
       <nav className="lp-nav">
         <div className="lp-container lp-nav-inner">
           <a href="#" className="lp-nav-logo">
             <AxonMark maskId="axon-mark-nav" />
             <span className="lp-nav-wordmark">Axon</span>
           </a>
-          <span className="lp-nav-links">
+          <div className="lp-nav-links">
             <a href="#features">Features</a>
             <a href="#pipeline">Pipeline</a>
             <a href="#how">How it works</a>
             <a href="#pricing">Pricing</a>
-          </span>
+          </div>
           <div className="lp-nav-actions">
             <a href="/login" className="lp-btn lp-btn-ghost">Sign in</a>
             <a href="/login" className="lp-btn lp-btn-accent">Get started</a>
@@ -41,324 +166,183 @@ export default function LandingContent() {
       </nav>
 
       {/* ── Hero ── */}
-      <section className="lp-hero">
+      <header className="lp-hero">
         <div className="lp-container">
-          <span className="lp-hero-badge">
-            <Zap size={12} /> Automated lead scoring for service businesses
+          <span className="lp-badge" data-hero style={{ '--i': 0 } as CSSProperties}>
+            <Zap size={14} /> Automated lead scoring for service businesses
           </span>
-          <h1 className="lp-hero-heading">
+          <h1 data-hero style={{ '--i': 1 } as CSSProperties}>
             Built on data,<br /><em>powered by people.</em>
           </h1>
-          <p className="lp-hero-sub">
-            Axon gives small businesses enterprise-grade intelligence — without the complexity. Surface the insights that matter, understand your customers, and make confident decisions every day.
+          <p className="lp-hero-sub" data-hero style={{ '--i': 2 } as CSSProperties}>
+            Axon gives small businesses enterprise-grade intelligence — without the complexity. Surface
+            the insights that matter, understand your customers, and make confident decisions every day.
           </p>
-          <div className="lp-hero-ctas">
-            <a href="/login" className="lp-btn lp-btn-accent lp-btn-lg">
+          <div className="lp-hero-ctas" data-hero style={{ '--i': 3 } as CSSProperties}>
+            <a className="lp-btn lp-btn-accent lp-btn-lg" href="/login">
               Open your dashboard <ArrowRight size={16} />
             </a>
-            <a href="#how" className="lp-btn lp-btn-outline lp-btn-lg">
+            <a className="lp-btn lp-btn-outline lp-btn-lg" href="#how">
               <Play size={16} /> See how it works
             </a>
           </div>
-          <div className="lp-hero-trust">
-            <div className="lp-hero-trust-avatars">
+          <div className="lp-hero-trust" data-hero style={{ '--i': 4 } as CSSProperties}>
+            <div className="lp-avatars">
               <span style={{ background: 'var(--color-moss)' }}>HC</span>
-              <span style={{ background: 'var(--color-ocean-d)' }}>PS</span>
+              <span style={{ background: 'var(--color-ocean)' }}>PS</span>
               <span style={{ background: 'var(--color-plum)' }}>SL</span>
               <span style={{ background: 'var(--color-accent)' }}>RF</span>
             </div>
             <span>Used by HVAC, pool, solar, and flooring contractors</span>
           </div>
 
-          {/* Dashboard mockup */}
-          <div className="lp-hero-visual">
-            <div className="lp-dashboard-frame">
-              <div className="lp-dash-titlebar">
-                <div className="lp-dash-dot lp-dash-dot-r" />
-                <div className="lp-dash-dot lp-dash-dot-y" />
-                <div className="lp-dash-dot lp-dash-dot-g" />
-              </div>
-              <div className="lp-dash-body">
-                <div className="lp-dash-sidebar">
-                  <div className="lp-dash-sidebar-logo">
-                    <AxonMark size={18} maskId="axon-mark-mockup" />
-                    <span>Axon</span>
-                  </div>
-                  <div className="lp-dash-nav-item active">
-                    <LayoutDashboard size={14} />
-                    Overview
-                  </div>
-                  <div className="lp-dash-nav-item">
-                    <Star size={14} />
-                    Leads
-                  </div>
-                  <div className="lp-dash-nav-item">
-                    <Columns3 size={14} />
-                    Pipeline
-                  </div>
-                  <div className="lp-dash-nav-item">
-                    <Check size={14} />
-                    Tasks
-                  </div>
-                  <div className="lp-dash-nav-item">
-                    <DollarSign size={14} />
-                    Expenses
-                  </div>
-                  <div className="lp-dash-nav-item">
-                    <FileText size={14} />
-                    Invoices
-                  </div>
-                  <div className="lp-dash-nav-item">
-                    <BookOpen size={14} />
-                    Bookkeeping
-                  </div>
-                  <div className="lp-dash-nav-item">
-                    <Settings size={14} />
-                    Scheduler
-                  </div>
-                </div>
-                <div className="lp-dash-main">
-                  <div className="lp-dash-topbar">
-                    <span className="lp-dash-title">Good morning, Pete</span>
-                    <span className="lp-dash-date">Jun 1, 2026</span>
-                  </div>
-                  <div className="lp-dash-metrics">
-                    <div className="lp-dash-metric">
-                      <div className="lp-dash-metric-label">Pipeline Value</div>
-                      <div className="lp-dash-metric-value">$142k</div>
-                      <div className="lp-dash-metric-delta">
-                        <TrendingUp size={10} color="var(--color-moss)" />
-                        +$18k this week
-                      </div>
-                    </div>
-                    <div className="lp-dash-metric">
-                      <div className="lp-dash-metric-label">Scored Leads</div>
-                      <div className="lp-dash-metric-value">1,847</div>
-                      <div className="lp-dash-metric-delta">
-                        <TrendingUp size={10} color="var(--color-moss)" />
-                        +124 this run
-                      </div>
-                    </div>
-                    <div className="lp-dash-metric">
-                      <div className="lp-dash-metric-label">Tasks Due Today</div>
-                      <div className="lp-dash-metric-value">8</div>
-                      <div className="lp-dash-metric-delta neg">
-                        <TrendingDown size={10} color="var(--color-rose)" />
-                        3 overdue
-                      </div>
-                    </div>
-                    <div className="lp-dash-metric">
-                      <div className="lp-dash-metric-label">Outstanding AR</div>
-                      <div className="lp-dash-metric-value">$9,450</div>
-                      <div className="lp-dash-metric-delta">
-                        <TrendingUp size={10} color="var(--color-moss)" />
-                        2 invoices
-                      </div>
-                    </div>
-                  </div>
-                  <div className="lp-dash-charts">
-                    <div className="lp-dash-chart-card">
-                      <div className="lp-dash-chart-label">Lead scores — this run</div>
-                      <div className="lp-chart-bars">
-                        <div className="lp-chart-bar" style={{ height: '30%' }} />
-                        <div className="lp-chart-bar" style={{ height: '55%' }} />
-                        <div className="lp-chart-bar" style={{ height: '70%' }} />
-                        <div className="lp-chart-bar" style={{ height: '65%' }} />
-                        <div className="lp-chart-bar" style={{ height: '80%' }} />
-                        <div className="lp-chart-bar" style={{ height: '72%' }} />
-                        <div className="lp-chart-bar hi" style={{ height: '90%' }} />
-                      </div>
-                    </div>
-                    <div className="lp-dash-chart-card">
-                      <div className="lp-dash-chart-label">Pipeline by stage</div>
-                      <div style={{ height: 80, display: 'flex', alignItems: 'center' }}>
-                        <svg viewBox="0 0 200 64" fill="none" style={{ width: '100%', height: '100%' }}>
-                          <path
-                            d="M0 52 C20 48 40 40 70 32 C100 24 130 18 155 14 C175 11 190 9 200 7"
-                            stroke="var(--color-accent)" strokeWidth="2" fill="none"
-                          />
-                          <path
-                            d="M0 52 C20 48 40 40 70 32 C100 24 130 18 155 14 C175 11 190 9 200 7 L200 64 L0 64Z"
-                            fill="var(--color-accent-50)"
-                          />
-                        </svg>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+          {/* ── Video header ── */}
+          <div className="lp-video-wrap">
+            <div className="lp-video-chrome">
+              <span className="lp-dot" style={{ background: '#E26A6A' }} />
+              <span className="lp-dot" style={{ background: '#E2B06A' }} />
+              <span className="lp-dot" style={{ background: '#6AE28B' }} />
+            </div>
+            <div className="lp-video-stage">
+              <video ref={videoRef} autoPlay muted loop playsInline poster="" preload="auto">
+                <source src="/hero-demo.mp4" type="video/mp4" />
+              </video>
+              <div className="lp-video-poster" ref={posterRef}>
+                <button
+                  type="button"
+                  className="lp-play"
+                  aria-label="Play product demo"
+                  onClick={() => videoRef.current?.play().catch(() => {})}
+                >
+                  <Play size={30} color="#fff" style={{ marginLeft: 4 }} />
+                </button>
+                <div className="lp-video-caption">See Axon in action</div>
               </div>
             </div>
           </div>
         </div>
-      </section>
+      </header>
 
       {/* ── Industry strip ── */}
-      <div className="lp-logos-section">
+      <div className="lp-strip">
         <div className="lp-container">
-          <p className="lp-logos-label">Built for service contractors across verticals</p>
-          <div className="lp-logos-row">
-            <span className="lp-logo-item">HVAC Services</span>
-            <span className="lp-logo-item">Pool &amp; Spa</span>
-            <span className="lp-logo-item">Solar Install</span>
-            <span className="lp-logo-item">Epoxy Flooring</span>
-            <span className="lp-logo-item">Roofing Co.</span>
-            <span className="lp-logo-item">Pest Control</span>
-            <span className="lp-logo-item">&amp; More</span>
+          <p className="lp-strip-label">Built for service contractors across verticals</p>
+          <div className="lp-strip-row">
+            <span>HVAC Services</span><span>Pool &amp; Spa</span><span>Solar Install</span>
+            <span>Epoxy Flooring</span><span>Roofing Co.</span><span>Pest Control</span>
           </div>
         </div>
       </div>
 
       {/* ── Features ── */}
-      <section className="lp-features-section" id="features">
+      <section className="lp-section" id="features" style={{ paddingTop: 80 }}>
         <div className="lp-container">
-          <div className="lp-section-eyebrow">
-            <Layers size={12} color="var(--color-accent)" />
-            What Axon does
-          </div>
-          <h2 className="lp-section-heading">
-            Everything a big enterprise has —<br />built for the way you actually work
-          </h2>
+          <div className="lp-eyebrow"><Layers size={12} /> What Axon does</div>
+          <h2 className="lp-h2">Everything a big enterprise has —<br />built for the way you actually work</h2>
           <p className="lp-section-sub">
-            Axon connects your data sources, learns your business patterns, and delivers intelligence that feels less like a report and more like advice from a trusted partner.
+            Axon connects your data sources, learns your business patterns, and delivers intelligence
+            that feels less like a report and more like advice from a trusted partner.
           </p>
-          <div className="lp-features-grid">
-            <div className="lp-feature-card">
-              <div className="lp-feature-icon accent"><Star size={20} color="var(--color-accent)" /></div>
-              <h3 className="lp-feature-name">Lead scoring engine</h3>
-              <p className="lp-feature-desc">
-                Axon pulls public property records for your target ZIP codes and scores every address by
-                opportunity size, condition signals, and vertical fit. Know who to call before you dial.
-              </p>
+          <div className="lp-features">
+            <div className="lp-feature">
+              <div className="lp-feature-ic" style={{ background: 'var(--color-accent-100)', color: 'var(--color-accent-300)' }}><Star size={18} /></div>
+              <h3>Lead scoring engine</h3>
+              <p>Axon pulls public property records for your target ZIP codes and scores every address by opportunity size, condition signals, and vertical fit.</p>
             </div>
-            <div className="lp-feature-card">
-              <div className="lp-feature-icon ocean"><Columns3 size={20} color="var(--color-ocean-d)" /></div>
-              <h3 className="lp-feature-name">Visual pipeline</h3>
-              <p className="lp-feature-desc">
-                Drag leads through your stages — New, Contacted, Quoted, Won — on a live Kanban board.
-                See your total pipeline value update in real time as deals move forward.
-              </p>
+            <div className="lp-feature">
+              <div className="lp-feature-ic" style={{ background: 'var(--color-info-bg)', color: 'var(--color-ocean)' }}><Columns3 size={18} /></div>
+              <h3>Visual pipeline</h3>
+              <p>Drag leads through your stages — New, Contacted, Quoted, Won — on a live Kanban board. See pipeline value update in real time.</p>
             </div>
-            <div className="lp-feature-card">
-              <div className="lp-feature-icon moss"><Check size={20} color="var(--color-moss)" /></div>
-              <h3 className="lp-feature-name">Task management</h3>
-              <p className="lp-feature-desc">
-                Create tasks linked to specific properties and leads, set priorities from low to urgent,
-                and get overdue alerts. Your follow-up list and your CRM, finally in sync.
-              </p>
+            <div className="lp-feature">
+              <div className="lp-feature-ic" style={{ background: 'var(--color-success-bg)', color: 'var(--color-moss)' }}><Check size={18} /></div>
+              <h3>Task management</h3>
+              <p>Create tasks linked to properties and leads, set priorities, and get overdue alerts. Your follow-up list and CRM, finally in sync.</p>
             </div>
-            <div className="lp-feature-card">
-              <div className="lp-feature-icon gold"><DollarSign size={20} color="var(--color-gold)" /></div>
-              <h3 className="lp-feature-name">Expense tracker</h3>
-              <p className="lp-feature-desc">
-                Log every business expense by category — fuel, materials, subcontractors, and more. Flag
-                tax-deductible items and export a clean CSV for your accountant any time.
-              </p>
+            <div className="lp-feature">
+              <div className="lp-feature-ic" style={{ background: 'var(--color-gold-soft)', color: 'var(--color-gold)' }}><DollarSign size={18} /></div>
+              <h3>Expense tracker</h3>
+              <p>Log every business expense by category — fuel, materials, subs. Flag tax-deductible items and export a clean CSV for your accountant.</p>
             </div>
-            <div className="lp-feature-card">
-              <div className="lp-feature-icon plum"><FileText size={20} color="var(--color-plum)" /></div>
-              <h3 className="lp-feature-name">Invoicing &amp; accounts receivable</h3>
-              <p className="lp-feature-desc">
-                Build invoices with line items, record partial payments, and pull an AR aging report with
-                one click. Know exactly who owes you, and how long they&apos;ve owed it.
-              </p>
+            <div className="lp-feature">
+              <div className="lp-feature-ic" style={{ background: 'var(--color-plum-soft)', color: 'var(--color-plum)' }}><FileText size={18} /></div>
+              <h3>Invoicing &amp; AR</h3>
+              <p>Build invoices with line items, record partial payments, and pull an AR aging report with one click. Know exactly who owes you.</p>
             </div>
-            <div className="lp-feature-card">
-              <div className="lp-feature-icon rose"><BookOpen size={20} color="var(--color-rose)" /></div>
-              <h3 className="lp-feature-name">Bookkeeping &amp; P&amp;L</h3>
-              <p className="lp-feature-desc">
-                See your monthly profit and loss and per-property job costing — revenue versus expenses
-                and margin per job. No separate accounting app needed.
-              </p>
+            <div className="lp-feature">
+              <div className="lp-feature-ic" style={{ background: 'var(--color-rose-soft)', color: 'var(--color-rose)' }}><BookOpen size={18} /></div>
+              <h3>Bookkeeping &amp; P&amp;L</h3>
+              <p>See your monthly profit and loss and per-property job costing — revenue versus expenses and margin per job. No separate app needed.</p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ── Split: Pipeline ── */}
-      <section className="lp-section" id="pipeline">
+      {/* ── Split: pipeline ── */}
+      <section className="lp-section" id="pipeline" style={{ paddingTop: 0 }}>
         <div className="lp-container">
-          <div className="lp-split-section">
+          <div className="lp-split">
             <div>
-              <div className="lp-section-eyebrow">
-                <Star size={12} color="var(--color-accent)" />
-                Lead intelligence
-              </div>
-              <h2 className="lp-section-heading">Your data knows what&#39;s coming -<br/> now so do you</h2>
+              <div className="lp-eyebrow"><Star size={12} /> Lead intelligence</div>
+              <h2 className="lp-h2">Your data knows what&apos;s coming —<br />now so do you</h2>
               <p className="lp-section-sub">
-                Axons intelligence layer reads patterns across your business and flags what needs your attention — not what already happened.
+                Axon&apos;s intelligence layer reads patterns across your business and flags what needs
+                your attention — not what already happened.
               </p>
-              <div className="lp-split-points">
-                <div className="lp-split-point">
-                  <div className="lp-split-point-icon"><Bell size={16} /></div>
-                  <div className="lp-split-point-text">
+              <div className="lp-points">
+                <div className="lp-point">
+                  <div className="lp-point-ic"><Bell size={16} /></div>
+                  <div>
                     <strong>Automated scoring runs</strong>
-                    <span>
-                      Schedule your pipeline to score leads by ZIP code and vertical on any cadence.
-                      Wake up to a fresh ranked list with no manual work.
-                    </span>
+                    <span>Schedule scoring by ZIP and vertical on any cadence. Wake up to a fresh ranked list with no manual work.</span>
                   </div>
                 </div>
-                <div className="lp-split-point">
-                  <div className="lp-split-point-icon"><GitBranch size={16} /></div>
-                  <div className="lp-split-point-text">
+                <div className="lp-point">
+                  <div className="lp-point-ic"><GitBranch size={16} /></div>
+                  <div>
                     <strong>Grade-based prioritization</strong>
-                    <span>
-                      Each lead gets an A–F grade based on score percentile. Filter by grade so your
-                      team focuses exclusively on the highest-potential properties.
-                    </span>
+                    <span>Each lead gets an A–F grade by score percentile. Filter by grade so your team focuses on the best properties.</span>
                   </div>
                 </div>
-                <div className="lp-split-point">
-                  <div className="lp-split-point-icon"><Crosshair size={16} /></div>
-                  <div className="lp-split-point-text">
+                <div className="lp-point">
+                  <div className="lp-point-ic"><Crosshair size={16} /></div>
+                  <div>
                     <strong>One-click pipeline entry</strong>
-                    <span>
-                      Promote any scored lead into your Kanban pipeline, assign a task, and add notes —
-                      all from the same lead detail drawer.
-                    </span>
+                    <span>Promote any scored lead into your Kanban pipeline, assign a task, and add notes — all from one drawer.</span>
                   </div>
                 </div>
               </div>
             </div>
             <div>
-              <div className="lp-insight-panel">
-                <div className="lp-insight-header">
-                  <span className="lp-insight-title">Top scored leads — 77007</span>
-                  <span className="lp-insight-badge">124 new</span>
+              <div className="lp-panel">
+                <div className="lp-panel-head">
+                  <h4>Top scored leads — 77007</h4>
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 'var(--radius-pill)', background: 'var(--color-accent-100)', color: 'var(--color-accent-300)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>124 new</span>
                 </div>
-                <div className="lp-insight-list">
-                  <div className="lp-insight-item">
-                    <div className="lp-insight-item-dot" style={{ background: 'var(--color-accent)' }} />
-                    <div style={{ flex: 1 }}>
-                      <div className="lp-insight-item-headline">1842 Westheimer Rd — Grade A</div>
-                      <div className="lp-insight-item-detail">
-                        3,400 sq ft single-family, built 1987. High signal for HVAC replacement based on
-                        age and lot characteristics.
-                      </div>
+                <div className="lp-panel-list">
+                  <div className="lp-panel-item">
+                    <span className="lp-panel-dot" style={{ background: 'var(--color-accent)' }} />
+                    <div>
+                      <h5>1842 Westheimer Rd — Grade A</h5>
+                      <p>3,400 sq ft single-family, built 1987. High signal for HVAC replacement.</p>
                     </div>
-                    <div className="lp-insight-item-metric">Score 94</div>
+                    <span className="lp-panel-metric" style={{ color: 'var(--color-accent-300)' }}>94</span>
                   </div>
-                  <div className="lp-insight-item">
-                    <div className="lp-insight-item-dot" style={{ background: 'var(--color-moss)' }} />
-                    <div style={{ flex: 1 }}>
-                      <div className="lp-insight-item-headline">504 River Oaks Blvd — Quote sent</div>
-                      <div className="lp-insight-item-detail">
-                        In pipeline · contacted last Tuesday · quote for epoxy garage at $6,200. Follow-up
-                        task due tomorrow.
-                      </div>
+                  <div className="lp-panel-item">
+                    <span className="lp-panel-dot" style={{ background: 'var(--color-moss)' }} />
+                    <div>
+                      <h5>504 River Oaks Blvd — Quote sent</h5>
+                      <p>In pipeline · quote for epoxy garage at $6,200. Follow-up due tomorrow.</p>
                     </div>
-                    <div className="lp-insight-item-metric">$6.2k</div>
+                    <span className="lp-panel-metric" style={{ color: 'var(--color-moss)' }}>$6.2k</span>
                   </div>
-                  <div className="lp-insight-item">
-                    <div className="lp-insight-item-dot" style={{ background: 'var(--color-ocean-d)' }} />
-                    <div style={{ flex: 1 }}>
-                      <div className="lp-insight-item-headline">3 leads in &ldquo;Contacted&rdquo; past 14 days</div>
-                      <div className="lp-insight-item-detail">
-                        No activity in two weeks on these accounts. Add a follow-up task to keep them
-                        from going cold.
-                      </div>
+                  <div className="lp-panel-item">
+                    <span className="lp-panel-dot" style={{ background: 'var(--color-ocean)' }} />
+                    <div>
+                      <h5>3 leads cold past 14 days</h5>
+                      <p>No activity in two weeks. Add a follow-up task to keep them warm.</p>
                     </div>
-                    <div className="lp-insight-item-metric">$21k</div>
+                    <span className="lp-panel-metric" style={{ color: 'var(--color-ink-700)' }}>$21k</span>
                   </div>
                 </div>
               </div>
@@ -367,82 +351,126 @@ export default function LandingContent() {
         </div>
       </section>
 
-      {/* ── Stats proof ── */}
-      <section className="lp-proof-section">
+      {/* ── Stats ── */}
+      <section className="lp-proof">
         <div className="lp-container">
-          <div className="lp-proof-inner">
-            <div className="lp-proof-stat">
-              <span className="lp-proof-stat-value lp-proof-stat-accent">50k+</span>
-              <span className="lp-proof-stat-label">Property leads<br />scored per territory</span>
+          <div className="lp-proof-grid">
+            <div className="lp-stat"><span className="lp-stat-v accent">50k+</span><span className="lp-stat-l">Property leads<br />scored per territory</span></div>
+            <div className="lp-stat"><span className="lp-stat-v">5 hrs</span><span className="lp-stat-l">Saved per week vs.<br />manual spreadsheets</span></div>
+            <div className="lp-stat"><span className="lp-stat-v accent">3.8×</span><span className="lp-stat-l">Higher contact rate<br />on grade-A leads</span></div>
+            <div className="lp-stat"><span className="lp-stat-v">1 app</span><span className="lp-stat-l">Replacing CRM, tasks,<br />expenses &amp; invoicing</span></div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Powered by people ── */}
+      <section className="lp-people">
+        <div className="lp-container lp-people-grid">
+          <div data-reveal>
+            <div className="lp-eyebrow"><Users size={12} /> Powered by people</div>
+            <h2>Data points the way.<br /><em>People close the job.</em></h2>
+            <p className="lp-people-sub">
+              Axon does the analysis so your team can do what software can&apos;t — show up, build trust,
+              and win the work. The intelligence runs quietly in the background; the relationships stay yours.
+            </p>
+            <div className="lp-people-stats">
+              <div><span className="v">4,200+</span><span className="l">contractors on Axon</span></div>
+              <div><span className="v">38</span><span className="l">states served</span></div>
             </div>
-            <div className="lp-proof-stat">
-              <span className="lp-proof-stat-value">5 hrs</span>
-              <span className="lp-proof-stat-label">Saved per week vs.<br />manual spreadsheets</span>
+          </div>
+          <div className="lp-collage" data-reveal>
+            <div className="lp-photo">
+              <div className="lp-photo-ph"><HardHat size={26} /><span>Field tech on site</span></div>
+              <img src="/people-1.jpg" alt="Field technician on a service call" />
+              <div className="lp-photo-tint" />
             </div>
-            <div className="lp-proof-stat">
-              <span className="lp-proof-stat-value lp-proof-stat-accent">3.8×</span>
-              <span className="lp-proof-stat-label">Higher contact rate<br />on grade-A leads</span>
+            <div className="lp-photo">
+              <div className="lp-photo-ph"><Wrench size={22} /><span>Crew at work</span></div>
+              <img src="/people-2.jpg" alt="Service crew at work" />
+              <div className="lp-photo-tint" />
             </div>
-            <div className="lp-proof-stat">
-              <span className="lp-proof-stat-value">1 app</span>
-              <span className="lp-proof-stat-label">Replacing CRM, tasks,<br />expenses &amp; invoicing</span>
+            <div className="lp-photo">
+              <div className="lp-photo-ph"><Users size={22} /><span>Owner &amp; customer</span></div>
+              <img src="/people-3.jpg" alt="Business owner with a customer" />
+              <div className="lp-photo-tint" />
             </div>
           </div>
         </div>
       </section>
 
-      {/* ── How it works ── */}
-      <section className="lp-section" id="how">
+      {/* ── How it works — scroll-pinned process ── */}
+      <section className="lp-process" id="how">
         <div className="lp-container">
-          <div style={{ textAlign: 'center', maxWidth: 540, margin: '0 auto' }}>
-            <div className="lp-section-eyebrow" style={{ justifyContent: 'center' }}>
-              <Map size={12} color="var(--color-accent)" />
-              How it works
-            </div>
-            <h2 className="lp-section-heading">From territory to closed job — in one workflow</h2>
+          <div className="lp-process-head" data-reveal>
+            <div className="lp-eyebrow" style={{ justifyContent: 'center' }}><Map size={12} /> How it works</div>
+            <h2 className="lp-h2">From territory to closed job — in one workflow</h2>
             <p className="lp-section-sub" style={{ margin: '0 auto' }}>
-              No data team. No complex setup. Point Axon at your ZIP codes and vertical, and it handles
-              the rest — from lead discovery to invoicing.
+              Point Axon at your ZIP codes and vertical, and it handles the rest — from lead discovery to invoicing.
             </p>
           </div>
-          <div className="lp-how-steps">
-            <div className="lp-how-step">
-              <div className="lp-how-step-number active">01</div>
-              <h3 className="lp-how-step-title">Set your territory</h3>
-              <p className="lp-how-step-desc">
-                Choose your ZIP codes and service vertical. Schedule scoring runs daily, weekly, or on
-                demand — Axon pulls fresh property data automatically.
-              </p>
+          <div className="lp-process-grid">
+            <div className="lp-pcol-steps">
+              <div className="lp-pstep" data-step="0">
+                <div className="lp-pstep-n"><b>01</b><span>Set your territory</span></div>
+                <h3>Tell Axon where to look</h3>
+                <p>Choose your ZIP codes and service vertical. Schedule scoring runs daily, weekly, or on demand — then let the engine work the public property records for you.</p>
+              </div>
+              <div className="lp-pstep" data-step="1">
+                <div className="lp-pstep-n"><b>02</b><span>Work your ranked leads</span></div>
+                <h3>Call the A&apos;s first</h3>
+                <p>Open the lead table sorted by score, filter to grade-A, and drop the best straight into your Kanban pipeline. No more guessing which door to knock on.</p>
+              </div>
+              <div className="lp-pstep" data-step="2">
+                <div className="lp-pstep-n"><b>03</b><span>Invoice &amp; close the books</span></div>
+                <h3>Win it, bill it, book it</h3>
+                <p>Win a job, build an invoice in seconds, log expenses against it, and watch your P&amp;L and per-job margin stay current — all without leaving Axon.</p>
+              </div>
             </div>
-            <div className="lp-how-step">
-              <div className="lp-how-step-number">02</div>
-              <h3 className="lp-how-step-title">Work your ranked leads</h3>
-              <p className="lp-how-step-desc">
-                Open the lead table sorted by score, filter to grade-A properties, and add the best ones
-                to your Kanban pipeline. Assign tasks, take notes, and track every touchpoint.
-              </p>
-            </div>
-            <div className="lp-how-step">
-              <div className="lp-how-step-number">03</div>
-              <h3 className="lp-how-step-title">Invoice, track, and close the books</h3>
-              <p className="lp-how-step-desc">
-                When you win a job, create an invoice in seconds. Log your expenses, monitor your AR,
-                and check your P&amp;L — Axon ties the whole job together so nothing falls through the cracks.
-              </p>
+            <div className="lp-pcol-visual">
+              <div className="lp-pvis-frame">
+                {/* 01 territory map */}
+                <div className="lp-pvis is-active" data-vis="0">
+                  <div className="lp-pvis-head"><span className="t-eyebrow">Territory · 77007</span></div>
+                  <div className="lp-mini-map">
+                    <span className="lp-pin" style={{ left: '22%', top: '30%' }} />
+                    <span className="lp-pin" style={{ left: '58%', top: '24%' }} />
+                    <span className="lp-pin" style={{ left: '40%', top: '54%' }} />
+                    <span className="lp-pin" style={{ left: '71%', top: '62%' }} />
+                    <span className="lp-pin" style={{ left: '30%', top: '74%' }} />
+                    <span className="lp-pin" style={{ left: '82%', top: '40%', background: 'var(--color-gold)', boxShadow: '0 0 0 4px rgba(240,183,38,0.25)' }} />
+                  </div>
+                </div>
+                {/* 02 ranked leads */}
+                <div className="lp-pvis" data-vis="1">
+                  <div className="lp-pvis-head"><span className="t-eyebrow">Ranked leads</span></div>
+                  <div className="lp-mini-row"><span className="grade" style={{ background: 'var(--color-success-bg)', color: 'var(--color-success)' }}>A</span><span className="addr">1842 Westheimer Rd</span><span className="val">$14k</span></div>
+                  <div className="lp-mini-row"><span className="grade" style={{ background: 'var(--color-success-bg)', color: 'var(--color-success)' }}>A</span><span className="addr">504 River Oaks Blvd</span><span className="val">$6.2k</span></div>
+                  <div className="lp-mini-row"><span className="grade" style={{ background: 'var(--color-info-bg)', color: 'var(--color-info)' }}>B</span><span className="addr">3300 Kirby Dr</span><span className="val">$9.8k</span></div>
+                  <div className="lp-mini-row"><span className="grade" style={{ background: 'var(--color-info-bg)', color: 'var(--color-info)' }}>B</span><span className="addr">77 Tanglewood Ln</span><span className="val">$12k</span></div>
+                </div>
+                {/* 03 invoice */}
+                <div className="lp-pvis" data-vis="2">
+                  <div className="lp-pvis-head"><span className="t-eyebrow">Invoice · #1042</span></div>
+                  <div className="lp-mini-inv">
+                    <div className="lp-mini-line"><span>HVAC system replacement</span><span>$18,400</span></div>
+                    <div className="lp-mini-line"><span>Permit &amp; disposal</span><span>$1,200</span></div>
+                    <div className="lp-mini-line"><span>Labor — 2 crew · 3 days</span><span>$3,600</span></div>
+                    <div className="lp-mini-total"><span className="t-eyebrow" style={{ margin: 0 }}>Total due</span><b>$23,200</b></div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ── CTA band ── */}
-      <section className="lp-cta-section">
+      {/* ── CTA ── */}
+      <section className="lp-cta">
         <div className="lp-container">
-          <h2 className="lp-cta-heading">
-            Predictive insights, <br /><em>personal connections</em>
-          </h2>
+          <h2>Predictive insights,<br /><em>personal connections</em></h2>
           <div className="lp-cta-actions">
-            <a href="/login" className="lp-btn lp-btn-accent lp-btn-lg">Open your dashboard</a>
-            <a href="#how" className="lp-btn lp-btn-ghost lp-btn-lg lp-cta-ghost">See how it works</a>
+            <a className="lp-btn lp-btn-accent lp-btn-lg" href="/login">Open your dashboard</a>
+            <a className="lp-btn lp-btn-ghost lp-btn-lg" href="#how" style={{ color: 'rgba(255,255,255,0.85)' }}>See how it works</a>
           </div>
         </div>
       </section>
@@ -452,14 +480,11 @@ export default function LandingContent() {
         <div className="lp-container">
           <div className="lp-footer-inner">
             <div>
-              <span className="lp-footer-wordmark">
-                <AxonMark size={20} maskId="axon-mark-footer" />
-                Axon
-              </span>
-              <p className="lp-footer-tagline">Built on data, powered by people.</p>
+              <span className="lp-footer-wordmark"><AxonMark size={20} maskId="axon-mark-footer" /> Axon</span>
+              <p className="lp-footer-tag">Built on data, powered by people.</p>
             </div>
             <div>
-              <div className="lp-footer-col-title">Product</div>
+              <div className="lp-footer-ct">Product</div>
               <ul className="lp-footer-links">
                 <li><a href="#features">Features</a></li>
                 <li><a href="#pipeline">Pipeline</a></li>
@@ -467,7 +492,7 @@ export default function LandingContent() {
               </ul>
             </div>
             <div>
-              <div className="lp-footer-col-title">Platform</div>
+              <div className="lp-footer-ct">Platform</div>
               <ul className="lp-footer-links">
                 <li><a href="/login">Lead scoring</a></li>
                 <li><a href="/login">Kanban pipeline</a></li>
@@ -476,7 +501,7 @@ export default function LandingContent() {
               </ul>
             </div>
             <div>
-              <div className="lp-footer-col-title">Account</div>
+              <div className="lp-footer-ct">Account</div>
               <ul className="lp-footer-links">
                 <li><a href="/login">Sign in</a></li>
                 <li><a href="#">Privacy</a></li>
@@ -485,11 +510,11 @@ export default function LandingContent() {
             </div>
           </div>
           <div className="lp-footer-bottom">
-            <span>&copy; 2026 Axon Intelligence, Inc. All rights reserved.</span>
+            <span>© 2026 Axon Intelligence, Inc.</span>
             <span>Predictive insights, personal connections</span>
           </div>
         </div>
       </footer>
-    </>
+    </div>
   )
 }

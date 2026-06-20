@@ -8,7 +8,7 @@ export const metadata = {
 
 export default function LandingPage() {
   return (
-    <div className="lp-root" data-theme="turquoise" data-bg="slate" data-texture="weave">
+    <div className="lp">
       <LandingContent />
     </div>
   )
