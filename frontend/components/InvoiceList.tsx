@@ -90,7 +90,7 @@ export function InvoiceList({ year, prefillLead, onToast }: Props) {
       {/* Toolbar */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
         {/* Status pills */}
-        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', flex: '1 1 200px' }}>
+        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', flex: '1 1 200px', minWidth: 0 }}>
           {STATUS_OPTIONS.map(s => (
             <button key={s.value} onClick={() => setStatus(s.value)}
               style={{

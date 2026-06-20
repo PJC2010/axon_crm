@@ -178,7 +178,7 @@ export function ExpenseTracker() {
           </select>
 
           {/* Category pills — horizontal scroll on mobile */}
-          <div style={{ display: 'flex', gap: 6, overflowX: 'auto', flex: '2 1 200px', paddingBottom: 2 }}>
+          <div style={{ display: 'flex', gap: 6, overflowX: 'auto', flex: '2 1 200px', minWidth: 0, paddingBottom: 2 }}>
             {CATEGORIES.map(c => (
               <button
                 key={c.value}

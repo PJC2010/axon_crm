@@ -148,7 +148,7 @@ export function QuoteList({ prefillLead, onToast }: Props) {
     <div>
       {/* Toolbar */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', flex: '1 1 200px' }}>
+        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', flex: '1 1 200px', minWidth: 0 }}>
           {STATUS_OPTIONS.map(s => (
             <button key={s.value} onClick={() => { setStatus(s.value); setPage(1) }}
               style={{
