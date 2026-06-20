@@ -10,11 +10,3 @@
 @import "./design-system/spacing.css";
 @import "./design-system/typography.css";
 @import "./design-system/base.css";
-
-/* Retint Blueprint's primary intent (buttons, tags, links) to turquoise
-   app-wide; loaded after blueprint-app.css so this :root override wins. */
-:root {
-  --bp-intent-primary-rest:   var(--color-accent);      /* turquoise3 */
-  --bp-intent-primary-hover:  var(--color-accent-700);  /* turquoise2 */
-  --bp-intent-primary-active: var(--color-accent-800);  /* turquoise1 */
-}

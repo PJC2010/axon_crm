@@ -1,10 +1,9 @@
 'use client'
 
-import { AnchorButton, Card, Elevation, Navbar, Tag } from '@blueprintjs/core'
 import {
-  ArrowRight, Book, Cog, ColumnLayout, Dashboard, Document, Dollar, GitBranch,
-  Layers, Lightning, Locate, Map, Notifications, Play, Star, Tick, TrendingDown, TrendingUp,
-} from '@blueprintjs/icons'
+  ArrowRight, BookOpen, Settings, Columns3, LayoutDashboard, FileText, DollarSign,
+  GitBranch, Layers, Zap, Crosshair, Map, Bell, Play, Star, Check, TrendingDown, TrendingUp,
+} from 'lucide-react'
 
 const AxonMark = ({ size = 28, maskId }: { size?: number; maskId: string }) => (
   <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true">
@@ -22,31 +21,31 @@ export default function LandingContent() {
   return (
     <>
       {/* ── Navigation ── */}
-      <Navbar className="lp-nav">
+      <nav className="lp-nav">
         <div className="lp-container lp-nav-inner">
           <a href="#" className="lp-nav-logo">
             <AxonMark maskId="axon-mark-nav" />
             <span className="lp-nav-wordmark">Axon</span>
           </a>
           <span className="lp-nav-links">
-            <AnchorButton variant="minimal" href="#features" text="Features" />
-            <AnchorButton variant="minimal" href="#pipeline" text="Pipeline" />
-            <AnchorButton variant="minimal" href="#how" text="How it works" />
-            <AnchorButton variant="minimal" href="#pricing" text="Pricing" />
+            <a href="#features">Features</a>
+            <a href="#pipeline">Pipeline</a>
+            <a href="#how">How it works</a>
+            <a href="#pricing">Pricing</a>
           </span>
           <div className="lp-nav-actions">
-            <AnchorButton variant="minimal" href="/login" text="Sign in" />
-            <AnchorButton intent="primary" href="/login" text="Get started" />
+            <a href="/login" className="lp-btn lp-btn-ghost">Sign in</a>
+            <a href="/login" className="lp-btn lp-btn-accent">Get started</a>
           </div>
         </div>
-      </Navbar>
+      </nav>
 
       {/* ── Hero ── */}
       <section className="lp-hero">
         <div className="lp-container">
-          <Tag round large minimal intent="primary" icon={<Lightning />} className="lp-hero-badge">
-            Automated lead scoring for service businesses
-          </Tag>
+          <span className="lp-hero-badge">
+            <Zap size={12} /> Automated lead scoring for service businesses
+          </span>
           <h1 className="lp-hero-heading">
             Built on data,<br /><em>powered by people.</em>
           </h1>
@@ -54,14 +53,12 @@ export default function LandingContent() {
             Axon gives small businesses enterprise-grade intelligence — without the complexity. Surface the insights that matter, understand your customers, and make confident decisions every day.
           </p>
           <div className="lp-hero-ctas">
-            <AnchorButton
-              size="large"
-              intent="primary"
-              endIcon={<ArrowRight />}
-              href="/login"
-              text="Open your dashboard"
-            />
-            <AnchorButton size="large" variant="outlined" icon={<Play />} href="#how" text="See how it works" />
+            <a href="/login" className="lp-btn lp-btn-accent lp-btn-lg">
+              Open your dashboard <ArrowRight size={16} />
+            </a>
+            <a href="#how" className="lp-btn lp-btn-outline lp-btn-lg">
+              <Play size={16} /> See how it works
+            </a>
           </div>
           <div className="lp-hero-trust">
             <div className="lp-hero-trust-avatars">
@@ -75,7 +72,7 @@ export default function LandingContent() {
 
           {/* Dashboard mockup */}
           <div className="lp-hero-visual">
-            <Card elevation={Elevation.FOUR} className="lp-dashboard-frame">
+            <div className="lp-dashboard-frame">
               <div className="lp-dash-titlebar">
                 <div className="lp-dash-dot lp-dash-dot-r" />
                 <div className="lp-dash-dot lp-dash-dot-y" />
@@ -88,7 +85,7 @@ export default function LandingContent() {
                     <span>Axon</span>
                   </div>
                   <div className="lp-dash-nav-item active">
-                    <Dashboard size={14} />
+                    <LayoutDashboard size={14} />
                     Overview
                   </div>
                   <div className="lp-dash-nav-item">
@@ -96,27 +93,27 @@ export default function LandingContent() {
                     Leads
                   </div>
                   <div className="lp-dash-nav-item">
-                    <ColumnLayout size={14} />
+                    <Columns3 size={14} />
                     Pipeline
                   </div>
                   <div className="lp-dash-nav-item">
-                    <Tick size={14} />
+                    <Check size={14} />
                     Tasks
                   </div>
                   <div className="lp-dash-nav-item">
-                    <Dollar size={14} />
+                    <DollarSign size={14} />
                     Expenses
                   </div>
                   <div className="lp-dash-nav-item">
-                    <Document size={14} />
+                    <FileText size={14} />
                     Invoices
                   </div>
                   <div className="lp-dash-nav-item">
-                    <Book size={14} />
+                    <BookOpen size={14} />
                     Bookkeeping
                   </div>
                   <div className="lp-dash-nav-item">
-                    <Cog size={14} />
+                    <Settings size={14} />
                     Scheduler
                   </div>
                 </div>
@@ -190,7 +187,7 @@ export default function LandingContent() {
                   </div>
                 </div>
               </div>
-            </Card>
+            </div>
           </div>
         </div>
       </section>
@@ -225,54 +222,54 @@ export default function LandingContent() {
             Axon connects your data sources, learns your business patterns, and delivers intelligence that feels less like a report and more like advice from a trusted partner.
           </p>
           <div className="lp-features-grid">
-            <Card interactive elevation={Elevation.ONE} className="lp-feature-card">
+            <div className="lp-feature-card">
               <div className="lp-feature-icon accent"><Star size={20} color="var(--color-accent)" /></div>
               <h3 className="lp-feature-name">Lead scoring engine</h3>
               <p className="lp-feature-desc">
                 Axon pulls public property records for your target ZIP codes and scores every address by
                 opportunity size, condition signals, and vertical fit. Know who to call before you dial.
               </p>
-            </Card>
-            <Card interactive elevation={Elevation.ONE} className="lp-feature-card">
-              <div className="lp-feature-icon ocean"><ColumnLayout size={20} color="var(--color-ocean-d)" /></div>
+            </div>
+            <div className="lp-feature-card">
+              <div className="lp-feature-icon ocean"><Columns3 size={20} color="var(--color-ocean-d)" /></div>
               <h3 className="lp-feature-name">Visual pipeline</h3>
               <p className="lp-feature-desc">
                 Drag leads through your stages — New, Contacted, Quoted, Won — on a live Kanban board.
                 See your total pipeline value update in real time as deals move forward.
               </p>
-            </Card>
-            <Card interactive elevation={Elevation.ONE} className="lp-feature-card">
-              <div className="lp-feature-icon moss"><Tick size={20} color="var(--color-moss)" /></div>
+            </div>
+            <div className="lp-feature-card">
+              <div className="lp-feature-icon moss"><Check size={20} color="var(--color-moss)" /></div>
               <h3 className="lp-feature-name">Task management</h3>
               <p className="lp-feature-desc">
                 Create tasks linked to specific properties and leads, set priorities from low to urgent,
                 and get overdue alerts. Your follow-up list and your CRM, finally in sync.
               </p>
-            </Card>
-            <Card interactive elevation={Elevation.ONE} className="lp-feature-card">
-              <div className="lp-feature-icon gold"><Dollar size={20} color="var(--color-gold)" /></div>
+            </div>
+            <div className="lp-feature-card">
+              <div className="lp-feature-icon gold"><DollarSign size={20} color="var(--color-gold)" /></div>
               <h3 className="lp-feature-name">Expense tracker</h3>
               <p className="lp-feature-desc">
                 Log every business expense by category — fuel, materials, subcontractors, and more. Flag
                 tax-deductible items and export a clean CSV for your accountant any time.
               </p>
-            </Card>
-            <Card interactive elevation={Elevation.ONE} className="lp-feature-card">
-              <div className="lp-feature-icon plum"><Document size={20} color="var(--color-plum)" /></div>
+            </div>
+            <div className="lp-feature-card">
+              <div className="lp-feature-icon plum"><FileText size={20} color="var(--color-plum)" /></div>
               <h3 className="lp-feature-name">Invoicing &amp; accounts receivable</h3>
               <p className="lp-feature-desc">
                 Build invoices with line items, record partial payments, and pull an AR aging report with
                 one click. Know exactly who owes you, and how long they&apos;ve owed it.
               </p>
-            </Card>
-            <Card interactive elevation={Elevation.ONE} className="lp-feature-card">
-              <div className="lp-feature-icon rose"><Book size={20} color="var(--color-rose)" /></div>
+            </div>
+            <div className="lp-feature-card">
+              <div className="lp-feature-icon rose"><BookOpen size={20} color="var(--color-rose)" /></div>
               <h3 className="lp-feature-name">Bookkeeping &amp; P&amp;L</h3>
               <p className="lp-feature-desc">
                 See your monthly profit and loss and per-property job costing — revenue versus expenses
                 and margin per job. No separate accounting app needed.
               </p>
-            </Card>
+            </div>
           </div>
         </div>
       </section>
@@ -292,7 +289,7 @@ export default function LandingContent() {
               </p>
               <div className="lp-split-points">
                 <div className="lp-split-point">
-                  <div className="lp-split-point-icon"><Notifications size={16} /></div>
+                  <div className="lp-split-point-icon"><Bell size={16} /></div>
                   <div className="lp-split-point-text">
                     <strong>Automated scoring runs</strong>
                     <span>
@@ -312,7 +309,7 @@ export default function LandingContent() {
                   </div>
                 </div>
                 <div className="lp-split-point">
-                  <div className="lp-split-point-icon"><Locate size={16} /></div>
+                  <div className="lp-split-point-icon"><Crosshair size={16} /></div>
                   <div className="lp-split-point-text">
                     <strong>One-click pipeline entry</strong>
                     <span>
@@ -324,10 +321,10 @@ export default function LandingContent() {
               </div>
             </div>
             <div>
-              <Card elevation={Elevation.TWO} className="lp-insight-panel">
+              <div className="lp-insight-panel">
                 <div className="lp-insight-header">
                   <span className="lp-insight-title">Top scored leads — 77007</span>
-                  <Tag minimal intent="primary">124 new</Tag>
+                  <span className="lp-insight-badge">124 new</span>
                 </div>
                 <div className="lp-insight-list">
                   <div className="lp-insight-item">
@@ -364,7 +361,7 @@ export default function LandingContent() {
                     <div className="lp-insight-item-metric">$21k</div>
                   </div>
                 </div>
-              </Card>
+              </div>
             </div>
           </div>
         </div>
@@ -409,30 +406,30 @@ export default function LandingContent() {
             </p>
           </div>
           <div className="lp-how-steps">
-            <Card elevation={Elevation.ONE} className="lp-how-step">
+            <div className="lp-how-step">
               <div className="lp-how-step-number active">01</div>
               <h3 className="lp-how-step-title">Set your territory</h3>
               <p className="lp-how-step-desc">
                 Choose your ZIP codes and service vertical. Schedule scoring runs daily, weekly, or on
                 demand — Axon pulls fresh property data automatically.
               </p>
-            </Card>
-            <Card elevation={Elevation.ONE} className="lp-how-step">
+            </div>
+            <div className="lp-how-step">
               <div className="lp-how-step-number">02</div>
               <h3 className="lp-how-step-title">Work your ranked leads</h3>
               <p className="lp-how-step-desc">
                 Open the lead table sorted by score, filter to grade-A properties, and add the best ones
                 to your Kanban pipeline. Assign tasks, take notes, and track every touchpoint.
               </p>
-            </Card>
-            <Card elevation={Elevation.ONE} className="lp-how-step">
+            </div>
+            <div className="lp-how-step">
               <div className="lp-how-step-number">03</div>
               <h3 className="lp-how-step-title">Invoice, track, and close the books</h3>
               <p className="lp-how-step-desc">
                 When you win a job, create an invoice in seconds. Log your expenses, monitor your AR,
                 and check your P&amp;L — Axon ties the whole job together so nothing falls through the cracks.
               </p>
-            </Card>
+            </div>
           </div>
         </div>
       </section>
@@ -444,8 +441,8 @@ export default function LandingContent() {
             Predictive insights, <br /><em>personal connections</em>
           </h2>
           <div className="lp-cta-actions">
-            <AnchorButton size="large" intent="primary" href="/login" text="Open your dashboard" />
-            <AnchorButton size="large" variant="minimal" href="#how" text="See how it works" className="lp-cta-ghost" />
+            <a href="/login" className="lp-btn lp-btn-accent lp-btn-lg">Open your dashboard</a>
+            <a href="#how" className="lp-btn lp-btn-ghost lp-btn-lg lp-cta-ghost">See how it works</a>
           </div>
         </div>
       </section>
