@@ -111,12 +111,12 @@ export default function PreviewPage() {
 
       {/* ── Top Nav ── */}
       <header style={{
-        height: 64, padding: '0 20px', background: 'var(--color-paper)',
+        height: 64, padding: wide ? '0 20px' : '0 10px', background: 'var(--color-paper)',
         borderBottom: '1px solid var(--color-ink-200)',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
         position: 'sticky', top: 0, zIndex: 10,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
           <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none', color: 'inherit' }}>
             <svg width="26" height="26" viewBox="0 0 32 32" fill="none" aria-hidden="true">
               <mask id="axon-mark-preview">
@@ -131,10 +131,10 @@ export default function PreviewPage() {
               Axon
             </span>
           </Link>
-          <span style={{ color: 'var(--color-ink-300)', fontSize: 14 }}>·</span>
-          <span className="t-eyebrow">Preview</span>
+          {wide && <span style={{ color: 'var(--color-ink-300)', fontSize: 14 }}>·</span>}
+          {wide && <span className="t-eyebrow">Preview</span>}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
           {[
             { label: 'Leads', icon: <Users size={13} strokeWidth={1.5} /> },
             { label: 'Pipeline', icon: <Kanban size={13} strokeWidth={1.5} /> },
