@@ -1,0 +1,43 @@
+/* ── Axon Design System · Spacing, Radius, Elevation, Motion ──
+   Vendored from the Axon Design System handoff. */
+
+:root {
+  /* Spacing scale (4px base) */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-24: 96px;
+
+  /* Radius — crisp, Blueprint-derived */
+  --radius-input:  4px;
+  --radius-button: 4px;
+  --radius-card:   4px;
+  --radius-modal:  6px;
+  --radius-pill:   9999px;
+
+  /* Elevation — dark ramp: a light 1px inset "border" + a soft drop shadow.
+     Cards read as etched glass on slate, not floating white boxes. */
+  --shadow-card:   inset 0 0 0 1px rgba(255, 255, 255, 0.2), 0 1px 10px 0 rgba(0, 0, 0, 0.2);
+  --shadow-pop:    inset 0 0 0 1px rgba(255, 255, 255, 0.2), 0 4px 6px -4px rgba(0, 0, 0, 0.5), 0 10px 30px -5px rgba(0, 0, 0, 0.5);
+  --shadow-modal:  inset 0 0 0 1px rgba(255, 255, 255, 0.2), 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 30px -5px rgba(0, 0, 0, 0.3);
+  --shadow-drawer: -4px 0 24px 0 rgba(0, 0, 0, 0.5);
+
+  /* Focus ring */
+  --ring-accent: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent);
+
+  /* Motion — Blueprint's signature ease; quick & confident */
+  --ease-out: cubic-bezier(0.4, 1, 0.75, 0.9);
+  --dur-fast: 100ms;
+  --dur-base: 180ms;
+
+  /* Layout */
+  --nav-height:   64px;
+  --container-max: 1200px;
+}

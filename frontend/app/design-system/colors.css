@@ -1,0 +1,93 @@
+/* ── Axon Design System · Colors ──
+   Vendored from the Axon Design System handoff (claude.ai/design) as the
+   canonical source of truth for the product's color tokens. Dark system:
+   slate surfaces, turquoise accent, inverted "ink" text scale, bright-on-dark
+   data-viz palette.
+
+   Adaptations for this codebase are marked "compat" at the bottom: a few alias
+   names the product already references, kept so existing components keep
+   rendering after the cut-over. */
+
+:root {
+  /* ── Surfaces — slate ramp, deepest → lightest ── */
+  --color-black:       #111418; /* deep panels, sidebar, bands */
+  --color-canvas-deep: #1c2127; /* recessed page canvas (handoff paper-deep) */
+  --color-paper:       #252a31; /* app background (slate) */
+  --color-surface:     #2f343c; /* card surface */
+  --color-surface-hi:  #383e47; /* hover / raised surface */
+  --color-cream:       #f6f7f9; /* light text on filled accents */
+
+  /* ── Ink scale — INVERTED: light text & borders for dark surfaces ── */
+  --color-ink-50:  #2f343c; /* faint fill */
+  --color-ink-100: #383e47; /* faint border */
+  --color-ink-200: #404854; /* border */
+  --color-ink-300: #5f6b7c; /* divider / faint text */
+  --color-ink-400: #8f99a8; /* placeholder text */
+  --color-ink-500: #abb3bf; /* muted text */
+  --color-ink-600: #c5cbd3; /* tertiary text */
+  --color-ink-700: #d3d8de; /* secondary body text */
+  --color-ink-800: #e5e8eb; /* strong body text */
+  --color-ink-900: #f6f7f9; /* primary text & headings */
+
+  /* ── Turquoise — signature accent ── */
+  --color-accent-50:   #103330; /* faint turquoise fill */
+  --color-accent-100:  #0c3a37; /* chip tint */
+  --color-accent:      #00a396; /* turquoise3 · filled controls (rest) */
+  --color-accent-600:  #13c9ba; /* turquoise4 · bright/landing accent */
+  --color-accent-700:  #007067; /* turquoise2 · hover */
+  --color-accent-800:  #004d46; /* turquoise1 · active */
+  --color-accent-300:  #7ae1d8; /* turquoise5 · bright accent text on dark */
+
+  /* ── Data-viz — extended palette (bright on dark) + soft chip tints ── */
+  --color-moss:       #32a467; /* green */
+  --color-moss-soft:  #1c3527;
+  --color-ocean:      #3fa6da; /* cerulean */
+  --color-ocean-soft: #16313d;
+  --color-gold:       #f0b726; /* gold */
+  --color-gold-soft:  #3a2f12;
+  --color-plum:       #bd6bbd; /* violet */
+  --color-plum-soft:  #331a33;
+  --color-rose:       #f5498b; /* rose */
+  --color-rose-soft:  #3a1626;
+
+  /* ── Semantic intents ── */
+  --color-success:    #32a467;
+  --color-success-bg: #1c3527;
+  --color-warning:    #ec9a3c;
+  --color-warning-bg: #3a2a12;
+  --color-danger:     #e76a6e;
+  --color-danger-bg:  #3a1d1d;
+  --color-info:       #3fa6da;
+  --color-info-bg:    #16313d;
+
+  /* ── RGB channels for translucent fills ── */
+  --color-accent-rgb: 0, 163, 150;
+  --color-gold-rgb:   240, 183, 38;
+  --color-moss-rgb:    50, 164, 103;
+  --color-rose-rgb:   245,  73, 139;
+
+  /* ── Semantic aliases (prefer these in product code) ── */
+  --bg-app:        var(--color-paper);
+  --bg-deep:       var(--color-canvas-deep);
+  --surface-card:  var(--color-surface);
+  --surface-raised:var(--color-surface-hi);
+  --border-subtle: var(--color-ink-100);
+  --border-default:var(--color-ink-200);
+  --border-strong: var(--color-ink-300);
+  --text-heading:  var(--color-ink-900);
+  --text-body:     var(--color-ink-700);
+  --text-muted:    var(--color-ink-500);
+  --text-faint:    var(--color-ink-400);
+  --text-on-accent:var(--color-cream);
+  --intent-primary:var(--color-accent);
+  --intent-primary-hover:  var(--color-accent-700);
+  --intent-primary-active: var(--color-accent-800);
+
+  /* ── compat: names this codebase already references ──
+     --color-paper-deep historically meant the raised/hover gray (#383e47),
+     i.e. the handoff's surface-hi — keep that meaning so hovers/bands and
+     landing.css are unchanged. The handoff's deep canvas is --color-canvas-deep. */
+  --color-paper-deep: #383e47;
+  --color-ocean-d:    var(--color-ocean);
+  --color-gold-bg:    var(--color-gold-soft);
+}
