@@ -144,8 +144,18 @@ INSIGHTS_STALE_DAYS           = int(os.getenv("INSIGHTS_STALE_DAYS", "30"))
 META_APP_ID             = os.getenv("META_APP_ID", "")
 META_APP_SECRET         = os.getenv("META_APP_SECRET", "")
 META_OAUTH_REDIRECT_URI = os.getenv("META_OAUTH_REDIRECT_URI", "")
-# FUTURE LLM insights (unused now — do NOT add the SDK dependency yet).
+# LLM / vision (Anthropic). Used by api/receipt_extract.py for receipt OCR; the
+# marketing-insights "claude" generator is still a future seam. The app boots
+# with no key — only the receipt-scan endpoint requires one.
 ANTHROPIC_API_KEY       = os.getenv("ANTHROPIC_API_KEY", "")
+
+# ── Receipt OCR ──────────────────────────────────────────────────────────────
+# Model used to extract expense fields from a receipt photo. Haiku handles clean
+# receipts well and is the cheapest tier; bump to claude-sonnet-4-6 for messier
+# images without a code change.
+RECEIPT_SCAN_MODEL = os.getenv("RECEIPT_SCAN_MODEL", "claude-haiku-4-5")
+# Receipt photos run larger than CSVs, so this is separate from IMPORT_MAX_BYTES.
+RECEIPT_MAX_BYTES  = int(os.getenv("RECEIPT_MAX_BYTES", str(10 * 1024 * 1024)))  # 10 MB
 
 # ── Machine-learning predictive lead scoring ─────────────────────────────────
 # Scorer mode controls whether the learned model is computed/shown:

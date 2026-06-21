@@ -1,11 +1,11 @@
 'use client'
-import { useState, useEffect, type FormEvent } from 'react'
+import { useState, useEffect, useRef, type FormEvent } from 'react'
 import {
-  X,
+  X, Camera, Loader2,
   Fuel, Package, UtensilsCrossed, Wrench, Megaphone, HardHat, Building2, ClipboardList,
   type LucideIcon,
 } from 'lucide-react'
-import { createExpense, updateExpense } from '@/lib/api'
+import { createExpense, updateExpense, scanReceipt } from '@/lib/api'
 import type { Expense, ExpenseCreate, ExpenseCategory, PaymentMethod } from '@/lib/types'
 import { DateQuickPicks } from './DateQuickPicks'
 
@@ -47,7 +47,31 @@ export function ExpenseForm({ expense, onSaved, onClose }: Props) {
   const [method, setMethod]       = useState<PaymentMethod>('card')
   const [deductible, setDeduct]   = useState(true)
   const [saving, setSaving]       = useState(false)
+  const [scanning, setScanning]   = useState(false)
   const [error, setError]         = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  async function handleReceipt(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-selecting the same file later
+    if (!file) return
+
+    setScanning(true)
+    setError(null)
+    try {
+      const r = await scanReceipt(file)
+      if (r.amount != null) setAmount(String(r.amount))
+      if (r.vendor) setVendor(r.vendor)
+      if (r.category) setCategory(r.category)
+      if (r.expense_date) setDate(r.expense_date)
+      if (r.is_tax_deductible != null) setDeduct(r.is_tax_deductible)
+      if (r.description) setDesc(r.description)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not read the receipt')
+    } finally {
+      setScanning(false)
+    }
+  }
 
   useEffect(() => {
     if (expense) {
@@ -124,6 +148,30 @@ export function ExpenseForm({ expense, onSaved, onClose }: Props) {
           </div>
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+            {/* Scan a receipt — add mode only; pre-fills the fields below */}
+            {!expense && (
+              <>
+                <input
+                  ref={fileRef} type="file" accept="image/*" capture="environment"
+                  onChange={handleReceipt} style={{ display: 'none' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={scanning}
+                  className="btn-secondary"
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    width: '100%', height: 46, fontSize: 14, fontWeight: 600,
+                  }}
+                >
+                  {scanning
+                    ? <><Loader2 size={18} className="spin" /> Reading receipt…</>
+                    : <><Camera size={18} strokeWidth={1.5} /> Scan a receipt</>}
+                </button>
+              </>
+            )}
 
             {/* Amount — large prominent input */}
             <div>

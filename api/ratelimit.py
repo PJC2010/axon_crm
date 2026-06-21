@@ -45,5 +45,7 @@ def client_ip(request: Request) -> str:
 # Shared limiter instances (per-process).
 login_limiter = RateLimiter(max_calls=10, per_seconds=60, name="login")
 import_limiter = RateLimiter(max_calls=20, per_seconds=3600, name="import")
+# Receipt OCR calls cost money per request — cap per account.
+receipt_scan_limiter = RateLimiter(max_calls=60, per_seconds=3600, name="receipt scan")
 pipeline_run_limiter = RateLimiter(max_calls=10, per_seconds=3600, name="pipeline run")
 public_quote_limiter = RateLimiter(max_calls=30, per_seconds=60, name="public quote")
