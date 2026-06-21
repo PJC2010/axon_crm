@@ -11,12 +11,18 @@ import csv
 import io
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from psycopg2.extensions import connection as PGConn
 
 from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user, require_owner
-from api.models import Expense, ExpenseCreate, ExpenseUpdate, ExpenseSummary, EXPENSE_CATEGORIES, PAYMENT_METHODS
+from api.models import (
+    Expense, ExpenseCreate, ExpenseUpdate, ExpenseSummary, ReceiptScanResult,
+    EXPENSE_CATEGORIES, PAYMENT_METHODS,
+)
+from api.ratelimit import receipt_scan_limiter
+from api.receipt_extract import extract_receipt, ReceiptExtractError, SUPPORTED_MEDIA_TYPES
+from config import RECEIPT_MAX_BYTES
 
 router = APIRouter()
 
@@ -173,6 +179,38 @@ def create_expense(
         row = dict_fetchone(cur)
         db.commit()
     return Expense(**row)
+
+
+@router.post("/expenses/scan-receipt", response_model=ReceiptScanResult)
+async def scan_receipt(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    """Extract expense fields from a receipt photo to pre-fill the form. The image
+    is read into memory, sent to Claude vision, and discarded — never stored."""
+    receipt_scan_limiter.check(str(current_user["account_id"]))
+
+    if file.content_type not in SUPPORTED_MEDIA_TYPES:
+        raise HTTPException(
+            status_code=415,
+            detail="Unsupported image type — upload a JPEG, PNG, WebP, or GIF.",
+        )
+
+    content = await file.read(RECEIPT_MAX_BYTES + 1)
+    if len(content) > RECEIPT_MAX_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Image too large — receipts are limited to {RECEIPT_MAX_BYTES // (1024 * 1024)} MB",
+        )
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    try:
+        fields = extract_receipt(content, file.content_type)
+    except ReceiptExtractError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    return ReceiptScanResult(**fields)
 
 
 @router.get("/expenses/{expense_id}", response_model=Expense)

@@ -328,6 +328,17 @@ export interface ExpenseSummary {
   count: number
 }
 
+// Fields extracted from a receipt photo to pre-fill the expense form. All
+// optional — a partial read still pre-fills whatever was recognized.
+export interface ReceiptScanResult {
+  amount?: number | null
+  vendor?: string | null
+  expense_date?: string | null
+  category?: ExpenseCategory | null
+  is_tax_deductible?: boolean | null
+  description?: string | null
+}
+
 export interface ExpenseFilters {
   year?: number
   month?: number

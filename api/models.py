@@ -113,6 +113,17 @@ class ExpenseSummary(BaseModel):
     count: int
 
 
+class ReceiptScanResult(BaseModel):
+    """Fields extracted from a receipt photo to pre-fill the expense form. All
+    optional — a partial read still pre-fills whatever was recognized."""
+    amount: Optional[float] = None
+    vendor: Optional[str] = None
+    expense_date: Optional[date] = None
+    category: Optional[str] = None
+    is_tax_deductible: Optional[bool] = None
+    description: Optional[str] = None
+
+
 # ── Invoices ──────────────────────────────────────────────────────────────────
 
 INVOICE_STATUSES = ["draft", "sent", "paid", "partial", "overdue", "void"]
