@@ -1,4 +1,5 @@
 """FastAPI application entry point."""
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -8,6 +9,28 @@ from api.routes import leads, notes, history, export
 from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, hcad, workflows, imports, quotes, appointments
 from api.routes import connections, insights, ml
 
+log = logging.getLogger(__name__)
+
+
+def _check_hcad_source() -> None:
+    """Warn loudly (non-fatal) if HCAD seeding is selected but no data is loaded.
+
+    On Render the DuckDB file is ephemeral, so the durable Postgres mirror must be
+    populated (see docs/RENDER_DEPLOYMENT.md). Without this check a misconfigured
+    deploy would silently seed 0 rows on every run.
+    """
+    from config import SEED_SOURCE
+    if SEED_SOURCE != "hcad":
+        return
+    from pipeline import hcad_store
+    if not hcad_store.hcad_available():
+        log.warning(
+            "SEED_SOURCE=hcad but no HCAD data is available (no DuckDB file at "
+            "PERMIT_DB_PATH and hcad_properties is empty). Seeding will return 0 "
+            "rows. Load the Postgres mirror with tools/load_hcad_to_postgres.py — "
+            "see docs/RENDER_DEPLOYMENT.md."
+        )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -15,6 +38,7 @@ async def lifespan(app: FastAPI):
     scheduler.start()
     load_active_schedules()
     schedule_retraining()
+    _check_hcad_source()
     yield
     scheduler.shutdown(wait=False)
 

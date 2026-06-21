@@ -24,6 +24,30 @@ def db_exists(db_path: str | None = None) -> bool:
     return path.exists() and path.stat().st_size > 0
 
 
+def hcad_available(db_path: str | None = None) -> bool:
+    """True if any HCAD source has data — the local DuckDB file, or the Postgres
+    `hcad_properties` mirror with at least one row.
+
+    Used by the startup guard so a deploy that selects HCAD seeding but has no
+    data loaded fails loudly instead of silently seeding 0 rows.
+    """
+    if db_exists(db_path):
+        return True
+    try:
+        from pipeline.db import get_conn
+        conn = get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM hcad_properties LIMIT 1")
+                return cur.fetchone() is not None
+        finally:
+            conn.close()
+    except Exception as e:
+        log.debug("hcad_available Postgres check failed: %s", e)
+        return False
+
+
+
 def query_permits(zip_code: str, db_path: str | None = None) -> dict[str, int]:
     """
     Return {address_norm: permit_count} for permits issued in the last 24 months.
