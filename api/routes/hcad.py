@@ -113,7 +113,11 @@ async def upload_hcad(
 
 @router.get("/hcad/status")
 def hcad_status(_: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
-    """Show which ZIPs have HCAD data loaded."""
+    """Show the active HCAD source and which ZIPs have data loaded."""
+    from pipeline import hcad_store
+    source = "duckdb" if hcad_store.db_exists() else (
+        "postgres" if hcad_store.hcad_available() else "none"
+    )
     with db.cursor() as cur:
         cur.execute("""
             SELECT site_zip, COUNT(*) AS properties,
@@ -134,7 +138,7 @@ def hcad_status(_: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
         """)
         cols = [d[0] for d in cur.description]
         rows = [dict(zip(cols, r)) for r in cur.fetchall()]
-    return rows
+    return {"source": source, "zips": rows}
 
 
 @router.delete("/hcad/{zip_code}", status_code=204)

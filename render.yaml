@@ -1,0 +1,50 @@
+# Render Blueprint for Axon CRM (backend API + managed Postgres).
+#
+# The Postgres database is the durable home for the HCAD data: Render's web
+# filesystem is ephemeral, so the local DuckDB is NOT used in production. Load
+# the county data into this database once with tools/load_hcad_to_postgres.py
+# (see docs/RENDER_DEPLOYMENT.md), and the pipeline reads it via the Postgres
+# fallback in pipeline/hcad_store.py.
+#
+# Deploy: push this file to your repo, then "New + > Blueprint" in Render.
+
+databases:
+  - name: axon-crm-db
+    plan: starter            # NOT free — free Postgres expires ~30 days.
+    databaseName: axon_crm
+    user: axon_crm
+
+services:
+  - type: web
+    name: axon-crm-api
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    # Runs after build, before the new version goes live, with env vars present.
+    preDeployCommand: python db/migrate.py
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: axon-crm-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true        # required; the app hard-fails if unset.
+      # HCAD-first, paid sources off. The DuckDB never ships to Render, so leave
+      # PERMIT_DB_PATH empty to force the durable Postgres mirror path.
+      - key: SEED_SOURCE
+        value: hcad
+      - key: PERMIT_DB_PATH
+        value: ""
+      # Public links (set to your deployed frontend origin).
+      - key: APP_BASE_URL
+        value: https://axon-crm-api.onrender.com
+      # Paid APIs — left blank on purpose. Set RENTCAST_API_KEY later to test
+      # RentCast as a gap-filler; the property step no-ops while it is empty.
+      - key: RENTCAST_API_KEY
+        value: ""
+      - key: ATTOM_API_KEY
+        value: ""
+      - key: GOOGLE_GEOCODE_KEY
+        value: ""

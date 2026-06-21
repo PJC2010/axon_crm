@@ -90,22 +90,26 @@ def build(src_dir: Path, out_db: Path, encoding: str) -> None:
     real_acct = real_src
 
     # ── helper subqueries for optional joins ────────────────────────────────
+    # NOTE: real_acct.acct is space-padded to a fixed width, while deeds/owners/
+    # building_res/permits/extra_features store acct UNpadded. Every acct key is
+    # therefore TRIM()'d so the joins below (and the runtime ps.acct = *.acct
+    # joins in pipeline/hcad_store.py) actually match.
     deeds_src = _src(con, f["deeds"], encoding)
     last_sale = (
-        f"(SELECT acct, MAX(TRY_STRPTIME(dos, '%m/%d/%Y')::DATE) AS last_sale_date "
-        f"FROM {deeds_src} WHERE dos IS NOT NULL GROUP BY acct)"
+        f"(SELECT TRIM(acct) AS acct, MAX(TRY_STRPTIME(dos, '%m/%d/%Y')::DATE) AS last_sale_date "
+        f"FROM {deeds_src} WHERE dos IS NOT NULL GROUP BY TRIM(acct))"
     ) if deeds_src else "(SELECT NULL::VARCHAR AS acct, NULL::DATE AS last_sale_date WHERE FALSE)"
 
     owners_src = _src(con, f["owners"], encoding)
     owner = (
-        f'(SELECT acct, ANY_VALUE("name") AS owner_name FROM {owners_src} '
-        f"WHERE COALESCE(ln_num, '1') = '1' GROUP BY acct)"
+        f'(SELECT TRIM(acct) AS acct, ANY_VALUE("name") AS owner_name FROM {owners_src} '
+        f"WHERE COALESCE(ln_num, '1') = '1' GROUP BY TRIM(acct))"
     ) if owners_src else "(SELECT NULL::VARCHAR AS acct, NULL::VARCHAR AS owner_name WHERE FALSE)"
 
     bres_src = _src(con, f["building_res"], encoding)
     byear = (
-        f"(SELECT acct, MIN(TRY_CAST(NULLIF(date_erected, '') AS INTEGER)) AS year_built "
-        f"FROM {bres_src} GROUP BY acct)"
+        f"(SELECT TRIM(acct) AS acct, MIN(TRY_CAST(NULLIF(date_erected, '') AS INTEGER)) AS year_built "
+        f"FROM {bres_src} GROUP BY TRIM(acct))"
     ) if bres_src else "(SELECT NULL::VARCHAR AS acct, NULL::INTEGER AS year_built WHERE FALSE)"
 
     # ── property_summary ────────────────────────────────────────────────────
@@ -115,7 +119,7 @@ def build(src_dir: Path, out_db: Path, encoding: str) -> None:
     print("Building property_summary ...")
     con.execute(f"""
         CREATE TABLE property_summary AS
-        WITH ra AS (SELECT * FROM {real_acct}),
+        WITH ra AS (SELECT * REPLACE (TRIM(acct) AS acct) FROM {real_acct}),
              ls AS {last_sale},
              ow AS {owner},
              yb AS {byear},
@@ -161,7 +165,7 @@ def build(src_dir: Path, out_db: Path, encoding: str) -> None:
             CREATE TABLE permits AS
             SELECT
                 TRY_CAST(NULLIF(id, '') AS BIGINT)        AS id,
-                acct,
+                TRIM(acct)                                AS acct,
                 status,
                 TRY_STRPTIME(issue_date, '%m/%d/%Y')::DATE AS issue_date,
                 permit_type,
@@ -178,7 +182,7 @@ def build(src_dir: Path, out_db: Path, encoding: str) -> None:
         print("Building extra_features ...")
         con.execute(f"""
             CREATE TABLE extra_features AS
-            SELECT acct, bld_num, cd, s_dscr, l_dscr, uts
+            SELECT TRIM(acct) AS acct, bld_num, cd, s_dscr, l_dscr, uts
             FROM {ef_src}
         """)
     else:

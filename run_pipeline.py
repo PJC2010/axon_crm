@@ -60,7 +60,8 @@ def run_zip(zip_code: str, args) -> None:
         if not args.force_seed and _zip_already_seeded(zip_code, account_id):
             log.info("[1/7] Seed: skipped (ZIP already in DB — use --force-seed to re-fetch)")
         else:
-            n = seed(zip_code, account_id, csv_path=args.seed_csv, limit=args.limit)
+            n = seed(zip_code, account_id, csv_path=args.seed_csv, limit=args.limit,
+                     seed_source=getattr(args, "seed_source", None))
             log.info("[1/7] Seed: %d records", n)
     else:
         log.info("[1/7] Seed: skipped")
@@ -204,6 +205,10 @@ def main():
                         help="Scoring vertical (e.g. epoxy_flooring, pool_maintenance, solar)")
     parser.add_argument("--seed-csv",   default=None,
                         help="CSV file to seed addresses from (instead of RentCast API)")
+    parser.add_argument("--seed-source", default=None, dest="seed_source",
+                        choices=["rentcast", "hcad"],
+                        help="Where step 1 gets addresses: 'rentcast' (paid, default) or "
+                             "'hcad' (free local Harris County data). Overrides SEED_SOURCE env.")
     parser.add_argument("--permit-csv", default=None,
                         help="CSV file with permit counts (address, zip, permit_count)")
     parser.add_argument("--skip",       default="",

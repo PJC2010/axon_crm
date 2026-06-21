@@ -24,6 +24,30 @@ def db_exists(db_path: str | None = None) -> bool:
     return path.exists() and path.stat().st_size > 0
 
 
+def hcad_available(db_path: str | None = None) -> bool:
+    """True if any HCAD source has data — the local DuckDB file, or the Postgres
+    `hcad_properties` mirror with at least one row.
+
+    Used by the startup guard so a deploy that selects HCAD seeding but has no
+    data loaded fails loudly instead of silently seeding 0 rows.
+    """
+    if db_exists(db_path):
+        return True
+    try:
+        from pipeline.db import get_conn
+        conn = get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM hcad_properties LIMIT 1")
+                return cur.fetchone() is not None
+        finally:
+            conn.close()
+    except Exception as e:
+        log.debug("hcad_available Postgres check failed: %s", e)
+        return False
+
+
+
 def query_permits(zip_code: str, db_path: str | None = None) -> dict[str, int]:
     """
     Return {address_norm: permit_count} for permits issued in the last 24 months.
@@ -325,6 +349,69 @@ def _duckdb_query_region(con, region_id: str, zip_code: str, joined: bool) -> di
     return result
 
 
+def query_parcels_for_zip(zip_code: str, db_path: str | None = None) -> dict[str, dict]:
+    """All parcels in one ZIP, keyed by normalized address, for free HCAD seeding.
+
+    Same field set as query_properties(), plus the raw site_address / site_zip /
+    mail_city the seed normalizer (`pipeline.seed._normalize_hcad`) needs to build
+    a properties row. Reads the local DuckDB only — zero paid API calls — and
+    falls back to the Postgres hcad_* mirror when the DuckDB file is absent.
+    """
+    db_file = db_path or PERMIT_DB_PATH
+    if db_exists(db_file):
+        con = duckdb.connect(str(db_file), read_only=True)
+        try:
+            return _duckdb_query_zip(con, zip_code, joined=True)
+        except duckdb.CatalogException:
+            return _duckdb_query_zip(con, zip_code, joined=False)
+        finally:
+            con.close()
+    return _pg_query_parcels_for_zip(zip_code)
+
+
+def _duckdb_query_zip(con, zip_code: str, joined: bool) -> dict[str, dict]:
+    name_expr = "nc.dscr" if joined else "NULL::VARCHAR"
+    join_clause = "LEFT JOIN neighborhood_codes nc ON nc.cd = ps.neighborhood_code" if joined else ""
+    rows = con.execute(f"""
+        SELECT
+            LOWER(TRIM(REGEXP_REPLACE(ps.site_address, '[^a-zA-Z0-9 ]', ' ', 'g'))) AS address_norm,
+            ps.site_address,
+            ps.site_zip,
+            ps.mail_city,
+            TRY_CAST(ps.year_built AS INTEGER)   AS year_built,
+            ps.building_sqft                     AS square_footage,
+            ps.land_sqft                         AS lot_size,
+            ps.tot_appr_val                      AS estimated_value,
+            ps.last_sale_date,
+            ps.owner_name,
+            ps.likely_owner_occupied             AS owner_occupied,
+            NULLIF(CONCAT_WS(', ',
+                NULLIF(TRIM(ps.mail_addr), ''),
+                NULLIF(TRIM(ps.mail_city), ''),
+                NULLIF(TRIM(CONCAT_WS(' ', NULLIF(TRIM(ps.mail_state), ''),
+                                           NULLIF(TRIM(ps.mail_zip), ''))), '')
+            ), '')                               AS mailing_address,
+            ps.neighborhood_code,
+            {name_expr}                          AS neighborhood_name
+        FROM property_summary ps
+        {join_clause}
+        WHERE ps.site_zip = ?
+          AND ps.site_address IS NOT NULL
+    """, [zip_code]).fetchall()
+
+    cols = ["address_norm", "site_address", "site_zip", "mail_city", "year_built",
+            "square_footage", "lot_size", "estimated_value", "last_sale_date",
+            "owner_name", "owner_occupied", "mailing_address",
+            "neighborhood_code", "neighborhood_name"]
+    result = {}
+    for row in rows:
+        d = dict(zip(cols, row))
+        addr = d.get("address_norm")
+        if addr:
+            result[addr] = d
+    return result
+
+
 # ── Postgres fallback functions ──────────────────────────────────────────────
 
 def _pg_query_permits(zip_code: str) -> dict[str, int]:
@@ -534,4 +621,51 @@ def _pg_query_properties_for_region(region_id: str, zip_code: str) -> dict[str, 
         return result
     except Exception as e:
         log.warning("Postgres HCAD region property query failed: %s", e)
+        return {}
+
+
+def _pg_query_parcels_for_zip(zip_code: str) -> dict[str, dict]:
+    """ZIP-level parcel seed from the Postgres hcad_properties mirror."""
+    try:
+        from pipeline.db import get_conn
+        conn = get_conn()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    LOWER(TRIM(REGEXP_REPLACE(site_address, '[^a-zA-Z0-9 ]', ' ', 'g'))) AS address_norm,
+                    site_address,
+                    site_zip,
+                    mail_city,
+                    CAST(NULLIF(year_built, '') AS INTEGER) AS year_built,
+                    building_sqft AS square_footage,
+                    land_sqft AS lot_size,
+                    tot_appr_val AS estimated_value,
+                    last_sale_date,
+                    owner_name,
+                    likely_owner_occupied AS owner_occupied,
+                    NULLIF(CONCAT_WS(', ',
+                        NULLIF(TRIM(mail_addr), ''),
+                        NULLIF(TRIM(mail_city), ''),
+                        NULLIF(TRIM(CONCAT_WS(' ', NULLIF(TRIM(mail_state), ''),
+                                                   NULLIF(TRIM(mail_zip), ''))), '')
+                    ), '') AS mailing_address,
+                    neighborhood_code,
+                    neighborhood_name
+                FROM hcad_properties
+                WHERE site_zip = %s AND site_address IS NOT NULL
+            """, (zip_code,))
+            cols = ["address_norm", "site_address", "site_zip", "mail_city", "year_built",
+                    "square_footage", "lot_size", "estimated_value", "last_sale_date",
+                    "owner_name", "owner_occupied", "mailing_address",
+                    "neighborhood_code", "neighborhood_name"]
+            result = {}
+            for row in cur.fetchall():
+                d = dict(zip(cols, row))
+                addr = d.get("address_norm")
+                if addr:
+                    result[addr] = d
+        conn.close()
+        return result
+    except Exception as e:
+        log.warning("Postgres HCAD ZIP parcel query failed: %s", e)
         return {}

@@ -98,6 +98,15 @@ JOB_VALUE_MODEL = {
 # a small fraction of the home's estimated value as a rough job ticket.
 JOB_VALUE_FALLBACK_PCT = float(os.getenv("JOB_VALUE_FALLBACK_PCT", "0.04"))
 
+# ── Seed source ───────────────────────────────────────────────────────────────
+# Where the seed step (step 1) gets its address list:
+#   "rentcast" — RentCast /properties scan (paid; default).
+#   "hcad"     — local Harris County DuckDB/Postgres mirror (free). Seeds every
+#                parcel in the ZIP and pre-fills the assessor fields RentCast/Attom
+#                would otherwise be paid to fetch. CLI: --seed-source hcad.
+# An explicit --seed-csv / --region still takes precedence over this default.
+SEED_SOURCE = os.getenv("SEED_SOURCE", "rentcast").strip().lower()
+
 # ── Seed property-type filter ─────────────────────────────────────────────────
 # Only these RentCast `propertyType` values are seeded; everything else (e.g.
 # Apartment, Multi-Family, Land) is skipped at seed so paid enrichment never
