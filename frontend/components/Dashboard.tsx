@@ -2,8 +2,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { RefreshCw, AlertCircle, Kanban, CheckSquare, Settings, LogOut, Receipt, BookOpen, Home, Menu, X } from 'lucide-react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { getLeads } from '@/lib/api'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { getLeads, getLead } from '@/lib/api'
 import { clearToken } from '@/lib/auth'
 import type { Lead, LeadFilters, LeadStatus } from '@/lib/types'
 import { LeadTable } from './LeadTable'
@@ -19,6 +19,7 @@ const DEFAULT_FILTERS: LeadFilters = { sort: 'score', page: 1, page_size: 50 }
 
 export function Dashboard() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [filters, setFilters]   = useState<LeadFilters>(DEFAULT_FILTERS)
   const [leads, setLeads]       = useState<Lead[]>([])
   const [total, setTotal]       = useState(0)
@@ -60,6 +61,25 @@ export function Dashboard() {
   }, [])
 
   useEffect(() => { fetchLeads(filters) }, [filters, fetchLeads])
+
+  // Open a lead's drawer when arriving with ?lead=<id> (e.g. from the home dashboard).
+  const leadParam = searchParams.get('lead')
+  useEffect(() => {
+    if (!leadParam) return
+    const id = Number(leadParam)
+    if (!Number.isFinite(id)) return
+    let cancelled = false
+    getLead(id)
+      .then(lead => { if (!cancelled) setSelected(lead) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [leadParam])
+
+  function handleCloseDrawer() {
+    setSelected(null)
+    // Drop the ?lead param so the drawer doesn't reopen on re-render/navigation.
+    if (leadParam) router.replace('/dashboard')
+  }
 
   function handleStatusChange(id: number, status: LeadStatus) {
     setLeads(prev => prev.map(l => l.id === id ? { ...l, status } : l))
@@ -274,7 +294,7 @@ export function Dashboard() {
 
       <ContactDrawer
         lead={selected}
-        onClose={() => setSelected(null)}
+        onClose={handleCloseDrawer}
         onStatusChange={handleStatusChange}
         onLeadChange={handleLeadChange}
         onToast={showToast}
