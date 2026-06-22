@@ -513,7 +513,7 @@ export function HomeDashboard() {
                 return (
                   <Link
                     key={lead.id}
-                    href="/dashboard"
+                    href={`/dashboard?lead=${lead.id}`}
                     style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 'var(--radius-card)', background: 'var(--color-surface)', boxShadow: 'var(--shadow-card)', minHeight: 56, textDecoration: 'none', color: 'inherit' }}
                   >
                     <ScoreBadge grade={lead.score_grade} score={lead.lead_score} />
