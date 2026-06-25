@@ -1,9 +1,43 @@
 'use client'
-import { useState, FormEvent } from 'react'
+import { useState, useEffect, useRef, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { login } from '@/lib/api'
+import { login, loginWithGoogle, loginWithApple } from '@/lib/api'
 import { setToken } from '@/lib/auth'
 import { Logo, Card, Button, Input } from '@/components/ds'
+
+const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID
+const APPLE_CLIENT_ID = process.env.NEXT_PUBLIC_APPLE_CLIENT_ID
+const APPLE_REDIRECT_URI = process.env.NEXT_PUBLIC_APPLE_REDIRECT_URI
+
+// Pull the human-readable reason out of an error thrown by lib/api's req(),
+// whose message looks like: API 403: {"detail":"..."}. Falls back to a generic
+// line when there's nothing useful to show.
+function reason(err: unknown, fallback: string): string {
+  const msg = err instanceof Error ? err.message : String(err)
+  const match = msg.match(/\{.*\}/)
+  if (match) {
+    try {
+      const detail = JSON.parse(match[0]).detail
+      if (typeof detail === 'string') return detail
+    } catch {
+      /* not JSON — fall through */
+    }
+  }
+  return fallback
+}
+
+// Inject a third-party <script> once and resolve when it has loaded.
+function loadScript(src: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) return resolve()
+    const el = document.createElement('script')
+    el.src = src
+    el.async = true
+    el.onload = () => resolve()
+    el.onerror = () => reject(new Error(`Failed to load ${src}`))
+    document.head.appendChild(el)
+  })
+}
 
 export default function LoginPage() {
   const router = useRouter()
@@ -11,6 +45,12 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const googleBtn = useRef<HTMLDivElement>(null)
+
+  function onTokenSuccess(access_token: string) {
+    setToken(access_token)
+    router.push('/home')
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -18,14 +58,85 @@ export default function LoginPage() {
     setLoading(true)
     try {
       const { access_token } = await login(username, password)
-      setToken(access_token)
-      router.push('/home')
+      onTokenSuccess(access_token)
     } catch {
       setError('Invalid username or password')
     } finally {
       setLoading(false)
     }
   }
+
+  // Google Identity Services: render the official button and exchange the
+  // returned ID token (credential) for an Axon JWT.
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID) return
+    let cancelled = false
+    loadScript('https://accounts.google.com/gsi/client')
+      .then(() => {
+        if (cancelled) return
+        const g = (window as any).google
+        if (!g || !googleBtn.current) return
+        g.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: async (resp: { credential: string }) => {
+            setError(null)
+            try {
+              const { access_token } = await loginWithGoogle(resp.credential)
+              onTokenSuccess(access_token)
+            } catch (err) {
+              setError(reason(err, 'Google sign-in failed'))
+            }
+          },
+        })
+        g.accounts.id.renderButton(googleBtn.current, {
+          theme: 'outline',
+          size: 'large',
+          width: 316,
+          text: 'continue_with',
+        })
+      })
+      .catch(() => setError('Could not load Google sign-in'))
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Sign in with Apple: init the SDK once; the button click triggers the popup.
+  useEffect(() => {
+    if (!APPLE_CLIENT_ID || !APPLE_REDIRECT_URI) return
+    loadScript(
+      'https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js',
+    )
+      .then(() => {
+        const a = (window as any).AppleID
+        if (!a) return
+        a.auth.init({
+          clientId: APPLE_CLIENT_ID,
+          scope: 'name email',
+          redirectURI: APPLE_REDIRECT_URI,
+          usePopup: true,
+        })
+      })
+      .catch(() => setError('Could not load Apple sign-in'))
+  }, [])
+
+  async function handleApple() {
+    setError(null)
+    try {
+      const a = (window as any).AppleID
+      const res = await a.auth.signIn()
+      const idToken = res?.authorization?.id_token
+      if (!idToken) throw new Error('No Apple token returned')
+      const { access_token } = await loginWithApple(idToken)
+      onTokenSuccess(access_token)
+    } catch (err) {
+      // The user closing the Apple popup throws too — keep that quiet-ish.
+      setError(reason(err, 'Apple sign-in was cancelled or failed'))
+    }
+  }
+
+  const showSocial = Boolean(GOOGLE_CLIENT_ID) || Boolean(APPLE_CLIENT_ID && APPLE_REDIRECT_URI)
 
   return (
     <div
@@ -92,6 +203,34 @@ export default function LoginPage() {
               {loading ? 'Signing in…' : 'Sign in'}
             </Button>
           </form>
+
+          {showSocial && (
+            <>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  margin: '20px 0 16px',
+                  color: 'var(--color-ink-300)',
+                  fontSize: 12,
+                }}
+              >
+                <span style={{ flex: 1, height: 1, background: 'var(--color-ink-100)' }} />
+                or
+                <span style={{ flex: 1, height: 1, background: 'var(--color-ink-100)' }} />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center' }}>
+                {GOOGLE_CLIENT_ID && <div ref={googleBtn} />}
+                {APPLE_CLIENT_ID && APPLE_REDIRECT_URI && (
+                  <Button type="button" variant="secondary" size="lg" fill onClick={handleApple}>
+                    Continue with Apple
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
 
           <p style={{ fontSize: 12, color: 'var(--color-ink-400)', margin: '18px 0 0', textAlign: 'center' }}>
             Built on data, powered by people.

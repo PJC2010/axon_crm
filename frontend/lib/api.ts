@@ -55,6 +55,16 @@ export function login(username: string, password: string): Promise<{ access_toke
   return req('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) })
 }
 
+// Social login: exchange a provider OIDC ID token for an Axon JWT. Same response
+// shape as login(), so the caller stores access_token the same way.
+export function loginWithGoogle(idToken: string): Promise<{ access_token: string }> {
+  return req('/auth/oauth/google', { method: 'POST', body: JSON.stringify({ id_token: idToken }) })
+}
+
+export function loginWithApple(idToken: string): Promise<{ access_token: string }> {
+  return req('/auth/oauth/apple', { method: 'POST', body: JSON.stringify({ id_token: idToken }) })
+}
+
 export function getMe(): Promise<User> {
   return req('/auth/me')
 }

@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import leads, notes, history, export
 from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, hcad, workflows, imports, quotes, appointments
-from api.routes import connections, insights, ml
+from api.routes import connections, insights, ml, oauth
 
 log = logging.getLogger(__name__)
 
@@ -64,6 +64,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router,     prefix="/api", tags=["Auth"])
+app.include_router(oauth.router,    prefix="/api", tags=["Auth"])
 app.include_router(leads.router,    prefix="/api", tags=["Leads"])
 app.include_router(notes.router,    prefix="/api", tags=["Notes"])
 app.include_router(history.router,  prefix="/api", tags=["History"])
