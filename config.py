@@ -144,6 +144,14 @@ INSIGHTS_STALE_DAYS           = int(os.getenv("INSIGHTS_STALE_DAYS", "30"))
 META_APP_ID             = os.getenv("META_APP_ID", "")
 META_APP_SECRET         = os.getenv("META_APP_SECRET", "")
 META_OAUTH_REDIRECT_URI = os.getenv("META_OAUTH_REDIRECT_URI", "")
+
+# ── Social login (Sign in with Google / Apple) ───────────────────────────────
+# Used by api/oauth_verify.py to validate the OIDC ID token's audience. The app
+# boots with these empty — the /api/auth/oauth/* endpoints return 503 until set.
+#   GOOGLE_OAUTH_CLIENT_ID — the Web OAuth client id from Google Cloud Console.
+#   APPLE_CLIENT_ID        — the Apple "Services ID" used for Sign in with Apple.
+GOOGLE_OAUTH_CLIENT_ID  = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
+APPLE_CLIENT_ID         = os.getenv("APPLE_CLIENT_ID", "")
 # LLM / vision (Anthropic). Used by api/receipt_extract.py for receipt OCR; the
 # marketing-insights "claude" generator is still a future seam. The app boots
 # with no key — only the receipt-scan endpoint requires one.

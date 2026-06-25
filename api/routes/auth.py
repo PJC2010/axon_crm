@@ -30,6 +30,14 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class IdTokenRequest(BaseModel):
+    """An OIDC ID token from Google / Apple, posted by the frontend SDK.
+
+    Used by the social-login routes in api/routes/oauth.py.
+    """
+    id_token: str
+
+
 class UserCreate(BaseModel):
     username: str
     email: str
