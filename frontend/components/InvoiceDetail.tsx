@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
-import { X, CreditCard, Trash2, Send } from 'lucide-react'
-import { recordPayment, deletePayment, updateInvoice, sendInvoice } from '@/lib/api'
+import { X, CreditCard, Trash2, Send, FileText } from 'lucide-react'
+import { recordPayment, deletePayment, updateInvoice, sendInvoice, invoicePdfUrl } from '@/lib/api'
 import type { Invoice, InvoiceStatus } from '@/lib/types'
 
 const STATUS_COLORS: Record<InvoiceStatus, { bg: string; text: string }> = {
@@ -224,6 +224,9 @@ export function InvoiceDetail({ invoice, onUpdate, onClose }: Props) {
           {showSendForm && invoice.status !== 'void' && (
             <div style={{ padding: '16px', background: 'var(--color-ink-50)', borderRadius: 'var(--radius-card)', border: '1px solid var(--color-ink-200)', display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div className="t-eyebrow">Send Invoice</div>
+              <div style={{ fontSize: 12, color: 'var(--color-ink-500)', marginTop: -4 }}>
+                The invoice PDF is attached to the email and linked in the text.
+              </div>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: invoice.client_email ? 'var(--color-ink-800)' : 'var(--color-ink-400)' }}>
                 <input type="checkbox" checked={sendEmail} disabled={!invoice.client_email} onChange={e => setSendEmail(e.target.checked)} />
                 Email {invoice.client_email ? `· ${invoice.client_email}` : '(no email on file)'}
@@ -290,6 +293,9 @@ export function InvoiceDetail({ invoice, onUpdate, onClose }: Props) {
                 <Send size={14} strokeWidth={1.5} /> Send Invoice
               </button>
             )}
+            <a href={invoicePdfUrl(invoice.id)} target="_blank" rel="noopener noreferrer" className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center', height: 42, padding: '0 16px', fontSize: 14, textDecoration: 'none' }}>
+              <FileText size={14} strokeWidth={1.5} /> PDF
+            </a>
             {invoice.status === 'draft' && (
               <button onClick={handleMarkSent} className="btn-secondary" style={{ flex: 1, height: 42, fontSize: 14 }}>Mark as Sent</button>
             )}
