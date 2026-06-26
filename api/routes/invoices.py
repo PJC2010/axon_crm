@@ -14,14 +14,15 @@ import csv
 import io
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import Response, StreamingResponse
 from psycopg2.extensions import connection as PGConn
 
 from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user, require_owner
 from api.invoice_logic import (
     _calc_totals, _recalc_paid, _update_invoice_payment_state, _load_invoice,
 )
+from api.invoice_pdf import build_invoice_pdf
 from api.notifications import send_invoice_email, send_invoice_sms
 from api.models import (
     Invoice, InvoiceCreate, InvoiceUpdate,
@@ -56,6 +57,14 @@ def _assert_invoice_account(db, invoice_id: int, account_id: int):
         cur.execute("SELECT 1 FROM invoices WHERE id = %s AND account_id = %s", (invoice_id, account_id))
         if not cur.fetchone():
             raise HTTPException(status_code=404, detail="Invoice not found")
+
+
+def _business_name(db, account_id: int) -> str:
+    """The org name that heads the invoice PDF / delivery messages."""
+    with db.cursor() as cur:
+        cur.execute("SELECT name FROM accounts WHERE id = %s", (account_id,))
+        row = cur.fetchone()
+    return (row[0] if row and row[0] else "Axon")
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -257,6 +266,22 @@ def get_invoice(invoice_id: int, user: dict = Depends(get_current_user), db: PGC
     return Invoice(**inv)
 
 
+@router.get("/invoices/{invoice_id}/pdf")
+def invoice_pdf(invoice_id: int, user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+    """Stream the invoice as a print-ready PDF. Auth accepts a ``?token=`` query
+    param (like the CSV export) so the browser can open it with a plain link."""
+    _assert_invoice_account(db, invoice_id, user["account_id"])
+    inv = _load_invoice(db, invoice_id)
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    pdf = build_invoice_pdf(inv, _business_name(db, user["account_id"]))
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{inv["invoice_number"]}.pdf"'},
+    )
+
+
 @router.patch("/invoices/{invoice_id}", response_model=Invoice)
 def update_invoice(
     invoice_id: int,
@@ -383,10 +408,16 @@ def delete_payment(
 def send_invoice(
     invoice_id: int,
     body: SendInvoiceRequest,
+    request: Request,
     current_user: dict = Depends(get_current_user),
     db: PGConn = Depends(get_db),
 ):
-    """Deliver an invoice summary to the client by email and/or SMS."""
+    """Deliver the invoice to the client by email and/or SMS.
+
+    Both channels carry the professional PDF: email attaches it directly, and
+    because a text can't hold a file, the SMS links to (and MMS-attaches) the
+    public PDF link served at /api/public/invoices/{token}/pdf.
+    """
     _assert_invoice_account(db, invoice_id, current_user["account_id"])
     inv = _load_invoice(db, invoice_id)
     if not inv:
@@ -398,8 +429,14 @@ def send_invoice(
     if not channels:
         raise HTTPException(status_code=400, detail="No valid channels (email, sms)")
 
-    business_name = current_user.get("username") or "Axon"
+    business_name = _business_name(db, current_user["account_id"])
     amount_due = float(inv["balance_due"])
+    pdf_bytes = build_invoice_pdf(inv, business_name)
+    pdf_url = str(request.url_for("public_invoice_pdf", token=inv["public_token"]))
+    # Render terminates TLS at its proxy (uvicorn sees plain http), but Twilio's
+    # MMS media must be reachable over HTTPS — force it for non-local hosts.
+    if pdf_url.startswith("http://") and "localhost" not in pdf_url and "127.0.0.1" not in pdf_url:
+        pdf_url = "https://" + pdf_url[len("http://"):]
     errors: list[str] = []
     sent: list[str] = []
 
@@ -411,6 +448,7 @@ def send_invoice(
                 send_invoice_email(
                     to_email=inv["client_email"], business_name=business_name,
                     invoice_number=inv["invoice_number"], amount_due=amount_due,
+                    pdf_bytes=pdf_bytes,
                 )
                 sent.append("email")
             except Exception as e:
@@ -424,6 +462,7 @@ def send_invoice(
                 send_invoice_sms(
                     to_phone=inv["client_phone"], business_name=business_name,
                     invoice_number=inv["invoice_number"], amount_due=amount_due,
+                    pdf_url=pdf_url,
                 )
                 sent.append("sms")
             except Exception as e:
@@ -444,3 +483,26 @@ def send_invoice(
         db.commit()
 
     return Invoice(**_load_invoice(db, invoice_id))
+
+
+# ── Public (customer-facing) route ────────────────────────────────────────────
+# Addressed by the invoice's unguessable token, no auth. Serves only the rendered
+# PDF — no ids or account internals — so a texted/MMS'd link is safe to share.
+
+@router.get("/public/invoices/{token}/pdf", name="public_invoice_pdf")
+def public_invoice_pdf(token: str, db: PGConn = Depends(get_db)):
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT id, account_id FROM invoices WHERE public_token = %s", (token,)
+        )
+        row = cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    invoice_id, account_id = row
+    inv = _load_invoice(db, invoice_id)
+    pdf = build_invoice_pdf(inv, _business_name(db, account_id))
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{inv["invoice_number"]}.pdf"'},
+    )

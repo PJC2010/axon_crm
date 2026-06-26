@@ -529,6 +529,13 @@ export function invoiceExportUrl(filters: InvoiceFilters = {}): string {
   return `${BASE}/invoices/export?${p}`
 }
 
+// Authed PDF URL (token in query string so a plain <a> link can open it).
+export function invoicePdfUrl(invoiceId: number): string {
+  const token = getToken()
+  const q = token ? `?token=${encodeURIComponent(token)}` : ''
+  return `${BASE}/invoices/${invoiceId}/pdf${q}`
+}
+
 // ── Invoice delivery ───────────────────────────────────────────────────────────
 
 export function sendInvoice(invoiceId: number, channels: string[]): Promise<Invoice> {
