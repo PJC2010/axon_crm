@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import leads, notes, history, export
 from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, hcad, workflows, imports, quotes, appointments
-from api.routes import connections, insights, ml, oauth
+from api.routes import connections, insights, ml, oauth, map as map_routes
 
 log = logging.getLogger(__name__)
 
@@ -82,6 +82,7 @@ app.include_router(appointments.router, prefix="/api", tags=["Appointments"])
 app.include_router(connections.router, prefix="/api", tags=["Connections"])
 app.include_router(insights.router,    prefix="/api", tags=["Insights"])
 app.include_router(ml.router,          prefix="/api", tags=["ML"])
+app.include_router(map_routes.router,  prefix="/api", tags=["Map"])
 
 
 @app.get("/api/health")

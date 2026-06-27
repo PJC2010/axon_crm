@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { RefreshCw, AlertCircle, Kanban, CheckSquare, Settings, LogOut, Receipt, BookOpen, Home, Menu, X } from 'lucide-react'
+import { RefreshCw, AlertCircle, Kanban, CheckSquare, Settings, LogOut, Receipt, BookOpen, Home, Menu, X, Map as MapIcon } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getLeads, getLead } from '@/lib/api'
@@ -142,6 +142,10 @@ export function Dashboard() {
               <Kanban size={13} strokeWidth={1.5} />
               <span>Pipeline</span>
             </Link>
+            <Link href="/map" title="Map" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
+              <MapIcon size={13} strokeWidth={1.5} />
+              <span>Map</span>
+            </Link>
             <Link href="/tasks" title="Tasks" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
               <CheckSquare size={13} strokeWidth={1.5} />
               <span>Tasks</span>
@@ -212,6 +216,7 @@ export function Dashboard() {
             {[
               { label: 'Home',        icon: <Home size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,        href: '/home' },
               { label: 'Pipeline',    icon: <Kanban size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,      href: '/pipeline' },
+              { label: 'Map',         icon: <MapIcon size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,     href: '/map' },
               { label: 'Tasks',       icon: <CheckSquare size={18} strokeWidth={1.5} color="var(--color-ink-500)" />, href: '/tasks' },
               { label: 'Expenses',    icon: <Receipt size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,     href: '/expenses' },
               { label: 'Bookkeeping', icon: <BookOpen size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,    href: '/bookkeeping' },

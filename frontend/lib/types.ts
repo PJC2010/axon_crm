@@ -57,6 +57,50 @@ export interface LeadPage {
   results: Lead[]
 }
 
+// ── Property map ──────────────────────────────────────────────────────────────
+// A geohash-6 'block' aggregate for the service-area choropleth. Carries both
+// color bases (recent intent signals + score) so the signals/score toggle on the
+// map never needs to refetch. The cell rectangle is derived client-side by
+// decoding `cell`.
+export interface MapCell {
+  cell: string
+  name: string | null
+  leads: number
+  avg_score: number | null
+  grade_a: number
+  grade_b: number
+  grade_c: number
+  grade_d: number
+  signal_count: number
+  lat: number | null
+  lng: number | null
+}
+
+// A single property pin — lighter than Lead for bulk viewport payloads.
+export interface MapPoint {
+  id: number
+  address: string | null
+  latitude: number
+  longitude: number
+  lead_score: number | null
+  score_grade: ScoreGrade | null
+  status: LeadStatus
+  signals: string[]
+}
+
+export interface MapBounds {
+  min_lat: number
+  min_lng: number
+  max_lat: number
+  max_lng: number
+}
+
+export interface MapFilters {
+  vertical?: string
+  status?: string
+  signal_days?: number
+}
+
 export interface ScoreFactor {
   key: string
   label: string
