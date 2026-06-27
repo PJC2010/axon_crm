@@ -251,8 +251,13 @@ function PropertyMapInner() {
       mapRef.current = map
       map.addControl(new maplibregl.NavigationControl(), 'top-right')
 
-      map.on('load', () => {
-        if (!map) return
+      // Add our data layers as soon as the *style* is parsed — deliberately NOT
+      // on the 'load' event, which also waits for the basemap's first tiles to
+      // download. If the tile provider is slow or unreachable, 'load' can never
+      // fire, which would silently leave the map with no cells/pins. Gating on
+      // the style instead keeps the overlay working regardless of basemap tiles.
+      const setupLayers = () => {
+        if (!map || !map.isStyleLoaded() || map.getLayer('cell-fill')) return
         // Choropleth (cells)
         map.addSource('cells', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
         map.addLayer({
@@ -328,7 +333,13 @@ function PropertyMapInner() {
 
         applyZoom()
         loadCells()
-      })
+      }
+
+      // Run now if the style is already parsed, otherwise on each styledata tick
+      // until it is. setupLayers is idempotent (guards on cell-fill), so the
+      // repeated listener is harmless and self-terminates after the first run.
+      if (map.isStyleLoaded()) setupLayers()
+      else map.on('styledata', setupLayers)
     })()
 
     return () => {
