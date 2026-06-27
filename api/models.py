@@ -64,6 +64,37 @@ class Lead(BaseModel):
         from_attributes = True
 
 
+# ── Map ───────────────────────────────────────────────────────────────────────
+
+class MapCell(BaseModel):
+    """A geohash-6 'block' aggregate for the service-area choropleth. Carries both
+    color bases (intent signals + score) so the frontend toggle needs no refetch.
+    The cell's rectangle geometry is derived frontend-side by decoding `cell`."""
+    cell: str                              # geohash-6
+    name: Optional[str] = None             # mode of hcad_neighborhood_name
+    leads: int
+    avg_score: Optional[float] = None
+    grade_a: int = 0
+    grade_b: int = 0
+    grade_c: int = 0
+    grade_d: int = 0
+    signal_count: int = 0                  # leads with a recent signal_event
+    lat: Optional[float] = None            # centroid, for initial map fit
+    lng: Optional[float] = None
+
+
+class MapPoint(BaseModel):
+    """A single property pin — intentionally lighter than Lead for bulk payloads."""
+    id: int
+    address: Optional[str] = None
+    latitude: float
+    longitude: float
+    lead_score: Optional[float] = None
+    score_grade: Optional[str] = None
+    status: str = "new"
+    signals: list[str] = []                # recent signal_type values
+
+
 # ── Expenses ──────────────────────────────────────────────────────────────────
 
 class ExpenseCreate(BaseModel):

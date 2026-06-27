@@ -446,6 +446,10 @@ def _build_filters(account_id: int, **kwargs) -> tuple[list[str], list]:
         "max_value":               "estimated_value <= %s",
         "neighborhood":            "LEFT(geohash, 6) = %s",
         "min_neighborhood_pctile": "neighborhood_value_pctile >= %s",
+        "min_lat":                 "latitude >= %s",
+        "max_lat":                 "latitude <= %s",
+        "min_lng":                 "longitude >= %s",
+        "max_lng":                 "longitude <= %s",
     }
     for key, sql in mapping.items():
         val = kwargs.get(key)

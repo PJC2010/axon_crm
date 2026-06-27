@@ -91,6 +91,30 @@ export function getLead(id: number): Promise<Lead> {
   return req<Lead>(`/leads/${id}`)
 }
 
+// ── Property map ────────────────────────────────────────────────────────────────
+
+import type { MapCell, MapPoint, MapBounds, MapFilters } from './types'
+
+// Geohash-6 aggregates for the choropleth (zoomed-out view). Returns every cell
+// with leads — no min-member threshold — so the map is complete.
+export function getMapCells(filters: MapFilters = {}): Promise<MapCell[]> {
+  const p = new URLSearchParams()
+  Object.entries(filters).forEach(([k, v]) => {
+    if (v !== undefined && v !== '') p.set(k, String(v))
+  })
+  return req<MapCell[]>(`/map/cells?${p}`)
+}
+
+// Property pins inside the current viewport (zoomed-in view). The bbox + hard
+// server-side limit keep payloads small.
+export function getMapProperties(bounds: MapBounds, filters: MapFilters = {}): Promise<MapPoint[]> {
+  const p = new URLSearchParams()
+  Object.entries({ ...bounds, ...filters }).forEach(([k, v]) => {
+    if (v !== undefined && v !== '') p.set(k, String(v))
+  })
+  return req<MapPoint[]>(`/map/properties?${p}`)
+}
+
 export function updateStatus(id: number, status: LeadStatus): Promise<Lead> {
   return req<Lead>(`/leads/${id}/status`, {
     method: 'PATCH',
