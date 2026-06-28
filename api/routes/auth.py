@@ -154,7 +154,7 @@ def list_team(current_user: dict = Depends(get_current_user), db: PGConn = Depen
     """Lightweight roster (id + username) of active members in the caller's org.
 
     Unlike GET /users (owner-only, exposes email/role), this is readable by any
-    authenticated member so assignee dropdowns (leads, appointments) can populate.
+    authenticated member so assignee dropdowns (leads, tasks) can populate.
     """
     with db.cursor() as cur:
         cur.execute(

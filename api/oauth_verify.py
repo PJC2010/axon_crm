@@ -7,7 +7,7 @@ returns the claims we trust (stable subject id + email). It does NOT mint our
 own session token — the auth route does that via api.security.create_access_token.
 
 Kept free of FastAPI/DB concerns (network only, to fetch JWKS) so it can be
-unit-tested directly, in the same spirit as api/calendar_ics.py. Reuses the
+unit-tested directly, in the same spirit as pipeline/scoring.py. Reuses the
 already-installed python-jose[cryptography] for RS256 + JWKS verification.
 """
 from __future__ import annotations
