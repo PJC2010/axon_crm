@@ -48,3 +48,35 @@ def get_json(url, *, headers=None, params=None, timeout=30,
 
     log.warning("GET %s failed after %d attempts: %s", url, retries + 1, last_err)
     return None
+
+
+def post_json(url, *, json=None, headers=None, timeout=30,
+              retries=None, backoff=None):
+    """POST `json` to `url` and return parsed JSON, retrying transient failures.
+
+    Same retry/backoff contract as get_json (returns None on failure, raises
+    nothing). Needed for providers whose API takes a JSON request body —
+    e.g. BatchData's skip-trace endpoint.
+    """
+    retries = HTTP_RETRIES if retries is None else retries
+    backoff = HTTP_BACKOFF if backoff is None else backoff
+
+    last_err = None
+    for attempt in range(retries + 1):
+        try:
+            resp = requests.post(url, json=json, headers=headers, timeout=timeout)
+            if resp.status_code in _RETRY_STATUS:
+                last_err = f"HTTP {resp.status_code}"
+                raise requests.HTTPError(last_err, response=resp)
+            resp.raise_for_status()
+            return resp.json()
+        except (requests.RequestException, ValueError) as e:
+            last_err = e
+            if attempt < retries:
+                delay = backoff * (2 ** attempt)
+                log.debug("POST %s failed (%s); retry %d/%d in %.1fs",
+                          url, e, attempt + 1, retries, delay)
+                time.sleep(delay)
+
+    log.warning("POST %s failed after %d attempts: %s", url, retries + 1, last_err)
+    return None

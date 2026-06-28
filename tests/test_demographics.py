@@ -7,6 +7,8 @@ from pipeline.demographics import (
     _first_name, _last_name, _safe_int, _safe_float,
     _yn, _band_lower, _parse_ym_date, _credit_grade,
     _mortgage_rate_type, _age_midpoint, _normalize_life_stage,
+    _decade_band, _iso_date, _latest_refi_date, _last_sale_year, _years_since,
+    _batchdata_lookup, PROVIDERS,
     enrich_demographics,
 )
 
@@ -222,6 +224,108 @@ class TestNormalizeLifeStage:
 
 
 # ── enrich_demographics no-key no-op ─────────────────────────────────────────
+
+# ── BatchData property-search parsing helpers ────────────────────────────────────
+
+class TestBatchdataHelpers:
+    def test_decade_band(self):
+        assert _decade_band(33) == "30-39"
+        assert _decade_band(67) == "60-69"
+        assert _decade_band(None) is None
+
+    def test_iso_date(self):
+        from datetime import date
+        assert _iso_date("2003-03-19T00:00:00.000Z") == date(2003, 3, 19)
+        assert _iso_date(None) is None
+
+    def test_latest_refi_date_picks_most_recent_refi(self):
+        from datetime import date
+        history = [
+            {"transactionType": "Resale", "recordingDate": "1996-03-27T00:00:00.000Z"},
+            {"transactionType": "Refi loans and 2nd trust deeds", "recordingDate": "2003-03-19T00:00:00.000Z"},
+            {"transactionType": "Refi", "recordingDate": "2010-06-01T00:00:00.000Z"},
+        ]
+        assert _latest_refi_date(history) == date(2010, 6, 1)
+
+    def test_latest_refi_date_none_when_no_refi(self):
+        assert _latest_refi_date([{"transactionType": "Resale",
+                                   "recordingDate": "1996-03-27T00:00:00.000Z"}]) is None
+
+    def test_last_sale_year_from_last_sale(self):
+        prop = {"sale": {"lastSale": {"saleDate": "1996-03-21T00:00:00.000Z"}}}
+        assert _last_sale_year(prop) == 1996
+
+    def test_years_since(self):
+        from datetime import date
+        assert _years_since(date.today().year - 8) == 8
+        assert _years_since(None) is None
+
+
+# ── _batchdata_lookup (Property Search demographics envelope) ─────────────────────
+
+class TestBatchdataDemographics:
+    def test_registered(self):
+        assert "batchdata" in PROVIDERS
+
+    def test_parses_property_search_response(self, monkeypatch):
+        captured = {}
+        def fake(url, *, json=None, headers=None, timeout=None):
+            captured["url"] = url
+            captured["json"] = json
+            return {"results": {"properties": [{
+                "demographics": {
+                    "age": 33,
+                    "income": 40000,
+                    "netWorth": 215000,
+                    "maritalStatus": "Married",
+                    "individualOccupation": "Craftsman / Blue Collar",
+                    "hasChildren": False,
+                },
+                "valuation": {"ltv": 0, "equityPercent": 100},
+                "quickLists": {"seniorOwner": False},
+                "mortgageHistory": [
+                    {"transactionType": "Refi loans and 2nd trust deeds",
+                     "recordingDate": "2003-03-19T00:00:00.000Z"},
+                ],
+                "sale": {"lastSale": {"saleDate": "1996-03-21T00:00:00.000Z"}},
+            }]}}
+        monkeypatch.setattr("pipeline.demographics.post_json", fake)
+        out = _batchdata_lookup({"owner_name": "Pete Castillo",
+                                 "address": "3723 Apple Hollow Ln",
+                                 "city": "Humble", "state": "TX", "zip": "77396"})
+        from datetime import date
+        assert out["owner_age"] == 33
+        assert out["age_range"] == "30-39"
+        assert out["est_household_income"] == 40000
+        assert out["estimated_net_worth"] == 215000
+        assert out["marital_status"] == "Married"
+        assert out["occupation"] == "Craftsman / Blue Collar"
+        assert out["has_children"] is False
+        assert out["loan_to_value"] == 0
+        assert out["senior_in_household"] is False
+        assert out["refi_date"] == date(2003, 3, 19)
+        assert out["length_of_residence_years"] == date.today().year - 1996
+        # Address query reached the property-search endpoint.
+        assert captured["url"].endswith("/property/search")
+        assert "3723 Apple Hollow Ln" in captured["json"]["searchCriteria"]["query"]
+
+    def test_senior_from_quicklist_flag(self, monkeypatch):
+        monkeypatch.setattr("pipeline.demographics.post_json",
+                            lambda *a, **k: {"results": {"properties": [
+                                {"demographics": {"age": 70}, "quickLists": {"seniorOwner": True}}]}})
+        out = _batchdata_lookup({"address": "1 Oak St"})
+        assert out["senior_in_household"] is True
+        assert out["life_stage"] == "retiree"
+
+    def test_no_properties_returns_none(self, monkeypatch):
+        monkeypatch.setattr("pipeline.demographics.post_json",
+                            lambda *a, **k: {"results": {"properties": []}})
+        assert _batchdata_lookup({"address": "1 Nowhere St"}) is None
+
+    def test_api_failure_returns_none(self, monkeypatch):
+        monkeypatch.setattr("pipeline.demographics.post_json", lambda *a, **k: None)
+        assert _batchdata_lookup({"address": "1 Oak St"}) is None
+
 
 class TestEnrichDemographicsNoKey:
     def test_no_provider_configured_returns_skipped(self, monkeypatch):

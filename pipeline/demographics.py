@@ -53,7 +53,7 @@ from config import (
     DEMO_MAX_ROWS_PER_ZIP, DEMO_MIN_GRADE,
 )
 from pipeline.db import get_conn, fetch_missing_field, upsert_properties
-from pipeline.http import get_json
+from pipeline.http import get_json, post_json
 
 log = logging.getLogger(__name__)
 
@@ -61,6 +61,13 @@ _GRADE_RANK = {"A": 4, "B": 3, "C": 2, "D": 1}
 
 # Default Versium Demographic Append endpoint — overridable via DEMO_BASE_URL.
 _VERSIUM_DEMO_URL = "https://api.versium.com/v2/demographic"
+
+# Default BatchData Property Search endpoint — overridable via DEMO_BASE_URL.
+# NOTE: demographics come from property/search, NOT skip-trace. Skip-trace only
+# returns contact info (phones/emails); the rich owner demographics (age, income,
+# net worth, marital status, occupation), valuation/LTV, and mortgage history all
+# live in the property/search response under results.properties[].
+_BATCHDATA_DEMO_URL = "https://api.batchdata.com/api/v1/property/search"
 
 
 def _versium_lookup(row: dict) -> dict | None:
@@ -157,15 +164,173 @@ def _versium_lookup(row: dict) -> dict | None:
     return result or None
 
 
+def _batchdata_lookup(row: dict) -> dict | None:
+    """Fetch owner demographics from BatchData's Property Search API.
+
+    Demographics are keyed on the PROPERTY (address), not the skip-traced person,
+    so we POST the address as a search query and read results.properties[0]. The
+    response carries everything the model wants across several sub-objects:
+      demographics  → age / income / net worth / marital status / occupation / children
+      valuation     → loan_to_value, equity
+      mortgageHistory → most recent refinance date
+      sale/deedHistory → length of residence
+      quickLists    → seniorOwner household flag
+    Mapped onto the same columns the Versium provider fills, so scoring and the
+    ML feature set consume them identically regardless of provider.
+    """
+    url = DEMO_BASE_URL or _BATCHDATA_DEMO_URL
+
+    query = ", ".join(p for p in (
+        row.get("address", ""),
+        row.get("city", ""),
+        f"{row.get('state', '')} {row.get('zip', '')}".strip(),
+    ) if p.strip())
+
+    resp = post_json(
+        url,
+        json={"searchCriteria": {"query": query}, "options": {"take": 1}},
+        headers={
+            "Authorization": f"Bearer {DEMO_API_KEY}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        timeout=25,
+    )
+    if not resp:
+        return None
+
+    results = resp.get("results") or resp
+    properties = results.get("properties") or results.get("property") or []
+    if isinstance(properties, dict):
+        properties = [properties]
+    if not properties:
+        return None
+    prop = properties[0]
+
+    demo = prop.get("demographics") or {}
+    val = prop.get("valuation") or {}
+    ql = prop.get("quickLists") or {}
+
+    # ── Model-feature / scoring fields straight off demographics ───────────────
+    owner_age      = _safe_int(demo.get("age"))
+    age_range      = _decade_band(owner_age)
+    income         = _band_lower(demo.get("income"))
+    net_worth      = _band_lower(demo.get("netWorth"))
+    marital_status = _str(demo.get("maritalStatus"))
+    occupation     = _str(demo.get("individualOccupation") or demo.get("occupation"))
+    has_children   = _yn(demo.get("hasChildren"))
+
+    # ── Valuation / equity ─────────────────────────────────────────────────────
+    ltv            = _safe_float(val.get("ltv"))
+
+    # ── Senior household flag: BatchData's seniorOwner, else derive from age ───
+    # seniorOwner is a household-level flag (may reflect a co-owner), so it can
+    # disagree with the matched individual's age. Keep it for the household
+    # feature, but don't let it drive life_stage when we have an explicit age —
+    # otherwise a 33-year-old with seniorOwner=True gets mislabeled "retiree".
+    senior = _yn(ql.get("seniorOwner"))
+    senior_by_age = (owner_age >= 65) if owner_age is not None else None
+    if senior is None:
+        senior = senior_by_age
+
+    # ── Most recent refinance from the mortgage history ────────────────────────
+    refi_date = _latest_refi_date(prop.get("mortgageHistory"))
+
+    # ── Length of residence from the last sale / earliest deed ─────────────────
+    tenure = _years_since(_last_sale_year(prop))
+
+    life_stage_senior = senior_by_age if owner_age is not None else senior
+    life_stage = _normalize_life_stage(None, owner_age, tenure, life_stage_senior)
+
+    result = {
+        # Scoring signals (only those BatchData provides — credit_rating,
+        # home_improvement, gardening, pets, decorating aren't in BatchData)
+        "refi_date":              refi_date,
+        "has_children":           has_children,
+        # Model features
+        "age_range":              age_range,
+        "estimated_net_worth":    net_worth,
+        "loan_to_value":          ltv,
+        "marital_status":         marital_status,
+        "occupation":             occupation,
+        "senior_in_household":    senior,
+        # Migration-028
+        "owner_age":              owner_age,
+        "length_of_residence_years": tenure,
+        "est_household_income":   income,
+        "life_stage":             life_stage,
+    }
+    result = {k: v for k, v in result.items() if v is not None}
+    return result or None
+
+
 # ── Provider registry ─────────────────────────────────────────────────────────
 
 PROVIDERS = {
     "versium": _versium_lookup,
+    "batchdata": _batchdata_lookup,
     # "melissa": _melissa_lookup,  # add more providers here
 }
 
 
 # ── Response parsing helpers ──────────────────────────────────────────────────
+
+def _decade_band(age: int | None) -> str | None:
+    """Bucket a precise age into a decade band: 33 → '30-39', 67 → '60-69'."""
+    if age is None:
+        return None
+    lo = (age // 10) * 10
+    return f"{lo}-{lo + 9}"
+
+
+def _iso_date(value) -> date | None:
+    """Parse a BatchData ISO timestamp ('2003-03-19T00:00:00.000Z') to a date."""
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except (ValueError, TypeError):
+        return _parse_ym_date(value)
+
+
+def _latest_refi_date(mortgage_history) -> date | None:
+    """Most recent refinance recordingDate from BatchData's mortgageHistory list."""
+    if not isinstance(mortgage_history, list):
+        return None
+    refis = []
+    for m in mortgage_history:
+        if not isinstance(m, dict):
+            continue
+        ttype = str(m.get("transactionType") or "").lower()
+        if "refi" in ttype:
+            d = _iso_date(m.get("recordingDate"))
+            if d:
+                refis.append(d)
+    return max(refis) if refis else None
+
+
+def _last_sale_year(prop: dict) -> int | None:
+    """Year of the owner's acquisition — last sale, else earliest deed record."""
+    sale = (prop.get("sale") or {}).get("lastSale") or {}
+    d = _iso_date(sale.get("saleDate"))
+    if d:
+        return d.year
+    deeds = prop.get("deedHistory")
+    if isinstance(deeds, list):
+        years = [_iso_date(x.get("saleDate")).year
+                 for x in deeds if isinstance(x, dict) and _iso_date(x.get("saleDate"))]
+        if years:
+            return min(years)
+    return None
+
+
+def _years_since(year: int | None) -> int | None:
+    """Whole years from `year` to today (length of residence)."""
+    if year is None:
+        return None
+    delta = date.today().year - year
+    return delta if delta >= 0 else None
+
 
 def _first_name(full_name: str) -> str:
     parts = full_name.strip().split()

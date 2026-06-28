@@ -7,7 +7,7 @@ import pytest
 
 from pipeline.contact import (
     PROVIDERS, _is_business, _owner_name_candidates, _clean_person_tokens,
-    _full_name, _first_value, _versium_lookup,
+    _full_name, _first_value, _versium_lookup, _batchdata_lookup,
 )
 
 
@@ -16,6 +16,47 @@ from pipeline.contact import (
 def test_versium_registered():
     # Regression: a missing "versium" entry is what caused the 409 in the UI.
     assert "versium" in PROVIDERS
+
+
+def test_batchdata_registered():
+    assert "batchdata" in PROVIDERS
+
+
+# ── _batchdata_lookup (parsing the Skip Trace response envelope) ──────────────────
+
+class TestBatchdataLookup:
+    def test_parses_persons_envelope(self, monkeypatch):
+        captured = {}
+        def fake(url, *, json=None, headers=None, timeout=None):
+            captured["url"] = url
+            captured["json"] = json
+            return {"results": {"persons": [{
+                "name": {"first": "Greta", "last": "Fisher", "full": "Greta Fisher"},
+                "phoneNumbers": [{"number": "8327086648", "type": "Mobile"}],
+                "emails": [{"email": "g@example.com"}],
+            }]}}
+        monkeypatch.setattr("pipeline.contact.post_json", fake)
+        out = _batchdata_lookup({"owner_name": "GRETA FISHER", "address": "1 Oak St",
+                                 "city": "Humble", "state": "TX", "zip": "77396"})
+        assert out == {
+            "contact_name": "Greta Fisher",
+            "contact_phone": "8327086648",
+            "contact_email": "g@example.com",
+        }
+        # Default endpoint + structured request payload.
+        assert captured["url"].endswith("/property/skip-trace")
+        req = captured["json"]["requests"][0]
+        assert req["propertyAddress"]["zip"] == "77396"
+        assert req["name"] == {"first": "Greta", "last": "Fisher"}
+
+    def test_no_persons_returns_none(self, monkeypatch):
+        monkeypatch.setattr("pipeline.contact.post_json",
+                            lambda *a, **k: {"results": {"persons": []}})
+        assert _batchdata_lookup({"owner_name": "Timothy Boone"}) is None
+
+    def test_api_failure_returns_none(self, monkeypatch):
+        monkeypatch.setattr("pipeline.contact.post_json", lambda *a, **k: None)
+        assert _batchdata_lookup({"owner_name": "Greta Fisher"}) is None
 
 
 # ── Business-entity detection ────────────────────────────────────────────────────

@@ -23,7 +23,7 @@ from config import (
     CONTACT_MAX_ROWS_PER_ZIP, CONTACT_MIN_GRADE,
 )
 from pipeline.db import get_conn, fetch_missing_field, upsert_properties
-from pipeline.http import get_json
+from pipeline.http import get_json, post_json
 
 log = logging.getLogger(__name__)
 
@@ -33,38 +33,69 @@ _GRADE_RANK = {"A": 4, "B": 3, "C": 2, "D": 1}
 # Default Versium Contact Append endpoint — overridable via CONTACT_BASE_URL.
 _VERSIUM_CONTACT_URL = "https://api.versium.com/v2/contact"
 
+# Default BatchData Skip Trace endpoint — overridable via CONTACT_BASE_URL.
+_BATCHDATA_SKIPTRACE_URL = "https://api.batchdata.com/api/v1/property/skip-trace"
+
 
 def _batchdata_lookup(row: dict) -> dict | None:
-    """Skip-trace via a BatchData-style property/owner endpoint.
+    """Skip-trace via BatchData's Property Skip Trace API.
 
-    Mapping is intentionally defensive: providers differ, so adjust the response
-    paths here for whichever provider you point CONTACT_BASE_URL at.
+    POSTs the property address (+ owner name when parseable) and reads the
+    first person match's phone/email back out. Response parsing is defensive —
+    BatchData nests results under results.persons[] with phoneNumbers[]/emails[].
     """
-    payload = get_json(
-        CONTACT_BASE_URL,
-        headers={"Authorization": f"Bearer {CONTACT_API_KEY}",
-                 "Accept": "application/json"},
-        params={
-            "name": row.get("owner_name", ""),
-            "address": row.get("address", ""),
-            "city": row.get("city", ""),
-            "state": row.get("state", ""),
-            "zip": row.get("zip", ""),
+    url = CONTACT_BASE_URL or _BATCHDATA_SKIPTRACE_URL
+
+    # BatchData matches on the property address; a structured first/last name
+    # (when the county owner_name is a parseable person) sharpens the match.
+    request: dict = {
+        "propertyAddress": {
+            "street": row.get("address", ""),
+            "city":   row.get("city", ""),
+            "state":  row.get("state", ""),
+            "zip":    row.get("zip", ""),
+        }
+    }
+    candidates = _owner_name_candidates(row.get("owner_name", ""))
+    if candidates:
+        first, last = candidates[0]
+        request["name"] = {"first": first, "last": last}
+
+    payload = post_json(
+        url,
+        json={"requests": [request]},
+        headers={
+            "Authorization": f"Bearer {CONTACT_API_KEY}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
         },
-        timeout=15,
+        timeout=20,
     )
     if not payload:
         return None
-    person = (payload.get("person") or payload.get("result") or payload) or {}
-    phones = person.get("phones") or person.get("phoneNumbers") or []
+
+    # results.persons[] is the documented shape; fall back gracefully if the
+    # account returns a flatter structure.
+    results = payload.get("results") or payload
+    persons = results.get("persons") or results.get("person") or []
+    if isinstance(persons, dict):
+        persons = [persons]
+    if not persons:
+        return None
+    person = persons[0]
+
+    phones = person.get("phoneNumbers") or person.get("phones") or []
     emails = person.get("emails") or person.get("emailAddresses") or []
-    phone = phones[0] if isinstance(phones, list) and phones else person.get("phone")
-    email = emails[0] if isinstance(emails, list) and emails else person.get("email")
-    if isinstance(phone, dict):
-        phone = phone.get("number")
-    if isinstance(email, dict):
-        email = email.get("address")
-    name = person.get("name") or row.get("owner_name")
+    phone = _first_value(phones[0], ("number", "phone", "value")) if isinstance(phones, list) and phones and isinstance(phones[0], dict) \
+        else (phones[0] if isinstance(phones, list) and phones else person.get("phone"))
+    email = _first_value(emails[0], ("email", "address", "value")) if isinstance(emails, list) and emails and isinstance(emails[0], dict) \
+        else (emails[0] if isinstance(emails, list) and emails else person.get("email"))
+
+    name = person.get("name")
+    if isinstance(name, dict):
+        name = name.get("full") or _full_name(name.get("first"), name.get("last"))
+    name = name or row.get("owner_name")
+
     if not (phone or email):
         return None
     return {
