@@ -684,46 +684,6 @@ export interface PerformanceBreakdown {
   buckets: PerformanceBucket[]
 }
 
-// ── Appointments ───────────────────────────────────────────────────────────────
-
-export type AppointmentStatus = 'scheduled' | 'completed' | 'cancelled' | 'no_show'
-
-export interface Appointment {
-  id: number
-  property_id: number | null
-  assigned_to: number | null
-  title: string
-  location: string | null
-  starts_at: string
-  ends_at: string
-  status: AppointmentStatus
-  notes: string | null
-  created_by: number | null
-  created_at: string
-  updated_at: string | null
-}
-
-export interface AppointmentCreate {
-  property_id?: number | null
-  assigned_to?: number | null
-  title: string
-  location?: string | null
-  starts_at: string
-  ends_at: string
-  notes?: string | null
-}
-
-export interface AppointmentUpdate {
-  property_id?: number | null
-  assigned_to?: number | null
-  title?: string
-  location?: string | null
-  starts_at?: string
-  ends_at?: string
-  status?: AppointmentStatus
-  notes?: string | null
-}
-
 // ── Workflows ────────────────────────────────────────────────────────────────
 
 export interface WorkflowRule {

@@ -1,4 +1,4 @@
-import type { Lead, LeadPage, LeadFilters, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, Appointment, AppointmentCreate, AppointmentUpdate, WorkflowRule, WorkflowRuleCreate, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse } from './types'
+import type { Lead, LeadPage, LeadFilters, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse } from './types'
 import { getToken, clearToken } from './auth'
 
 // Use 127.0.0.1 (not localhost): on macOS `localhost` resolves to IPv6 ::1
@@ -288,39 +288,10 @@ export function getPerformance(dimension: PerformanceDimension): Promise<Perform
   return req<PerformanceBreakdown>(`/pipeline/performance?dimension=${dimension}`)
 }
 
-// ── Team & appointments ─────────────────────────────────────────────────────────
+// ── Team ────────────────────────────────────────────────────────────────────────
 
 export function getTeam(): Promise<TeamMember[]> {
   return req<TeamMember[]>('/team')
-}
-
-export function getAppointments(params: { start?: string; end?: string; property_id?: number } = {}): Promise<Appointment[]> {
-  const q = new URLSearchParams()
-  if (params.start) q.set('start', params.start)
-  if (params.end) q.set('end', params.end)
-  if (params.property_id != null) q.set('property_id', String(params.property_id))
-  const qs = q.toString()
-  return req<Appointment[]>(`/appointments${qs ? `?${qs}` : ''}`)
-}
-
-export function getLeadAppointments(leadId: number): Promise<Appointment[]> {
-  return req<Appointment[]>(`/leads/${leadId}/appointments`)
-}
-
-export function createAppointment(body: AppointmentCreate): Promise<Appointment> {
-  return req<Appointment>('/appointments', { method: 'POST', body: JSON.stringify(body) })
-}
-
-export function updateAppointment(id: number, body: AppointmentUpdate): Promise<Appointment> {
-  return req<Appointment>(`/appointments/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
-}
-
-export function deleteAppointment(id: number): Promise<void> {
-  return req<void>(`/appointments/${id}`, { method: 'DELETE' })
-}
-
-export function sendAppointment(id: number, channels: string[], to?: { to_email?: string; to_phone?: string }): Promise<{ results: Record<string, string> }> {
-  return req(`/appointments/${id}/send`, { method: 'POST', body: JSON.stringify({ channels, ...to }) })
 }
 
 export function getPipelineStats(): Promise<Record<string, { count: number; total_value: number }>> {

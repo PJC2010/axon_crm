@@ -1,6 +1,6 @@
 'use client'
 import Link from 'next/link'
-import { X, Archive, ArrowUpRight, CalendarPlus } from 'lucide-react'
+import { X, Archive, ArrowUpRight } from 'lucide-react'
 import type { Lead, LeadStatus } from '@/lib/types'
 import { archiveLead } from '@/lib/api'
 import { useState } from 'react'
@@ -99,15 +99,6 @@ export function ContactDrawer({ lead, onClose, onStatusChange, onLeadChange, onT
                 }}
               >
                 Open full page <ArrowUpRight size={13} strokeWidth={1.5} />
-              </Link>
-              <Link
-                href={`/calendar?lead=${lead.id}`}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 4,
-                  fontSize: 12, fontWeight: 500, color: 'var(--color-accent)', textDecoration: 'none',
-                }}
-              >
-                <CalendarPlus size={13} strokeWidth={1.5} /> Book appointment
               </Link>
             </div>
           </div>

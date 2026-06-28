@@ -98,7 +98,7 @@ _LEAD_SOURCE_VOCAB = ["pipeline", "csv_import", "facebook", "instagram", "manual
 # Behavioral CRM features injected at scoring time (not persisted in the snapshot,
 # since they evolve). Absent => 0, which is meaningful (no activity yet), so these
 # carry NO missing indicator.
-_BEHAVIORAL = ["crm_touches", "days_in_pipeline", "quotes_sent", "appointments"]
+_BEHAVIORAL = ["crm_touches", "days_in_pipeline", "quotes_sent"]
 
 
 def _f(v) -> float | None:

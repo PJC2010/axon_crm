@@ -482,56 +482,6 @@ class HistoryEntry(BaseModel):
         from_attributes = True
 
 
-# ── Appointments ────────────────────────────────────────────────────────────────
-
-APPOINTMENT_STATUSES = ["scheduled", "completed", "cancelled", "no_show"]
-
-
-class AppointmentCreate(BaseModel):
-    property_id: Optional[int] = None
-    assigned_to: Optional[int] = None
-    title: str
-    location: Optional[str] = None
-    starts_at: datetime
-    ends_at: datetime
-    notes: Optional[str] = None
-
-
-class AppointmentUpdate(BaseModel):
-    property_id: Optional[int] = None
-    assigned_to: Optional[int] = None
-    title: Optional[str] = None
-    location: Optional[str] = None
-    starts_at: Optional[datetime] = None
-    ends_at: Optional[datetime] = None
-    status: Optional[str] = None
-    notes: Optional[str] = None
-
-
-class Appointment(BaseModel):
-    id: int
-    property_id: Optional[int] = None
-    assigned_to: Optional[int] = None
-    title: str
-    location: Optional[str] = None
-    starts_at: datetime
-    ends_at: datetime
-    status: str
-    notes: Optional[str] = None
-    created_by: Optional[int] = None
-    created_at: datetime
-    updated_at: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
-
-
-class SendAppointmentRequest(BaseModel):
-    channels: list[str]              # any of: "email", "sms"
-    to_email: Optional[str] = None   # defaults to the linked lead's contact email
-    to_phone: Optional[str] = None   # defaults to the linked lead's contact phone
-
-
 # ── Connectors / connections ────────────────────────────────────────────────────
 
 # Providers a user can connect today (file-upload import). OAuth comes later.
