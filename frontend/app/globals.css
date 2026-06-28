@@ -10,3 +10,16 @@
 @import "./design-system/spacing.css";
 @import "./design-system/typography.css";
 @import "./design-system/base.css";
+
+/* ── Home dashboard entrance — staggered rise-in.
+   Each section sets its own `--d` delay; reduced-motion (guarded in base.css)
+   collapses the duration so content lands immediately at its final state. */
+@keyframes axon-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+.axon-rise {
+  opacity: 0;
+  animation: axon-rise 460ms cubic-bezier(0.4, 1, 0.75, 0.9) both;
+  animation-delay: var(--d, 0ms);
+}
