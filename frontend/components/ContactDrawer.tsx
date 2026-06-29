@@ -8,6 +8,7 @@ import { useTerminology } from '@/hooks/useTerminology'
 import { StatusSelect } from './StatusSelect'
 import { ScoreBadge } from './ScoreBadge'
 import { ContactInfoSection } from './lead/ContactInfoSection'
+import { CustomFieldsSection } from './lead/CustomFieldsSection'
 import { PropertySignals } from './lead/PropertySignals'
 import { WhyThisScore } from './lead/WhyThisScore'
 import { ActivityPanel } from './lead/ActivityPanel'
@@ -126,6 +127,7 @@ export function ContactDrawer({ lead, onClose, onStatusChange, onLeadChange, onT
             <NextStepHint status={lead.status} leadId={lead.id} onToast={onToast} />
           </div>
           <ContactInfoSection lead={lead} onSaved={l => onLeadChange?.(l)} onToast={onToast} />
+          <CustomFieldsSection key={lead.id} lead={lead} onSaved={l => onLeadChange?.(l)} onToast={onToast} />
           {propertyBased && <PropertySignals lead={lead} />}
           {propertyBased && <WhyThisScore leadId={lead.id} />}
           <ActivityPanel leadId={lead.id} />

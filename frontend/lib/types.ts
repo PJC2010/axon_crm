@@ -49,6 +49,21 @@ export interface Lead {
   created_at: string | null
   updated_at: string | null
   archived_at: string | null
+  // Account-defined custom field values, keyed by RecordFieldDef.key.
+  custom_fields?: Record<string, unknown>
+}
+
+// Account-defined custom field (the generic record-model layer; see
+// api/routes/record_fields.py).
+export type RecordFieldType = 'text' | 'number' | 'date' | 'boolean' | 'select'
+
+export interface RecordFieldDef {
+  id: number
+  key: string
+  label: string
+  field_type: RecordFieldType
+  options: string[]
+  sort_order: number
 }
 
 export interface LeadPage {

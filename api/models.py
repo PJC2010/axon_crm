@@ -60,6 +60,9 @@ class Lead(BaseModel):
     # Populated only when SCORER_MODE is 'shadow' or 'learned' and a model exists.
     ml_conversion_prob: Optional[float] = None
     ml_model_version: Optional[int] = None
+    # Account-defined custom field values (see api/routes/record_fields.py). Keyed
+    # by record_field_defs.key; empty for accounts that define no custom fields.
+    custom_fields: dict = {}
 
     class Config:
         from_attributes = True

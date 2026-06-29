@@ -6,6 +6,7 @@ import { getSchedules, createSchedule, updateSchedule, deleteSchedule, triggerRu
 import { AuthGuard } from '@/components/AuthGuard'
 import { AutomationTemplates } from '@/components/AutomationTemplates'
 import { ConnectionsSection } from '@/components/ConnectionsSection'
+import { CustomFieldsSettings } from '@/components/CustomFieldsSettings'
 import { useEntitlements } from '@/hooks/useEntitlements'
 import { useTerminology } from '@/hooks/useTerminology'
 import type { PipelineSchedule, PipelineRun, WorkflowRule } from '@/lib/types'
@@ -498,6 +499,9 @@ function SettingsPage() {
           )}
         </section>
         )}
+
+        {/* Custom fields (generic record model) */}
+        <CustomFieldsSettings />
 
         {/* Connected accounts / integrations */}
         <ConnectionsSection />

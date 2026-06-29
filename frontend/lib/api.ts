@@ -1,4 +1,4 @@
-import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, ModuleMap } from './types'
+import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, ModuleMap, RecordFieldDef, RecordFieldType } from './types'
 import { getToken, clearToken } from './auth'
 
 // Use 127.0.0.1 (not localhost): on macOS `localhost` resolves to IPv6 ::1
@@ -86,6 +86,35 @@ export function updateBusinessType(business_type: string): Promise<{
   terminology: Record<string, string>; categories: { value: string; label: string }[]
 }> {
   return req('/account/business-type', { method: 'PATCH', body: JSON.stringify({ business_type }) })
+}
+
+// ── Custom record fields ────────────────────────────────────────────────────────
+
+export function getRecordFields(): Promise<RecordFieldDef[]> {
+  return req('/record-fields')
+}
+
+export function createRecordField(body: {
+  label: string; field_type: RecordFieldType; options?: string[]; sort_order?: number
+}): Promise<RecordFieldDef> {
+  return req('/record-fields', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateRecordField(id: number, body: Partial<{
+  label: string; field_type: RecordFieldType; options: string[]; sort_order: number
+}>): Promise<RecordFieldDef> {
+  return req(`/record-fields/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export function deleteRecordField(id: number): Promise<void> {
+  return req(`/record-fields/${id}`, { method: 'DELETE' })
+}
+
+// Merge custom field values into a record; a value of null clears that key.
+export function updateLeadCustomFields(
+  leadId: number, values: Record<string, unknown>,
+): Promise<{ custom_fields: Record<string, unknown> }> {
+  return req(`/leads/${leadId}/custom-fields`, { method: 'PATCH', body: JSON.stringify({ values }) })
 }
 
 export function completeOnboarding(): Promise<{ ok: boolean }> {

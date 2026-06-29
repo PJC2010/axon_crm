@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.entitlements import require_module
-from api.routes import leads, notes, history, export
+from api.routes import leads, notes, history, export, record_fields
 from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, hcad, workflows, imports, quotes
 from api.routes import connections, insights, ml, oauth, map as map_routes
 
@@ -67,6 +67,8 @@ app.add_middleware(
 app.include_router(auth.router,     prefix="/api", tags=["Auth"])
 app.include_router(oauth.router,    prefix="/api", tags=["Auth"])
 app.include_router(leads.router,    prefix="/api", tags=["Leads"])
+# Custom record fields are part of the core record model — always available.
+app.include_router(record_fields.router, prefix="/api", tags=["RecordFields"])
 app.include_router(notes.router,    prefix="/api", tags=["Notes"])
 app.include_router(history.router,  prefix="/api", tags=["History"])
 app.include_router(export.router,   prefix="/api", tags=["Export"])
