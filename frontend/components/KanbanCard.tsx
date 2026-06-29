@@ -5,26 +5,27 @@ import { ScoreBadge } from './ScoreBadge'
 
 interface Props {
   lead: PipelineCardLead
-  onClick: () => void
   onQuickTask?: (lead: PipelineCardLead) => void
+  /** When true, render the lighter "ghost" variant used by the drag layer. */
+  ghost?: boolean
 }
 
 const fmt = (v: number | null) =>
   v != null ? '$' + v.toLocaleString() : null
 
-export function KanbanCard({ lead, onClick, onQuickTask }: Props) {
+export function KanbanCard({ lead, onQuickTask, ghost = false }: Props) {
   return (
     <div
-      onClick={onClick}
       style={{
         padding: '10px 12px',
         background: 'var(--color-paper)',
         border: '1px solid var(--color-ink-200)',
         borderRadius: 'var(--radius-card)',
-        cursor: 'pointer',
+        cursor: ghost ? 'grabbing' : 'pointer',
         display: 'flex',
         flexDirection: 'column',
         gap: 6,
+        boxShadow: ghost ? 'var(--shadow-lg, 0 12px 28px rgba(0,0,0,0.18))' : undefined,
       }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
@@ -42,9 +43,10 @@ export function KanbanCard({ lead, onClick, onQuickTask }: Props) {
             {fmt(lead.estimated_job_value)}
           </span>
         ) : <span />}
-        {onQuickTask && (
+        {onQuickTask && !ghost && (
           <button
             type="button"
+            data-no-drag
             onClick={e => { e.stopPropagation(); onQuickTask(lead) }}
             title="Add a task for this lead"
             style={{

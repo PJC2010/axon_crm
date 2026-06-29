@@ -3,10 +3,11 @@ import { useEffect, useState, useCallback } from 'react'
 import { RefreshCw, AlertCircle, Kanban, CheckSquare, Settings, LogOut, Receipt, BookOpen, Home, Menu, X, Map as MapIcon } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { getLeads, getLead } from '@/lib/api'
+import { getLeads, getLead, getLeadByNumber } from '@/lib/api'
 import { clearToken } from '@/lib/auth'
 import type { Lead, LeadFilters, LeadStatus } from '@/lib/types'
 import { LeadTable } from './LeadTable'
+import { CustomerSearch } from './CustomerSearch'
 import { TerritoryFilter } from './TerritoryFilter'
 import { ContactDrawer } from './ContactDrawer'
 import { ExportButton } from './ExportButton'
@@ -75,10 +76,22 @@ export function Dashboard() {
     return () => { cancelled = true }
   }, [leadParam])
 
+  // Open by durable account number when arriving with ?customer=C-01001
+  // (e.g. from universal search) — the stable handle the deep link rides on.
+  const customerParam = searchParams.get('customer')
+  useEffect(() => {
+    if (!customerParam) return
+    let cancelled = false
+    getLeadByNumber(customerParam)
+      .then(lead => { if (!cancelled) setSelected(lead) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [customerParam])
+
   function handleCloseDrawer() {
     setSelected(null)
-    // Drop the ?lead param so the drawer doesn't reopen on re-render/navigation.
-    if (leadParam) router.replace('/dashboard')
+    // Drop the deep-link param so the drawer doesn't reopen on re-render/navigation.
+    if (leadParam || customerParam) router.replace('/dashboard')
   }
 
   function handleStatusChange(id: number, status: LeadStatus) {
@@ -158,6 +171,7 @@ export function Dashboard() {
               <BookOpen size={13} strokeWidth={1.5} />
               <span>Books</span>
             </Link>
+            <CustomerSearch />
             <TaskBell />
             <ImportContactsModal onImported={() => fetchLeads(filters)} />
             <ExportButton filters={filters} />

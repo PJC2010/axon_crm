@@ -6,6 +6,7 @@ GET  /api/zips            — distinct ZIP codes in DB
 """
 import json
 import logging
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from psycopg2.extensions import connection as PGConn
@@ -14,7 +15,7 @@ from pydantic import BaseModel, Field
 from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user
 from api.models import (
     Lead, LeadPage, StatusUpdate, LeadContactUpdate,
-    ScoreExplanation, ScoreFactor, VerticalFactor, MLFactor,
+    CustomerSearchResult, ScoreExplanation, ScoreFactor, VerticalFactor, MLFactor,
 )
 from config import (
     DEFAULT_WEIGHTS, VERTICAL_WEIGHTS, CONTACT_PROVIDER, CONTACT_API_KEY, SCORER_MODE,
@@ -72,6 +73,79 @@ def list_leads(
 
     return LeadPage(total=total, page=page, page_size=page_size,
                     results=[Lead(**r) for r in rows])
+
+
+# NOTE: literal-path routes (/leads/search, /leads/by-number/...) must be declared
+# before /leads/{lead_id}, or the int-typed param route would shadow them.
+
+@router.get("/leads/search", response_model=list[CustomerSearchResult])
+def search_leads(
+    q: str = Query(..., min_length=1, description="Free text: account number, name, address, phone, or email"),
+    limit: int = Query(20, ge=1, le=50),
+    db: PGConn = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Universal customer lookup. Matches across account_number, contact/owner
+    name, address, email, and phone (digits only, so formatting doesn't matter).
+    Exact and prefix account-number hits rank first, then everything else.
+    Always scoped to the caller's account and excludes archived leads. Uses the
+    trigram (pg_trgm) indexes from migration 038 for fast ILIKE substring search."""
+    term = q.strip()
+    if not term:
+        return []
+    digits = re.sub(r"[^0-9]", "", term)
+    params = {
+        "account_id": user["account_id"],
+        "term": term,
+        "prefix": f"{term}%",
+        "like": f"%{term}%",
+        "digits": digits,
+        "digits_like": f"%{digits}%",
+        "limit": limit,
+    }
+    with db.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, account_number, contact_name, owner_name, address, city, zip,
+                   contact_phone, status, score_grade,
+                   CASE
+                       WHEN UPPER(account_number) = UPPER(%(term)s)     THEN 0
+                       WHEN account_number ILIKE %(prefix)s             THEN 1
+                       ELSE 2
+                   END AS match_rank
+            FROM properties
+            WHERE account_id = %(account_id)s AND archived_at IS NULL
+              AND (
+                    account_number ILIKE %(like)s
+                 OR contact_name   ILIKE %(like)s
+                 OR owner_name     ILIKE %(like)s
+                 OR address        ILIKE %(like)s
+                 OR contact_email  ILIKE %(like)s
+                 OR (%(digits)s <> '' AND
+                     regexp_replace(COALESCE(contact_phone, ''), '[^0-9]', '', 'g') ILIKE %(digits_like)s)
+              )
+            ORDER BY match_rank, contact_name NULLS LAST, account_number
+            LIMIT %(limit)s
+            """,
+            params,
+        )
+        rows = dict_fetchall(cur)
+    return [CustomerSearchResult(**r) for r in rows]
+
+
+@router.get("/leads/by-number/{account_number}", response_model=Lead)
+def get_lead_by_number(account_number: str, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
+    """Resolve a customer by their durable account number — the stable handle
+    that deep links, quotes, and QR codes reference instead of the internal id."""
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM properties WHERE account_number = %s AND account_id = %s",
+            (account_number, user["account_id"]),
+        )
+        row = dict_fetchone(cur)
+    if not row:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return Lead(**row)
 
 
 @router.get("/leads/{lead_id}", response_model=Lead)

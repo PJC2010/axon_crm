@@ -99,6 +99,7 @@ async def run_import(
 
     _, raw_rows = _read_csv(await _read_limited(file))
     result = ImportResult()
+    new_lead_ids: list[int] = []
 
     with db.cursor() as cur:
         for i, raw in enumerate(raw_rows, start=1):
@@ -114,16 +115,27 @@ async def run_import(
             # Savepoint per row so one bad row doesn't discard the whole import.
             cur.execute("SAVEPOINT import_row")
             try:
-                inserted = _upsert_row(cur, user["account_id"], row)
+                inserted, lead_id = _upsert_row(cur, user["account_id"], row)
                 cur.execute("RELEASE SAVEPOINT import_row")
                 if inserted:
                     result.imported += 1
+                    if lead_id is not None:
+                        new_lead_ids.append(lead_id)
                 else:
                     result.updated += 1
             except Exception as exc:  # keep importing the rest of the file
                 cur.execute("ROLLBACK TO SAVEPOINT import_row")
                 result.errors.append(f"row {i}: {exc}")
     db.commit()
+
+    # Fire lead_imported automations for the freshly created leads (e.g. an
+    # "initial outreach" follow-up task), so imported lists land on a rep's radar.
+    if new_lead_ids:
+        try:
+            from api.workflow_engine import execute_import_rules
+            execute_import_rules(db, user["account_id"], new_lead_ids, user["id"])
+        except Exception:
+            log.exception("lead_imported rules failed for account %s", user["account_id"])
 
     log.info(
         "Contact import for account %s: %d new, %d updated, %d skipped, %d errors",
@@ -132,8 +144,9 @@ async def run_import(
     return result
 
 
-def _upsert_row(cur, account_id: int, row: dict) -> bool:
-    """Insert or update one imported row. Returns True if a new row was inserted.
+def _upsert_row(cur, account_id: int, row: dict) -> tuple[bool, int | None]:
+    """Insert or update one imported row. Returns (inserted, lead_id) where
+    `inserted` is True when a new row was created (vs. an existing one updated).
 
     Dedup target depends on the row shape:
       - has address  -> (account_id, address, zip)
@@ -158,10 +171,10 @@ def _upsert_row(cur, account_id: int, row: dict) -> bool:
                     "WHERE address IS NULL AND contact_email IS NOT NULL")
     else:
         cur.execute(
-            f"INSERT INTO properties ({col_names}) VALUES ({placeholders})",
+            f"INSERT INTO properties ({col_names}) VALUES ({placeholders}) RETURNING id",
             values,
         )
-        return True
+        return True, cur.fetchone()[0]
 
     updates = ", ".join(f"{c} = EXCLUDED.{c}" for c in data_cols if c not in key_cols)
     if "enrichment_flags" in data_cols:
@@ -172,10 +185,11 @@ def _upsert_row(cur, account_id: int, row: dict) -> bool:
     cur.execute(
         f"INSERT INTO properties ({col_names}) VALUES ({placeholders}) "
         f"ON CONFLICT {conflict} DO UPDATE SET {updates} "
-        f"RETURNING (xmax = 0) AS inserted",
+        f"RETURNING id, (xmax = 0) AS inserted",
         values,
     )
-    return bool(cur.fetchone()[0])
+    lead_id, inserted = cur.fetchone()
+    return bool(inserted), lead_id
 
 
 _TEMPLATE_COLS = [

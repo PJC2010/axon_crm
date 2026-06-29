@@ -4,6 +4,7 @@ export type TaskPriority = 'low' | 'normal' | 'high' | 'urgent'
 
 export interface Lead {
   id: number
+  account_number: string | null
   address: string | null
   city: string | null
   state: string | null
@@ -55,6 +56,19 @@ export interface LeadPage {
   page: number
   page_size: number
   results: Lead[]
+}
+
+export interface CustomerSearchResult {
+  id: number
+  account_number: string | null
+  contact_name: string | null
+  owner_name: string | null
+  address: string | null
+  city: string | null
+  zip: string | null
+  contact_phone: string | null
+  status: LeadStatus
+  score_grade: ScoreGrade | null
 }
 
 // ── Property map ──────────────────────────────────────────────────────────────

@@ -73,7 +73,9 @@ export function ContactDrawer({ lead, onClose, onStatusChange, onLeadChange, onT
           }}
         >
           <div>
-            <p className="t-eyebrow" style={{ marginBottom: 4 }}>{lead.zip}</p>
+            <p className="t-eyebrow" style={{ marginBottom: 4 }}>
+              {[lead.account_number, lead.zip].filter(Boolean).join(' · ')}
+            </p>
             <h2
               style={{
                 fontFamily: 'var(--font-display)',

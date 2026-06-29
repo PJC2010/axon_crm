@@ -11,6 +11,7 @@ PAYMENT_METHODS    = ["cash", "card", "check", "zelle", "other"]
 
 class Lead(BaseModel):
     id: int
+    account_number: Optional[str] = None
     address: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
@@ -348,6 +349,21 @@ class LeadPage(BaseModel):
     page: int
     page_size: int
     results: list[Lead]
+
+
+class CustomerSearchResult(BaseModel):
+    """Lightweight hit for the universal customer search dropdown — just enough
+    to identify and link to a customer without paying for a full Lead payload."""
+    id: int
+    account_number: Optional[str] = None
+    contact_name: Optional[str] = None
+    owner_name: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    zip: Optional[str] = None
+    contact_phone: Optional[str] = None
+    status: str = "new"
+    score_grade: Optional[str] = None
 
 
 # ── Score explanation ─────────────────────────────────────────────────────────

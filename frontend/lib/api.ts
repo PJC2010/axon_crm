@@ -1,4 +1,4 @@
-import type { Lead, LeadPage, LeadFilters, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse } from './types'
+import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse } from './types'
 import { getToken, clearToken } from './auth'
 
 // Use 127.0.0.1 (not localhost): on macOS `localhost` resolves to IPv6 ::1
@@ -89,6 +89,15 @@ export function getLeads(filters: LeadFilters = {}): Promise<LeadPage> {
 
 export function getLead(id: number): Promise<Lead> {
   return req<Lead>(`/leads/${id}`)
+}
+
+export function getLeadByNumber(accountNumber: string): Promise<Lead> {
+  return req<Lead>(`/leads/by-number/${encodeURIComponent(accountNumber)}`)
+}
+
+// Universal customer search: account number, name, address, phone, or email.
+export function searchCustomers(q: string, limit = 20): Promise<CustomerSearchResult[]> {
+  return req<CustomerSearchResult[]>(`/leads/search?q=${encodeURIComponent(q)}&limit=${limit}`)
 }
 
 // ── Property map ────────────────────────────────────────────────────────────────

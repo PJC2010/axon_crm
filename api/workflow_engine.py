@@ -94,6 +94,46 @@ def execute_signal_event_rules(conn, account_id: int, events: list[dict]) -> lis
     return results
 
 
+def execute_import_rules(conn, account_id: int, lead_ids: list[int], user_id: int) -> list[dict]:
+    """Run active lead_imported rules against rows just created by an import.
+
+    Fires once per newly inserted lead (updates to existing leads don't fire, so
+    re-imports stay quiet). `user_id` is the importing user, who owns any tasks
+    the rules create. Vertical-scoped rules only apply to leads in that vertical.
+    Returns action results, including failures, for the import response.
+    """
+    if not lead_ids:
+        return []
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM workflow_rules WHERE trigger_type = 'lead_imported' AND is_active = TRUE AND account_id = %s",
+            (account_id,),
+        )
+        rules = dict_fetchall(cur)
+    if not rules:
+        return []
+
+    results = []
+    for lead_id in lead_ids:
+        lead_vertical = _get_lead_vertical(conn, lead_id, account_id)
+        for rule in rules:
+            if rule["vertical"] and rule["vertical"] != lead_vertical:
+                continue
+            try:
+                result = _execute_action(conn, rule, lead_id, user_id, account_id)
+                if result:
+                    results.append(result)
+            except Exception as exc:
+                log.exception("Import rule %d failed for lead %d", rule["id"], lead_id)
+                results.append({
+                    "action": "rule_failed",
+                    "rule_id": rule["id"],
+                    "rule_name": rule["name"],
+                    "error": str(exc),
+                })
+    return results
+
+
 def execute_quote_event_rules(conn, account_id: int, lead_id: int | None, event: str, user_id: int) -> list[dict]:
     """Run active quote_event rules for a quote lifecycle event.
 
@@ -420,6 +460,18 @@ _QUOTE_DEFAULTS = [
     },
 ]
 
+# Import automations: the moment a fresh lead lands from a CSV/contact import,
+# put it on a rep's radar so imported lists actually get worked.
+_IMPORT_DEFAULTS = [
+    {
+        "name": "New imported lead → initial outreach",
+        "trigger_type": "lead_imported",
+        "trigger_config": {},
+        "action_config": {"title": "Initial outreach call to new lead", "due_days_offset": 2, "priority": "high"},
+    },
+]
+
 for _rules in VERTICAL_DEFAULTS.values():
     _rules.extend(_SIGNAL_DEFAULTS)
     _rules.extend(_QUOTE_DEFAULTS)
+    _rules.extend(_IMPORT_DEFAULTS)

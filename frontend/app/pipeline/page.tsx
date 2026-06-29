@@ -1,11 +1,12 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, RefreshCw, Home, BarChart3, Kanban } from 'lucide-react'
 import { getPipeline, getPipelineStats, updateStatus, getLead, getPipelineStages } from '@/lib/api'
 import { AuthGuard } from '@/components/AuthGuard'
-import type { Lead, PipelineCardLead, PipelineGroup, PipelineStage, LeadStatus } from '@/lib/types'
+import type { Lead, PipelineCardLead, PipelineGroup, LeadStatus } from '@/lib/types'
 import { KanbanCard } from '@/components/KanbanCard'
+import { useKanbanDnd } from '@/hooks/useKanbanDnd'
 import { ContactDrawer } from '@/components/ContactDrawer'
 import { PipelineAnalytics } from '@/components/PipelineAnalytics'
 import { QuickTaskModal } from '@/components/QuickTaskModal'
@@ -26,13 +27,12 @@ function PipelinePage() {
   const [groups, setGroups] = useState<PipelineGroup>({})
   const [stats, setStats] = useState<Record<string, { count: number; total_value: number }>>({})
   const [loading, setLoading] = useState(true)
-  const [dragLead, setDragLead] = useState<PipelineCardLead | null>(null)
-  const [dragOver, setDragOver] = useState<string | null>(null)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [view, setView] = useState<'board' | 'analytics'>('board')
   const [wide, setWide] = useState(false)
   const [quickTaskLead, setQuickTaskLead] = useState<PipelineCardLead | null>(null)
   const { toasts, show: showToast, dismiss: dismissToast } = useToast()
+  const boardRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     const check = () => setWide(window.innerWidth >= 640)
@@ -61,21 +61,8 @@ function PipelinePage() {
 
   useEffect(() => { load() }, [load])
 
-  function handleDragStart(lead: PipelineCardLead) {
-    setDragLead(lead)
-  }
-
-  function handleDragOver(e: React.DragEvent, stage: string) {
-    e.preventDefault()
-    setDragOver(stage)
-  }
-
-  async function handleDrop(e: React.DragEvent, stage: string) {
-    e.preventDefault()
-    setDragOver(null)
-    if (!dragLead || dragLead.status === stage) return
-    const lead = dragLead
-    setDragLead(null)
+  const moveLead = useCallback(async (lead: PipelineCardLead, stage: string) => {
+    if (lead.status === stage) return
     // Optimistic update
     setGroups(prev => {
       const next = { ...prev }
@@ -90,7 +77,7 @@ function PipelinePage() {
     } catch {
       load() // revert on error
     }
-  }
+  }, [load])
 
   async function handleCardClick(card: PipelineCardLead) {
     try {
@@ -129,6 +116,14 @@ function PipelinePage() {
       return next
     })
   }
+
+  const { dragItem, draggingId, overStage, onPointerDown, setGhostNode } = useKanbanDnd<PipelineCardLead>({
+    getId: lead => lead.id,
+    getStage: lead => lead.status,
+    onDrop: moveLead,
+    onSelect: handleCardClick,
+    scrollRef: boardRef,
+  })
 
   const fmtValue = (v: number) =>
     v >= 1000 ? `$${(v / 1000).toFixed(0)}k` : `$${v}`
@@ -181,25 +176,26 @@ function PipelinePage() {
           <PipelineAnalytics />
         </div>
       ) : (
-        <div style={{ flex: 1, overflowX: 'auto', padding: '20px 16px' }}>
+        <div ref={boardRef} style={{ flex: 1, overflowX: 'auto', padding: '20px 16px' }}>
           <div style={{ display: 'flex', gap: 12, minWidth: 'max-content', height: '100%' }}>
             {stages.map(stage => {
               const leads = groups[stage.key] ?? []
               const stageStat = stats[stage.key]
+              const isOver = overStage === stage.key && dragItem != null && dragItem.status !== stage.key
               return (
                 <div
                   key={stage.key}
-                  onDragOver={e => handleDragOver(e, stage.key)}
-                  onDragLeave={() => setDragOver(null)}
-                  onDrop={e => handleDrop(e, stage.key)}
+                  data-stage-key={stage.key}
                   style={{
                     width: 240,
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 8,
-                    background: dragOver === stage.key ? 'var(--color-surface)' : 'transparent',
+                    background: isOver ? 'var(--color-surface)' : 'transparent',
+                    outline: isOver ? '2px dashed var(--color-accent)' : '2px dashed transparent',
+                    outlineOffset: -2,
                     borderRadius: 'var(--radius-card)',
-                    transition: 'background 0.15s',
+                    transition: 'background 0.15s, outline-color 0.15s',
                     padding: 8,
                     minHeight: 400,
                   }}
@@ -223,11 +219,16 @@ function PipelinePage() {
                     {leads.map(lead => (
                       <div
                         key={lead.id}
-                        draggable
-                        onDragStart={() => handleDragStart(lead)}
-                        style={{ opacity: dragLead?.id === lead.id ? 0.5 : 1 }}
+                        onPointerDown={e => onPointerDown(e, lead)}
+                        style={{
+                          opacity: draggingId === lead.id ? 0.4 : 1,
+                          touchAction: 'pan-x pan-y',
+                          WebkitUserSelect: 'none',
+                          userSelect: 'none',
+                          WebkitTouchCallout: 'none',
+                        }}
                       >
-                        <KanbanCard lead={lead} onClick={() => handleCardClick(lead)} onQuickTask={setQuickTaskLead} />
+                        <KanbanCard lead={lead} onQuickTask={setQuickTaskLead} />
                       </div>
                     ))}
                   </div>
@@ -235,6 +236,25 @@ function PipelinePage() {
               )
             })}
           </div>
+        </div>
+      )}
+
+      {dragItem && (
+        <div
+          ref={setGhostNode}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: 224,
+            margin: '-20px 0 0 -16px',
+            pointerEvents: 'none',
+            zIndex: 1000,
+            opacity: 0.95,
+            willChange: 'transform',
+          }}
+        >
+          <KanbanCard lead={dragItem} ghost />
         </div>
       )}
 
