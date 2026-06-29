@@ -4,9 +4,11 @@ import { X, Archive, ArrowUpRight } from 'lucide-react'
 import type { Lead, LeadStatus } from '@/lib/types'
 import { archiveLead } from '@/lib/api'
 import { useState } from 'react'
+import { useTerminology } from '@/hooks/useTerminology'
 import { StatusSelect } from './StatusSelect'
 import { ScoreBadge } from './ScoreBadge'
 import { ContactInfoSection } from './lead/ContactInfoSection'
+import { CustomFieldsSection } from './lead/CustomFieldsSection'
 import { PropertySignals } from './lead/PropertySignals'
 import { WhyThisScore } from './lead/WhyThisScore'
 import { ActivityPanel } from './lead/ActivityPanel'
@@ -22,6 +24,7 @@ interface Props {
 }
 
 export function ContactDrawer({ lead, onClose, onStatusChange, onLeadChange, onToast }: Props) {
+  const { t, propertyBased } = useTerminology()
   const [archiving, setArchiving] = useState(false)
 
   if (!lead) return null
@@ -109,7 +112,7 @@ export function ContactDrawer({ lead, onClose, onStatusChange, onLeadChange, onT
               onClick={handleArchive}
               disabled={archiving}
               className="dash-icon-btn borderless"
-              title="Archive this lead"
+              title={`Archive this ${t('lead').toLowerCase()}`}
             >
               <Archive size={16} strokeWidth={1.5} />
             </button>
@@ -124,8 +127,9 @@ export function ContactDrawer({ lead, onClose, onStatusChange, onLeadChange, onT
             <NextStepHint status={lead.status} leadId={lead.id} onToast={onToast} />
           </div>
           <ContactInfoSection lead={lead} onSaved={l => onLeadChange?.(l)} onToast={onToast} />
-          <PropertySignals lead={lead} />
-          <WhyThisScore leadId={lead.id} />
+          <CustomFieldsSection key={lead.id} lead={lead} onSaved={l => onLeadChange?.(l)} onToast={onToast} />
+          {propertyBased && <PropertySignals lead={lead} />}
+          {propertyBased && <WhyThisScore leadId={lead.id} />}
           <ActivityPanel leadId={lead.id} />
         </div>
       </aside>

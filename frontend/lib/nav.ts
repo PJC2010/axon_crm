@@ -22,11 +22,13 @@ export interface NavItem {
   icon: LucideIcon
   /** Visible when ANY listed module is enabled. Omit for always-on core items. */
   modules?: ModuleKey[]
+  /** Terminology key — when set, the label is translated per business type. */
+  termKey?: string
 }
 
 export const NAV_ITEMS: NavItem[] = [
   { href: '/home',        label: 'Home',        icon: Home },
-  { href: '/dashboard',   label: 'Leads',       icon: Users },
+  { href: '/dashboard',   label: 'Leads',       icon: Users, termKey: 'leads' },
   { href: '/pipeline',    label: 'Pipeline',    icon: Kanban },
   { href: '/map',         label: 'Map',         icon: MapIcon,  modules: ['map'] },
   { href: '/tasks',       label: 'Tasks',       icon: CheckSquare },

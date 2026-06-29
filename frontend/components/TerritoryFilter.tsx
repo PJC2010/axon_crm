@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { SlidersHorizontal } from 'lucide-react'
 import { getZips, getNeighborhoods } from '@/lib/api'
+import { useTerminology } from '@/hooks/useTerminology'
 import type { LeadFilters, Neighborhood } from '@/lib/types'
 
 interface Props {
@@ -39,18 +40,6 @@ const STATUSES = [
   { value: 'converted',      label: 'Converted' },
 ]
 
-const VERTICALS = [
-  { value: '',                 label: 'All verticals' },
-  { value: 'epoxy_flooring',   label: 'Epoxy flooring' },
-  { value: 'pool_maintenance', label: 'Pool maintenance' },
-  { value: 'solar',            label: 'Solar' },
-  { value: 'roofing',          label: 'Roofing' },
-  { value: 'hvac',             label: 'HVAC' },
-  { value: 'fencing',          label: 'Fencing' },
-  { value: 'landscaping',      label: 'Landscaping' },
-  { value: 'pressure_washing', label: 'Pressure washing' },
-]
-
 const SORTS = [
   { value: 'score',               label: 'Score' },
   { value: 'sale_date',           label: 'Sale date' },
@@ -82,6 +71,8 @@ function fmtValue(v: number | null): string {
 }
 
 export function TerritoryFilter({ filters, onChange }: Props) {
+  const { t, categories } = useTerminology()
+  const verticalOptions = [{ value: '', label: `All ${t('categories').toLowerCase()}` }, ...categories]
   const [zips, setZips] = useState<string[]>([])
   const [neighborhoods, setNeighborhoods] = useState<Neighborhood[]>([])
 
@@ -135,9 +126,9 @@ export function TerritoryFilter({ filters, onChange }: Props) {
         {zips.map(z => <option key={z} value={z}>{z}</option>)}
       </select>
 
-      {/* Vertical */}
+      {/* Category (vertical) */}
       <select value={filters.vertical ?? ''} onChange={e => set('vertical', e.target.value)} className="select-field">
-        {VERTICALS.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
+        {verticalOptions.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
       </select>
 
       {/* Grade chips — color-coded to match ScoreBadge palette */}

@@ -17,6 +17,7 @@ import { StatusPill } from './ds'
 import { TaskBell } from './TaskBell'
 import { NavLinks } from './NavLinks'
 import { useEntitlements, clearEntitlementsCache } from '@/hooks/useEntitlements'
+import { useTerminology } from '@/hooks/useTerminology'
 import type { ModuleKey } from '@/lib/types'
 import { OnboardingWizard } from './OnboardingWizard'
 import { GettingStartedChecklist } from './GettingStartedChecklist'
@@ -63,6 +64,7 @@ type DrawerId = 'rev' | 'ar' | 'win' | 'forecast'
 export function HomeDashboard() {
   const router = useRouter()
   const { hasModule } = useEntitlements()
+  const { t } = useTerminology()
   const [data, setData] = useState<DashData>({
     user: null, taskCounts: null, pipelineStats: null, arSummary: null, forecast: null, analytics: null, pnl: null, expenses: null, recentLeads: [],
   })
@@ -209,7 +211,7 @@ export function HomeDashboard() {
         { label: 'Win rate', value: `${data.analytics?.win_rate ?? 0}%`, tone: 'moss' },
         { label: 'Deals won', value: String(data.analytics?.leads_won ?? 0) },
         { label: 'Avg cycle time', value: data.analytics?.avg_cycle_time != null ? `${data.analytics.avg_cycle_time}d` : '—' },
-        { label: 'Active leads', value: activeLeads != null ? String(activeLeads) : '—' },
+        { label: `Active ${t('leads').toLowerCase()}`, value: activeLeads != null ? String(activeLeads) : '—' },
       ],
       cta: { label: 'View pipeline', href: '/pipeline' },
     },

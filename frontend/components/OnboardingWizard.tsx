@@ -2,25 +2,18 @@
 import { useState, useEffect } from 'react'
 import { ArrowRight, ArrowLeft, Zap, MapPin, Kanban, CheckCircle2 } from 'lucide-react'
 import { completeOnboarding, triggerRun, seedWorkflowDefaults, getRegions, type Region } from '@/lib/api'
+import { useTerminology } from '@/hooks/useTerminology'
 
 interface Props {
   onComplete: () => void
 }
 
-const VERTICALS = [
-  { key: 'epoxy_flooring', label: 'Epoxy Flooring', desc: 'Garage floor coatings & concrete finishing' },
-  { key: 'pool_maintenance', label: 'Pool Maintenance', desc: 'Pool cleaning, repair & maintenance' },
-  { key: 'solar', label: 'Solar', desc: 'Solar panel installation & consultation' },
-  { key: 'roofing', label: 'Roofing', desc: 'Roof replacement, repair & storm restoration' },
-  { key: 'hvac', label: 'HVAC', desc: 'Heating & cooling install, repair & service' },
-  { key: 'fencing', label: 'Fencing', desc: 'Fence installation & replacement' },
-  { key: 'landscaping', label: 'Landscaping', desc: 'Landscape design & recurring lawn care' },
-  { key: 'pressure_washing', label: 'Pressure Washing', desc: 'Exterior, driveway & pool deck cleaning' },
-]
-
 const STEPS = ['Welcome', 'Territory', 'Automations', 'Ready']
 
 export function OnboardingWizard({ onComplete }: Props) {
+  // Category picklist + terminology come from the account's business type.
+  const { categories, t } = useTerminology()
+  const categoryLabel = (value: string) => categories.find(c => c.value === value)?.label
   const [step, setStep] = useState(0)
   const [vertical, setVertical] = useState('')
   const [zip, setZip] = useState('')
@@ -114,26 +107,25 @@ export function OnboardingWizard({ onComplete }: Props) {
               Welcome to Axon
             </h1>
             <p style={{ fontSize: 15, color: 'var(--color-ink-500)', margin: '0 0 28px', lineHeight: 1.5 }}>
-              Let&apos;s get your pipeline set up in under a minute. First, what type of service business are you in?
+              Let&apos;s get your pipeline set up in under a minute. First, which {t('category').toLowerCase()} best describes your work?
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {VERTICALS.map(v => (
+              {categories.map(c => (
                 <button
-                  key={v.key}
-                  onClick={() => setVertical(v.key)}
+                  key={c.value}
+                  onClick={() => setVertical(c.value)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px',
                     borderRadius: 'var(--radius-card)',
-                    border: vertical === v.key ? '2px solid var(--color-accent)' : '1px solid var(--color-ink-200)',
-                    background: vertical === v.key ? 'var(--color-accent-50)' : 'var(--color-surface)',
+                    border: vertical === c.value ? '2px solid var(--color-accent)' : '1px solid var(--color-ink-200)',
+                    background: vertical === c.value ? 'var(--color-accent-50)' : 'var(--color-surface)',
                     cursor: 'pointer', textAlign: 'left', width: '100%',
                   }}
                 >
                   <div style={{ flex: 1 }}>
-                    <p style={{ margin: 0, fontSize: 15, fontWeight: 500, color: 'var(--color-ink-900)' }}>{v.label}</p>
-                    <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--color-ink-400)' }}>{v.desc}</p>
+                    <p style={{ margin: 0, fontSize: 15, fontWeight: 500, color: 'var(--color-ink-900)' }}>{c.label}</p>
                   </div>
-                  {vertical === v.key && <CheckCircle2 size={18} strokeWidth={2} style={{ color: 'var(--color-accent)', flexShrink: 0 }} />}
+                  {vertical === c.value && <CheckCircle2 size={18} strokeWidth={2} style={{ color: 'var(--color-accent)', flexShrink: 0 }} />}
                 </button>
               ))}
             </div>
@@ -150,7 +142,7 @@ export function OnboardingWizard({ onComplete }: Props) {
             <p style={{ fontSize: 15, color: 'var(--color-ink-500)', margin: '0 0 24px', lineHeight: 1.5 }}>
               Pick the area you serve by name — e.g. The Heights or Spring Branch. We&apos;ll find
               properties there and score them for{' '}
-              {VERTICALS.find(v => v.key === vertical)?.label?.toLowerCase() ?? 'your service'}.
+              {categoryLabel(vertical)?.toLowerCase() ?? 'your service'}.
             </p>
 
             {/* Region typeahead (primary) */}
@@ -255,7 +247,7 @@ export function OnboardingWizard({ onComplete }: Props) {
             </h2>
             <p style={{ fontSize: 15, color: 'var(--color-ink-500)', margin: '0 0 24px', lineHeight: 1.5 }}>
               Axon can automatically create follow-up tasks when you move leads through your pipeline.
-              We&apos;ll set up recommended automations for {VERTICALS.find(v => v.key === vertical)?.label?.toLowerCase() ?? 'your service'}.
+              We&apos;ll set up recommended automations for {categoryLabel(vertical)?.toLowerCase() ?? 'your service'}.
             </p>
             <button
               onClick={handleSeedWorkflows}

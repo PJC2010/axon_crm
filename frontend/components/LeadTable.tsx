@@ -7,6 +7,7 @@ import { archiveBulk, archiveByFilter } from '@/lib/api'
 import { ScoreBadge } from './ScoreBadge'
 import { StatusSelect } from './StatusSelect'
 import { ConfirmModal } from './ConfirmModal'
+import { useTerminology } from '@/hooks/useTerminology'
 
 interface Props {
   leads: Lead[]
@@ -45,6 +46,7 @@ const TH_STYLE: React.CSSProperties = {
 }
 
 export function LeadTable({ leads, total, filters, loading, onRowClick, onFiltersChange, onStatusChange, onToast }: Props) {
+  const { t } = useTerminology()
   const page      = filters.page ?? 1
   const pageSize  = filters.page_size ?? PAGE_SIZE
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
@@ -76,7 +78,7 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
       await archiveBulk(Array.from(selected))
       setSelected(new Set())
       onFiltersChange(filters)
-      onToast?.(`Archived ${selected.size} lead${selected.size !== 1 ? 's' : ''}`)
+      onToast?.(`Archived ${selected.size} ${(selected.size !== 1 ? t('leads') : t('lead')).toLowerCase()}`)
     } catch {
       onToast?.('Archive failed — please try again', 'error')
     } finally { setArchiving(false) }
@@ -88,7 +90,7 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
       await archiveByFilter(filters)
       setSelected(new Set())
       onFiltersChange(filters)
-      onToast?.(`Archived all ${total} matching leads`)
+      onToast?.(`Archived all ${total} matching ${t('leads').toLowerCase()}`)
     } catch {
       onToast?.('Archive failed — please try again', 'error')
     } finally {
