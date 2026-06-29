@@ -6,6 +6,7 @@ import { getSchedules, createSchedule, updateSchedule, deleteSchedule, triggerRu
 import { AuthGuard } from '@/components/AuthGuard'
 import { AutomationTemplates } from '@/components/AutomationTemplates'
 import { ConnectionsSection } from '@/components/ConnectionsSection'
+import { useEntitlements } from '@/hooks/useEntitlements'
 import type { PipelineSchedule, PipelineRun, WorkflowRule } from '@/lib/types'
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
@@ -25,6 +26,7 @@ function duration(run: PipelineRun) {
 }
 
 function SettingsPage() {
+  const { hasModule } = useEntitlements()
   const [schedules, setSchedules] = useState<PipelineSchedule[]>([])
   const [runs, setRuns] = useState<PipelineRun[]>([])
   const [workflows, setWorkflows] = useState<WorkflowRule[]>([])
@@ -62,10 +64,12 @@ function SettingsPage() {
 
   const loadData = useCallback(async () => {
     try {
-      const [s, r, w] = await Promise.all([getSchedules(), getPipelineRuns(), getWorkflows()])
-      setSchedules(s)
-      setRuns(r)
-      setWorkflows(w)
+      // Fetch independently so a 403 from a module the account lacks (prospecting
+      // schedules/runs, automation workflows) doesn't blank out the rest.
+      const [s, r, w] = await Promise.allSettled([getSchedules(), getPipelineRuns(), getWorkflows()])
+      if (s.status === 'fulfilled') setSchedules(s.value)
+      if (r.status === 'fulfilled') setRuns(r.value)
+      if (w.status === 'fulfilled') setWorkflows(w.value)
     } finally {
       setLoading(false)
     }
@@ -77,7 +81,7 @@ function SettingsPage() {
   useEffect(() => {
     const hasRunning = runs.some(r => r.status === 'running' || r.status === 'queued')
     if (!hasRunning) return
-    const id = setInterval(() => getPipelineRuns().then(setRuns), 5000)
+    const id = setInterval(() => getPipelineRuns().then(setRuns).catch(() => {}), 5000)
     return () => clearInterval(id)
   }, [runs])
 
@@ -159,6 +163,8 @@ function SettingsPage() {
 
       <div style={{ maxWidth: 760, margin: '0 auto', padding: '28px 20px', display: 'flex', flexDirection: 'column', gap: 32 }}>
 
+        {hasModule('prospecting') && (
+        <>
         {/* Manual run */}
         <section>
           <h2 className="t-eyebrow" style={{ marginBottom: 12 }}>Run pipeline now</h2>
@@ -297,8 +303,11 @@ function SettingsPage() {
             </button>
           </form>
         </section>
+        </>
+        )}
 
         {/* Workflow rules */}
+        {hasModule('automation') && (
         <section>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -484,11 +493,13 @@ function SettingsPage() {
             </p>
           )}
         </section>
+        )}
 
         {/* Connected accounts / integrations */}
         <ConnectionsSection />
 
         {/* Run log */}
+        {hasModule('prospecting') && (
         <section>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
             <h2 className="t-eyebrow" style={{ margin: 0 }}>Recent runs</h2>
@@ -552,6 +563,7 @@ function SettingsPage() {
             </table>
           )}
         </section>
+        )}
       </div>
     </div>
   )

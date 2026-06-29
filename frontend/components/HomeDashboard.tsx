@@ -1,10 +1,10 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, type ReactNode } from 'react'
 import {
-  TrendingUp, Users, CheckSquare,
+  TrendingUp,
   Plus, FileText, Receipt, Kanban,
   AlertCircle, ArrowUpRight, ArrowDownRight,
-  LogOut, Settings, BookOpen, ArrowRight,
+  LogOut, Settings, ArrowRight,
   Percent, Target, Menu, X,
 } from 'lucide-react'
 import Link from 'next/link'
@@ -15,6 +15,9 @@ import type { Lead, PipelineCounts, ARSummary, ForecastData, User, PipelineAnaly
 import { ScoreBadge } from './ScoreBadge'
 import { StatusPill } from './ds'
 import { TaskBell } from './TaskBell'
+import { NavLinks } from './NavLinks'
+import { useEntitlements, clearEntitlementsCache } from '@/hooks/useEntitlements'
+import type { ModuleKey } from '@/lib/types'
 import { OnboardingWizard } from './OnboardingWizard'
 import { GettingStartedChecklist } from './GettingStartedChecklist'
 import { ToastStack, useToast } from './Toast'
@@ -59,6 +62,7 @@ type DrawerId = 'rev' | 'ar' | 'win' | 'forecast'
 
 export function HomeDashboard() {
   const router = useRouter()
+  const { hasModule } = useEntitlements()
   const [data, setData] = useState<DashData>({
     user: null, taskCounts: null, pipelineStats: null, arSummary: null, forecast: null, analytics: null, pnl: null, expenses: null, recentLeads: [],
   })
@@ -125,6 +129,7 @@ export function HomeDashboard() {
 
   function handleSignOut() {
     clearToken()
+    clearEntitlementsCache()
     router.push('/login')
   }
 
@@ -259,26 +264,7 @@ export function HomeDashboard() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           {wide ? (
             <>
-              <Link href="/dashboard" title="Leads" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
-                <Users size={13} strokeWidth={1.5} />
-                <span>Leads</span>
-              </Link>
-              <Link href="/pipeline" title="Pipeline" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
-                <Kanban size={13} strokeWidth={1.5} />
-                <span>Pipeline</span>
-              </Link>
-              <Link href="/tasks" title="Tasks" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
-                <CheckSquare size={13} strokeWidth={1.5} />
-                <span>Tasks</span>
-              </Link>
-              <Link href="/expenses" title="Expenses" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
-                <Receipt size={13} strokeWidth={1.5} />
-                <span>Expenses</span>
-              </Link>
-              <Link href="/bookkeeping" title="Bookkeeping" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
-                <BookOpen size={13} strokeWidth={1.5} />
-                <span>Books</span>
-              </Link>
+              <NavLinks variant="desktop" current="/home" />
               <TaskBell />
               <Link href="/settings" title="Settings" className="dash-icon-btn">
                 <Settings size={13} strokeWidth={1.5} />
@@ -319,30 +305,21 @@ export function HomeDashboard() {
             padding: 8,
             display: 'flex', flexDirection: 'column', gap: 2,
           }}>
-            {[
-              { label: 'Leads',       icon: <Users size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,       href: '/dashboard' },
-              { label: 'Pipeline',    icon: <Kanban size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,      href: '/pipeline' },
-              { label: 'Tasks',       icon: <CheckSquare size={18} strokeWidth={1.5} color="var(--color-ink-500)" />, href: '/tasks' },
-              { label: 'Expenses',    icon: <Receipt size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,     href: '/expenses' },
-              { label: 'Bookkeeping', icon: <BookOpen size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,    href: '/bookkeeping' },
-              { label: 'Settings',    icon: <Settings size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,    href: '/settings' },
-            ].map(({ label, icon, href }) => (
-              <Link
-                key={href}
-                href={href}
-                onClick={() => setMenuOpen(false)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 12,
-                  padding: '12px 14px', minHeight: 48,
-                  borderRadius: 'var(--radius-button)',
-                  textDecoration: 'none', color: 'var(--color-ink-800)',
-                  fontSize: 15, fontWeight: 500,
-                }}
-              >
-                {icon}
-                {label}
-              </Link>
-            ))}
+            <NavLinks variant="mobile" current="/home" onNavigate={() => setMenuOpen(false)} />
+            <Link
+              href="/settings"
+              onClick={() => setMenuOpen(false)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '12px 14px', minHeight: 48,
+                borderRadius: 'var(--radius-button)',
+                textDecoration: 'none', color: 'var(--color-ink-800)',
+                fontSize: 15, fontWeight: 500,
+              }}
+            >
+              <Settings size={18} strokeWidth={1.5} color="var(--color-ink-500)" />
+              Settings
+            </Link>
             <button
               onClick={() => { setMenuOpen(false); handleSignOut() }}
               style={{
@@ -512,11 +489,13 @@ export function HomeDashboard() {
               New Lead
             </Link>
 
-            {[
+            {([
               { label: 'View Pipeline',  icon: <Kanban size={14} strokeWidth={1.5} />,   href: '/pipeline' },
-              { label: 'Create Invoice', icon: <FileText size={14} strokeWidth={1.5} />, href: '/bookkeeping' },
-              { label: 'Log Expense',    icon: <Receipt size={14} strokeWidth={1.5} />,  href: '/expenses' },
-            ].map(({ label, icon, href }) => (
+              { label: 'Create Invoice', icon: <FileText size={14} strokeWidth={1.5} />, href: '/bookkeeping', module: 'invoicing' as ModuleKey },
+              { label: 'Log Expense',    icon: <Receipt size={14} strokeWidth={1.5} />,  href: '/expenses', module: 'bookkeeping' as ModuleKey },
+            ] as { label: string; icon: ReactNode; href: string; module?: ModuleKey }[])
+              .filter(({ module }) => !module || hasModule(module))
+              .map(({ label, icon, href }) => (
               <Link
                 key={href}
                 href={href}

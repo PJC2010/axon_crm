@@ -18,11 +18,19 @@ DEFAULT_STAGES = [
 ]
 
 
-def create_account(conn, name: str) -> int:
-    """Create an organization and seed its default pipeline stages.
+def create_account(conn, name: str, plan_name: str = "pro") -> int:
+    """Create an organization and seed its default pipeline stages and plan.
 
-    Returns the new account id. Caller owns the transaction (commits).
+    New orgs default to the full ``pro`` module set (admins can downgrade later via
+    scripts/set_account_plan.py). Returns the new account id. Caller owns the
+    transaction (commits).
     """
+    from psycopg2.extras import Json
+    from api.entitlements import MODULE_KEYS, PLAN_CATALOG
+
+    granted = PLAN_CATALOG.get(plan_name, set(MODULE_KEYS))
+    modules = {key: key in granted for key in MODULE_KEYS}
+
     with conn.cursor() as cur:
         cur.execute("INSERT INTO accounts (name) VALUES (%s) RETURNING id", (name,))
         account_id = cur.fetchone()[0]
@@ -31,5 +39,10 @@ def create_account(conn, name: str) -> int:
             "(account_id, key, label, color, sort_order, is_terminal, is_default) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             [(account_id, *stage) for stage in DEFAULT_STAGES],
+        )
+        cur.execute(
+            "INSERT INTO account_plans (account_id, plan_name, modules) VALUES (%s, %s, %s) "
+            "ON CONFLICT (account_id) DO NOTHING",
+            (account_id, plan_name, Json(modules)),
         )
     return account_id
