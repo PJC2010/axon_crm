@@ -18,21 +18,29 @@ DEFAULT_STAGES = [
 ]
 
 
-def create_account(conn, name: str, plan_name: str = "pro") -> int:
-    """Create an organization and seed its default pipeline stages and plan.
+def create_account(conn, name: str, plan_name: str = "pro",
+                   business_type: str = "home_services") -> int:
+    """Create an organization and seed its default pipeline stages, plan, and type.
 
-    New orgs default to the full ``pro`` module set (admins can downgrade later via
-    scripts/set_account_plan.py). Returns the new account id. Caller owns the
-    transaction (commits).
+    The seeded module set is the business type's defaults bounded by the plan's
+    allowance — a module is enabled only if both the plan grants it and the type
+    wants it on (so a non-property type ships with prospecting/map off even on a
+    `pro` plan). Admins can change either later via scripts/set_account_plan.py.
+    Returns the new account id. Caller owns the transaction (commits).
     """
     from psycopg2.extras import Json
     from api.entitlements import MODULE_KEYS, PLAN_CATALOG
+    from api.business_types import get_business_type
 
     granted = PLAN_CATALOG.get(plan_name, set(MODULE_KEYS))
-    modules = {key: key in granted for key in MODULE_KEYS}
+    bt = get_business_type(business_type)
+    modules = {key: (key in granted) and bt.default_modules.get(key, True) for key in MODULE_KEYS}
 
     with conn.cursor() as cur:
-        cur.execute("INSERT INTO accounts (name) VALUES (%s) RETURNING id", (name,))
+        cur.execute(
+            "INSERT INTO accounts (name, business_type) VALUES (%s, %s) RETURNING id",
+            (name, bt.key),
+        )
         account_id = cur.fetchone()[0]
         cur.executemany(
             "INSERT INTO pipeline_stages "

@@ -79,6 +79,15 @@ export function updateAccountPlan(modules: Partial<ModuleMap>): Promise<AccountF
   return req('/account/plan', { method: 'PATCH', body: JSON.stringify({ modules }) })
 }
 
+// Switch the account's business type (terminology/categories preset). Returns the
+// new business-type profile. Callers should clearEntitlementsCache() afterward.
+export function updateBusinessType(business_type: string): Promise<{
+  business_type: string; property_based: boolean
+  terminology: Record<string, string>; categories: { value: string; label: string }[]
+}> {
+  return req('/account/business-type', { method: 'PATCH', body: JSON.stringify({ business_type }) })
+}
+
 export function completeOnboarding(): Promise<{ ok: boolean }> {
   return req('/auth/onboarding-complete', { method: 'PATCH' })
 }

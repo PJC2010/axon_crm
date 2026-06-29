@@ -7,10 +7,10 @@ import { AuthGuard } from '@/components/AuthGuard'
 import { AutomationTemplates } from '@/components/AutomationTemplates'
 import { ConnectionsSection } from '@/components/ConnectionsSection'
 import { useEntitlements } from '@/hooks/useEntitlements'
+import { useTerminology } from '@/hooks/useTerminology'
 import type { PipelineSchedule, PipelineRun, WorkflowRule } from '@/lib/types'
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
-const VERTICALS = ['', 'epoxy_flooring', 'pool_maintenance', 'solar', 'roofing', 'hvac', 'fencing', 'landscaping', 'pressure_washing']
 const STATUS_COLOR: Record<string, string> = {
   queued:    'var(--color-ink-400)',
   running:   'var(--color-accent)',
@@ -27,6 +27,7 @@ function duration(run: PipelineRun) {
 
 function SettingsPage() {
   const { hasModule } = useEntitlements()
+  const { categories, t } = useTerminology()
   const [schedules, setSchedules] = useState<PipelineSchedule[]>([])
   const [runs, setRuns] = useState<PipelineRun[]>([])
   const [workflows, setWorkflows] = useState<WorkflowRule[]>([])
@@ -171,7 +172,8 @@ function SettingsPage() {
           <form onSubmit={handleTrigger} style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <input type="text" value={runZip} onChange={e => setRunZip(e.target.value)} placeholder="ZIP code" className="drawer-input" style={{ width: 120 }} required />
             <select value={runVertical} onChange={e => setRunVertical(e.target.value)} className="drawer-input">
-              {VERTICALS.map(v => <option key={v} value={v}>{v || 'Default'}</option>)}
+              <option value="">Default</option>
+              {categories.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
             <input type="number" min={1} value={runTopN} onChange={e => setRunTopN(e.target.value)} placeholder="Leads/run" title="Cap leads enriched per run (saves API cost). Blank = whole ZIP." className="drawer-input" style={{ width: 110 }} />
             <input type="text" value={runNearAddress} onChange={e => setRunNearAddress(e.target.value)} placeholder="Near address (optional)" title="Only enrich homes within the radius of this address" className="drawer-input" style={{ width: 200 }} />
@@ -284,7 +286,8 @@ function SettingsPage() {
           <form onSubmit={handleAddSchedule} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <input type="text" value={zip} onChange={e => setZip(e.target.value)} placeholder="ZIP" className="drawer-input" style={{ width: 90 }} required />
             <select value={vertical} onChange={e => setVertical(e.target.value)} className="drawer-input">
-              {VERTICALS.map(v => <option key={v} value={v}>{v || 'Default'}</option>)}
+              <option value="">Default</option>
+              {categories.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
             <select value={day} onChange={e => setDay(e.target.value)} className="drawer-input" style={{ textTransform: 'capitalize' }}>
               {DAYS.map(d => <option key={d} value={d} style={{ textTransform: 'capitalize' }}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>)}
@@ -387,7 +390,8 @@ function SettingsPage() {
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <input type="text" value={wfName} onChange={e => setWfName(e.target.value)} placeholder="Rule name" className="drawer-input" style={{ flex: 1, minWidth: 140 }} required />
                 <select value={wfVertical} onChange={e => setWfVertical(e.target.value)} className="drawer-input">
-                  {VERTICALS.map(v => <option key={v} value={v}>{v || 'All verticals'}</option>)}
+                  <option value="">All {t('categories').toLowerCase()}</option>
+                  {categories.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
                 </select>
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>

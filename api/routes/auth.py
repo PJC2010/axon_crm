@@ -18,6 +18,7 @@ from api.deps import get_current_user, require_owner
 from api.entitlements import (
     MODULE_KEYS, PLAN_CATALOG, get_account_modules, _plan_defaults,
 )
+from api.business_types import BUSINESS_TYPES, business_type_profile
 
 router = APIRouter()
 
@@ -66,11 +67,25 @@ class UserOut(BaseModel):
     # frontend can gate nav/UI on first load; empty on the team-management endpoints
     # that don't need it.
     modules: dict[str, bool] = {}
+    # The account's business type (drives terminology/categories). The full profile
+    # (terminology, categories) is served by GET /account/features.
+    business_type: str = "home_services"
 
 
 class PlanUpdate(BaseModel):
     """Owner-driven toggle of optional modules within the account's plan."""
     modules: dict[str, bool]
+
+
+class BusinessTypeUpdate(BaseModel):
+    business_type: str
+
+
+def _account_business_type(account_id: int, db: PGConn) -> str:
+    with db.cursor() as cur:
+        cur.execute("SELECT business_type FROM accounts WHERE id = %s", (account_id,))
+        row = cur.fetchone()
+    return row[0] if row and row[0] else "home_services"
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -104,25 +119,31 @@ def me(current_user: dict = Depends(get_current_user), db: PGConn = Depends(get_
         row = dict_fetchone(cur)
     if not row:
         raise HTTPException(status_code=404, detail="User not found")
-    return UserOut(**row, modules=get_account_modules(row["account_id"], db))
+    return UserOut(
+        **row,
+        modules=get_account_modules(row["account_id"], db),
+        business_type=_account_business_type(row["account_id"], db),
+    )
 
 
 @router.get("/account/features")
 def account_features(current_user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
-    """Resolved plan + enabled-module map for the caller's account.
+    """Resolved plan, enabled modules, and business-type profile for the account.
 
-    Powers the frontend entitlement gating (frontend/hooks/useEntitlements.ts).
+    Single payload powering both entitlement gating (frontend/hooks/
+    useEntitlements.ts) and terminology (frontend/hooks/useTerminology). The
+    business-type profile carries terminology + the category picklist + the
+    property_based flag.
     """
+    acct = current_user["account_id"]
     with db.cursor() as cur:
-        cur.execute(
-            "SELECT plan_name FROM account_plans WHERE account_id = %s",
-            (current_user["account_id"],),
-        )
+        cur.execute("SELECT plan_name FROM account_plans WHERE account_id = %s", (acct,))
         row = cur.fetchone()
     plan_name = row[0] if row else "pro"
     return {
         "plan_name": plan_name,
-        "modules": get_account_modules(current_user["account_id"], db),
+        "modules": get_account_modules(acct, db),
+        **business_type_profile(_account_business_type(acct, db)),
     }
 
 
@@ -166,6 +187,29 @@ def update_account_plan(
         )
         db.commit()
     return {"plan_name": plan_name, "modules": get_account_modules(acct, db)}
+
+
+@router.patch("/account/business-type")
+def update_business_type(
+    body: BusinessTypeUpdate,
+    current_user: dict = Depends(require_owner),
+    db: PGConn = Depends(get_db),
+):
+    """Owner switches the account's business type (terminology/categories preset).
+
+    Does not touch enabled modules — those remain under the plan + /account/plan;
+    switching type only changes how the product reads. Returns the new profile.
+    """
+    if body.business_type not in BUSINESS_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unknown business type: {body.business_type}")
+    acct = current_user["account_id"]
+    with db.cursor() as cur:
+        cur.execute(
+            "UPDATE accounts SET business_type = %s WHERE id = %s",
+            (body.business_type, acct),
+        )
+        db.commit()
+    return business_type_profile(body.business_type)
 
 
 @router.patch("/auth/onboarding-complete")

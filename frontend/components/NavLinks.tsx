@@ -2,6 +2,7 @@
 import Link from 'next/link'
 import { NAV_ITEMS, isNavVisible } from '@/lib/nav'
 import { useEntitlements } from '@/hooks/useEntitlements'
+import { useTerminology } from '@/hooks/useTerminology'
 
 /**
  * Primary feature navigation, rendered from the central NAV_ITEMS config and
@@ -21,7 +22,9 @@ export function NavLinks({
   onNavigate?: () => void
 }) {
   const { hasModule } = useEntitlements()
+  const { t } = useTerminology()
   const items = NAV_ITEMS.filter((it) => it.href !== current && isNavVisible(it, hasModule))
+  const labelOf = (it: typeof NAV_ITEMS[number]) => (it.termKey ? t(it.termKey) : it.label)
 
   if (variant === 'desktop') {
     return (
@@ -32,12 +35,12 @@ export function NavLinks({
             <Link
               key={it.href}
               href={it.href}
-              title={it.label}
+              title={labelOf(it)}
               className="dash-icon-btn"
               style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}
             >
               <Icon size={13} strokeWidth={1.5} />
-              <span>{it.shortLabel ?? it.label}</span>
+              <span>{it.shortLabel ?? labelOf(it)}</span>
             </Link>
           )
         })}
@@ -63,7 +66,7 @@ export function NavLinks({
             }}
           >
             <Icon size={18} strokeWidth={1.5} color="var(--color-ink-500)" />
-            {it.label}
+            {labelOf(it)}
           </Link>
         )
       })}

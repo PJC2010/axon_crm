@@ -314,9 +314,21 @@ export type ModuleKey =
 
 export type ModuleMap = Record<ModuleKey, boolean>
 
+// A category option ("vertical" in home-services terms). Driven by business type.
+export interface Category {
+  value: string
+  label: string
+}
+
 export interface AccountFeatures {
   plan_name: string
   modules: ModuleMap
+  // Business-type profile (see api/business_types.py). Optional so older payloads
+  // / pre-load states degrade gracefully to home-services defaults.
+  business_type?: string
+  property_based?: boolean
+  terminology?: Record<string, string>
+  categories?: Category[]
 }
 
 export interface User {
@@ -328,6 +340,7 @@ export interface User {
   onboarding_complete: boolean
   // Populated by GET /auth/me; enabled feature modules for this user's account.
   modules?: Partial<ModuleMap>
+  business_type?: string
 }
 
 export interface ChecklistStatus {
