@@ -17,8 +17,14 @@ from psycopg2.extensions import connection as PGConn
 from pydantic import BaseModel
 
 from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user, require_owner
+from api.entitlements import require_module
 
 router = APIRouter()
+
+# Data-acquisition / "pipeline refresh" endpoints below are gated on the
+# `prospecting` module. The Kanban board *view* endpoints (get_pipeline,
+# pipeline_stats, stage CRUD, analytics, etc.) stay part of `core`.
+_prospecting = Depends(require_module("prospecting"))
 
 PIPELINE_STAGES = ["new", "contacted", "qualified", "quote_sent", "won", "lost", "not_interested"]
 
@@ -494,7 +500,7 @@ def update_job_value(lead_id: int, body: JobValueUpdate, user: dict = Depends(ge
 # ── Schedules ─────────────────────────────────────────────────────────────────
 
 @router.get("/pipeline-schedules")
-def list_schedules(user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+def list_schedules(user: dict = Depends(get_current_user), db: PGConn = Depends(get_db), _mod: dict = _prospecting):
     with db.cursor() as cur:
         cur.execute(
             "SELECT * FROM pipeline_schedules WHERE account_id = %s ORDER BY id",
@@ -504,7 +510,7 @@ def list_schedules(user: dict = Depends(get_current_user), db: PGConn = Depends(
 
 
 @router.post("/pipeline-schedules", status_code=201)
-def create_schedule(body: ScheduleCreate, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+def create_schedule(body: ScheduleCreate, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db), _mod: dict = _prospecting):
     from api.scheduler import add_schedule_job
     with db.cursor() as cur:
         cur.execute(
@@ -526,6 +532,7 @@ def update_schedule(
     body: ScheduleUpdate,
     current_user: dict = Depends(require_owner),
     db: PGConn = Depends(get_db),
+    _mod: dict = _prospecting,
 ):
     from api.scheduler import remove_schedule_job, add_schedule_job
     sets, params = [], []
@@ -560,7 +567,7 @@ def update_schedule(
 
 
 @router.delete("/pipeline-schedules/{schedule_id}", status_code=204)
-def delete_schedule(schedule_id: int, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+def delete_schedule(schedule_id: int, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db), _mod: dict = _prospecting):
     from api.scheduler import remove_schedule_job
     remove_schedule_job(schedule_id)
     with db.cursor() as cur:
@@ -577,7 +584,7 @@ def delete_schedule(schedule_id: int, current_user: dict = Depends(require_owner
 # ── Manual runs ───────────────────────────────────────────────────────────────
 
 @router.post("/pipeline/run", status_code=201)
-def trigger_run(body: RunCreate, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+def trigger_run(body: RunCreate, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db), _mod: dict = _prospecting):
     from api.ratelimit import pipeline_run_limiter
     from api.scheduler import enqueue_run, enqueue_region_run
     # Manual runs spend real enrichment-API dollars — throttle per account.
@@ -609,7 +616,7 @@ def trigger_run(body: RunCreate, current_user: dict = Depends(require_owner), db
 
 
 @router.get("/pipeline/runs")
-def list_runs(limit: int = Query(20, ge=1, le=100), user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+def list_runs(limit: int = Query(20, ge=1, le=100), user: dict = Depends(get_current_user), db: PGConn = Depends(get_db), _mod: dict = _prospecting):
     with db.cursor() as cur:
         cur.execute(
             "SELECT * FROM pipeline_runs WHERE account_id = %s ORDER BY created_at DESC LIMIT %s",
@@ -619,7 +626,7 @@ def list_runs(limit: int = Query(20, ge=1, le=100), user: dict = Depends(get_cur
 
 
 @router.get("/pipeline/runs/{run_id}")
-def get_run(run_id: int, user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+def get_run(run_id: int, user: dict = Depends(get_current_user), db: PGConn = Depends(get_db), _mod: dict = _prospecting):
     with db.cursor() as cur:
         cur.execute("SELECT * FROM pipeline_runs WHERE id = %s AND account_id = %s", (run_id, user["account_id"]))
         row = dict_fetchone(cur)
@@ -629,7 +636,7 @@ def get_run(run_id: int, user: dict = Depends(get_current_user), db: PGConn = De
 
 
 @router.post("/pipeline/rescore")
-def rescore(body: RunCreate, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+def rescore(body: RunCreate, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db), _mod: dict = _prospecting):
     """Score (or re-score) all leads in a ZIP without re-running the full pipeline."""
     import sys, os
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -639,7 +646,7 @@ def rescore(body: RunCreate, current_user: dict = Depends(require_owner), db: PG
 
 
 @router.post("/pipeline/rescore-all")
-def rescore_all(current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+def rescore_all(current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db), _mod: dict = _prospecting):
     """Score (or re-score) all leads in every ZIP for this org."""
     import sys, os
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -663,7 +670,7 @@ def rescore_all(current_user: dict = Depends(require_owner), db: PGConn = Depend
 
 
 @router.delete("/pipeline/runs/{run_id}", status_code=204)
-def cancel_run(run_id: int, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+def cancel_run(run_id: int, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db), _mod: dict = _prospecting):
     """Signal a running pipeline to stop after its current step."""
     from api.scheduler import request_cancel
     acct = current_user["account_id"]

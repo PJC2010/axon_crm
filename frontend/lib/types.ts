@@ -302,6 +302,23 @@ export interface PipelineCounts {
   overdue: number
 }
 
+// Optional, gateable feature modules. Mirrors api/entitlements.py MODULE_KEYS.
+export type ModuleKey =
+  | 'prospecting'
+  | 'map'
+  | 'invoicing'
+  | 'bookkeeping'
+  | 'quotes'
+  | 'marketing'
+  | 'automation'
+
+export type ModuleMap = Record<ModuleKey, boolean>
+
+export interface AccountFeatures {
+  plan_name: string
+  modules: ModuleMap
+}
+
 export interface User {
   id: number
   username: string
@@ -309,6 +326,8 @@ export interface User {
   role: string
   is_active: boolean
   onboarding_complete: boolean
+  // Populated by GET /auth/me; enabled feature modules for this user's account.
+  modules?: Partial<ModuleMap>
 }
 
 export interface ChecklistStatus {

@@ -2,9 +2,10 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from api.entitlements import require_module
 from api.routes import leads, notes, history, export
 from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, hcad, workflows, imports, quotes
 from api.routes import connections, insights, ml, oauth, map as map_routes
@@ -69,19 +70,36 @@ app.include_router(leads.router,    prefix="/api", tags=["Leads"])
 app.include_router(notes.router,    prefix="/api", tags=["Notes"])
 app.include_router(history.router,  prefix="/api", tags=["History"])
 app.include_router(export.router,   prefix="/api", tags=["Export"])
+# Tasks and the core pipeline (Kanban board view + stages) are part of `core` and
+# are always available. The data-acquisition/refresh endpoints inside pipeline.py
+# are gated per-endpoint on the `prospecting` module (see api/routes/pipeline.py).
 app.include_router(tasks.router,    prefix="/api", tags=["Tasks"])
 app.include_router(pipeline.router,  prefix="/api", tags=["Pipeline"])
-app.include_router(expenses.router,    prefix="/api", tags=["Expenses"])
-app.include_router(invoices.router,    prefix="/api", tags=["Invoices"])
-app.include_router(quotes.router,      prefix="/api", tags=["Quotes"])
-app.include_router(bookkeeping.router, prefix="/api", tags=["Bookkeeping"])
-app.include_router(hcad.router,        prefix="/api", tags=["HCAD"])
-app.include_router(workflows.router,   prefix="/api", tags=["Workflows"])
-app.include_router(imports.router,     prefix="/api", tags=["Import"])
+# Single-concern feature routers are gated as whole modules here. Mixed-concern
+# routers (pipeline.py) gate per-endpoint instead. connections.py stays ungated:
+# it is generic integration infra (Meta + Stripe OAuth); only the marketing
+# *analytics* (insights.py) is gated on the `marketing` module.
+app.include_router(expenses.router,    prefix="/api", tags=["Expenses"],
+                   dependencies=[Depends(require_module("bookkeeping"))])
+app.include_router(invoices.router,    prefix="/api", tags=["Invoices"],
+                   dependencies=[Depends(require_module("invoicing"))])
+app.include_router(quotes.router,      prefix="/api", tags=["Quotes"],
+                   dependencies=[Depends(require_module("quotes"))])
+app.include_router(bookkeeping.router, prefix="/api", tags=["Bookkeeping"],
+                   dependencies=[Depends(require_module("bookkeeping"))])
+app.include_router(hcad.router,        prefix="/api", tags=["HCAD"],
+                   dependencies=[Depends(require_module("prospecting"))])
+app.include_router(workflows.router,   prefix="/api", tags=["Workflows"],
+                   dependencies=[Depends(require_module("automation"))])
+app.include_router(imports.router,     prefix="/api", tags=["Import"],
+                   dependencies=[Depends(require_module("prospecting"))])
 app.include_router(connections.router, prefix="/api", tags=["Connections"])
-app.include_router(insights.router,    prefix="/api", tags=["Insights"])
-app.include_router(ml.router,          prefix="/api", tags=["ML"])
-app.include_router(map_routes.router,  prefix="/api", tags=["Map"])
+app.include_router(insights.router,    prefix="/api", tags=["Insights"],
+                   dependencies=[Depends(require_module("marketing"))])
+app.include_router(ml.router,          prefix="/api", tags=["ML"],
+                   dependencies=[Depends(require_module("prospecting"))])
+app.include_router(map_routes.router,  prefix="/api", tags=["Map"],
+                   dependencies=[Depends(require_module("map"))])
 
 
 @app.get("/api/health")

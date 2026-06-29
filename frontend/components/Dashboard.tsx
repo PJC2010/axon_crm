@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { RefreshCw, AlertCircle, Kanban, CheckSquare, Settings, LogOut, Receipt, BookOpen, Home, Menu, X, Map as MapIcon } from 'lucide-react'
+import { RefreshCw, AlertCircle, Settings, LogOut, Menu, X } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getLeads, getLead, getLeadByNumber } from '@/lib/api'
@@ -15,6 +15,8 @@ import { ImportContactsModal } from './ImportContactsModal'
 import { TaskBell } from './TaskBell'
 import { ToastStack, useToast } from './Toast'
 import { QuickAddFAB } from './QuickAddFAB'
+import { NavLinks } from './NavLinks'
+import { clearEntitlementsCache } from '@/hooks/useEntitlements'
 
 const DEFAULT_FILTERS: LeadFilters = { sort: 'score', page: 1, page_size: 50 }
 
@@ -44,6 +46,7 @@ export function Dashboard() {
 
   function handleSignOut() {
     clearToken()
+    clearEntitlementsCache()
     router.push('/login')
   }
 
@@ -147,30 +150,7 @@ export function Dashboard() {
 
         {wide ? (
           <div className="flex items-center gap-1">
-            <Link href="/home" title="Home" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
-              <Home size={13} strokeWidth={1.5} />
-              <span>Home</span>
-            </Link>
-            <Link href="/pipeline" title="Pipeline" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
-              <Kanban size={13} strokeWidth={1.5} />
-              <span>Pipeline</span>
-            </Link>
-            <Link href="/map" title="Map" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
-              <MapIcon size={13} strokeWidth={1.5} />
-              <span>Map</span>
-            </Link>
-            <Link href="/tasks" title="Tasks" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
-              <CheckSquare size={13} strokeWidth={1.5} />
-              <span>Tasks</span>
-            </Link>
-            <Link href="/expenses" title="Expenses" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
-              <Receipt size={13} strokeWidth={1.5} />
-              <span>Expenses</span>
-            </Link>
-            <Link href="/bookkeeping" title="Bookkeeping" className="dash-icon-btn" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', textDecoration: 'none', color: 'inherit', fontSize: 13 }}>
-              <BookOpen size={13} strokeWidth={1.5} />
-              <span>Books</span>
-            </Link>
+            <NavLinks variant="desktop" current="/dashboard" />
             <CustomerSearch />
             <TaskBell />
             <ImportContactsModal onImported={() => fetchLeads(filters)} />
@@ -227,31 +207,21 @@ export function Dashboard() {
             padding: 8,
             display: 'flex', flexDirection: 'column', gap: 2,
           }}>
-            {[
-              { label: 'Home',        icon: <Home size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,        href: '/home' },
-              { label: 'Pipeline',    icon: <Kanban size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,      href: '/pipeline' },
-              { label: 'Map',         icon: <MapIcon size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,     href: '/map' },
-              { label: 'Tasks',       icon: <CheckSquare size={18} strokeWidth={1.5} color="var(--color-ink-500)" />, href: '/tasks' },
-              { label: 'Expenses',    icon: <Receipt size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,     href: '/expenses' },
-              { label: 'Bookkeeping', icon: <BookOpen size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,    href: '/bookkeeping' },
-              { label: 'Settings',    icon: <Settings size={18} strokeWidth={1.5} color="var(--color-ink-500)" />,    href: '/settings' },
-            ].map(({ label, icon, href }) => (
-              <Link
-                key={href}
-                href={href}
-                onClick={() => setMenuOpen(false)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 12,
-                  padding: '12px 14px', minHeight: 48,
-                  borderRadius: 'var(--radius-button)',
-                  textDecoration: 'none', color: 'var(--color-ink-800)',
-                  fontSize: 15, fontWeight: 500,
-                }}
-              >
-                {icon}
-                {label}
-              </Link>
-            ))}
+            <NavLinks variant="mobile" current="/dashboard" onNavigate={() => setMenuOpen(false)} />
+            <Link
+              href="/settings"
+              onClick={() => setMenuOpen(false)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '12px 14px', minHeight: 48,
+                borderRadius: 'var(--radius-button)',
+                textDecoration: 'none', color: 'var(--color-ink-800)',
+                fontSize: 15, fontWeight: 500,
+              }}
+            >
+              <Settings size={18} strokeWidth={1.5} color="var(--color-ink-500)" />
+              Settings
+            </Link>
 
             {/* Lead actions */}
             <div style={{ borderTop: '1px solid var(--color-ink-100)', margin: '6px 0', paddingTop: 10 }}>
