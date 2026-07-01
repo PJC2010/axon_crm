@@ -114,6 +114,30 @@ export function HomeDashboard() {
         expenses:      expRes.status       === 'fulfilled' ? expRes.value            : null,
         recentLeads:   leadsRes.status     === 'fulfilled' ? leadsRes.value.results  : [],
       })
+
+      // Promise.allSettled never rejects itself, so a source failing (network error,
+      // 403 module-not-enabled, 500, etc.) would otherwise render as a silent '—'
+      // with no indication anything went wrong. Surface it explicitly instead.
+      const sources: { label: string; res: PromiseSettledResult<unknown> }[] = [
+        { label: 'Tasks', res: countsRes },
+        { label: 'Pipeline', res: statsRes },
+        { label: 'Accounts receivable', res: arRes },
+        { label: 'Forecast', res: forecastRes },
+        { label: 'Win rate', res: analyticsRes },
+        { label: 'P&L', res: pnlRes },
+        { label: 'Expenses', res: expRes },
+        { label: 'Recent leads', res: leadsRes },
+      ]
+      const failed = sources.filter((s): s is { label: string; res: PromiseRejectedResult } => s.res.status === 'rejected')
+      if (failed.length > 0) {
+        const names = failed.map(f => f.label).join(', ')
+        const moduleDisabled = failed.some(f => /API 403/.test(String(f.res.reason?.message ?? '')))
+        setError(
+          moduleDisabled
+            ? `${names}: not available on your current plan. Check Settings → Plan to enable these modules.`
+            : `Couldn't load: ${names}. Refresh to retry.`
+        )
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load dashboard')
     } finally {
