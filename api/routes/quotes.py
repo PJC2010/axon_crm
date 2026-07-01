@@ -40,6 +40,14 @@ log = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Public, token-addressed routes (see module docstring). Registered on their own
+# router in main.py, without the `require_module("quotes")` gate: a customer
+# opening a shared quote link shouldn't need the seller's plan/module, and
+# gating them would also attach `get_current_user` (which accepts a `?token=`
+# query param for CSV-export auth) to a route whose *path* parameter is also
+# named `token`, tripping FastAPI's path/query param collision check.
+public_router = APIRouter()
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -422,7 +430,7 @@ def _public_payload(db: PGConn, quote: dict) -> dict:
     }
 
 
-@router.get("/public/quotes/{token}")
+@public_router.get("/public/quotes/{token}")
 def public_view_quote(token: str, request: Request, db: PGConn = Depends(get_db)):
     public_quote_limiter.check(client_ip(request))
     quote = _get_public_quote(db, token)
@@ -437,7 +445,7 @@ def public_view_quote(token: str, request: Request, db: PGConn = Depends(get_db)
     return _public_payload(db, quote)
 
 
-@router.post("/public/quotes/{token}/accept")
+@public_router.post("/public/quotes/{token}/accept")
 def public_accept_quote(token: str, request: Request, db: PGConn = Depends(get_db)):
     public_quote_limiter.check(client_ip(request))
     quote = _get_public_quote(db, token)
@@ -462,7 +470,7 @@ def public_accept_quote(token: str, request: Request, db: PGConn = Depends(get_d
     return _public_payload(db, _get_public_quote(db, token))
 
 
-@router.post("/public/quotes/{token}/decline")
+@public_router.post("/public/quotes/{token}/decline")
 def public_decline_quote(token: str, body: PublicDeclineRequest, request: Request, db: PGConn = Depends(get_db)):
     public_quote_limiter.check(client_ip(request))
     quote = _get_public_quote(db, token)

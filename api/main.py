@@ -87,6 +87,12 @@ app.include_router(invoices.router,    prefix="/api", tags=["Invoices"],
                    dependencies=[Depends(require_module("invoicing"))])
 app.include_router(quotes.router,      prefix="/api", tags=["Quotes"],
                    dependencies=[Depends(require_module("quotes"))])
+# Public, token-addressed customer-facing links stay ungated: they must work
+# without the seller's login or plan, and gating them re-introduces a `token`
+# path/query param collision with `get_current_user` (see api/routes/invoices.py
+# and api/routes/quotes.py).
+app.include_router(invoices.public_router, prefix="/api", tags=["Invoices"])
+app.include_router(quotes.public_router,   prefix="/api", tags=["Quotes"])
 app.include_router(bookkeeping.router, prefix="/api", tags=["Bookkeeping"],
                    dependencies=[Depends(require_module("bookkeeping"))])
 app.include_router(hcad.router,        prefix="/api", tags=["HCAD"],
