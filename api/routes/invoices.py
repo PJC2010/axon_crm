@@ -32,6 +32,14 @@ from api.models import (
 
 router = APIRouter()
 
+# Public, token-addressed route (see below). Registered on its own router in
+# main.py, without the `require_module("invoicing")` gate: a customer opening
+# a texted/MMS'd invoice link shouldn't need the seller's plan/module, and
+# gating it would also attach `get_current_user` (which accepts a `?token=`
+# query param for CSV-export auth) to a route whose *path* parameter is also
+# named `token`, tripping FastAPI's path/query param collision check.
+public_router = APIRouter()
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 # Payment-state helpers (_calc_totals, _recalc_paid, _update_invoice_payment_state,
@@ -489,7 +497,7 @@ def send_invoice(
 # Addressed by the invoice's unguessable token, no auth. Serves only the rendered
 # PDF — no ids or account internals — so a texted/MMS'd link is safe to share.
 
-@router.get("/public/invoices/{token}/pdf", name="public_invoice_pdf")
+@public_router.get("/public/invoices/{token}/pdf", name="public_invoice_pdf")
 def public_invoice_pdf(token: str, db: PGConn = Depends(get_db)):
     with db.cursor() as cur:
         cur.execute(
