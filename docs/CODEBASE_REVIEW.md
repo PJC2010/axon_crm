@@ -74,6 +74,8 @@ Axon CRM v1 is a multi-tenant CRM for small service businesses built on FastAPI 
 
 This is the product's moat — Jobber, Housecall Pro, and ServiceTitan all assume the customer brings their own leads. Axon *generates* them. Everything below builds on infrastructure that already exists; nothing requires a new platform.
 
+> For the multi-vertical platform strategy (insurance, retail, appointment-based businesses), see [`GENERALIZATION_ROADMAP.md`](GENERALIZATION_ROADMAP.md).
+
 ### 3.1 Event-driven lead triggers (highest value)
 
 Today the pipeline scores **static state** (home age, equity, garage). The most valuable signals in home services are **timing events** — and the schema already stores the raw material:
