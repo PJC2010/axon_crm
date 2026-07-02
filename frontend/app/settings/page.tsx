@@ -9,6 +9,7 @@ import { WorkflowRuleForm, describeTrigger } from '@/components/WorkflowRuleForm
 import { ConnectionsSection } from '@/components/ConnectionsSection'
 import { CustomFieldsSettings } from '@/components/CustomFieldsSettings'
 import { MessageTemplatesSettings } from '@/components/MessageTemplatesSettings'
+import { ImportOrdersModal } from '@/components/ImportOrdersModal'
 import { RescoreSection } from '@/components/RescoreSection'
 import { useEntitlements } from '@/hooks/useEntitlements'
 import { useTerminology } from '@/hooks/useTerminology'
@@ -435,6 +436,17 @@ function SettingsPage() {
         <CustomFieldsSettings />
 
         <MessageTemplatesSettings />
+
+        {hasModule('orders') && (
+          <section>
+            <h2 className="t-eyebrow" style={{ marginBottom: 6 }}>Orders</h2>
+            <p style={{ fontSize: 13, color: 'var(--color-ink-400)', margin: '0 0 12px' }}>
+              Import your Square or Shopify order history. Customers are matched by email and their
+              purchase history feeds RFM scoring automatically.
+            </p>
+            <ImportOrdersModal />
+          </section>
+        )}
 
         <RescoreSection />
 

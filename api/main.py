@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.entitlements import require_module
 from api.routes import leads, notes, history, export, record_fields, segments, messaging
 from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, hcad, workflows, imports, quotes
-from api.routes import policies, orders, appointments, objects
+from api.routes import policies, orders, appointments, objects, order_imports
 from api.routes import connections, insights, ml, oauth, map as map_routes
 
 log = logging.getLogger(__name__)
@@ -112,6 +112,8 @@ app.include_router(bookkeeping.router, prefix="/api", tags=["Bookkeeping"],
 app.include_router(policies.router,     prefix="/api", tags=["Policies"],
                    dependencies=[Depends(require_module("policies"))])
 app.include_router(orders.router,       prefix="/api", tags=["Orders"],
+                   dependencies=[Depends(require_module("orders"))])
+app.include_router(order_imports.router, prefix="/api", tags=["Orders"],
                    dependencies=[Depends(require_module("orders"))])
 app.include_router(appointments.router, prefix="/api", tags=["Appointments"],
                    dependencies=[Depends(require_module("appointments"))])

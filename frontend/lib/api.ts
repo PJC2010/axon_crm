@@ -773,16 +773,44 @@ export function runContactImport(
 
 // Fetch the sample CSV as a blob (auth header required) and trigger a download.
 export async function downloadContactTemplate(): Promise<void> {
+  return _downloadCsv('/imports/contacts/template', 'axon_import_template.csv')
+}
+
+// ── Retail orders import (Square / Shopify) ──────────────────────────────────
+
+export function previewOrderImport(file: File): Promise<ImportPreview> {
+  const form = new FormData()
+  form.append('file', file)
+  return multipart<ImportPreview>('/imports/orders/preview', form)
+}
+
+export function runOrderImport(
+  file: File,
+  mapping: Record<string, string>,
+  opts: { default_channel?: string } = {},
+): Promise<ImportResult> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('mapping', JSON.stringify(mapping))
+  if (opts.default_channel) form.append('default_channel', opts.default_channel)
+  return multipart<ImportResult>('/imports/orders', form)
+}
+
+export async function downloadOrderTemplate(): Promise<void> {
+  return _downloadCsv('/imports/orders/template', 'axon_orders_template.csv')
+}
+
+async function _downloadCsv(path: string, filename: string): Promise<void> {
   const token = getToken()
   const headers: Record<string, string> = {}
   if (token) headers['Authorization'] = `Bearer ${token}`
-  const res = await fetch(`${BASE}/imports/contacts/template`, { headers })
+  const res = await fetch(`${BASE}${path}`, { headers })
   if (!res.ok) throw new Error(`API ${res.status}`)
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = 'axon_import_template.csv'
+  a.download = filename
   a.click()
   URL.revokeObjectURL(url)
 }
