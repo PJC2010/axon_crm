@@ -205,6 +205,9 @@ class InvoicePayment(BaseModel):
         from_attributes = True
 
 
+INVOICE_RECURRENCES = ["weekly", "monthly", "quarterly", "annual"]
+
+
 class InvoiceCreate(BaseModel):
     property_id: Optional[int] = None
     client_name: str
@@ -216,6 +219,9 @@ class InvoiceCreate(BaseModel):
     due_date: Optional[date] = None
     notes: Optional[str] = None
     line_items: list[LineItemCreate]
+    # Recurring revenue (memberships/retainers): cadence + optional end date.
+    recurrence: Optional[str] = None
+    recurrence_end: Optional[date] = None
 
 
 class InvoiceUpdate(BaseModel):
@@ -229,6 +235,9 @@ class InvoiceUpdate(BaseModel):
     due_date: Optional[date] = None
     notes: Optional[str] = None
     line_items: Optional[list[LineItemCreate]] = None
+    # Pass recurrence="" (or null) to stop a series; a cadence to (re)start it.
+    recurrence: Optional[str] = None
+    recurrence_end: Optional[date] = None
 
 
 class Invoice(BaseModel):
@@ -253,6 +262,10 @@ class Invoice(BaseModel):
     created_at: datetime
     line_items: list[LineItem] = []
     payments: list[InvoicePayment] = []
+    recurrence: Optional[str] = None
+    recurrence_next: Optional[date] = None
+    recurrence_end: Optional[date] = None
+    recurring_source_id: Optional[int] = None
 
     class Config:
         from_attributes = True

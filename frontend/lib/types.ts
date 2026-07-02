@@ -526,7 +526,14 @@ export interface Invoice {
   // delivery tracking
   sent_at?: string | null
   sent_channels?: string[] | null
+  // recurring revenue
+  recurrence?: InvoiceRecurrence | null
+  recurrence_next?: string | null
+  recurrence_end?: string | null
+  recurring_source_id?: number | null
 }
+
+export type InvoiceRecurrence = 'weekly' | 'monthly' | 'quarterly' | 'annual'
 
 export interface InvoiceCreate {
   property_id?: number
@@ -539,6 +546,9 @@ export interface InvoiceCreate {
   due_date?: string
   notes?: string
   line_items: { description: string; quantity: number; unit_price: number; sort_order?: number }[]
+  // '' stops a series; a cadence starts/updates it.
+  recurrence?: InvoiceRecurrence | ''
+  recurrence_end?: string
 }
 
 export interface InvoiceFilters {

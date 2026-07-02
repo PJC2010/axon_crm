@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Download } from 'lucide-react'
+import { Plus, Download, Repeat } from 'lucide-react'
 import { getInvoices, invoiceExportUrl } from '@/lib/api'
 import type { Invoice, InvoiceStatus, InvoiceFilters, InvoiceCreate, Lead } from '@/lib/types'
 import { InvoiceForm } from './InvoiceForm'
@@ -142,6 +142,11 @@ export function InvoiceList({ year, prefillLead, onToast }: Props) {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
                     <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--color-ink-500)' }}>{inv.invoice_number}</span>
                     <span style={{ padding: '2px 8px', borderRadius: 'var(--radius-pill)', fontSize: 11, fontWeight: 600, background: s.bg, color: s.text, textTransform: 'capitalize' }}>{inv.status}</span>
+                    {inv.recurrence && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', borderRadius: 'var(--radius-pill)', fontSize: 11, fontWeight: 600, background: 'var(--color-accent-50)', color: 'var(--color-accent)' }}>
+                        <Repeat size={10} strokeWidth={2} /> {inv.recurrence}
+                      </span>
+                    )}
                   </div>
                   <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--color-ink-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.client_name}</div>
                   <div style={{ fontSize: 12, color: 'var(--color-ink-400)', marginTop: 2 }}>

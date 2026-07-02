@@ -357,6 +357,7 @@ def schedule_retraining():
 # just avoids the wasted concurrent scans.
 WORKFLOW_TICK_LOCK_KEY = 742026001
 ACCOUNT_RESCORE_LOCK_KEY = 742026002
+RECURRING_INVOICE_LOCK_KEY = 742026003
 
 
 def run_workflow_daily_tick():
@@ -432,6 +433,42 @@ def schedule_account_rescore():
         misfire_grace_time=3600,
     )
     log.info("Scheduled daily account rescore at %02d:45 UTC", WORKFLOW_TICK_HOUR)
+
+
+def run_recurring_invoice_tick():
+    """Daily: generate the next occurrence of every due recurring invoice."""
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_try_advisory_lock(%s)", (RECURRING_INVOICE_LOCK_KEY,))
+            if not cur.fetchone()[0]:
+                log.info("Recurring invoice tick skipped — another worker holds the lock")
+                return
+        try:
+            from api.recurring_invoices import generate_due_invoices
+            summary = generate_due_invoices(conn)
+            log.info("Recurring invoice tick finished: %s", summary)
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_unlock(%s)", (RECURRING_INVOICE_LOCK_KEY,))
+            conn.commit()
+    except Exception:
+        log.exception("Recurring invoice tick failed")
+    finally:
+        conn.close()
+
+
+def schedule_recurring_invoices():
+    """Register the daily recurring-invoice cron (idempotent)."""
+    from config import WORKFLOW_TICK_HOUR
+    scheduler.add_job(
+        run_recurring_invoice_tick,
+        trigger=CronTrigger(hour=WORKFLOW_TICK_HOUR, minute=30, timezone="UTC"),
+        id="recurring_invoices_daily",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    log.info("Scheduled daily recurring invoices at %02d:30 UTC", WORKFLOW_TICK_HOUR)
 
 
 def load_active_schedules():
