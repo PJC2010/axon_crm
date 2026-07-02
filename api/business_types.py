@@ -49,6 +49,12 @@ BASE_TERMINOLOGY: dict[str, str] = {
 }
 
 
+# Default dashboard KPI set (the pre-Phase-6 hardcoded tiles). Presets override
+# to surface their vertical's numbers; frontend/components/HomeDashboard.tsx
+# maps these ids to tiles.
+DEFAULT_KPIS: tuple[str, ...] = ("revenue_mtd", "outstanding_ar", "win_rate", "forecast")
+
+
 @dataclass(frozen=True)
 class BusinessType:
     key: str
@@ -58,6 +64,21 @@ class BusinessType:
     categories: list[dict[str, str]]
     # Only the overrides vs BASE_TERMINOLOGY; resolve_terminology() merges them.
     terminology_overrides: dict[str, str] = field(default_factory=dict)
+    # ── Provisioning pack (Phase 6) ────────────────────────────────────────────
+    # Pipeline stages seeded at account creation / opt-in switch. None → the
+    # classic accounts.DEFAULT_STAGES. Tuples match the pipeline_stages insert:
+    # (key, label, color, sort_order, is_terminal, is_default).
+    default_stages: tuple | None = None
+    # record_field_defs seeds: {"key", "label", "field_type", "options"?}.
+    default_fields: tuple = ()
+    # workflow_rules seeds (full rule shape incl. trigger_type/action_type).
+    # Seeded separately from create_account because rules need a creator user
+    # (scheduled rules run as created_by) — see accounts.seed_business_type_workflows.
+    default_workflows: tuple = ()
+    # Dashboard KPI tile ids for this vertical (see HomeDashboard KPI config).
+    kpis: tuple[str, ...] = DEFAULT_KPIS
+    # Child-object modules this preset is built around (subset of MODULE_KEYS).
+    objects: tuple[str, ...] = ()
 
 
 # The 8 home-services verticals (keys match config.py JOB_VALUE_MODEL /
@@ -87,6 +108,83 @@ _PROFESSIONAL_SERVICES_CATEGORIES = [
     {"value": "project", "label": "Project"},
     {"value": "advisory", "label": "Advisory"},
 ]
+
+_INSURANCE_CATEGORIES = [
+    {"value": "auto", "label": "Auto"},
+    {"value": "home", "label": "Home"},
+    {"value": "life", "label": "Life"},
+    {"value": "health", "label": "Health"},
+    {"value": "commercial", "label": "Commercial"},
+]
+
+_RETAIL_CATEGORIES = [
+    {"value": "in_store", "label": "In store"},
+    {"value": "online", "label": "Online"},
+    {"value": "marketplace", "label": "Marketplace"},
+    {"value": "wholesale", "label": "Wholesale"},
+]
+
+# Insurance pipeline mirrors the sales→bound→renewal book lifecycle.
+_INSURANCE_STAGES = (
+    ("prospect", "Prospect", "var(--color-ink-300)", 0, False, True),
+    ("quoted",   "Quoted",   "var(--color-gold)",    1, False, False),
+    ("bound",    "Bound",    "var(--color-moss)",    2, False, False),
+    ("renewal",  "Renewal",  "var(--color-ocean)",   3, False, False),
+    ("lost",     "Lost",     "var(--color-danger)",  4, True,  False),
+)
+
+# Retail stages are customer-lifecycle segments, not a deal funnel.
+_RETAIL_STAGES = (
+    ("new",     "New",     "var(--color-ink-300)", 0, False, True),
+    ("repeat",  "Repeat",  "var(--color-ocean)",   1, False, False),
+    ("vip",     "VIP",     "var(--color-moss)",    2, False, False),
+    ("at_risk", "At risk", "var(--color-gold)",    3, False, False),
+    ("lapsed",  "Lapsed",  "var(--color-danger)",  4, True,  False),
+)
+
+# X-date automation: the whole reason an agency runs a CRM. Rules target the
+# policies child table via the Phase-4 date_offset trigger; the firings ledger
+# fires each policy's renewal exactly once per offset per expiration date.
+_INSURANCE_WORKFLOWS = (
+    {
+        "name": "Renewal — 90 days out",
+        "trigger_type": "date_offset",
+        "trigger_config": {"source": "policies", "date_field": "expiration_date", "offset_days": -90},
+        "action_type": "create_task",
+        "action_config": {"title": "Renewal in 90 days — start remarketing quotes", "due_days_offset": 7, "priority": "normal"},
+    },
+    {
+        "name": "Renewal — 30 days out",
+        "trigger_type": "date_offset",
+        "trigger_config": {"source": "policies", "date_field": "expiration_date", "offset_days": -30},
+        "action_type": "create_task",
+        "action_config": {"title": "Renewal in 30 days — present renewal terms", "due_days_offset": 3, "priority": "high"},
+    },
+    {
+        "name": "Renewal — 7 days out",
+        "trigger_type": "date_offset",
+        "trigger_config": {"source": "policies", "date_field": "expiration_date", "offset_days": -7},
+        "action_type": "create_task",
+        "action_config": {"title": "Renewal in 7 days — confirm binding", "due_days_offset": 1, "priority": "urgent"},
+    },
+    {
+        "name": "Annual review call",
+        "trigger_type": "inactivity",
+        "trigger_config": {"days": 180},
+        "action_type": "create_task",
+        "action_config": {"title": "No contact in 6 months — schedule annual review", "due_days_offset": 7, "priority": "normal"},
+    },
+)
+
+_RETAIL_WORKFLOWS = (
+    {
+        "name": "Win-back — 90 days quiet",
+        "trigger_type": "inactivity",
+        "trigger_config": {"days": 90},
+        "action_type": "create_task",
+        "action_config": {"title": "No purchase in 90 days — send a win-back offer", "due_days_offset": 3, "priority": "normal"},
+    },
+)
 
 
 BUSINESS_TYPES: dict[str, BusinessType] = {
@@ -137,6 +235,61 @@ BUSINESS_TYPES: dict[str, BusinessType] = {
             "owner": "Primary contact",
         },
     ),
+    "insurance_agency": BusinessType(
+        key="insurance_agency",
+        label="Insurance agency",
+        property_based=False,
+        default_modules=_modules(prospecting=False, map=False, orders=False),
+        categories=_INSURANCE_CATEGORIES,
+        terminology_overrides={
+            "lead": "Client",
+            "leads": "Clients",
+            "record": "Client",
+            "records": "Clients",
+            "jobValue": "Premium",
+            "territory": "Book of business",
+            "category": "Line of business",
+            "categories": "Lines of business",
+            "owner": "Policyholder",
+        },
+        default_stages=_INSURANCE_STAGES,
+        default_fields=(
+            {"key": "current_carrier", "label": "Current carrier", "field_type": "text"},
+            {"key": "x_date", "label": "X-date", "field_type": "date"},
+            {"key": "household_size", "label": "Household size", "field_type": "number"},
+        ),
+        default_workflows=_INSURANCE_WORKFLOWS,
+        kpis=("premium_in_force", "active_policies", "renewals_30d", "win_rate"),
+        objects=("policies", "appointments"),
+    ),
+    "retail": BusinessType(
+        key="retail",
+        label="Retail",
+        property_based=False,
+        default_modules=_modules(prospecting=False, map=False, policies=False, appointments=False),
+        categories=_RETAIL_CATEGORIES,
+        terminology_overrides={
+            "lead": "Customer",
+            "leads": "Customers",
+            "record": "Customer",
+            "records": "Customers",
+            "jobValue": "Order value",
+            "territory": "Market",
+            "category": "Channel",
+            "categories": "Channels",
+            "owner": "Customer",
+        },
+        default_stages=_RETAIL_STAGES,
+        default_fields=(
+            {"key": "loyalty_number", "label": "Loyalty number", "field_type": "text"},
+            {"key": "birthday", "label": "Birthday", "field_type": "date"},
+            {"key": "preferred_channel", "label": "Preferred channel", "field_type": "select",
+             "options": ["in_store", "online", "marketplace"]},
+        ),
+        default_workflows=_RETAIL_WORKFLOWS,
+        kpis=("revenue_mtd", "orders_30d", "repeat_rate", "outstanding_ar"),
+        objects=("orders",),
+    ),
 }
 
 DEFAULT_BUSINESS_TYPE = "home_services"
@@ -161,4 +314,14 @@ def business_type_profile(key: str | None) -> dict:
         "property_based": bt.property_based,
         "terminology": resolve_terminology(bt.key),
         "categories": bt.categories,
+        "kpis": list(bt.kpis),
+        "objects": list(bt.objects),
     }
+
+
+def business_type_catalog() -> list[dict]:
+    """Picker payload for onboarding: every preset, in definition order."""
+    return [
+        {"key": bt.key, "label": bt.label, "property_based": bt.property_based}
+        for bt in BUSINESS_TYPES.values()
+    ]

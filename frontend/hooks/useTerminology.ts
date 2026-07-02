@@ -18,7 +18,12 @@ export interface Terminology {
   categories: Category[]
   propertyBased: boolean
   businessType: string
+  // Dashboard KPI tile ids for this business type (Phase 6 packs); the default
+  // reproduces the classic four home-services tiles.
+  kpis: string[]
 }
+
+const DEFAULT_KPIS = ['revenue_mtd', 'outstanding_ar', 'win_rate', 'forecast']
 
 export function useTerminology(): Terminology {
   const { features } = useEntitlements()
@@ -28,5 +33,6 @@ export function useTerminology(): Terminology {
     categories: features?.categories ?? DEFAULT_CATEGORIES,
     propertyBased: features?.property_based ?? true,
     businessType: features?.business_type ?? 'home_services',
+    kpis: features?.kpis ?? DEFAULT_KPIS,
   }), [features])
 }

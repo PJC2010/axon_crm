@@ -347,6 +347,27 @@ export interface AccountFeatures {
   property_based?: boolean
   terminology?: Record<string, string>
   categories?: Category[]
+  // Dashboard KPI tile ids + child objects for this business type (Phase 6).
+  kpis?: string[]
+  objects?: string[]
+}
+
+export interface BusinessTypeInfo {
+  key: string
+  label: string
+  property_based: boolean
+}
+
+// Aggregates from GET /api/objects/kpis; keys present only when the matching
+// module is enabled for the account.
+export interface ObjectKpis {
+  premium_in_force?: number
+  active_policies?: number
+  renewals_30d?: number
+  revenue_mtd?: number
+  orders_30d?: number
+  repeat_rate?: number | null
+  appointments_7d?: number
 }
 
 export interface User {

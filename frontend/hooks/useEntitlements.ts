@@ -16,6 +16,7 @@ import type { AccountFeatures, ModuleKey } from '@/lib/types'
  */
 let cache: AccountFeatures | null = null
 let inflight: Promise<AccountFeatures> | null = null
+const listeners = new Set<(f: AccountFeatures) => void>()
 
 function load(): Promise<AccountFeatures> {
   if (cache) return Promise.resolve(cache)
@@ -33,6 +34,17 @@ export function clearEntitlementsCache(): void {
   inflight = null
 }
 
+/**
+ * Re-fetch entitlements and push the fresh payload to every mounted hook —
+ * used after a business-type switch so terminology/modules update in place
+ * (mounted components otherwise keep the stale cached payload).
+ */
+export async function refreshEntitlements(): Promise<void> {
+  clearEntitlementsCache()
+  const f = await load()
+  listeners.forEach((l) => l(f))
+}
+
 export interface Entitlements {
   features: AccountFeatures | null
   loading: boolean
@@ -46,12 +58,16 @@ export function useEntitlements(): Entitlements {
 
   useEffect(() => {
     let active = true
-    if (cache) { setFeatures(cache); setLoading(false); return }
-    load()
-      .then((f) => { if (active) setFeatures(f) })
-      .catch(() => { /* permissive: leave features null so hasModule returns true */ })
-      .finally(() => { if (active) setLoading(false) })
-    return () => { active = false }
+    const listener = (f: AccountFeatures) => { if (active) setFeatures(f) }
+    listeners.add(listener)
+    if (cache) { setFeatures(cache); setLoading(false) }
+    else {
+      load()
+        .then((f) => { if (active) setFeatures(f) })
+        .catch(() => { /* permissive: leave features null so hasModule returns true */ })
+        .finally(() => { if (active) setLoading(false) })
+    }
+    return () => { active = false; listeners.delete(listener) }
   }, [])
 
   const hasModule = (m: ModuleKey): boolean => {

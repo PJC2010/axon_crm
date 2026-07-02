@@ -11,8 +11,15 @@ from datetime import date, timedelta
 import pytest
 
 import config
-from pipeline.profiles import PROFILES, DEFAULT_PROFILE_KEY, ScoringProfile, resolve_profile
+from pipeline.profiles import (
+    PROFILES, PROFILE_PERFECT_ROWS, DEFAULT_PROFILE_KEY, ScoringProfile, resolve_profile,
+)
 from pipeline.scoring import _compute_score, compute_score, explain_score
+
+# Property profiles share config.FACTOR_META; non-property profiles (RFM,
+# renewal) carry their own factor_meta and are excluded from the classic-
+# formula parity check (the classic formula only knows property signals).
+PROPERTY_PROFILE_KEYS = [k for k, p in PROFILES.items() if p.factor_meta is config.FACTOR_META]
 
 
 def today_year() -> int:
@@ -79,7 +86,7 @@ class TestParityWithClassicFormula:
     """compute_score(row, profile) == _compute_score(row, profile.weights) —
     the refactor must not change any existing score."""
 
-    @pytest.mark.parametrize("profile_key", list(PROFILES))
+    @pytest.mark.parametrize("profile_key", PROPERTY_PROFILE_KEYS)
     @pytest.mark.parametrize("row", [PERFECT_ROW, MIXED_ROW, EMPTY_ROW],
                              ids=["perfect", "mixed", "empty"])
     def test_parity(self, profile_key, row):
@@ -115,13 +122,26 @@ class TestProfileInvariants:
         """A row that maxes every one of the profile's own signals must score
         ~100 — built from the profile's factor_meta, not property assumptions."""
         profile = PROFILES[profile_key]
-        # Property profiles share PERFECT_ROW; a non-property profile's perfect
-        # row is synthesized per-field when its fields aren't in PERFECT_ROW.
-        row = dict(PERFECT_ROW)
+        # Property profiles share PERFECT_ROW; non-property profiles declare
+        # their own saturating rows in PROFILE_PERFECT_ROWS.
+        row = PROFILE_PERFECT_ROWS.get(profile_key, PERFECT_ROW)
         score = compute_score(row, profile)
         assert score == pytest.approx(100.0, abs=1.0), (
             f"Profile '{profile_key}' should score ~100 on a perfect row"
         )
+
+    @pytest.mark.parametrize("profile_key", list(PROFILE_PERFECT_ROWS))
+    def test_non_property_profiles_zero_on_empty_row(self, profile_key):
+        assert compute_score({}, PROFILES[profile_key]) == 0.0
+
+    @pytest.mark.parametrize("profile_key", list(PROFILE_PERFECT_ROWS))
+    def test_non_property_explanations_reconcile(self, profile_key):
+        profile = PROFILES[profile_key]
+        row = PROFILE_PERFECT_ROWS[profile_key]
+        result = explain_score(row, {}, profile=profile)
+        total = sum(f["contribution"] for f in result["factors"])
+        assert total == pytest.approx(result["score"], abs=0.1)
+        assert result["grade"] == "A"
 
 
 class TestExplainScoreWithProfile:

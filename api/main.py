@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.entitlements import require_module
 from api.routes import leads, notes, history, export, record_fields, segments
 from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, hcad, workflows, imports, quotes
-from api.routes import policies, orders, appointments
+from api.routes import policies, orders, appointments, objects
 from api.routes import connections, insights, ml, oauth, map as map_routes
 
 log = logging.getLogger(__name__)
@@ -108,6 +108,8 @@ app.include_router(orders.router,       prefix="/api", tags=["Orders"],
                    dependencies=[Depends(require_module("orders"))])
 app.include_router(appointments.router, prefix="/api", tags=["Appointments"],
                    dependencies=[Depends(require_module("appointments"))])
+# Ungated: internally checks account_has_module per aggregate block.
+app.include_router(objects.router,      prefix="/api", tags=["Objects"])
 app.include_router(hcad.router,        prefix="/api", tags=["HCAD"],
                    dependencies=[Depends(require_module("prospecting"))])
 app.include_router(workflows.router,   prefix="/api", tags=["Workflows"],

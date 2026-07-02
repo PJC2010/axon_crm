@@ -6,12 +6,13 @@ import {
   AlertCircle, ArrowUpRight, ArrowDownRight,
   LogOut, Settings, ArrowRight,
   Percent, Target, Menu, X,
+  ShieldCheck, ShoppingBag, Repeat, CalendarClock,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { getMe, getTaskCounts, getPipelineStats, getARSummary, getLeads, getPipelineForecast, getPipelineAnalytics, getPnL, getExpenseSummary } from '@/lib/api'
+import { getMe, getTaskCounts, getPipelineStats, getARSummary, getLeads, getPipelineForecast, getPipelineAnalytics, getPnL, getExpenseSummary, getObjectKpis } from '@/lib/api'
 import { clearToken } from '@/lib/auth'
-import type { Lead, PipelineCounts, ARSummary, ForecastData, User, PipelineAnalytics, PnLReport, ExpenseSummary } from '@/lib/types'
+import type { Lead, PipelineCounts, ARSummary, ForecastData, User, PipelineAnalytics, PnLReport, ExpenseSummary, ObjectKpis } from '@/lib/types'
 import { ScoreBadge } from './ScoreBadge'
 import { StatusPill } from './ds'
 import { TaskBell } from './TaskBell'
@@ -61,10 +62,13 @@ function fmtFull(n: number): string {
 
 type DrawerId = 'rev' | 'ar' | 'win' | 'forecast'
 
+// KPI tiles fed by /api/objects/kpis instead of the classic P&L/AR sources.
+const OBJECT_KPI_IDS = new Set(['premium_in_force', 'active_policies', 'renewals_30d', 'orders_30d', 'repeat_rate'])
+
 export function HomeDashboard() {
   const router = useRouter()
   const { hasModule } = useEntitlements()
-  const { t } = useTerminology()
+  const { t, kpis } = useTerminology()
   const [data, setData] = useState<DashData>({
     user: null, taskCounts: null, pipelineStats: null, arSummary: null, forecast: null, analytics: null, pnl: null, expenses: null, recentLeads: [],
   })
@@ -74,6 +78,7 @@ export function HomeDashboard() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [drawer, setDrawer]   = useState<DrawerId | null>(null)
+  const [objectKpis, setObjectKpis] = useState<ObjectKpis | null>(null)
   const { toasts, show: showToast, dismiss: dismissToast } = useToast()
 
   useEffect(() => {
@@ -146,6 +151,14 @@ export function HomeDashboard() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Business-type KPI tiles (premium in force, orders, …) read child-object
+  // aggregates — fetched only when this account's KPI set needs them.
+  const needsObjectKpis = kpis.some(k => OBJECT_KPI_IDS.has(k))
+  useEffect(() => {
+    if (!needsObjectKpis) return
+    getObjectKpis().then(setObjectKpis).catch(() => {})
+  }, [needsObjectKpis])
 
   useEffect(() => {
     if (data.user && !data.user.onboarding_complete) {
@@ -443,44 +456,107 @@ export function HomeDashboard() {
             gap: 12, marginBottom: 22,
           }}
         >
-          <KpiTile
-            icon={<TrendingUp size={15} strokeWidth={1.5} color="var(--color-accent-300)" />}
-            label="Revenue · MTD"
-            value={loading || revThis === null ? '—' : fmtCurrency(revThis)}
-            context={revDelta !== null
-              ? <>{revDelta >= 0 ? '▲' : '▼'} {fmtCurrency(Math.abs(revDelta))} vs last</>
-              : `${MONTH_ABBR[curMonth - 1]} so far`}
-            contextTone={revDelta !== null ? (revDelta >= 0 ? 'moss' : 'danger') : 'muted'}
-            spark={revenueSpark}
-            sparkColor="var(--color-accent-300)"
-            onOpen={() => setDrawer('rev')}
-          />
-          <KpiTile
-            icon={<FileText size={15} strokeWidth={1.5} color="var(--color-gold)" />}
-            label="Outstanding (AR)"
-            value={loading || outstanding === null ? '—' : fmtCurrency(outstanding)}
-            context={overdueAR > 0
-              ? `${fmtCurrency(overdueAR)} overdue`
-              : `${data.arSummary?.invoice_count ?? 0} open invoices`}
-            contextTone={overdueAR > 0 ? 'danger' : 'muted'}
-            onOpen={() => setDrawer('ar')}
-          />
-          <KpiTile
-            icon={<Percent size={15} strokeWidth={1.5} color="var(--color-moss)" />}
-            label="Win Rate"
-            value={loading || !data.analytics ? '—' : `${data.analytics.win_rate}%`}
-            context={data.analytics?.avg_cycle_time != null ? `${data.analytics.avg_cycle_time}d avg cycle` : '30-day period'}
-            contextTone="moss"
-            onOpen={() => setDrawer('win')}
-          />
-          <KpiTile
-            icon={<Target size={15} strokeWidth={1.5} color="var(--color-accent-300)" />}
-            label="Forecast"
-            value={loading || !data.forecast ? '—' : fmtCurrency(data.forecast.weighted_total)}
-            context={pipelineValue !== null ? `${fmtCurrency(pipelineValue)} pipeline` : 'weighted pipeline'}
-            contextTone="muted"
-            onOpen={() => setDrawer('forecast')}
-          />
+          {kpis.map(id => {
+            switch (id) {
+              case 'revenue_mtd': return (
+                <KpiTile key={id}
+                  icon={<TrendingUp size={15} strokeWidth={1.5} color="var(--color-accent-300)" />}
+                  label="Revenue · MTD"
+                  value={loading || revThis === null ? '—' : fmtCurrency(revThis)}
+                  context={revDelta !== null
+                    ? <>{revDelta >= 0 ? '▲' : '▼'} {fmtCurrency(Math.abs(revDelta))} vs last</>
+                    : `${MONTH_ABBR[curMonth - 1]} so far`}
+                  contextTone={revDelta !== null ? (revDelta >= 0 ? 'moss' : 'danger') : 'muted'}
+                  spark={revenueSpark}
+                  sparkColor="var(--color-accent-300)"
+                  onOpen={() => setDrawer('rev')}
+                />
+              )
+              case 'outstanding_ar': return (
+                <KpiTile key={id}
+                  icon={<FileText size={15} strokeWidth={1.5} color="var(--color-gold)" />}
+                  label="Outstanding (AR)"
+                  value={loading || outstanding === null ? '—' : fmtCurrency(outstanding)}
+                  context={overdueAR > 0
+                    ? `${fmtCurrency(overdueAR)} overdue`
+                    : `${data.arSummary?.invoice_count ?? 0} open invoices`}
+                  contextTone={overdueAR > 0 ? 'danger' : 'muted'}
+                  onOpen={() => setDrawer('ar')}
+                />
+              )
+              case 'win_rate': return (
+                <KpiTile key={id}
+                  icon={<Percent size={15} strokeWidth={1.5} color="var(--color-moss)" />}
+                  label="Win Rate"
+                  value={loading || !data.analytics ? '—' : `${data.analytics.win_rate}%`}
+                  context={data.analytics?.avg_cycle_time != null ? `${data.analytics.avg_cycle_time}d avg cycle` : '30-day period'}
+                  contextTone="moss"
+                  onOpen={() => setDrawer('win')}
+                />
+              )
+              case 'forecast': return (
+                <KpiTile key={id}
+                  icon={<Target size={15} strokeWidth={1.5} color="var(--color-accent-300)" />}
+                  label="Forecast"
+                  value={loading || !data.forecast ? '—' : fmtCurrency(data.forecast.weighted_total)}
+                  context={pipelineValue !== null ? `${fmtCurrency(pipelineValue)} pipeline` : 'weighted pipeline'}
+                  contextTone="muted"
+                  onOpen={() => setDrawer('forecast')}
+                />
+              )
+              case 'premium_in_force': return (
+                <KpiTile key={id}
+                  icon={<ShieldCheck size={15} strokeWidth={1.5} color="var(--color-accent-300)" />}
+                  label="Premium in Force"
+                  value={objectKpis?.premium_in_force == null ? '—' : fmtCurrency(objectKpis.premium_in_force)}
+                  context={objectKpis?.active_policies != null ? `${objectKpis.active_policies} active policies` : 'annualized'}
+                  contextTone="muted"
+                  onOpen={() => router.push('/dashboard')}
+                />
+              )
+              case 'active_policies': return (
+                <KpiTile key={id}
+                  icon={<ShieldCheck size={15} strokeWidth={1.5} color="var(--color-moss)" />}
+                  label="Active Policies"
+                  value={objectKpis?.active_policies == null ? '—' : String(objectKpis.active_policies)}
+                  context="book of business"
+                  contextTone="moss"
+                  onOpen={() => router.push('/dashboard')}
+                />
+              )
+              case 'renewals_30d': return (
+                <KpiTile key={id}
+                  icon={<CalendarClock size={15} strokeWidth={1.5} color="var(--color-gold)" />}
+                  label="Renewals · 30d"
+                  value={objectKpis?.renewals_30d == null ? '—' : String(objectKpis.renewals_30d)}
+                  context="policies expiring soon"
+                  contextTone={(objectKpis?.renewals_30d ?? 0) > 0 ? 'danger' : 'muted'}
+                  onOpen={() => router.push('/tasks')}
+                />
+              )
+              case 'orders_30d': return (
+                <KpiTile key={id}
+                  icon={<ShoppingBag size={15} strokeWidth={1.5} color="var(--color-accent-300)" />}
+                  label="Orders · 30d"
+                  value={objectKpis?.orders_30d == null ? '—' : String(objectKpis.orders_30d)}
+                  context="completed orders"
+                  contextTone="muted"
+                  onOpen={() => router.push('/dashboard')}
+                />
+              )
+              case 'repeat_rate': return (
+                <KpiTile key={id}
+                  icon={<Repeat size={15} strokeWidth={1.5} color="var(--color-moss)" />}
+                  label="Repeat Rate"
+                  value={objectKpis?.repeat_rate == null ? '—' : `${Math.round(objectKpis.repeat_rate * 100)}%`}
+                  context={`of ${t('leads').toLowerCase()} buy again`}
+                  contextTone="moss"
+                  onOpen={() => router.push('/dashboard')}
+                />
+              )
+              default: return null
+            }
+          })}
         </div>
 
         {/* ── Getting Started Checklist ── */}
