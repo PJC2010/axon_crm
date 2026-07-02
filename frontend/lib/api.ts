@@ -106,6 +106,12 @@ export function getObjectKpis(): Promise<ObjectKpis> {
   return req('/objects/kpis')
 }
 
+// Recompute lead scores from child-object roll-ups (insurance renewal / retail
+// RFM). Owner-only; 400 for business types that aren't scored this way.
+export function rescoreObjects(): Promise<{ updated: number }> {
+  return req('/objects/rescore', { method: 'POST' })
+}
+
 // ── Custom record fields ────────────────────────────────────────────────────────
 
 export function getRecordFields(): Promise<RecordFieldDef[]> {

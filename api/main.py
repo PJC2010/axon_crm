@@ -36,11 +36,15 @@ def _check_hcad_source() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from api.scheduler import scheduler, load_active_schedules, schedule_retraining, schedule_workflow_tick
+    from api.scheduler import (
+        scheduler, load_active_schedules, schedule_retraining,
+        schedule_workflow_tick, schedule_account_rescore,
+    )
     scheduler.start()
     load_active_schedules()
     schedule_retraining()
     schedule_workflow_tick()
+    schedule_account_rescore()
     _check_hcad_source()
     yield
     scheduler.shutdown(wait=False)

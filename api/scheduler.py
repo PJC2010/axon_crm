@@ -356,6 +356,7 @@ def schedule_retraining():
 # the daily rules N times. The firings ledger already dedups actions; the lock
 # just avoids the wasted concurrent scans.
 WORKFLOW_TICK_LOCK_KEY = 742026001
+ACCOUNT_RESCORE_LOCK_KEY = 742026002
 
 
 def run_workflow_daily_tick():
@@ -392,6 +393,45 @@ def schedule_workflow_tick():
         misfire_grace_time=3600,
     )
     log.info("Scheduled daily workflow tick at %02d:15 UTC", WORKFLOW_TICK_HOUR)
+
+
+def run_account_rescore_tick():
+    """Daily: rescore non-property accounts (insurance renewal, retail RFM) whose
+    scores drift with time (days-to-renewal, days-since-last-order)."""
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_try_advisory_lock(%s)", (ACCOUNT_RESCORE_LOCK_KEY,))
+            if not cur.fetchone()[0]:
+                log.info("Account rescore skipped — another worker holds the lock")
+                return
+        try:
+            from pipeline.account_rescore import rescore_all_accounts
+            summary = rescore_all_accounts(conn)
+            log.info("Account rescore finished: %s", summary)
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_unlock(%s)", (ACCOUNT_RESCORE_LOCK_KEY,))
+            conn.commit()
+    except Exception:
+        log.exception("Account rescore tick failed")
+    finally:
+        conn.close()
+
+
+def schedule_account_rescore():
+    """Register the daily account-rescore cron (idempotent)."""
+    from config import WORKFLOW_TICK_HOUR
+    scheduler.add_job(
+        run_account_rescore_tick,
+        # 30 min after the workflow tick so renewal-proximity scores are fresh
+        # before any date-based rules that read them run the next morning.
+        trigger=CronTrigger(hour=WORKFLOW_TICK_HOUR, minute=45, timezone="UTC"),
+        id="account_rescore_daily",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    log.info("Scheduled daily account rescore at %02d:45 UTC", WORKFLOW_TICK_HOUR)
 
 
 def load_active_schedules():
