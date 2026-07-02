@@ -27,8 +27,9 @@ from api.notifications import send_invoice_email, send_invoice_sms
 from api.models import (
     Invoice, InvoiceCreate, InvoiceUpdate,
     InvoicePayment, PaymentCreate, LineItem, SendInvoiceRequest,
-    INVOICE_STATUSES, PAYMENT_METHODS,
+    INVOICE_STATUSES, PAYMENT_METHODS, INVOICE_RECURRENCES,
 )
+from api.recurring_invoices import advance
 
 router = APIRouter()
 
@@ -238,17 +239,25 @@ def create_invoice(
     if not body.line_items:
         raise HTTPException(status_code=400, detail="At least one line item required")
 
+    recurrence = body.recurrence or None
+    if recurrence and recurrence not in INVOICE_RECURRENCES:
+        raise HTTPException(status_code=400, detail=f"recurrence must be one of {INVOICE_RECURRENCES}")
+    # The invoice itself is the first occurrence; the next one is one cadence out.
+    recurrence_next = advance(body.issue_date, recurrence) if recurrence else None
+
     items_raw = [{"quantity": li.quantity, "unit_price": li.unit_price, "description": li.description, "sort_order": li.sort_order} for li in body.line_items]
     subtotal, tax_amount, total = _calc_totals(items_raw, body.tax_rate)
 
     with db.cursor() as cur:
         cur.execute(
             "INSERT INTO invoices (property_id, client_name, client_phone, client_email, client_address, "
-            "tax_rate, subtotal, tax_amount, total, issue_date, due_date, notes, created_by, account_id) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id, invoice_number",
+            "tax_rate, subtotal, tax_amount, total, issue_date, due_date, notes, created_by, account_id, "
+            "recurrence, recurrence_next, recurrence_end) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id, invoice_number",
             (body.property_id, body.client_name, body.client_phone, body.client_email,
              body.client_address, body.tax_rate, subtotal, tax_amount, total,
-             body.issue_date, body.due_date, body.notes, current_user["id"], current_user["account_id"]),
+             body.issue_date, body.due_date, body.notes, current_user["id"], current_user["account_id"],
+             recurrence, recurrence_next, body.recurrence_end),
         )
         inv_row = cur.fetchone()
         inv_id, inv_num = inv_row[0], inv_row[1]
@@ -316,6 +325,22 @@ def update_invoice(
         sets.append("status = %s"); params.append(body.status)
     if body.issue_date is not None:
         sets.append("issue_date = %s"); params.append(body.issue_date)
+
+    # Recurrence: an empty string stops the series; a cadence (re)starts it,
+    # recomputing recurrence_next one cadence out from the (new or existing)
+    # issue date. recurrence_end, when supplied, is stored as-is.
+    if body.recurrence is not None:
+        recurrence = body.recurrence or None
+        if recurrence and recurrence not in INVOICE_RECURRENCES:
+            raise HTTPException(status_code=400, detail=f"recurrence must be one of {INVOICE_RECURRENCES}")
+        if recurrence:
+            base_issue = body.issue_date or existing["issue_date"]
+            sets += ["recurrence = %s", "recurrence_next = %s"]
+            params += [recurrence, advance(base_issue, recurrence)]
+        else:
+            sets += ["recurrence = NULL", "recurrence_next = NULL"]
+    if body.recurrence_end is not None:
+        sets.append("recurrence_end = %s"); params.append(body.recurrence_end)
 
     # If line items provided, replace them and recalculate totals
     if body.line_items is not None:

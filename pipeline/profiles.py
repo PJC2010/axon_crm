@@ -163,6 +163,16 @@ PROFILE_PERFECT_ROWS: dict[str, dict] = {
     "retail_rfm": {"days_since_last_order": 0, "order_count_365d": 6, "lifetime_spend": 1000},
 }
 
+# Which scoring profile an account uses when it isn't property/vertical-driven.
+# Property business types (home_services, …) score per-vertical via score_zip;
+# these types score account-wide over child-object roll-ups (see
+# pipeline/account_rescore.py). A business type absent here has no account-wide
+# scoring — its records keep whatever score the pipeline set (usually none).
+SCORING_PROFILE_BY_BUSINESS_TYPE: dict[str, str] = {
+    "insurance_agency": "insurance_renewal",
+    "retail": "retail_rfm",
+}
+
 
 def resolve_profile(key: str | None) -> ScoringProfile:
     """Same fallback rule scorer.score_zip has always used: an unknown or

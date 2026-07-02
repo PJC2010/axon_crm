@@ -9,6 +9,7 @@ import { StatusSelect } from './StatusSelect'
 import { ScoreBadge } from './ScoreBadge'
 import { ToastStack, useToast } from './Toast'
 import { ContactInfoSection } from './lead/ContactInfoSection'
+import { MessageSection } from './lead/MessageSection'
 import { PoliciesSection } from './lead/PoliciesSection'
 import { OrdersSection } from './lead/OrdersSection'
 import { AppointmentsSection } from './lead/AppointmentsSection'
@@ -119,6 +120,7 @@ export function LeadDetail({ leadId }: { leadId: number }) {
             </div>
 
             <ContactInfoSection lead={lead} onSaved={setLead} onToast={showToast} />
+            <MessageSection leadId={lead.id} />
             <PoliciesSection leadId={lead.id} />
             <OrdersSection leadId={lead.id} />
             <AppointmentsSection leadId={lead.id} />

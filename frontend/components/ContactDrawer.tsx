@@ -9,6 +9,7 @@ import { StatusSelect } from './StatusSelect'
 import { ScoreBadge } from './ScoreBadge'
 import { ContactInfoSection } from './lead/ContactInfoSection'
 import { CustomFieldsSection } from './lead/CustomFieldsSection'
+import { MessageSection } from './lead/MessageSection'
 import { PoliciesSection } from './lead/PoliciesSection'
 import { OrdersSection } from './lead/OrdersSection'
 import { AppointmentsSection } from './lead/AppointmentsSection'
@@ -131,6 +132,7 @@ export function ContactDrawer({ lead, onClose, onStatusChange, onLeadChange, onT
           </div>
           <ContactInfoSection lead={lead} onSaved={l => onLeadChange?.(l)} onToast={onToast} />
           <CustomFieldsSection key={lead.id} lead={lead} onSaved={l => onLeadChange?.(l)} onToast={onToast} />
+          <MessageSection key={`msg-${lead.id}`} leadId={lead.id} />
           <PoliciesSection key={`pol-${lead.id}`} leadId={lead.id} />
           <OrdersSection key={`ord-${lead.id}`} leadId={lead.id} />
           <AppointmentsSection key={`appt-${lead.id}`} leadId={lead.id} />

@@ -8,7 +8,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 
-from api.deps import dict_fetchall
+from api.deps import dict_fetchall, dict_fetchone
 
 log = logging.getLogger(__name__)
 
@@ -513,6 +513,8 @@ def _execute_action(conn, rule: dict, lead_id: int, user_id: int, account_id: in
         return _move_lead_status(conn, cfg, lead_id, user_id, account_id)
     if action_type == "send_notification":
         return _send_notification(conn, cfg, lead_id, rule, account_id)
+    if action_type == "send_template":
+        return _send_template(conn, cfg, lead_id, rule, account_id)
 
     log.warning("Unknown action_type: %s", action_type)
     return None
@@ -614,6 +616,70 @@ def _send_notification(conn, cfg: dict, lead_id: int, rule: dict, account_id: in
         history_id = cur.fetchone()[0]
     conn.commit()
     return {"action": "notification_sent", "rule_name": rule["name"], "to": to_email, "history_id": history_id}
+
+
+def _send_template(conn, cfg: dict, lead_id: int, rule: dict, account_id: int) -> dict | None:
+    """Message the matched record's own contact from a saved template.
+
+    Distinct from send_notification (which emails the rule's owner): this
+    renders a message_templates row against the record and sends it to the
+    record's contact email/phone. Fails soft — a missing template, an
+    unconfigured channel, or a contact with no address on file is skipped
+    (surfaced in the results), never raised.
+    """
+    from api import messaging, notifications
+
+    template_id = cfg.get("template_id")
+    if not template_id:
+        return None
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM message_templates WHERE id = %s AND account_id = %s",
+                    (template_id, account_id))
+        template = dict_fetchone(cur)
+    if not template:
+        log.warning("send_template rule %r references missing template %s", rule["name"], template_id)
+        return {"action": "template_skipped", "rule_name": rule["name"], "reason": "template_not_found"}
+
+    channel = template["channel"]
+    configured = notifications.email_configured() if channel == "email" else notifications.sms_configured()
+    if not configured:
+        log.info("send_template skipped for rule %r — %s not configured", rule["name"], channel)
+        return {"action": "template_skipped", "rule_name": rule["name"], "reason": f"{channel}_not_configured"}
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, contact_name, contact_email, contact_phone, address, owner_name "
+            "FROM properties WHERE id = %s AND account_id = %s",
+            (lead_id, account_id),
+        )
+        record = dict_fetchone(cur)
+    if not record:
+        return None
+    recipient = messaging.recipient_for_channel(record, channel)
+    if not recipient:
+        return {"action": "template_skipped", "rule_name": rule["name"], "reason": f"no_{channel}_address"}
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT name FROM accounts WHERE id = %s", (account_id,))
+        row = cur.fetchone()
+    ctx = messaging.build_context(record, row[0] if row else None)
+
+    body = messaging.render_template(template["body"], ctx)
+    if channel == "email":
+        subject = messaging.render_template(template["subject"], ctx) or template["name"]
+        notifications.send_email(to_email=recipient, subject=subject, html=body.replace("\n", "<br>"))
+    else:
+        notifications.send_sms(to_phone=recipient, body=body)
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO contact_history (property_id, action, outcome, created_by) "
+            "VALUES (%s, %s, %s, %s) RETURNING id",
+            (lead_id, f"{channel.upper()} sent — {template['name']}", "sent", rule.get("created_by")),
+        )
+        history_id = cur.fetchone()[0]
+    conn.commit()
+    return {"action": "template_sent", "rule_name": rule["name"], "to": recipient, "history_id": history_id}
 
 
 def _log_history(conn, cfg: dict, lead_id: int, user_id: int) -> dict:

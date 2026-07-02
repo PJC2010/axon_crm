@@ -20,7 +20,7 @@ router = APIRouter()
 TRIGGER_TYPES = ("status_change", "signal_event", "lead_imported", "quote_event",
                  "date_offset", "inactivity",
                  "policy_event", "order_event", "appointment_event")
-ACTION_TYPES = ("create_task", "log_history", "move_lead_status", "send_notification")
+ACTION_TYPES = ("create_task", "log_history", "move_lead_status", "send_notification", "send_template")
 
 
 class WorkflowRuleCreate(BaseModel):
@@ -75,6 +75,11 @@ def _validate_rule(trigger_type: str, trigger_config: dict, action_type: str, ac
 
     if action_type == "send_notification" and action_config.get("channel", "email") != "email":
         raise HTTPException(status_code=400, detail="send_notification supports only the email channel")
+
+    if action_type == "send_template":
+        tid = action_config.get("template_id")
+        if not isinstance(tid, int) or isinstance(tid, bool):
+            raise HTTPException(status_code=400, detail="send_template needs a template_id")
 
 
 @router.get("/workflows")

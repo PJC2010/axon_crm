@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, type FormEvent } from 'react'
 import { X, Plus, Trash2 } from 'lucide-react'
 import { createInvoice, updateInvoice } from '@/lib/api'
-import type { Invoice, InvoiceCreate, LineItem } from '@/lib/types'
+import type { Invoice, InvoiceCreate, InvoiceRecurrence, LineItem } from '@/lib/types'
 
 const PAYMENT_METHODS = ['card', 'cash', 'check', 'zelle', 'other']
 
@@ -35,6 +35,8 @@ export function InvoiceForm({ invoice, prefill, onSaved, onClose }: Props) {
   const [dueDate, setDueDate]         = useState(dueDateDefault())
   const [taxRate, setTaxRate]         = useState('0')
   const [notes, setNotes]             = useState('')
+  const [recurrence, setRecurrence]   = useState<InvoiceRecurrence | ''>('')
+  const [recurrenceEnd, setRecurrenceEnd] = useState('')
   const [items, setItems]             = useState<DraftItem[]>([emptyItem()])
   const [saving, setSaving]           = useState(false)
   const [error, setError]             = useState<string | null>(null)
@@ -49,6 +51,8 @@ export function InvoiceForm({ invoice, prefill, onSaved, onClose }: Props) {
       setDueDate(invoice.due_date ?? dueDateDefault())
       setTaxRate(String(invoice.tax_rate))
       setNotes(invoice.notes ?? '')
+      setRecurrence(invoice.recurrence ?? '')
+      setRecurrenceEnd(invoice.recurrence_end ?? '')
       setItems(invoice.line_items.length
         ? invoice.line_items.map(li => ({ description: li.description, quantity: String(li.quantity), unit_price: String(li.unit_price) }))
         : [emptyItem()]
@@ -87,6 +91,9 @@ export function InvoiceForm({ invoice, prefill, onSaved, onClose }: Props) {
         issue_date: issueDate,
         due_date: dueDate || undefined,
         notes: notes || undefined,
+        // Always send recurrence so editing can also stop a series ('' clears it).
+        recurrence: recurrence,
+        recurrence_end: recurrence && recurrenceEnd ? recurrenceEnd : undefined,
         line_items: items.map((it, idx) => ({
           description: it.description.trim(),
           quantity: parseFloat(it.quantity) || 1,
@@ -222,6 +229,31 @@ export function InvoiceForm({ invoice, prefill, onSaved, onClose }: Props) {
               <input placeholder="Optional notes" value={notes} onChange={e => setNotes(e.target.value)} className="drawer-input" style={{ width: '100%', boxSizing: 'border-box' }} />
             </div>
           </div>
+
+          {/* Recurrence (memberships / retainers / maintenance contracts) */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+            <div style={{ flex: '0 0 160px' }}>
+              <label className="t-label" style={{ display: 'block', marginBottom: 6 }}>Repeat</label>
+              <select value={recurrence} onChange={e => setRecurrence(e.target.value as InvoiceRecurrence | '')} className="drawer-input" style={{ width: '100%', boxSizing: 'border-box' }}>
+                <option value="">One-time</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="annual">Annual</option>
+              </select>
+            </div>
+            {recurrence && (
+              <div style={{ flex: 1 }}>
+                <label className="t-label" style={{ display: 'block', marginBottom: 6 }}>End date (optional)</label>
+                <input type="date" value={recurrenceEnd} onChange={e => setRecurrenceEnd(e.target.value)} className="drawer-input" style={{ width: '100%', boxSizing: 'border-box' }} />
+              </div>
+            )}
+          </div>
+          {recurrence && (
+            <p style={{ margin: '-4px 0 0', fontSize: 12, color: 'var(--color-ink-400)' }}>
+              A new invoice is generated automatically each {recurrence === 'annual' ? 'year' : recurrence.replace('ly', '')} starting after the issue date.
+            </p>
+          )}
 
           {error && (
             <div style={{ padding: '10px 14px', background: 'var(--color-danger-tint,#fef2f2)', border: '1px solid var(--color-danger)', borderRadius: 'var(--radius-input)', color: 'var(--color-danger)', fontSize: 13 }}>

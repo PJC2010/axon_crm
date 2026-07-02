@@ -7,10 +7,10 @@ retail reads revenue_mtd / orders_30d / repeat_rate. Registered ungated —
 each block is computed only when the account has that object's module, and
 omitted keys simply don't render as tiles.
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from psycopg2.extensions import connection as PGConn
 
-from api.deps import get_db, get_current_user
+from api.deps import get_db, get_current_user, require_owner
 from api.entitlements import account_has_module
 
 router = APIRouter()
@@ -77,3 +77,24 @@ def object_kpis(user: dict = Depends(get_current_user), db: PGConn = Depends(get
             out["appointments_7d"] = cur.fetchone()[0]
 
     return out
+
+
+@router.post("/objects/rescore")
+def rescore_records(current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+    """Recompute lead scores for this account from its child-object roll-ups.
+
+    Only meaningful for account-wide scored business types (insurance → renewal
+    proximity, retail → RFM); a 400 tells other types there's nothing to do here.
+    The nightly job does this automatically; this is the manual "rescore now".
+    """
+    from pipeline.account_rescore import profile_key_for_account, rescore_account
+
+    acct = current_user["account_id"]
+    if not profile_key_for_account(db, acct):
+        raise HTTPException(
+            status_code=400,
+            detail="This business type is not scored from child-object roll-ups.",
+        )
+    updated = rescore_account(db, acct)
+    db.commit()
+    return {"updated": updated}

@@ -1,4 +1,4 @@
-import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType } from './types'
+import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, MessageTemplate, MessageTemplateCreate, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType } from './types'
 import { getToken, clearToken } from './auth'
 
 // Use 127.0.0.1 (not localhost): on macOS `localhost` resolves to IPv6 ::1
@@ -104,6 +104,12 @@ export function getBusinessTypes(): Promise<BusinessTypeInfo[]> {
 // are present only for modules the account has enabled.
 export function getObjectKpis(): Promise<ObjectKpis> {
   return req('/objects/kpis')
+}
+
+// Recompute lead scores from child-object roll-ups (insurance renewal / retail
+// RFM). Owner-only; 400 for business types that aren't scored this way.
+export function rescoreObjects(): Promise<{ updated: number }> {
+  return req('/objects/rescore', { method: 'POST' })
 }
 
 // ── Custom record fields ────────────────────────────────────────────────────────
@@ -700,6 +706,30 @@ export function updateAppointment(id: number, body: Partial<AppointmentCreate>):
 
 export function deleteAppointment(id: number): Promise<void> {
   return req<void>(`/appointments/${id}`, { method: 'DELETE' })
+}
+
+// ── Message templates & contact-level messaging ──────────────────────────────
+
+export function getMessageTemplates(): Promise<MessageTemplate[]> {
+  return req<MessageTemplate[]>('/message-templates')
+}
+
+export function createMessageTemplate(body: MessageTemplateCreate): Promise<MessageTemplate> {
+  return req<MessageTemplate>('/message-templates', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateMessageTemplate(id: number, body: Partial<MessageTemplateCreate>): Promise<MessageTemplate> {
+  return req<MessageTemplate>(`/message-templates/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export function deleteMessageTemplate(id: number): Promise<void> {
+  return req<void>(`/message-templates/${id}`, { method: 'DELETE' })
+}
+
+export function sendLeadMessage(leadId: number, body: {
+  template_id?: number; channel?: string; subject?: string; body?: string
+}): Promise<{ sent: boolean; channel: string; to: string }> {
+  return req(`/leads/${leadId}/message`, { method: 'POST', body: JSON.stringify(body) })
 }
 
 // ── Saved segments ───────────────────────────────────────────────────────────

@@ -8,6 +8,8 @@ import { AutomationTemplates } from '@/components/AutomationTemplates'
 import { WorkflowRuleForm, describeTrigger } from '@/components/WorkflowRuleForm'
 import { ConnectionsSection } from '@/components/ConnectionsSection'
 import { CustomFieldsSettings } from '@/components/CustomFieldsSettings'
+import { MessageTemplatesSettings } from '@/components/MessageTemplatesSettings'
+import { RescoreSection } from '@/components/RescoreSection'
 import { useEntitlements } from '@/hooks/useEntitlements'
 import { useTerminology } from '@/hooks/useTerminology'
 import type { PipelineSchedule, PipelineRun, WorkflowRule } from '@/lib/types'
@@ -431,6 +433,10 @@ function SettingsPage() {
 
         {/* Custom fields (generic record model) */}
         <CustomFieldsSettings />
+
+        <MessageTemplatesSettings />
+
+        <RescoreSection />
 
         {/* Connected accounts / integrations */}
         <ConnectionsSection />
