@@ -373,10 +373,6 @@ export default function LandingContent() {
               Axon does the analysis so your team can do what software can&apos;t — show up, build trust,
               and win the work. The intelligence runs quietly in the background; the relationships stay yours.
             </p>
-            <div className="lp-people-stats">
-              <div><span className="v">4,200+</span><span className="l">contractors on Axon</span></div>
-              <div><span className="v">38</span><span className="l">states served</span></div>
-            </div>
           </div>
           <div className="lp-collage" data-reveal>
             <div className="lp-photo">
@@ -510,7 +506,7 @@ export default function LandingContent() {
             </div>
           </div>
           <div className="lp-footer-bottom">
-            <span>© 2026 Axon Intelligence, Inc.</span>
+            <span>© 2026 Axon, a Castillo &amp; Co LLC company.</span>
             <span>Predictive insights, personal connections</span>
           </div>
         </div>
