@@ -1,4 +1,4 @@
-import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, ModuleMap, RecordFieldDef, RecordFieldType } from './types'
+import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, ModuleMap, RecordFieldDef, RecordFieldType } from './types'
 import { getToken, clearToken } from './auth'
 
 // Use 127.0.0.1 (not localhost): on macOS `localhost` resolves to IPv6 ::1
@@ -626,6 +626,24 @@ export function deleteWorkflow(id: number): Promise<void> {
 
 export function seedWorkflowDefaults(vertical: string): Promise<{ created: number; rules: WorkflowRule[] }> {
   return req(`/workflows/seed-defaults?vertical=${vertical}`, { method: 'POST' })
+}
+
+// ── Saved segments ───────────────────────────────────────────────────────────
+
+export function getSegments(): Promise<Segment[]> {
+  return req<Segment[]>('/segments')
+}
+
+export function createSegment(name: string, filters: LeadFilters): Promise<Segment> {
+  return req<Segment>('/segments', { method: 'POST', body: JSON.stringify({ name, filters }) })
+}
+
+export function updateSegment(id: number, body: { name?: string; filters?: LeadFilters }): Promise<Segment> {
+  return req<Segment>(`/segments/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export function deleteSegment(id: number): Promise<void> {
+  return req<void>(`/segments/${id}`, { method: 'DELETE' })
 }
 
 // ── Contact / lead import ───────────────────────────────────────────────────────

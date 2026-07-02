@@ -747,13 +747,43 @@ export interface PerformanceBreakdown {
 
 // ── Workflows ────────────────────────────────────────────────────────────────
 
+export interface WorkflowTriggerConfig {
+  // status_change
+  from_status?: string
+  to_status?: string
+  // signal_event
+  signal_type?: string
+  // quote_event
+  event?: string
+  // date_offset — whitelisted source/date_field, offset relative to the anchor
+  source?: string
+  date_field?: string
+  offset_days?: number
+  // inactivity
+  days?: number
+  statuses?: string[]
+}
+
+export interface WorkflowActionConfig {
+  // create_task
+  title?: string
+  due_days_offset?: number
+  priority?: string
+  // move_lead_status
+  status?: string
+  // send_notification (email-only)
+  channel?: string
+  subject?: string
+  message?: string
+}
+
 export interface WorkflowRule {
   id: number
   name: string
   trigger_type: string
-  trigger_config: { from_status?: string; to_status?: string; signal_type?: string }
+  trigger_config: WorkflowTriggerConfig
   action_type: string
-  action_config: { title?: string; due_days_offset?: number; priority?: string }
+  action_config: WorkflowActionConfig
   is_active: boolean
   vertical: string | null
   created_by: number | null
@@ -764,11 +794,22 @@ export interface WorkflowRule {
 export interface WorkflowRuleCreate {
   name: string
   trigger_type?: string
-  trigger_config: { from_status?: string; to_status?: string; signal_type?: string }
+  trigger_config: WorkflowTriggerConfig
   action_type?: string
-  action_config: { title?: string; due_days_offset?: number; priority?: string }
+  action_config: WorkflowActionConfig
   is_active?: boolean
   vertical?: string
+}
+
+// ── Saved segments ───────────────────────────────────────────────────────────
+
+export interface Segment {
+  id: number
+  name: string
+  filters: LeadFilters
+  created_by: number | null
+  created_at: string
+  updated_at: string
 }
 
 export interface JobCostRow {

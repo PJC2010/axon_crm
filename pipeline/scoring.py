@@ -27,26 +27,33 @@ def score_property(row: dict, weights: dict) -> tuple[float, str]:
     return score, _grade(score)
 
 
+def compute_score(row: dict, profile) -> float:
+    """Profile-driven weighted sum — the generic core every profile shares.
+
+    `profile` is a pipeline.profiles.ScoringProfile (duck-typed here to keep the
+    import one-directional). Each weighted signal reads the row field named in
+    the profile's factor_meta and normalizes it 0–1 via the profile's signal fn;
+    the weighted sum scales to 0–100. Zero-weight factors are skipped, which is
+    numerically identical to including them.
+    """
+    return sum(
+        weight * profile.signal_fns[key](row.get(profile.factor_meta[key]["field"]))
+        for key, weight in profile.weights.items()
+        if weight
+    ) * 100
+
+
 def _compute_score(row: dict, weights: dict) -> float:
-    return (
-        weights["age"]              * _age_signal(row.get("year_built"))          +
-        weights["sale"]             * _sale_signal(row.get("last_sale_date"))     +
-        weights["equity"]           * _equity_signal(row.get("estimated_equity")) +
-        weights["garage"]           * _garage_signal(row.get("garage_spaces"))    +
-        weights["income"]           * _income_signal(row.get("zip_median_income"))+
-        weights["permit"]           * _permit_signal(row.get("permit_count_24mo"))+
-        weights.get("neighborhood", 0) * _neighborhood_signal(row.get("neighborhood_value_ratio")) +
-        weights.get("pool", 0)              * _pool_signal(row.get("has_pool"))                  +
-        weights.get("slab", 0)              * _slab_signal(row.get("has_cracked_slab"))          +
-        weights.get("storm", 0)             * _storm_signal(row.get("last_storm_date"))          +
-        weights.get("home_improvement", 0)  * _home_improvement_signal(row.get("home_improvement_flag")) +
-        weights.get("refi", 0)              * _refi_signal(row.get("refi_date"))                +
-        weights.get("credit", 0)            * _credit_signal(row.get("credit_rating"))          +
-        weights.get("children", 0)          * _children_signal(row.get("has_children"))         +
-        weights.get("gardening", 0)         * _gardening_signal(row.get("gardening_flag"))      +
-        weights.get("absentee", 0)          * _absentee_signal(row.get("owner_occupied"))       +
-        weights.get("tenure", 0)            * _tenure_signal(row.get("ownership_years"))         +
-        weights.get("life_stage", 0)        * _life_stage_signal(row.get("life_stage"))
+    """Back-compat wrapper: score with the classic property signal set.
+
+    Kept as the entry point for callers that pass a raw weights dict
+    (scorer.score_zip, explain_score, tests). Parity with the profile-driven
+    loop is pinned by tests/test_scoring.py.
+    """
+    return sum(
+        weight * _SIGNAL_FNS[key](row.get(FACTOR_META[key]["field"]))
+        for key, weight in weights.items()
+        if weight
     ) * 100
 
 
@@ -300,20 +307,29 @@ def _summarize(grade: str, factors: list[dict], top_drivers: list[str]) -> str:
     return f"{grade} lead — driven mainly by {phrase}."
 
 
-def explain_score(row: dict, weights: dict) -> dict:
+def explain_score(row: dict, weights: dict, profile=None) -> dict:
     """Break a lead's score into per-factor contributions.
 
     For each factor weighted in `weights` (skipping zero-weight factors), reports
     its normalized signal strength (0–1) and weighted point contribution
     (weight × signal × 100). The contributions sum to the score from
     `_compute_score`, so the breakdown always reconciles with the displayed total.
+
+    When a `profile` (pipeline.profiles.ScoringProfile) is passed, its weights,
+    factor metadata, and signal functions are used instead — this is how
+    non-property profiles get the same explainable breakdown for free.
     """
+    meta_map = profile.factor_meta if profile is not None else FACTOR_META
+    fns = profile.signal_fns if profile is not None else _SIGNAL_FNS
+    if profile is not None:
+        weights = profile.weights
+
     factors = []
     for key, weight in weights.items():
         if not weight:
             continue  # factor carries no weight in this profile — omit as noise
-        meta = FACTOR_META[key]
-        signal = _SIGNAL_FNS[key](row.get(meta["field"]))
+        meta = meta_map[key]
+        signal = fns[key](row.get(meta["field"]))
         factors.append({
             "key":          key,
             "label":        meta["label"],
@@ -325,7 +341,7 @@ def explain_score(row: dict, weights: dict) -> dict:
 
     factors.sort(key=lambda f: f["contribution"], reverse=True)
     top_drivers = [f["key"] for f in factors[:3] if f["contribution"] > 0]
-    score = _compute_score(row, weights)
+    score = compute_score(row, profile) if profile is not None else _compute_score(row, weights)
     grade = _grade(score)
     return {
         "score":       round(score, 2),

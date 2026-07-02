@@ -2,9 +2,10 @@
 import { useEffect, useState, useCallback, FormEvent } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Play, Trash2, RefreshCw, Home, XCircle, Zap, Plus } from 'lucide-react'
-import { getSchedules, createSchedule, updateSchedule, deleteSchedule, triggerRun, getPipelineRuns, cancelRun, rescoreZip, rescoreAll, getWorkflows, createWorkflow, updateWorkflow, deleteWorkflow, seedWorkflowDefaults } from '@/lib/api'
+import { getSchedules, createSchedule, updateSchedule, deleteSchedule, triggerRun, getPipelineRuns, cancelRun, rescoreZip, rescoreAll, getWorkflows, updateWorkflow, deleteWorkflow, seedWorkflowDefaults } from '@/lib/api'
 import { AuthGuard } from '@/components/AuthGuard'
 import { AutomationTemplates } from '@/components/AutomationTemplates'
+import { WorkflowRuleForm, describeTrigger } from '@/components/WorkflowRuleForm'
 import { ConnectionsSection } from '@/components/ConnectionsSection'
 import { CustomFieldsSettings } from '@/components/CustomFieldsSettings'
 import { useEntitlements } from '@/hooks/useEntitlements'
@@ -28,20 +29,12 @@ function duration(run: PipelineRun) {
 
 function SettingsPage() {
   const { hasModule } = useEntitlements()
-  const { categories, t } = useTerminology()
+  const { categories } = useTerminology()
   const [schedules, setSchedules] = useState<PipelineSchedule[]>([])
   const [runs, setRuns] = useState<PipelineRun[]>([])
   const [workflows, setWorkflows] = useState<WorkflowRule[]>([])
   const [loading, setLoading] = useState(true)
   const [showWfForm, setShowWfForm] = useState(false)
-  const [wfName, setWfName] = useState('')
-  const [wfFromStatus, setWfFromStatus] = useState('')
-  const [wfToStatus, setWfToStatus] = useState('')
-  const [wfTaskTitle, setWfTaskTitle] = useState('')
-  const [wfDueDays, setWfDueDays] = useState(3)
-  const [wfPriority, setWfPriority] = useState('normal')
-  const [wfVertical, setWfVertical] = useState('')
-  const [wfSaving, setWfSaving] = useState(false)
   const [seeding, setSeeding] = useState(false)
 
   // Form state
@@ -361,76 +354,14 @@ function SettingsPage() {
           />
 
           {showWfForm && (
-            <form
-              onSubmit={async (e: FormEvent) => {
-                e.preventDefault()
-                if (!wfName.trim() || !wfToStatus || !wfTaskTitle.trim()) return
-                setWfSaving(true)
-                try {
-                  await createWorkflow({
-                    name: wfName.trim(),
-                    trigger_config: {
-                      ...(wfFromStatus ? { from_status: wfFromStatus } : {}),
-                      to_status: wfToStatus,
-                    },
-                    action_config: { title: wfTaskTitle.trim(), due_days_offset: wfDueDays, priority: wfPriority },
-                    vertical: wfVertical || undefined,
-                  })
-                  setWfName(''); setWfToStatus(''); setWfTaskTitle(''); setWfDueDays(3); setWfPriority('normal'); setWfVertical(''); setWfFromStatus('')
-                  setShowWfForm(false)
-                  const w = await getWorkflows()
-                  setWorkflows(w)
-                } finally { setWfSaving(false) }
+            <WorkflowRuleForm
+              onCreated={async () => {
+                setShowWfForm(false)
+                const w = await getWorkflows()
+                setWorkflows(w)
               }}
-              style={{
-                display: 'flex', flexDirection: 'column', gap: 10, padding: 16,
-                background: 'var(--color-surface)', borderRadius: 'var(--radius-card)',
-                border: '1px solid var(--color-ink-200)', marginBottom: 16,
-              }}
-            >
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <input type="text" value={wfName} onChange={e => setWfName(e.target.value)} placeholder="Rule name" className="drawer-input" style={{ flex: 1, minWidth: 140 }} required />
-                <select value={wfVertical} onChange={e => setWfVertical(e.target.value)} className="drawer-input">
-                  <option value="">All {t('categories').toLowerCase()}</option>
-                  {categories.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                </select>
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 12, color: 'var(--color-ink-500)', fontWeight: 500 }}>When status changes</span>
-                <select value={wfFromStatus} onChange={e => setWfFromStatus(e.target.value)} className="drawer-input" style={{ width: 120 }}>
-                  <option value="">from any</option>
-                  {['new', 'contacted', 'qualified', 'quote_sent', 'won', 'lost', 'not_interested'].map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-                <span style={{ fontSize: 12, color: 'var(--color-ink-500)' }}>to</span>
-                <select value={wfToStatus} onChange={e => setWfToStatus(e.target.value)} className="drawer-input" style={{ width: 120 }} required>
-                  <option value="">select…</option>
-                  {['new', 'contacted', 'qualified', 'quote_sent', 'won', 'lost', 'not_interested'].map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 12, color: 'var(--color-ink-500)', fontWeight: 500 }}>Create task:</span>
-                <input type="text" value={wfTaskTitle} onChange={e => setWfTaskTitle(e.target.value)} placeholder="Task title" className="drawer-input" style={{ flex: 1, minWidth: 160 }} required />
-                <span style={{ fontSize: 12, color: 'var(--color-ink-500)' }}>due in</span>
-                <input type="number" value={wfDueDays} onChange={e => setWfDueDays(Number(e.target.value))} className="drawer-input" style={{ width: 56 }} min={0} max={90} />
-                <span style={{ fontSize: 12, color: 'var(--color-ink-500)' }}>days</span>
-                <select value={wfPriority} onChange={e => setWfPriority(e.target.value)} className="drawer-input" style={{ width: 90 }}>
-                  <option value="low">Low</option>
-                  <option value="normal">Normal</option>
-                  <option value="high">High</option>
-                  <option value="urgent">Urgent</option>
-                </select>
-              </div>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button type="button" onClick={() => setShowWfForm(false)} style={{
-                  padding: '0 14px', height: 32, background: 'transparent', color: 'var(--color-ink-500)',
-                  border: '1px solid var(--color-ink-200)', borderRadius: 'var(--radius-pill)', fontSize: 12, cursor: 'pointer',
-                }}>Cancel</button>
-                <button type="submit" disabled={wfSaving} style={{
-                  padding: '0 14px', height: 32, background: 'var(--color-ink-900)', color: 'var(--color-paper)',
-                  border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 12, cursor: wfSaving ? 'not-allowed' : 'pointer',
-                }}>{wfSaving ? 'Saving…' : 'Create rule'}</button>
-              </div>
-            </form>
+              onCancel={() => setShowWfForm(false)}
+            />
           )}
 
           {workflows.length > 0 ? (
@@ -447,9 +378,7 @@ function SettingsPage() {
                   <tr key={w.id} style={{ borderBottom: '1px solid var(--color-ink-100)' }}>
                     <td style={{ padding: '8px', fontWeight: 500 }}>{w.name}</td>
                     <td style={{ padding: '8px', color: 'var(--color-ink-500)', fontSize: 12 }}>
-                      {w.trigger_type === 'signal_event'
-                        ? `signal: ${w.trigger_config.signal_type || 'any'}`
-                        : <>{w.trigger_config.from_status ? `${w.trigger_config.from_status} → ` : '* → '}{w.trigger_config.to_status || '*'}</>}
+                      {describeTrigger(w)}
                     </td>
                     <td style={{ padding: '8px', color: 'var(--color-ink-500)', fontSize: 12 }}>
                       {w.action_config.title || w.action_type}

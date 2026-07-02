@@ -7,7 +7,7 @@ Pure scoring math lives in pipeline.scoring (DB-free, testable).
 import logging
 from datetime import datetime
 
-from config import DEFAULT_WEIGHTS, VERTICAL_WEIGHTS, SCORER_MODE
+from config import SCORER_MODE
 from pipeline.db import get_conn, fetch_by_zip, upsert_properties
 from pipeline.equity import estimate_equity
 from pipeline.job_value import estimate_job_value
@@ -21,7 +21,10 @@ log = logging.getLogger(__name__)
 
 
 def score_zip(zip_code: str, account_id: int, vertical: str | None = None) -> int:
-    weights = VERTICAL_WEIGHTS.get(vertical, DEFAULT_WEIGHTS) if vertical else DEFAULT_WEIGHTS
+    # Resolved through the profile registry (pipeline/profiles.py); property
+    # profiles wrap the same config weights, so output is unchanged.
+    from pipeline.profiles import resolve_profile
+    weights = resolve_profile(vertical).weights
     conn = get_conn()
     rows = fetch_by_zip(conn, zip_code, account_id)
     if not rows:

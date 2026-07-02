@@ -562,3 +562,27 @@ class MarketingInsightsResponse(BaseModel):
     period_days: int
     has_data: bool = False
     last_synced_at: Optional[datetime] = None
+
+
+# ── Saved segments ──────────────────────────────────────────────────────────────
+
+class SegmentCreate(BaseModel):
+    name: str
+    filters: dict = {}
+
+
+class SegmentUpdate(BaseModel):
+    name: Optional[str] = None
+    filters: Optional[dict] = None
+
+
+class Segment(BaseModel):
+    id: int
+    name: str
+    filters: dict = {}
+    created_by: Optional[int] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

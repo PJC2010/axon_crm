@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.entitlements import require_module
-from api.routes import leads, notes, history, export, record_fields
+from api.routes import leads, notes, history, export, record_fields, segments
 from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, hcad, workflows, imports, quotes
 from api.routes import connections, insights, ml, oauth, map as map_routes
 
@@ -35,10 +35,11 @@ def _check_hcad_source() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from api.scheduler import scheduler, load_active_schedules, schedule_retraining
+    from api.scheduler import scheduler, load_active_schedules, schedule_retraining, schedule_workflow_tick
     scheduler.start()
     load_active_schedules()
     schedule_retraining()
+    schedule_workflow_tick()
     _check_hcad_source()
     yield
     scheduler.shutdown(wait=False)
@@ -69,6 +70,8 @@ app.include_router(oauth.router,    prefix="/api", tags=["Auth"])
 app.include_router(leads.router,    prefix="/api", tags=["Leads"])
 # Custom record fields are part of the core record model — always available.
 app.include_router(record_fields.router, prefix="/api", tags=["RecordFields"])
+# Saved segments are core list-view conveniences — always available.
+app.include_router(segments.router, prefix="/api", tags=["Segments"])
 app.include_router(notes.router,    prefix="/api", tags=["Notes"])
 app.include_router(history.router,  prefix="/api", tags=["History"])
 app.include_router(export.router,   prefix="/api", tags=["Export"])

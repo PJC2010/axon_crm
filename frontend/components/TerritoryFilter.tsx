@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { SlidersHorizontal } from 'lucide-react'
 import { getZips, getNeighborhoods } from '@/lib/api'
 import { useTerminology } from '@/hooks/useTerminology'
+import { SegmentPicker } from './SegmentPicker'
 import type { LeadFilters, Neighborhood } from '@/lib/types'
 
 interface Props {
@@ -189,8 +190,12 @@ export function TerritoryFilter({ filters, onChange }: Props) {
         {NEIGHBORHOOD_TIERS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
       </select>
 
-      {/* Sort — pushed to right */}
+      {/* Saved views + sort — pushed to right */}
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <SegmentPicker
+          filters={filters}
+          onApply={f => onChange({ sort: 'score', ...f, page: 1, page_size: filters.page_size })}
+        />
         <span style={{ fontSize: 12, color: 'var(--color-ink-500)' }}>Sort by</span>
         <select value={filters.sort ?? 'score'} onChange={e => set('sort', e.target.value)} className="select-field">
           {SORTS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
