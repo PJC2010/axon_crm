@@ -33,6 +33,11 @@ MODULE_KEYS: tuple[str, ...] = (
     "quotes",        # quote builder + convert-to-invoice
     "marketing",     # Meta/ad insights
     "automation",    # workflow rules engine
+    # Associated child objects (Phase 5 of the generalization roadmap). Existing
+    # accounts were backfilled OFF in migration 043; business-type presets opt in.
+    "policies",      # insurance book of business + renewal automation
+    "orders",        # retail purchase history
+    "appointments",  # scheduled visits/bookings
 )
 
 # Named plans bundle modules. The exact tiers/prices are a product decision; this
@@ -40,7 +45,7 @@ MODULE_KEYS: tuple[str, ...] = (
 # backfill default for existing accounts).
 PLAN_CATALOG: dict[str, set[str]] = {
     "starter": set(),  # core only
-    "growth": {"invoicing", "bookkeeping", "quotes", "automation"},
+    "growth": {"invoicing", "bookkeeping", "quotes", "automation", "appointments"},
     "pro": set(MODULE_KEYS),
 }
 

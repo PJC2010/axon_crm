@@ -17,6 +17,12 @@ from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user, req
 router = APIRouter()
 
 
+TRIGGER_TYPES = ("status_change", "signal_event", "lead_imported", "quote_event",
+                 "date_offset", "inactivity",
+                 "policy_event", "order_event", "appointment_event")
+ACTION_TYPES = ("create_task", "log_history", "move_lead_status", "send_notification")
+
+
 class WorkflowRuleCreate(BaseModel):
     name: str
     trigger_type: str = "status_change"
@@ -29,10 +35,46 @@ class WorkflowRuleCreate(BaseModel):
 
 class WorkflowRuleUpdate(BaseModel):
     name: Optional[str] = None
+    trigger_type: Optional[str] = None
     trigger_config: Optional[dict] = None
+    action_type: Optional[str] = None
     action_config: Optional[dict] = None
     is_active: Optional[bool] = None
     vertical: Optional[str] = None
+
+
+def _validate_rule(trigger_type: str, trigger_config: dict, action_type: str, action_config: dict) -> None:
+    """Reject configs the engine would silently skip, so mistakes surface at
+    save time instead of as a rule that never fires."""
+    if trigger_type not in TRIGGER_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unknown trigger_type: {trigger_type}")
+    if action_type not in ACTION_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unknown action_type: {action_type}")
+
+    if trigger_type == "date_offset":
+        from api.workflow_engine import DATE_TRIGGER_SOURCES
+        source = trigger_config.get("source", "properties")
+        src = DATE_TRIGGER_SOURCES.get(source)
+        if not src:
+            raise HTTPException(status_code=400, detail=f"Unknown date source: {source}")
+        field = trigger_config.get("date_field")
+        if field not in src["fields"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"date_field must be one of {sorted(src['fields'])} for source {source}",
+            )
+        try:
+            int(trigger_config.get("offset_days", 0))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="offset_days must be an integer")
+
+    if trigger_type == "inactivity":
+        days = trigger_config.get("days")
+        if not isinstance(days, int) or isinstance(days, bool) or days <= 0:
+            raise HTTPException(status_code=400, detail="inactivity rules need a positive integer `days`")
+
+    if action_type == "send_notification" and action_config.get("channel", "email") != "email":
+        raise HTTPException(status_code=400, detail="send_notification supports only the email channel")
 
 
 @router.get("/workflows")
@@ -47,6 +89,7 @@ def list_workflows(db: PGConn = Depends(get_db), user: dict = Depends(get_curren
 
 @router.post("/workflows", status_code=201)
 def create_workflow(body: WorkflowRuleCreate, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+    _validate_rule(body.trigger_type, body.trigger_config, body.action_type, body.action_config)
     with db.cursor() as cur:
         cur.execute(
             "INSERT INTO workflow_rules (name, trigger_type, trigger_config, action_type, action_config, is_active, vertical, created_by, account_id) "
@@ -62,11 +105,36 @@ def create_workflow(body: WorkflowRuleCreate, current_user: dict = Depends(requi
 
 @router.patch("/workflows/{rule_id}")
 def update_workflow(rule_id: int, body: WorkflowRuleUpdate, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+    # Validate against the merged (current ⊕ patch) rule so a partial update
+    # can't leave an inconsistent trigger/action combination behind.
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT trigger_type, trigger_config, action_type, action_config FROM workflow_rules "
+            "WHERE id = %s AND account_id = %s",
+            (rule_id, current_user["account_id"]),
+        )
+        current = dict_fetchone(cur)
+    if not current:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    for key in ("trigger_config", "action_config"):
+        if isinstance(current[key], str):
+            current[key] = json.loads(current[key])
+    _validate_rule(
+        body.trigger_type if body.trigger_type is not None else current["trigger_type"],
+        body.trigger_config if body.trigger_config is not None else current["trigger_config"],
+        body.action_type if body.action_type is not None else current["action_type"],
+        body.action_config if body.action_config is not None else current["action_config"],
+    )
+
     sets, params = [], []
     if body.name is not None:
         sets.append("name = %s"); params.append(body.name)
+    if body.trigger_type is not None:
+        sets.append("trigger_type = %s"); params.append(body.trigger_type)
     if body.trigger_config is not None:
         sets.append("trigger_config = %s"); params.append(json.dumps(body.trigger_config))
+    if body.action_type is not None:
+        sets.append("action_type = %s"); params.append(body.action_type)
     if body.action_config is not None:
         sets.append("action_config = %s"); params.append(json.dumps(body.action_config))
     if body.is_active is not None:

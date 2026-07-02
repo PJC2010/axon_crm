@@ -184,6 +184,11 @@ ML_EPOCHS = int(os.getenv("ML_EPOCHS", "600"))
 # Hour (UTC) of the nightly retrain job that refreshes labels and re-fits models.
 ML_RETRAIN_HOUR = int(os.getenv("ML_RETRAIN_HOUR", "3"))
 
+# ── Scheduled workflow rules (date_offset / inactivity triggers) ──────────────
+# Hour (UTC) of the daily tick that evaluates date-based and inactivity workflow
+# rules (see api/workflow_engine.py run_daily_rules). Runs at :15 past the hour.
+WORKFLOW_TICK_HOUR = int(os.getenv("WORKFLOW_TICK_HOUR", "7"))
+
 # ── Invoice delivery (notifications) ─────────────────────────────────────────
 RESEND_API_KEY      = os.getenv("RESEND_API_KEY", "")
 RESEND_FROM_EMAIL   = os.getenv("RESEND_FROM_EMAIL", "")

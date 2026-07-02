@@ -351,6 +351,49 @@ def schedule_retraining():
     log.info("Scheduled nightly model retrain at %02d:00 UTC", ML_RETRAIN_HOUR)
 
 
+# Fixed advisory-lock key for the workflow tick: the scheduler runs in-process
+# in every Uvicorn worker, so without this a multi-worker deploy would evaluate
+# the daily rules N times. The firings ledger already dedups actions; the lock
+# just avoids the wasted concurrent scans.
+WORKFLOW_TICK_LOCK_KEY = 742026001
+
+
+def run_workflow_daily_tick():
+    """Daily: evaluate date_offset / inactivity workflow rules for all accounts."""
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_try_advisory_lock(%s)", (WORKFLOW_TICK_LOCK_KEY,))
+            if not cur.fetchone()[0]:
+                log.info("Workflow tick skipped — another worker holds the lock")
+                return
+        try:
+            from api.workflow_engine import run_daily_rules
+            summary = run_daily_rules(conn)
+            log.info("Workflow daily tick finished: %s", summary)
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_unlock(%s)", (WORKFLOW_TICK_LOCK_KEY,))
+            conn.commit()
+    except Exception:
+        log.exception("Workflow daily tick failed")
+    finally:
+        conn.close()
+
+
+def schedule_workflow_tick():
+    """Register the daily workflow-rule cron (idempotent — replaces any existing job)."""
+    from config import WORKFLOW_TICK_HOUR
+    scheduler.add_job(
+        run_workflow_daily_tick,
+        trigger=CronTrigger(hour=WORKFLOW_TICK_HOUR, minute=15, timezone="UTC"),
+        id="workflow_daily_tick",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    log.info("Scheduled daily workflow tick at %02d:15 UTC", WORKFLOW_TICK_HOUR)
+
+
 def load_active_schedules():
     """Called at startup — restore all active schedules from the DB into APScheduler."""
     try:

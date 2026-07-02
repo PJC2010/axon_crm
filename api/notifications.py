@@ -19,6 +19,30 @@ def sms_configured() -> bool:
     return bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER)
 
 
+def send_email(*, to_email: str, subject: str, html: str) -> None:
+    """Generic transactional email — the primitive workflow notifications use.
+    The invoice/quote senders below keep their bespoke templates."""
+    if not email_configured():
+        raise RuntimeError("Email is not configured (RESEND_API_KEY / RESEND_FROM_EMAIL)")
+    import resend
+    resend.api_key = RESEND_API_KEY
+    resend.Emails.send({
+        "from": RESEND_FROM_EMAIL,
+        "to": [to_email],
+        "subject": subject,
+        "html": html,
+    })
+
+
+def send_sms(*, to_phone: str, body: str) -> None:
+    """Generic SMS primitive."""
+    if not sms_configured():
+        raise RuntimeError("SMS is not configured (TWILIO_* env vars)")
+    from twilio.rest import Client
+    client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+    client.messages.create(body=body, from_=TWILIO_FROM_NUMBER, to=to_phone)
+
+
 def send_invoice_email(*, to_email: str, business_name: str, invoice_number: str,
                        amount_due: float, pdf_bytes: bytes | None = None) -> None:
     """Email the invoice. When ``pdf_bytes`` is supplied the rendered invoice PDF

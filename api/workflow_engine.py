@@ -1,7 +1,8 @@
 """Workflow automation engine.
 
-Evaluates active workflow rules when lead status changes and executes
-matching actions (e.g., auto-creating tasks).
+Evaluates active workflow rules on lead lifecycle events (status changes,
+signals, imports, quote events) and on the daily scheduled tick (date_offset /
+inactivity triggers) and executes matching actions (e.g., auto-creating tasks).
 """
 import json
 import logging
@@ -10,6 +11,55 @@ from datetime import datetime, timedelta
 from api.deps import dict_fetchall
 
 log = logging.getLogger(__name__)
+
+# ── Scheduled (date-based) trigger sources ────────────────────────────────────
+# Whitelist of tables/date columns a `date_offset` rule may target. SQL is built
+# only from these entries — never from user input — so rule configs cannot
+# inject identifiers. Each source yields (target_id, lead_id, anchor) rows;
+# `lead_id` is the properties row actions run against, `target_id` + the
+# anchor's date value form the idempotency key in workflow_rule_firings.
+# Later phases add child-object tables (policies, orders, appointments) here —
+# the daily tick needs no changes.
+DATE_TRIGGER_SOURCES = {
+    "properties": {
+        "target_type": "property",
+        "table": "properties",
+        "fields": ("last_sale_date", "refi_date", "last_storm_date", "created_at"),
+        "id_col": "id",
+        "lead_col": "id",
+        "extra_where": "AND archived_at IS NULL",
+    },
+    # Child objects (Phase 5): actions run against the linked lead, so rows
+    # without a property_id are skipped; the child row is the dedup target so
+    # e.g. each policy's renewal fires independently.
+    "policies": {
+        "target_type": "policy",
+        "table": "policies",
+        "fields": ("effective_date", "expiration_date"),
+        "id_col": "id",
+        "lead_col": "property_id",
+        "extra_where": "AND property_id IS NOT NULL",
+    },
+    "orders": {
+        "target_type": "order",
+        "table": "orders",
+        "fields": ("order_date",),
+        "id_col": "id",
+        "lead_col": "property_id",
+        "extra_where": "AND property_id IS NOT NULL",
+    },
+    "appointments": {
+        "target_type": "appointment",
+        "table": "appointments",
+        "fields": ("starts_at",),
+        "id_col": "id",
+        "lead_col": "property_id",
+        "extra_where": "AND property_id IS NOT NULL",
+    },
+}
+
+# Object types whose routes fire lifecycle events ({object_type}_event rules).
+OBJECT_EVENT_TYPES = ("policy", "order", "appointment")
 
 
 def execute_status_change_rules(conn, lead_id: int, old_status: str | None, new_status: str, user_id: int, account_id: int) -> list[dict]:
@@ -180,6 +230,249 @@ def execute_quote_event_rules(conn, account_id: int, lead_id: int | None, event:
     return results
 
 
+def execute_object_event_rules(conn, account_id: int, lead_id: int | None,
+                               object_type: str, event: str, user_id: int) -> list[dict]:
+    """Run active {object_type}_event rules for a child-object lifecycle event.
+
+    Mirrors execute_quote_event_rules: `event` is 'created' or the object's new
+    status (e.g. 'active', 'refunded', 'no_show'); rules whose trigger_config
+    names a different event are skipped, and lead-targeting actions are skipped
+    when the object isn't linked to a lead.
+    """
+    if object_type not in OBJECT_EVENT_TYPES:
+        log.warning("Unknown object_type for event rules: %r", object_type)
+        return []
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM workflow_rules WHERE trigger_type = %s AND is_active = TRUE AND account_id = %s",
+            (f"{object_type}_event", account_id),
+        )
+        rules = dict_fetchall(cur)
+    if not rules:
+        return []
+
+    lead_vertical = _get_lead_vertical(conn, lead_id, account_id) if lead_id else None
+
+    results = []
+    for rule in rules:
+        cfg = rule["trigger_config"]
+        if isinstance(cfg, str):
+            cfg = json.loads(cfg)
+        if cfg.get("event") and cfg["event"] != event:
+            continue
+        if rule["vertical"] and rule["vertical"] != lead_vertical:
+            continue
+        if lead_id is None:
+            continue  # all current actions target the linked lead
+
+        try:
+            result = _execute_action(conn, rule, lead_id, user_id, account_id)
+            if result:
+                results.append(result)
+        except Exception as exc:
+            log.exception("%s rule %d failed for lead %s", object_type, rule["id"], lead_id)
+            results.append({
+                "action": "rule_failed",
+                "rule_id": rule["id"],
+                "rule_name": rule["name"],
+                "error": str(exc),
+            })
+    return results
+
+
+def _date_source_sql(source: str, field: str) -> str:
+    """Candidate query for a date_offset rule. `source`/`field` are validated
+    against DATE_TRIGGER_SOURCES by the caller; params are (account_id, offset_days)."""
+    src = DATE_TRIGGER_SOURCES[source]
+    return (
+        f"SELECT {src['id_col']} AS target_id, {src['lead_col']} AS lead_id, {field}::date AS anchor "
+        f"FROM {src['table']} "
+        f"WHERE account_id = %s {src.get('extra_where', '')} "
+        f"AND {field} IS NOT NULL "
+        # Fire when today ≈ anchor + offset (negative offset = before the anchor).
+        # The 3-day catch-up window tolerates missed ticks; the firings ledger
+        # makes re-scanning those days safe.
+        f"AND {field}::date + %s BETWEEN CURRENT_DATE - 3 AND CURRENT_DATE"
+    )
+
+
+def _claim_firing(conn, rule_id: int, account_id: int, target_type: str, target_id: int, fire_key: str) -> bool:
+    """Atomically claim a (rule, target, anchor) firing. Returns False when this
+    exact firing already happened — the caller must then skip the action."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO workflow_rule_firings (rule_id, account_id, target_type, target_id, fire_key) "
+            "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING RETURNING id",
+            (rule_id, account_id, target_type, target_id, fire_key),
+        )
+        return cur.fetchone() is not None
+
+
+def execute_date_offset_rules(conn, account_id: int) -> list[dict]:
+    """Run active date_offset rules for one account (called by the daily tick).
+
+    trigger_config: {"source": "properties", "date_field": "last_sale_date",
+    "offset_days": -30} — fire when CURRENT_DATE is (anchor + offset_days),
+    with a 3-day catch-up window. Actions run as the rule's creator since
+    there is no acting user. The workflow_rule_firings ledger keeps a rule
+    from firing twice for the same target/anchor.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM workflow_rules WHERE trigger_type = 'date_offset' AND is_active = TRUE AND account_id = %s",
+            (account_id,),
+        )
+        rules = dict_fetchall(cur)
+
+    results = []
+    for rule in rules:
+        cfg = rule["trigger_config"]
+        if isinstance(cfg, str):
+            cfg = json.loads(cfg)
+        source = cfg.get("source", "properties")
+        field = cfg.get("date_field")
+        src = DATE_TRIGGER_SOURCES.get(source)
+        if not src or field not in src["fields"]:
+            log.warning("date_offset rule %d has invalid source/field %r.%r — skipped", rule["id"], source, field)
+            continue
+        try:
+            offset_days = int(cfg.get("offset_days", 0))
+        except (TypeError, ValueError):
+            log.warning("date_offset rule %d has non-integer offset_days — skipped", rule["id"])
+            continue
+
+        with conn.cursor() as cur:
+            cur.execute(_date_source_sql(source, field), (account_id, offset_days))
+            candidates = cur.fetchall()
+
+        for target_id, lead_id, anchor in candidates:
+            if lead_id is None:
+                continue
+            if rule["vertical"] and rule["vertical"] != _get_lead_vertical(conn, lead_id, account_id):
+                continue
+            if not _claim_firing(conn, rule["id"], account_id, src["target_type"], target_id, anchor.isoformat()):
+                continue
+            try:
+                result = _execute_action(conn, rule, lead_id, rule["created_by"], account_id)
+                if result:
+                    results.append(result)
+            except Exception as exc:
+                # Roll back so the unclaimed firing is released and retried next tick.
+                conn.rollback()
+                log.exception("Date rule %d failed for lead %d", rule["id"], lead_id)
+                results.append({
+                    "action": "rule_failed",
+                    "rule_id": rule["id"],
+                    "rule_name": rule["name"],
+                    "error": str(exc),
+                })
+    return results
+
+
+def execute_inactivity_rules(conn, account_id: int) -> list[dict]:
+    """Run active inactivity rules for one account (called by the daily tick).
+
+    trigger_config: {"days": 60, "statuses": ["contacted", ...]?} — fire for
+    leads whose last contact_history touch (or creation, if never contacted)
+    is older than `days`. Without an explicit status scope, leads in the
+    account's terminal stages (won/lost/...) are excluded so closed work
+    doesn't nag. One firing per lapse episode: the fire key is the last-touch
+    date, so a new touch re-arms the rule for a future lapse.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM workflow_rules WHERE trigger_type = 'inactivity' AND is_active = TRUE AND account_id = %s",
+            (account_id,),
+        )
+        rules = dict_fetchall(cur)
+
+    results = []
+    for rule in rules:
+        cfg = rule["trigger_config"]
+        if isinstance(cfg, str):
+            cfg = json.loads(cfg)
+        try:
+            days = int(cfg.get("days", 0))
+        except (TypeError, ValueError):
+            days = 0
+        if days <= 0:
+            log.warning("inactivity rule %d has invalid days — skipped", rule["id"])
+            continue
+        statuses = cfg.get("statuses") or None
+
+        sql = (
+            "SELECT p.id, COALESCE(MAX(ch.created_at), p.created_at) AS last_touch "
+            "FROM properties p "
+            "LEFT JOIN contact_history ch ON ch.property_id = p.id "
+            "WHERE p.account_id = %s AND p.archived_at IS NULL "
+        )
+        params: list = [account_id]
+        if statuses:
+            sql += "AND p.status = ANY(%s) "
+            params.append(list(statuses))
+        else:
+            sql += ("AND p.status NOT IN "
+                    "(SELECT key FROM pipeline_stages WHERE account_id = %s AND is_terminal) ")
+            params.append(account_id)
+        if rule["vertical"]:
+            sql += "AND p.vertical = %s "
+            params.append(rule["vertical"])
+        sql += ("GROUP BY p.id, p.created_at "
+                "HAVING COALESCE(MAX(ch.created_at), p.created_at) < NOW() - make_interval(days => %s)")
+        params.append(days)
+
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            candidates = cur.fetchall()
+
+        for lead_id, last_touch in candidates:
+            fire_key = last_touch.date().isoformat() if last_touch else "never"
+            if not _claim_firing(conn, rule["id"], account_id, "property", lead_id, fire_key):
+                continue
+            try:
+                result = _execute_action(conn, rule, lead_id, rule["created_by"], account_id)
+                if result:
+                    results.append(result)
+            except Exception as exc:
+                conn.rollback()
+                log.exception("Inactivity rule %d failed for lead %d", rule["id"], lead_id)
+                results.append({
+                    "action": "rule_failed",
+                    "rule_id": rule["id"],
+                    "rule_name": rule["name"],
+                    "error": str(exc),
+                })
+    return results
+
+
+def run_daily_rules(conn) -> dict:
+    """Evaluate all accounts' scheduled rules (called by the daily workflow tick).
+
+    Per-account isolation: one account's failure never blocks the rest.
+    Returns a summary for the tick's log line.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT DISTINCT account_id FROM workflow_rules "
+            "WHERE trigger_type IN ('date_offset', 'inactivity') AND is_active = TRUE"
+        )
+        account_ids = [r[0] for r in cur.fetchall()]
+
+    summary = {"accounts": len(account_ids), "actions": 0, "failures": 0}
+    for account_id in account_ids:
+        try:
+            results = execute_date_offset_rules(conn, account_id)
+            results += execute_inactivity_rules(conn, account_id)
+            conn.commit()
+            summary["actions"] += sum(1 for r in results if r.get("action") != "rule_failed")
+            summary["failures"] += sum(1 for r in results if r.get("action") == "rule_failed")
+        except Exception:
+            conn.rollback()
+            summary["failures"] += 1
+            log.exception("Daily workflow rules failed for account %d", account_id)
+    return summary
+
+
 def _matches_trigger(rule: dict, old_status: str | None, new_status: str) -> bool:
     cfg = rule["trigger_config"]
     if isinstance(cfg, str):
@@ -218,6 +511,8 @@ def _execute_action(conn, rule: dict, lead_id: int, user_id: int, account_id: in
         return _log_history(conn, cfg, lead_id, user_id)
     if action_type == "move_lead_status":
         return _move_lead_status(conn, cfg, lead_id, user_id, account_id)
+    if action_type == "send_notification":
+        return _send_notification(conn, cfg, lead_id, rule, account_id)
 
     log.warning("Unknown action_type: %s", action_type)
     return None
@@ -261,6 +556,64 @@ def _create_task(conn, cfg: dict, lead_id: int, user_id: int, rule_name: str, ac
         row = cur.fetchone()
     conn.commit()
     return {"action": "task_created", "task_id": row[0], "title": row[1], "due_date": str(row[2]), "priority": row[3]}
+
+
+def _send_notification(conn, cfg: dict, lead_id: int, rule: dict, account_id: int) -> dict | None:
+    """Email the rule's creator about the matched lead ("notify me" semantics).
+
+    Email-only for now (users have no phone column). Fails soft when the email
+    channel isn't configured so scheduled rules keep working on hosts without
+    Resend — the skip is visible in the results/log rather than an exception.
+    """
+    from api import notifications
+
+    channel = cfg.get("channel", "email")
+    if channel != "email":
+        log.warning("send_notification supports only the email channel (got %r)", channel)
+        return None
+
+    recipient_id = rule.get("created_by")
+    if not recipient_id:
+        return None
+    with conn.cursor() as cur:
+        cur.execute("SELECT email FROM users WHERE id = %s", (recipient_id,))
+        row = cur.fetchone()
+    to_email = row[0] if row else None
+    if not to_email:
+        return None
+
+    if not notifications.email_configured():
+        log.info("send_notification skipped for rule %r — email not configured", rule["name"])
+        return {"action": "notification_skipped", "rule_name": rule["name"], "reason": "email_not_configured"}
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT COALESCE(contact_name, owner_name, address) FROM properties WHERE id = %s AND account_id = %s",
+            (lead_id, account_id),
+        )
+        row = cur.fetchone()
+    lead_label = (row[0] if row else None) or f"lead #{lead_id}"
+
+    subject = cfg.get("subject") or rule["name"]
+    message = cfg.get("message") or subject
+    html = (
+        '<div style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">'
+        f'<h2 style="margin:0 0 4px">{subject}</h2>'
+        f'<p style="color:#555;margin:0 0 20px">Automation: {rule["name"]} — {lead_label}</p>'
+        f"<p>{message}</p>"
+        "</div>"
+    )
+    notifications.send_email(to_email=to_email, subject=subject, html=html)
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO contact_history (property_id, action, outcome, created_by) "
+            "VALUES (%s, %s, %s, %s) RETURNING id",
+            (lead_id, f"Notification sent — {rule['name']}", None, recipient_id),
+        )
+        history_id = cur.fetchone()[0]
+    conn.commit()
+    return {"action": "notification_sent", "rule_name": rule["name"], "to": to_email, "history_id": history_id}
 
 
 def _log_history(conn, cfg: dict, lead_id: int, user_id: int) -> dict:

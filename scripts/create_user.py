@@ -33,22 +33,27 @@ import psycopg2
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from api.security import hash_password  # noqa: E402
-from api.accounts import create_account  # noqa: E402
+from api.accounts import create_account, seed_business_type_workflows  # noqa: E402
+from api.business_types import BUSINESS_TYPES, DEFAULT_BUSINESS_TYPE  # noqa: E402
 
 VALID_ROLES = ("owner", "sales_rep")
 
 
 def create_user(username: str, email: str, password: str, role: str,
-                account_id: int | None, new_account: str | None) -> tuple[int, int]:
+                account_id: int | None, new_account: str | None,
+                business_type: str = DEFAULT_BUSINESS_TYPE) -> tuple[int, int]:
     """Insert the user and return (user_id, account_id). Raises on conflict/error.
 
     Exactly one of `account_id` (join existing org) or `new_account` (create a
-    fresh org, seeding its default pipeline stages) must be provided.
+    fresh org, seeding the business type's stages/fields/plan) must be provided.
+    For a new account, the preset's default workflows are seeded after the user
+    insert — scheduled rules run as their creator, so a user must exist first.
     """
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     try:
+        is_new_account = bool(new_account)
         if new_account:
-            account_id = create_account(conn, new_account)
+            account_id = create_account(conn, new_account, business_type=business_type)
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO users (username, email, hashed_pw, role, account_id) "
@@ -56,6 +61,8 @@ def create_user(username: str, email: str, password: str, role: str,
                 (username, email, hash_password(password), role, account_id),
             )
             new_id = cur.fetchone()[0]
+        if is_new_account:
+            seed_business_type_workflows(conn, account_id, business_type, new_id)
         conn.commit()
         return new_id, account_id
     finally:
@@ -86,6 +93,11 @@ def main():
         "--account-id", type=int, dest="account_id",
         help="Add the user to this existing org (shares its leads)",
     )
+    parser.add_argument(
+        "--business-type", dest="business_type", default=DEFAULT_BUSINESS_TYPE,
+        choices=sorted(BUSINESS_TYPES), metavar="TYPE",
+        help=f"Preset for a new org ({', '.join(sorted(BUSINESS_TYPES))}); only used with --new-account",
+    )
     args = parser.parse_args()
 
     if "DATABASE_URL" not in os.environ:
@@ -102,7 +114,7 @@ def main():
     try:
         new_id, account_id = create_user(
             args.username, args.email, password, args.role,
-            args.account_id, args.new_account,
+            args.account_id, args.new_account, args.business_type,
         )
     except psycopg2.errors.UniqueViolation:
         print(

@@ -79,6 +79,10 @@ class PlanUpdate(BaseModel):
 
 class BusinessTypeUpdate(BaseModel):
     business_type: str
+    # Opt-in provisioning: also seed the preset's pack (missing stages, custom
+    # fields, default workflows, module map bounded by the plan). Off by default
+    # so a bare terminology switch stays non-destructive.
+    apply_defaults: bool = False
 
 
 def _account_business_type(account_id: int, db: PGConn) -> str:
@@ -197,8 +201,12 @@ def update_business_type(
 ):
     """Owner switches the account's business type (terminology/categories preset).
 
-    Does not touch enabled modules — those remain under the plan + /account/plan;
-    switching type only changes how the product reads. Returns the new profile.
+    By default only the preset changes (how the product reads); modules stay
+    under the plan + /account/plan. With ``apply_defaults=true`` the preset's
+    provisioning pack is also seeded: missing pipeline stages (never deleting
+    existing ones), custom-field definitions, default workflow rules (created
+    as the acting owner), and the pack's module map merged in — bounded by what
+    the account's plan grants. Returns the new profile (+ provisioned counts).
     """
     if body.business_type not in BUSINESS_TYPES:
         raise HTTPException(status_code=400, detail=f"Unknown business type: {body.business_type}")
@@ -208,8 +216,52 @@ def update_business_type(
             "UPDATE accounts SET business_type = %s WHERE id = %s",
             (body.business_type, acct),
         )
-        db.commit()
-    return business_type_profile(body.business_type)
+
+    provisioned = None
+    if body.apply_defaults:
+        from api.accounts import (
+            seed_business_type_fields, seed_business_type_stages, seed_business_type_workflows,
+        )
+        bt = BUSINESS_TYPES[body.business_type]
+        stages = seed_business_type_stages(db, acct, body.business_type)
+        fields = seed_business_type_fields(db, acct, body.business_type)
+        workflows = seed_business_type_workflows(db, acct, body.business_type, current_user["id"])
+
+        # Merge the pack's module map, bounded by the plan's grant. Only modules
+        # the pack wants ON are touched — nothing the owner enabled is disabled.
+        with db.cursor() as cur:
+            cur.execute("SELECT plan_name, modules FROM account_plans WHERE account_id = %s", (acct,))
+            row = cur.fetchone()
+        plan_name = row[0] if row else "pro"
+        granted = PLAN_CATALOG.get(plan_name, set(MODULE_KEYS))
+        overrides = dict(row[1]) if (row and row[1]) else {}
+        modules_enabled = 0
+        for key, wanted in bt.default_modules.items():
+            if wanted and key in granted and not overrides.get(key, key in granted):
+                overrides[key] = True
+                modules_enabled += 1
+        with db.cursor() as cur:
+            cur.execute(
+                "INSERT INTO account_plans (account_id, plan_name, modules, updated_at) "
+                "VALUES (%s, %s, %s, NOW()) "
+                "ON CONFLICT (account_id) DO UPDATE SET modules = %s, updated_at = NOW()",
+                (acct, plan_name, Json(overrides), Json(overrides)),
+            )
+        provisioned = {"stages": stages, "fields": fields, "workflows": workflows,
+                       "modules_enabled": modules_enabled}
+
+    db.commit()
+    profile = business_type_profile(body.business_type)
+    if provisioned is not None:
+        profile["provisioned"] = provisioned
+    return profile
+
+
+@router.get("/account/business-types")
+def list_business_types(current_user: dict = Depends(get_current_user)):
+    """The business-type catalog for the onboarding picker."""
+    from api.business_types import business_type_catalog
+    return business_type_catalog()
 
 
 @router.patch("/auth/onboarding-complete")

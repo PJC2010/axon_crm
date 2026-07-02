@@ -326,6 +326,9 @@ export type ModuleKey =
   | 'quotes'
   | 'marketing'
   | 'automation'
+  | 'policies'
+  | 'orders'
+  | 'appointments'
 
 export type ModuleMap = Record<ModuleKey, boolean>
 
@@ -344,6 +347,27 @@ export interface AccountFeatures {
   property_based?: boolean
   terminology?: Record<string, string>
   categories?: Category[]
+  // Dashboard KPI tile ids + child objects for this business type (Phase 6).
+  kpis?: string[]
+  objects?: string[]
+}
+
+export interface BusinessTypeInfo {
+  key: string
+  label: string
+  property_based: boolean
+}
+
+// Aggregates from GET /api/objects/kpis; keys present only when the matching
+// module is enabled for the account.
+export interface ObjectKpis {
+  premium_in_force?: number
+  active_policies?: number
+  renewals_30d?: number
+  revenue_mtd?: number
+  orders_30d?: number
+  repeat_rate?: number | null
+  appointments_7d?: number
 }
 
 export interface User {
@@ -747,13 +771,43 @@ export interface PerformanceBreakdown {
 
 // ── Workflows ────────────────────────────────────────────────────────────────
 
+export interface WorkflowTriggerConfig {
+  // status_change
+  from_status?: string
+  to_status?: string
+  // signal_event
+  signal_type?: string
+  // quote_event
+  event?: string
+  // date_offset — whitelisted source/date_field, offset relative to the anchor
+  source?: string
+  date_field?: string
+  offset_days?: number
+  // inactivity
+  days?: number
+  statuses?: string[]
+}
+
+export interface WorkflowActionConfig {
+  // create_task
+  title?: string
+  due_days_offset?: number
+  priority?: string
+  // move_lead_status
+  status?: string
+  // send_notification (email-only)
+  channel?: string
+  subject?: string
+  message?: string
+}
+
 export interface WorkflowRule {
   id: number
   name: string
   trigger_type: string
-  trigger_config: { from_status?: string; to_status?: string; signal_type?: string }
+  trigger_config: WorkflowTriggerConfig
   action_type: string
-  action_config: { title?: string; due_days_offset?: number; priority?: string }
+  action_config: WorkflowActionConfig
   is_active: boolean
   vertical: string | null
   created_by: number | null
@@ -764,11 +818,151 @@ export interface WorkflowRule {
 export interface WorkflowRuleCreate {
   name: string
   trigger_type?: string
-  trigger_config: { from_status?: string; to_status?: string; signal_type?: string }
+  trigger_config: WorkflowTriggerConfig
   action_type?: string
-  action_config: { title?: string; due_days_offset?: number; priority?: string }
+  action_config: WorkflowActionConfig
   is_active?: boolean
   vertical?: string
+}
+
+// ── Associated child objects (policies / orders / appointments) ──────────────
+
+export type PolicyStatus = 'quoted' | 'active' | 'lapsed' | 'cancelled'
+
+export interface Policy {
+  id: number
+  property_id: number | null
+  policy_number: string | null
+  carrier: string | null
+  policy_type: string | null
+  premium: number | null
+  billing_frequency: string | null
+  effective_date: string | null
+  expiration_date: string | null
+  status: PolicyStatus
+  commission_rate: number | null
+  notes: string | null
+  created_by: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PolicyCreate {
+  property_id?: number
+  policy_number?: string
+  carrier?: string
+  policy_type?: string
+  premium?: number
+  billing_frequency?: string
+  effective_date?: string
+  expiration_date?: string
+  status?: PolicyStatus
+  commission_rate?: number
+  notes?: string
+}
+
+export interface PolicyPage {
+  items: Policy[]
+  total: number
+  page: number
+  page_size: number
+  premium_in_force: number
+  active_count: number
+  next_expiration: string | null
+}
+
+export type OrderStatus = 'pending' | 'completed' | 'refunded' | 'cancelled'
+
+export interface OrderItem {
+  description?: string
+  quantity?: number
+  price?: number
+}
+
+export interface Order {
+  id: number
+  property_id: number | null
+  order_number: string | null
+  order_date: string | null
+  total: number
+  item_count: number | null
+  items: OrderItem[]
+  channel: string | null
+  status: OrderStatus
+  notes: string | null
+  created_by: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface OrderCreate {
+  property_id?: number
+  order_number?: string
+  order_date?: string
+  total?: number
+  item_count?: number
+  items?: OrderItem[]
+  channel?: string
+  status?: OrderStatus
+  notes?: string
+}
+
+export interface OrderPage {
+  items: Order[]
+  total: number
+  page: number
+  page_size: number
+  lifetime_total: number
+  completed_count: number
+  last_order_date: string | null
+}
+
+export type AppointmentStatus = 'scheduled' | 'completed' | 'cancelled' | 'no_show'
+
+export interface Appointment {
+  id: number
+  property_id: number | null
+  assigned_to: number | null
+  title: string
+  location: string | null
+  starts_at: string
+  ends_at: string
+  status: AppointmentStatus
+  notes: string | null
+  created_by: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AppointmentCreate {
+  property_id?: number
+  assigned_to?: number
+  title: string
+  location?: string
+  starts_at: string
+  ends_at: string
+  status?: AppointmentStatus
+  notes?: string
+}
+
+export interface AppointmentPage {
+  items: Appointment[]
+  total: number
+  page: number
+  page_size: number
+  next_at: string | null
+  upcoming_count: number
+}
+
+// ── Saved segments ───────────────────────────────────────────────────────────
+
+export interface Segment {
+  id: number
+  name: string
+  filters: LeadFilters
+  created_by: number | null
+  created_at: string
+  updated_at: string
 }
 
 export interface JobCostRow {

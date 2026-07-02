@@ -1,4 +1,4 @@
-import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, ModuleMap, RecordFieldDef, RecordFieldType } from './types'
+import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType } from './types'
 import { getToken, clearToken } from './auth'
 
 // Use 127.0.0.1 (not localhost): on macOS `localhost` resolves to IPv6 ::1
@@ -81,11 +81,29 @@ export function updateAccountPlan(modules: Partial<ModuleMap>): Promise<AccountF
 
 // Switch the account's business type (terminology/categories preset). Returns the
 // new business-type profile. Callers should clearEntitlementsCache() afterward.
-export function updateBusinessType(business_type: string): Promise<{
+// With applyDefaults, the preset's provisioning pack (missing stages, custom
+// fields, default workflows, plan-bounded modules) is also seeded.
+export function updateBusinessType(business_type: string, applyDefaults = false): Promise<{
   business_type: string; property_based: boolean
   terminology: Record<string, string>; categories: { value: string; label: string }[]
+  kpis?: string[]; objects?: string[]
+  provisioned?: { stages: number; fields: number; workflows: number; modules_enabled: number }
 }> {
-  return req('/account/business-type', { method: 'PATCH', body: JSON.stringify({ business_type }) })
+  return req('/account/business-type', {
+    method: 'PATCH',
+    body: JSON.stringify({ business_type, apply_defaults: applyDefaults }),
+  })
+}
+
+// Business-type catalog for the onboarding picker.
+export function getBusinessTypes(): Promise<BusinessTypeInfo[]> {
+  return req('/account/business-types')
+}
+
+// Child-object dashboard aggregates (premium in force, revenue MTD, …). Keys
+// are present only for modules the account has enabled.
+export function getObjectKpis(): Promise<ObjectKpis> {
+  return req('/objects/kpis')
 }
 
 // ── Custom record fields ────────────────────────────────────────────────────────
@@ -626,6 +644,80 @@ export function deleteWorkflow(id: number): Promise<void> {
 
 export function seedWorkflowDefaults(vertical: string): Promise<{ created: number; rules: WorkflowRule[] }> {
   return req(`/workflows/seed-defaults?vertical=${vertical}`, { method: 'POST' })
+}
+
+// ── Associated child objects (policies / orders / appointments) ──────────────
+
+export function getPolicies(params: { property_id?: number; status?: string; page?: number; page_size?: number } = {}): Promise<PolicyPage> {
+  const p = new URLSearchParams()
+  Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== '') p.set(k, String(v)) })
+  return req<PolicyPage>(`/policies?${p}`)
+}
+
+export function createPolicy(body: PolicyCreate): Promise<Policy> {
+  return req<Policy>('/policies', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updatePolicy(id: number, body: Partial<PolicyCreate>): Promise<Policy> {
+  return req<Policy>(`/policies/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export function deletePolicy(id: number): Promise<void> {
+  return req<void>(`/policies/${id}`, { method: 'DELETE' })
+}
+
+export function getOrders(params: { property_id?: number; status?: string; channel?: string; page?: number; page_size?: number } = {}): Promise<OrderPage> {
+  const p = new URLSearchParams()
+  Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== '') p.set(k, String(v)) })
+  return req<OrderPage>(`/orders?${p}`)
+}
+
+export function createOrder(body: OrderCreate): Promise<Order> {
+  return req<Order>('/orders', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateOrder(id: number, body: Partial<OrderCreate>): Promise<Order> {
+  return req<Order>(`/orders/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export function deleteOrder(id: number): Promise<void> {
+  return req<void>(`/orders/${id}`, { method: 'DELETE' })
+}
+
+export function getAppointments(params: { property_id?: number; status?: string; from?: string; to?: string; page?: number; page_size?: number } = {}): Promise<AppointmentPage> {
+  const p = new URLSearchParams()
+  Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== '') p.set(k, String(v)) })
+  return req<AppointmentPage>(`/appointments?${p}`)
+}
+
+export function createAppointment(body: AppointmentCreate): Promise<Appointment> {
+  return req<Appointment>('/appointments', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateAppointment(id: number, body: Partial<AppointmentCreate>): Promise<Appointment> {
+  return req<Appointment>(`/appointments/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export function deleteAppointment(id: number): Promise<void> {
+  return req<void>(`/appointments/${id}`, { method: 'DELETE' })
+}
+
+// ── Saved segments ───────────────────────────────────────────────────────────
+
+export function getSegments(): Promise<Segment[]> {
+  return req<Segment[]>('/segments')
+}
+
+export function createSegment(name: string, filters: LeadFilters): Promise<Segment> {
+  return req<Segment>('/segments', { method: 'POST', body: JSON.stringify({ name, filters }) })
+}
+
+export function updateSegment(id: number, body: { name?: string; filters?: LeadFilters }): Promise<Segment> {
+  return req<Segment>(`/segments/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export function deleteSegment(id: number): Promise<void> {
+  return req<void>(`/segments/${id}`, { method: 'DELETE' })
 }
 
 // ── Contact / lead import ───────────────────────────────────────────────────────

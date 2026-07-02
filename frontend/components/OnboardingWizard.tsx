@@ -1,21 +1,56 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { ArrowRight, ArrowLeft, Zap, MapPin, Kanban, CheckCircle2 } from 'lucide-react'
-import { completeOnboarding, triggerRun, seedWorkflowDefaults, getRegions, type Region } from '@/lib/api'
+import { ArrowRight, ArrowLeft, Zap, MapPin, Kanban, CheckCircle2, Briefcase } from 'lucide-react'
+import {
+  completeOnboarding, triggerRun, seedWorkflowDefaults, getRegions,
+  getBusinessTypes, updateBusinessType, type Region,
+} from '@/lib/api'
 import { useTerminology } from '@/hooks/useTerminology'
+import { refreshEntitlements } from '@/hooks/useEntitlements'
+import type { BusinessTypeInfo } from '@/lib/types'
 
 interface Props {
   onComplete: () => void
 }
 
-const STEPS = ['Welcome', 'Territory', 'Automations', 'Ready']
-
 export function OnboardingWizard({ onComplete }: Props) {
-  // Category picklist + terminology come from the account's business type.
-  const { categories, t } = useTerminology()
+  // Category picklist + terminology come from the account's business type; a
+  // switch on the Business step refreshes them in place (refreshEntitlements).
+  const { categories, t, businessType, propertyBased } = useTerminology()
   const categoryLabel = (value: string) => categories.find(c => c.value === value)?.label
   const [step, setStep] = useState(0)
   const [vertical, setVertical] = useState('')
+
+  // Business-type picker (step 0). `bizType` tracks the user's selection before
+  // it's applied on Continue; property_based comes from the catalog so the
+  // Territory step hides immediately for non-property presets.
+  const [catalog, setCatalog] = useState<BusinessTypeInfo[]>([])
+  const [bizType, setBizType] = useState<string | null>(null)
+  const [applying, setApplying] = useState(false)
+  useEffect(() => {
+    getBusinessTypes().then(setCatalog).catch(() => setCatalog([]))
+  }, [])
+  const selectedType = bizType ?? businessType
+  const selectedInfo = catalog.find(c => c.key === selectedType)
+  const isPropertyBased = selectedInfo?.property_based ?? propertyBased
+  const isHomeServices = selectedType === 'home_services'
+
+  const steps = ['Business', 'Category', ...(isPropertyBased ? ['Territory'] : []), 'Automations', 'Ready']
+  const stepName = steps[Math.min(step, steps.length - 1)]
+
+  async function handleBusinessContinue() {
+    if (bizType && bizType !== businessType) {
+      setApplying(true)
+      try {
+        // apply_defaults seeds the pack (stages, fields, workflows, modules).
+        await updateBusinessType(bizType, true)
+        await refreshEntitlements()
+      } catch { /* allow continuing — terminology falls back to current */ }
+      finally { setApplying(false) }
+    }
+    setVertical('')
+    setStep(s => s + 1)
+  }
   const [zip, setZip] = useState('')
   const [importing, setImporting] = useState(false)
   const [imported, setImported] = useState(false)
@@ -82,7 +117,7 @@ export function OnboardingWizard({ onComplete }: Props) {
       <div style={{ width: '100%', maxWidth: 520, padding: '0 20px' }}>
         {/* Progress */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 32, justifyContent: 'center' }}>
-          {STEPS.map((s, i) => (
+          {steps.map((s, i) => (
             <div key={s} style={{
               height: 4, width: 48, borderRadius: 2,
               background: i <= step ? 'var(--color-accent)' : 'var(--color-ink-200)',
@@ -91,8 +126,44 @@ export function OnboardingWizard({ onComplete }: Props) {
           ))}
         </div>
 
-        {/* Step 0: Welcome */}
-        {step === 0 && (
+        {/* Step: Business type */}
+        {stepName === 'Business' && (
+          <div style={{ textAlign: 'center' }}>
+            <Briefcase size={40} strokeWidth={1.5} style={{ color: 'var(--color-accent)', marginBottom: 16 }} />
+            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 600, color: 'var(--color-ink-900)', margin: '0 0 8px' }}>
+              Welcome to Axon
+            </h1>
+            <p style={{ fontSize: 15, color: 'var(--color-ink-500)', margin: '0 0 28px', lineHeight: 1.5 }}>
+              What kind of business are you? This sets up your pipeline stages, fields, and automations.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {catalog.map(c => (
+                <button
+                  key={c.key}
+                  onClick={() => setBizType(c.key)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px',
+                    borderRadius: 'var(--radius-card)',
+                    border: selectedType === c.key ? '2px solid var(--color-accent)' : '1px solid var(--color-ink-200)',
+                    background: selectedType === c.key ? 'var(--color-accent-50)' : 'var(--color-surface)',
+                    cursor: 'pointer', textAlign: 'left', width: '100%',
+                  }}
+                >
+                  <div style={{ flex: 1 }}>
+                    <p style={{ margin: 0, fontSize: 15, fontWeight: 500, color: 'var(--color-ink-900)' }}>{c.label}</p>
+                  </div>
+                  {selectedType === c.key && <CheckCircle2 size={18} strokeWidth={2} style={{ color: 'var(--color-accent)', flexShrink: 0 }} />}
+                </button>
+              ))}
+              {catalog.length === 0 && (
+                <p style={{ fontSize: 13, color: 'var(--color-ink-400)' }}>Loading business types…</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Step: Category */}
+        {stepName === 'Category' && (
           <div style={{ textAlign: 'center' }}>
             <svg width="48" height="48" viewBox="0 0 32 32" fill="none" style={{ marginBottom: 20 }} aria-hidden="true">
               <mask id="axon-mark-onboard">
@@ -104,10 +175,10 @@ export function OnboardingWizard({ onComplete }: Props) {
               <circle cx="16" cy="16" r="1.5" fill="var(--color-ink-900)" />
             </svg>
             <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 600, color: 'var(--color-ink-900)', margin: '0 0 8px' }}>
-              Welcome to Axon
+              Pick your {t('category').toLowerCase()}
             </h1>
             <p style={{ fontSize: 15, color: 'var(--color-ink-500)', margin: '0 0 28px', lineHeight: 1.5 }}>
-              Let&apos;s get your pipeline set up in under a minute. First, which {t('category').toLowerCase()} best describes your work?
+              Which {t('category').toLowerCase()} best describes your work?
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {categories.map(c => (
@@ -132,8 +203,8 @@ export function OnboardingWizard({ onComplete }: Props) {
           </div>
         )}
 
-        {/* Step 1: Territory */}
-        {step === 1 && (
+        {/* Step: Territory (property-based presets only) */}
+        {stepName === 'Territory' && (
           <div style={{ textAlign: 'center' }}>
             <MapPin size={40} strokeWidth={1.5} style={{ color: 'var(--color-accent)', marginBottom: 16 }} />
             <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 600, color: 'var(--color-ink-900)', margin: '0 0 8px' }}>
@@ -238,43 +309,66 @@ export function OnboardingWizard({ onComplete }: Props) {
           </div>
         )}
 
-        {/* Step 2: Automations */}
-        {step === 2 && (
+        {/* Step: Automations */}
+        {stepName === 'Automations' && (
           <div style={{ textAlign: 'center' }}>
             <Zap size={40} strokeWidth={1.5} style={{ color: 'var(--color-accent)', marginBottom: 16 }} />
             <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 600, color: 'var(--color-ink-900)', margin: '0 0 8px' }}>
-              Enable automations
+              {isHomeServices ? 'Enable automations' : 'Automations are ready'}
             </h2>
-            <p style={{ fontSize: 15, color: 'var(--color-ink-500)', margin: '0 0 24px', lineHeight: 1.5 }}>
-              Axon can automatically create follow-up tasks when you move leads through your pipeline.
-              We&apos;ll set up recommended automations for {categoryLabel(vertical)?.toLowerCase() ?? 'your service'}.
-            </p>
-            <button
-              onClick={handleSeedWorkflows}
-              disabled={seeding || seeded || !vertical}
-              style={{
-                padding: '12px 24px', borderRadius: 'var(--radius-pill)',
-                background: seeded ? 'var(--color-moss)' : 'var(--color-accent)',
-                color: 'white', border: 'none', fontSize: 15, fontWeight: 500, cursor: seeding ? 'not-allowed' : 'pointer',
-                display: 'inline-flex', alignItems: 'center', gap: 8,
-              }}
-            >
-              {seeded ? (
-                <><CheckCircle2 size={16} /> Automations enabled</>
-              ) : seeding ? 'Setting up…' : (
-                <><Zap size={16} /> Enable recommended automations</>
-              )}
-            </button>
-            {!vertical && (
-              <p style={{ marginTop: 12, fontSize: 13, color: 'var(--color-ink-400)' }}>
-                Go back and select a vertical to enable automations.
-              </p>
+            {isHomeServices ? (
+              <>
+                <p style={{ fontSize: 15, color: 'var(--color-ink-500)', margin: '0 0 24px', lineHeight: 1.5 }}>
+                  Axon can automatically create follow-up tasks when you move leads through your pipeline.
+                  We&apos;ll set up recommended automations for {categoryLabel(vertical)?.toLowerCase() ?? 'your service'}.
+                </p>
+                <button
+                  onClick={handleSeedWorkflows}
+                  disabled={seeding || seeded || !vertical}
+                  style={{
+                    padding: '12px 24px', borderRadius: 'var(--radius-pill)',
+                    background: seeded ? 'var(--color-moss)' : 'var(--color-accent)',
+                    color: 'white', border: 'none', fontSize: 15, fontWeight: 500, cursor: seeding ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex', alignItems: 'center', gap: 8,
+                  }}
+                >
+                  {seeded ? (
+                    <><CheckCircle2 size={16} /> Automations enabled</>
+                  ) : seeding ? 'Setting up…' : (
+                    <><Zap size={16} /> Enable recommended automations</>
+                  )}
+                </button>
+                {!vertical && (
+                  <p style={{ marginTop: 12, fontSize: 13, color: 'var(--color-ink-400)' }}>
+                    Go back and select a vertical to enable automations.
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <p style={{ fontSize: 15, color: 'var(--color-ink-500)', margin: '0 0 24px', lineHeight: 1.5 }}>
+                  Your {selectedInfo?.label.toLowerCase() ?? 'business'} preset already set up its
+                  recommended automations{selectedType === 'insurance_agency'
+                    ? ' — renewal reminders at 90, 30, and 7 days before each policy expires, plus an annual review nudge.'
+                    : selectedType === 'retail'
+                      ? ' — a win-back task when a customer goes 90 days without a purchase.'
+                      : '.'}
+                  {' '}Manage them anytime in Settings.
+                </p>
+                <div style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 24px',
+                  borderRadius: 'var(--radius-pill)', background: 'var(--color-moss)', color: 'white',
+                  fontSize: 15, fontWeight: 500,
+                }}>
+                  <CheckCircle2 size={16} /> Automations enabled
+                </div>
+              </>
             )}
           </div>
         )}
 
-        {/* Step 3: Ready */}
-        {step === 3 && (
+        {/* Step: Ready */}
+        {stepName === 'Ready' && (
           <div style={{ textAlign: 'center' }}>
             <CheckCircle2 size={48} strokeWidth={1.5} style={{ color: 'var(--color-moss)', marginBottom: 16 }} />
             <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 600, color: 'var(--color-ink-900)', margin: '0 0 8px' }}>
@@ -319,19 +413,19 @@ export function OnboardingWizard({ onComplete }: Props) {
             </button>
           ) : <div />}
 
-          {step < STEPS.length - 1 ? (
+          {step < steps.length - 1 ? (
             <button
-              onClick={() => setStep(s => s + 1)}
-              disabled={step === 0 && !vertical}
+              onClick={() => stepName === 'Business' ? handleBusinessContinue() : setStep(s => s + 1)}
+              disabled={(stepName === 'Category' && !vertical) || applying}
               style={{
                 padding: '10px 24px', borderRadius: 'var(--radius-pill)',
                 background: 'var(--color-accent)', color: 'white',
                 border: 'none', fontSize: 14, fontWeight: 500, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', gap: 6,
-                opacity: step === 0 && !vertical ? 0.5 : 1,
+                opacity: (stepName === 'Category' && !vertical) || applying ? 0.5 : 1,
               }}
             >
-              Continue <ArrowRight size={14} />
+              {applying ? 'Setting up…' : 'Continue'} <ArrowRight size={14} />
             </button>
           ) : (
             <button
@@ -350,7 +444,7 @@ export function OnboardingWizard({ onComplete }: Props) {
         </div>
 
         {/* Skip link */}
-        {step < STEPS.length - 1 && (
+        {step < steps.length - 1 && (
           <div style={{ textAlign: 'center', marginTop: 16 }}>
             <button
               onClick={handleFinish}
