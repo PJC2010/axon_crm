@@ -326,13 +326,16 @@ def get_timeline(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depend
             raise HTTPException(status_code=404, detail="Lead not found")
         cur.execute(
             "SELECT id, property_id, 'history' AS type, action AS title, outcome AS detail, "
+            "channel, direction, body, "
             "created_at FROM contact_history WHERE property_id = %s "
             "UNION ALL "
             "SELECT id, property_id, 'note' AS type, note AS title, NULL AS detail, "
+            "NULL AS channel, NULL AS direction, NULL AS body, "
             "created_at FROM contact_notes WHERE property_id = %s "
             "UNION ALL "
             "SELECT id, property_id, 'task' AS type, title, "
             "CASE WHEN is_complete THEN 'completed' ELSE priority END AS detail, "
+            "NULL AS channel, NULL AS direction, NULL AS body, "
             "created_at FROM tasks WHERE property_id = %s "
             "UNION ALL "
             "SELECT id, property_id, 'signal' AS type, "
@@ -340,6 +343,7 @@ def get_timeline(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depend
             "                 WHEN 'new_permit' THEN 'New permit activity' "
             "                 ELSE signal_type END AS title, "
             "details->>'summary' AS detail, "
+            "NULL AS channel, NULL AS direction, NULL AS body, "
             "detected_at AS created_at FROM signal_events WHERE property_id = %s "
             "ORDER BY created_at DESC",
             (lead_id, lead_id, lead_id, lead_id),

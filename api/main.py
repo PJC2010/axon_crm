@@ -10,7 +10,7 @@ from api.routes import leads, notes, history, export, record_fields, segments, m
 from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, hcad, workflows, imports, quotes
 from api.routes import policies, orders, appointments, objects, order_imports
 from api.routes import connections, insights, ml, oauth, map as map_routes
-from api.routes import stripe_payments
+from api.routes import stripe_payments, twilio_inbound
 
 log = logging.getLogger(__name__)
 
@@ -111,6 +111,8 @@ app.include_router(quotes.public_router,   prefix="/api", tags=["Quotes"])
 app.include_router(stripe_payments.router, prefix="/api", tags=["Payments"],
                    dependencies=[Depends(require_module("invoicing"))])
 app.include_router(stripe_payments.public_router, prefix="/api", tags=["Payments"])
+# Inbound Twilio SMS (two-way messaging) — Twilio calls it, signature-verified.
+app.include_router(twilio_inbound.public_router, prefix="/api", tags=["Messaging"])
 app.include_router(bookkeeping.router, prefix="/api", tags=["Bookkeeping"],
                    dependencies=[Depends(require_module("bookkeeping"))])
 # Associated child objects (Phase 5) — each gated as a whole module. Presets
