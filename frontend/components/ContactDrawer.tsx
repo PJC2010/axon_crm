@@ -9,6 +9,9 @@ import { StatusSelect } from './StatusSelect'
 import { ScoreBadge } from './ScoreBadge'
 import { ContactInfoSection } from './lead/ContactInfoSection'
 import { CustomFieldsSection } from './lead/CustomFieldsSection'
+import { PoliciesSection } from './lead/PoliciesSection'
+import { OrdersSection } from './lead/OrdersSection'
+import { AppointmentsSection } from './lead/AppointmentsSection'
 import { PropertySignals } from './lead/PropertySignals'
 import { WhyThisScore } from './lead/WhyThisScore'
 import { ActivityPanel } from './lead/ActivityPanel'
@@ -128,6 +131,9 @@ export function ContactDrawer({ lead, onClose, onStatusChange, onLeadChange, onT
           </div>
           <ContactInfoSection lead={lead} onSaved={l => onLeadChange?.(l)} onToast={onToast} />
           <CustomFieldsSection key={lead.id} lead={lead} onSaved={l => onLeadChange?.(l)} onToast={onToast} />
+          <PoliciesSection key={`pol-${lead.id}`} leadId={lead.id} />
+          <OrdersSection key={`ord-${lead.id}`} leadId={lead.id} />
+          <AppointmentsSection key={`appt-${lead.id}`} leadId={lead.id} />
           {propertyBased && <PropertySignals lead={lead} />}
           {propertyBased && <WhyThisScore leadId={lead.id} />}
           <ActivityPanel leadId={lead.id} />

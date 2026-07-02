@@ -17,7 +17,9 @@ from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user, req
 router = APIRouter()
 
 
-TRIGGER_TYPES = ("status_change", "signal_event", "lead_imported", "quote_event", "date_offset", "inactivity")
+TRIGGER_TYPES = ("status_change", "signal_event", "lead_imported", "quote_event",
+                 "date_offset", "inactivity",
+                 "policy_event", "order_event", "appointment_event")
 ACTION_TYPES = ("create_task", "log_history", "move_lead_status", "send_notification")
 
 

@@ -94,7 +94,9 @@ BUSINESS_TYPES: dict[str, BusinessType] = {
         key="home_services",
         label="Home services",
         property_based=True,
-        default_modules=_modules(_base=True),  # everything on — current behavior
+        # Everything on except the Phase-5 child objects (matches pre-Phase-5 UX;
+        # owners can enable them from the plan settings).
+        default_modules=_modules(_base=True, policies=False, orders=False, appointments=False),
         categories=_HOME_SERVICES_CATEGORIES,
         terminology_overrides={},  # base vocabulary
     ),
@@ -103,7 +105,7 @@ BUSINESS_TYPES: dict[str, BusinessType] = {
         label="General sales / B2B",
         property_based=False,
         # No property pipeline or map for non-property businesses.
-        default_modules=_modules(prospecting=False, map=False),
+        default_modules=_modules(prospecting=False, map=False, policies=False, orders=False),
         categories=_GENERAL_SALES_CATEGORIES,
         terminology_overrides={
             "record": "Account",
@@ -121,7 +123,7 @@ BUSINESS_TYPES: dict[str, BusinessType] = {
         key="professional_services",
         label="Professional services",
         property_based=False,
-        default_modules=_modules(prospecting=False, map=False),
+        default_modules=_modules(prospecting=False, map=False, policies=False, orders=False),
         categories=_PROFESSIONAL_SERVICES_CATEGORIES,
         terminology_overrides={
             "lead": "Client",

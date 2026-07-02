@@ -29,7 +29,37 @@ DATE_TRIGGER_SOURCES = {
         "lead_col": "id",
         "extra_where": "AND archived_at IS NULL",
     },
+    # Child objects (Phase 5): actions run against the linked lead, so rows
+    # without a property_id are skipped; the child row is the dedup target so
+    # e.g. each policy's renewal fires independently.
+    "policies": {
+        "target_type": "policy",
+        "table": "policies",
+        "fields": ("effective_date", "expiration_date"),
+        "id_col": "id",
+        "lead_col": "property_id",
+        "extra_where": "AND property_id IS NOT NULL",
+    },
+    "orders": {
+        "target_type": "order",
+        "table": "orders",
+        "fields": ("order_date",),
+        "id_col": "id",
+        "lead_col": "property_id",
+        "extra_where": "AND property_id IS NOT NULL",
+    },
+    "appointments": {
+        "target_type": "appointment",
+        "table": "appointments",
+        "fields": ("starts_at",),
+        "id_col": "id",
+        "lead_col": "property_id",
+        "extra_where": "AND property_id IS NOT NULL",
+    },
 }
+
+# Object types whose routes fire lifecycle events ({object_type}_event rules).
+OBJECT_EVENT_TYPES = ("policy", "order", "appointment")
 
 
 def execute_status_change_rules(conn, lead_id: int, old_status: str | None, new_status: str, user_id: int, account_id: int) -> list[dict]:
@@ -191,6 +221,56 @@ def execute_quote_event_rules(conn, account_id: int, lead_id: int | None, event:
                 results.append(result)
         except Exception as exc:
             log.exception("Quote rule %d failed for lead %s", rule["id"], lead_id)
+            results.append({
+                "action": "rule_failed",
+                "rule_id": rule["id"],
+                "rule_name": rule["name"],
+                "error": str(exc),
+            })
+    return results
+
+
+def execute_object_event_rules(conn, account_id: int, lead_id: int | None,
+                               object_type: str, event: str, user_id: int) -> list[dict]:
+    """Run active {object_type}_event rules for a child-object lifecycle event.
+
+    Mirrors execute_quote_event_rules: `event` is 'created' or the object's new
+    status (e.g. 'active', 'refunded', 'no_show'); rules whose trigger_config
+    names a different event are skipped, and lead-targeting actions are skipped
+    when the object isn't linked to a lead.
+    """
+    if object_type not in OBJECT_EVENT_TYPES:
+        log.warning("Unknown object_type for event rules: %r", object_type)
+        return []
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM workflow_rules WHERE trigger_type = %s AND is_active = TRUE AND account_id = %s",
+            (f"{object_type}_event", account_id),
+        )
+        rules = dict_fetchall(cur)
+    if not rules:
+        return []
+
+    lead_vertical = _get_lead_vertical(conn, lead_id, account_id) if lead_id else None
+
+    results = []
+    for rule in rules:
+        cfg = rule["trigger_config"]
+        if isinstance(cfg, str):
+            cfg = json.loads(cfg)
+        if cfg.get("event") and cfg["event"] != event:
+            continue
+        if rule["vertical"] and rule["vertical"] != lead_vertical:
+            continue
+        if lead_id is None:
+            continue  # all current actions target the linked lead
+
+        try:
+            result = _execute_action(conn, rule, lead_id, user_id, account_id)
+            if result:
+                results.append(result)
+        except Exception as exc:
+            log.exception("%s rule %d failed for lead %s", object_type, rule["id"], lead_id)
             results.append({
                 "action": "rule_failed",
                 "rule_id": rule["id"],

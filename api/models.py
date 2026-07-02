@@ -564,6 +564,145 @@ class MarketingInsightsResponse(BaseModel):
     last_synced_at: Optional[datetime] = None
 
 
+# ── Associated child objects (policies / orders / appointments) ─────────────────
+
+POLICY_STATUSES = ["quoted", "active", "lapsed", "cancelled"]
+ORDER_STATUSES = ["pending", "completed", "refunded", "cancelled"]
+APPOINTMENT_STATUSES = ["scheduled", "completed", "cancelled", "no_show"]
+
+
+class PolicyCreate(BaseModel):
+    property_id: Optional[int] = None
+    policy_number: Optional[str] = None
+    carrier: Optional[str] = None
+    policy_type: Optional[str] = None       # line of business (auto/home/life/…)
+    premium: Optional[float] = None          # annualized
+    billing_frequency: Optional[str] = None
+    effective_date: Optional[date] = None
+    expiration_date: Optional[date] = None   # the renewal/X-date
+    status: str = "quoted"
+    commission_rate: Optional[float] = None
+    notes: Optional[str] = None
+
+
+class PolicyUpdate(BaseModel):
+    property_id: Optional[int] = None
+    policy_number: Optional[str] = None
+    carrier: Optional[str] = None
+    policy_type: Optional[str] = None
+    premium: Optional[float] = None
+    billing_frequency: Optional[str] = None
+    effective_date: Optional[date] = None
+    expiration_date: Optional[date] = None
+    status: Optional[str] = None
+    commission_rate: Optional[float] = None
+    notes: Optional[str] = None
+
+
+class Policy(BaseModel):
+    id: int
+    property_id: Optional[int] = None
+    policy_number: Optional[str] = None
+    carrier: Optional[str] = None
+    policy_type: Optional[str] = None
+    premium: Optional[float] = None
+    billing_frequency: Optional[str] = None
+    effective_date: Optional[date] = None
+    expiration_date: Optional[date] = None
+    status: str
+    commission_rate: Optional[float] = None
+    notes: Optional[str] = None
+    created_by: Optional[int] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class OrderCreate(BaseModel):
+    property_id: Optional[int] = None
+    order_number: Optional[str] = None
+    order_date: Optional[date] = None        # defaults to today server-side
+    total: float = 0
+    item_count: Optional[int] = None
+    items: list[dict] = []
+    channel: Optional[str] = None
+    status: str = "completed"
+    notes: Optional[str] = None
+
+
+class OrderUpdate(BaseModel):
+    property_id: Optional[int] = None
+    order_number: Optional[str] = None
+    order_date: Optional[date] = None
+    total: Optional[float] = None
+    item_count: Optional[int] = None
+    items: Optional[list[dict]] = None
+    channel: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class Order(BaseModel):
+    id: int
+    property_id: Optional[int] = None
+    order_number: Optional[str] = None
+    order_date: Optional[date] = None
+    total: float = 0
+    item_count: Optional[int] = None
+    items: list[dict] = []
+    channel: Optional[str] = None
+    status: str
+    notes: Optional[str] = None
+    created_by: Optional[int] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AppointmentCreate(BaseModel):
+    property_id: Optional[int] = None
+    assigned_to: Optional[int] = None
+    title: str
+    location: Optional[str] = None
+    starts_at: datetime
+    ends_at: datetime
+    status: str = "scheduled"
+    notes: Optional[str] = None
+
+
+class AppointmentUpdate(BaseModel):
+    property_id: Optional[int] = None
+    assigned_to: Optional[int] = None
+    title: Optional[str] = None
+    location: Optional[str] = None
+    starts_at: Optional[datetime] = None
+    ends_at: Optional[datetime] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class Appointment(BaseModel):
+    id: int
+    property_id: Optional[int] = None
+    assigned_to: Optional[int] = None
+    title: str
+    location: Optional[str] = None
+    starts_at: Optional[datetime] = None
+    ends_at: Optional[datetime] = None
+    status: str
+    notes: Optional[str] = None
+    created_by: Optional[int] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
 # ── Saved segments ──────────────────────────────────────────────────────────────
 
 class SegmentCreate(BaseModel):
