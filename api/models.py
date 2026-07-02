@@ -4,7 +4,7 @@ from typing import Optional
 from pydantic import BaseModel
 
 EXPENSE_CATEGORIES = ["fuel", "materials", "meals", "tools", "advertising", "subcontractor", "office", "other"]
-PAYMENT_METHODS    = ["cash", "card", "check", "zelle", "other"]
+PAYMENT_METHODS    = ["cash", "card", "check", "zelle", "stripe", "other"]
 
 
 # ── Lead ──────────────────────────────────────────────────────────────────────
@@ -200,6 +200,10 @@ class InvoicePayment(BaseModel):
     notes: Optional[str] = None
     created_by: Optional[int] = None
     created_at: datetime
+    # Set on payments recorded by the Stripe webhook; such rows can't be
+    # deleted manually (refund via Stripe instead).
+    stripe_payment_intent_id: Optional[str] = None
+    stripe_charge_id: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -266,6 +270,9 @@ class Invoice(BaseModel):
     recurrence_next: Optional[date] = None
     recurrence_end: Optional[date] = None
     recurring_source_id: Optional[int] = None
+    # Token addressing the public pay page (/pay/{pay_token}); separate from
+    # public_token so a circulating PDF link can't initiate payment.
+    pay_token: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -275,6 +282,30 @@ class Invoice(BaseModel):
 
 class SendInvoiceRequest(BaseModel):
     channels: list[str]  # any of: "email", "sms"
+
+
+# ── Online payments (Stripe Connect) ──────────────────────────────────────────
+
+class StripeStatus(BaseModel):
+    available: bool                    # platform key configured on the server
+    connected: bool                    # this account has a connected account
+    charges_enabled: bool = False
+    payouts_enabled: bool = False
+    details_submitted: bool = False
+
+
+class PublicPayInfo(BaseModel):
+    """Customer-safe pay-page payload — no ids or account internals."""
+    business_name: str
+    invoice_number: str
+    status: str
+    total: float
+    amount_paid: float
+    balance_due: float
+    issue_date: date
+    due_date: Optional[date] = None
+    payable: bool
+    pdf_url: str
 
 
 # ── Quotes ────────────────────────────────────────────────────────────────────
@@ -509,6 +540,10 @@ class HistoryEntry(BaseModel):
     action: str
     outcome: Optional[str] = None
     created_at: datetime
+    # Two-way messaging (048): NULL on legacy rows and manual log entries.
+    channel: Optional[str] = None      # 'sms' | 'email'
+    direction: Optional[str] = None    # 'inbound' | 'outbound'
+    body: Optional[str] = None
 
     class Config:
         from_attributes = True
