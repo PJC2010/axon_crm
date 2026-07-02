@@ -1,8 +1,8 @@
 'use client'
-import { useState, FormEvent } from 'react'
-import { createWorkflow } from '@/lib/api'
+import { useState, useEffect, FormEvent } from 'react'
+import { createWorkflow, getMessageTemplates } from '@/lib/api'
 import { useTerminology } from '@/hooks/useTerminology'
-import type { WorkflowActionConfig, WorkflowTriggerConfig } from '@/lib/types'
+import type { MessageTemplate, WorkflowActionConfig, WorkflowTriggerConfig } from '@/lib/types'
 
 const STATUSES = ['new', 'contacted', 'qualified', 'quote_sent', 'won', 'lost', 'not_interested']
 
@@ -24,6 +24,7 @@ const TRIGGER_OPTIONS = [
 const ACTION_OPTIONS = [
   { value: 'create_task', label: 'Create task' },
   { value: 'send_notification', label: 'Email me' },
+  { value: 'send_template', label: 'Message the contact' },
 ]
 
 const LABEL_STYLE = { fontSize: 12, color: 'var(--color-ink-500)', fontWeight: 500 } as const
@@ -52,8 +53,14 @@ export function WorkflowRuleForm({ onCreated, onCancel }: { onCreated: () => voi
   const [priority, setPriority] = useState('normal')
   const [subject, setSubject] = useState('')
   const [message, setMessage] = useState('')
+  const [templateId, setTemplateId] = useState<number | ''>('')
+  const [templates, setTemplates] = useState<MessageTemplate[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    getMessageTemplates().then(setTemplates).catch(() => setTemplates([]))
+  }, [])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -62,6 +69,7 @@ export function WorkflowRuleForm({ onCreated, onCancel }: { onCreated: () => voi
     if (triggerType === 'status_change' && !toStatus) return
     if (actionType === 'create_task' && !taskTitle.trim()) return
     if (actionType === 'send_notification' && !subject.trim()) return
+    if (actionType === 'send_template' && templateId === '') return
 
     let trigger_config: WorkflowTriggerConfig = {}
     if (triggerType === 'status_change') {
@@ -78,10 +86,14 @@ export function WorkflowRuleForm({ onCreated, onCancel }: { onCreated: () => voi
       trigger_config = { event: quoteEvent }
     }
 
-    const action_config: WorkflowActionConfig =
-      actionType === 'create_task'
-        ? { title: taskTitle.trim(), due_days_offset: dueDays, priority }
-        : { channel: 'email', subject: subject.trim(), ...(message.trim() ? { message: message.trim() } : {}) }
+    let action_config: WorkflowActionConfig
+    if (actionType === 'create_task') {
+      action_config = { title: taskTitle.trim(), due_days_offset: dueDays, priority }
+    } else if (actionType === 'send_template') {
+      action_config = { template_id: templateId as number }
+    } else {
+      action_config = { channel: 'email', subject: subject.trim(), ...(message.trim() ? { message: message.trim() } : {}) }
+    }
 
     setSaving(true)
     try {
@@ -195,6 +207,17 @@ export function WorkflowRuleForm({ onCreated, onCancel }: { onCreated: () => voi
             <input type="text" value={subject} onChange={e => setSubject(e.target.value)} placeholder="Email subject" className="drawer-input" style={{ flex: 1, minWidth: 160 }} required />
             <input type="text" value={message} onChange={e => setMessage(e.target.value)} placeholder="Message (optional)" className="drawer-input" style={{ flex: 1, minWidth: 160 }} />
           </>
+        )}
+
+        {actionType === 'send_template' && (
+          templates.length > 0 ? (
+            <select value={templateId} onChange={e => setTemplateId(e.target.value ? Number(e.target.value) : '')} className="drawer-input" style={{ flex: 1, minWidth: 180 }} required>
+              <option value="">Choose a template…</option>
+              {templates.map(tpl => <option key={tpl.id} value={tpl.id}>{tpl.name} ({tpl.channel})</option>)}
+            </select>
+          ) : (
+            <span style={HINT_STYLE}>Create a message template in Settings first.</span>
+          )
         )}
       </div>
 

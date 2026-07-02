@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.entitlements import require_module
-from api.routes import leads, notes, history, export, record_fields, segments
+from api.routes import leads, notes, history, export, record_fields, segments, messaging
 from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, hcad, workflows, imports, quotes
 from api.routes import policies, orders, appointments, objects
 from api.routes import connections, insights, ml, oauth, map as map_routes
@@ -77,6 +77,8 @@ app.include_router(leads.router,    prefix="/api", tags=["Leads"])
 app.include_router(record_fields.router, prefix="/api", tags=["RecordFields"])
 # Saved segments are core list-view conveniences — always available.
 app.include_router(segments.router, prefix="/api", tags=["Segments"])
+# Contact-level messaging (templates + per-record send) — core.
+app.include_router(messaging.router, prefix="/api", tags=["Messaging"])
 app.include_router(notes.router,    prefix="/api", tags=["Notes"])
 app.include_router(history.router,  prefix="/api", tags=["History"])
 app.include_router(export.router,   prefix="/api", tags=["Export"])

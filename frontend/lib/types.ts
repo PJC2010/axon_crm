@@ -799,6 +799,8 @@ export interface WorkflowActionConfig {
   channel?: string
   subject?: string
   message?: string
+  // send_template
+  template_id?: number
 }
 
 export interface WorkflowRule {
@@ -952,6 +954,28 @@ export interface AppointmentPage {
   page_size: number
   next_at: string | null
   upcoming_count: number
+}
+
+// ── Message templates & contact-level messaging ──────────────────────────────
+
+export type MessageChannel = 'email' | 'sms'
+
+export interface MessageTemplate {
+  id: number
+  name: string
+  channel: MessageChannel
+  subject: string | null
+  body: string
+  created_by: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface MessageTemplateCreate {
+  name: string
+  channel: MessageChannel
+  subject?: string
+  body: string
 }
 
 // ── Saved segments ───────────────────────────────────────────────────────────
