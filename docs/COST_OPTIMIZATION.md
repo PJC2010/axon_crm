@@ -5,8 +5,8 @@ the canonical base layer for every field it can supply, and routing only the gen
 unavailable fields to paid APIs.
 
 Today's live cost centers are **RentCast** (seeding + property detail) and the
-**Versium** skip-trace/demographics steps. ATTOM and Google Geocoding are not significant
-costs right now. Scope is Harris County now, with paid APIs kept as the path for future
+**BatchData** skip-trace/demographics steps. Google Geocoding is not a significant
+cost right now. (ATTOM was removed from the project on 2026-07-01.) Scope is Harris County now, with paid APIs kept as the path for future
 out-of-county ZIPs.
 
 See `DATA_PIPELINE.md` for the full step-by-step. This document covers (a) which fields
@@ -26,9 +26,9 @@ garage_spaces, permit_count_24mo.
 | Field(s) | Why HCAD can't | Source |
 |---|---|---|
 | contact_phone, contact_email | Assessor records never contain contact info | Versium skip-trace |
-| last_sale_**price**, true market **AVM** | **Texas is a non-disclosure state** — sale prices aren't public. HCAD gives *appraised* (tax) value, which trends below market | RentCast / ATTOM |
-| garage_type | HCAD records garage *units*, not type | RentCast / ATTOM |
-| mortgage_balance | Not in assessor data; feeds the equity calc | ATTOM |
+| last_sale_**price**, true market **AVM** | **Texas is a non-disclosure state** — sale prices aren't public. HCAD gives *appraised* (tax) value, which trends below market | RentCast |
+| garage_type | HCAD records garage *units*, not type | RentCast |
+| mortgage_balance | Not in assessor data; equity now uses the amortization fallback in `pipeline/equity.py` | (none — ATTOM removed) |
 | Demographics / life-events (refi_date, credit_rating, income band, net worth, LTV, has_children, life_stage, …) | Not assessor data | Versium demographic |
 | latitude / longitude | Absent from the HCAD text export today | See Phase 3 (free options) |
 
@@ -48,8 +48,8 @@ optionally, **market value/sale price** when appraised value isn't good enough.
   (`run_pipeline.py`); RentCast stays the default so other flows are unchanged.
 - `pipeline/hcad_enrichment.py` now also backfills `estimated_equity` from the appraised
   value (via `estimate_equity()`), so the equity signal survives an HCAD-only run.
-- Effect: seeding *and* most of step 5's fields come from the free data; with RentCast/ATTOM
-  keys blank the paid detail step is a no-op. Re-enable RentCast for testing by setting
+- Effect: seeding *and* most of step 5's fields come from the free data; with the RentCast
+  key blank the paid detail step is a no-op. Re-enable RentCast for testing by setting
   `RENTCAST_API_KEY` — it rejoins step 5 as a pure gap-filler.
 - Run it: `python run_pipeline.py --zip 77002 --account-id 1 --seed-source hcad`.
 
@@ -68,7 +68,7 @@ optionally, **market value/sale price** when appraised value isn't good enough.
 ### Phase 3 — Free substitutions for the remaining paid edges
 - **Geocoding:** replace Google with **HCAD GIS parcel centroids** or the **US Census
   batch geocoder** (both free) for Harris County addresses.
-- **Market value:** keep RentCast/ATTOM as an **explicit, opt-in** market-value
+- **Market value:** keep RentCast as an **explicit, opt-in** market-value
   enrichment used only when the HCAD appraised value isn't accurate enough for the equity
   signal — not a default step in Harris County runs.
 

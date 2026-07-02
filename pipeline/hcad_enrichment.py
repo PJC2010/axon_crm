@@ -2,14 +2,14 @@
 Step 4b — Harris County Appraisal District fallback enrichment.
 
 Backfills null property fields using harris_county.duckdb when RentCast
-and Attom return nothing. Never overwrites a value that's already set.
+returns nothing. Never overwrites a value that's already set.
 
 Fields backfilled from property_summary (if null):
   year_built, square_footage, lot_size, estimated_value,
   last_sale_date, owner_name, owner_occupied, ownership_years, mailing_address
 
 Fields backfilled from extra_features (always latest HCAD truth):
-  has_pool, has_cracked_slab, garage_spaces (when still null after Attom)
+  has_pool, has_cracked_slab, garage_spaces (when still null)
 """
 import logging
 from datetime import date
@@ -88,7 +88,7 @@ def enrich_hcad(zip_code: str, account_id: int) -> int:
             if ef.get("has_cracked_slab"):
                 update["has_cracked_slab"] = True
                 changed = True
-            # Only fill garage_spaces from HCAD if Attom hasn't set it yet.
+            # Only fill garage_spaces from HCAD if it isn't already set.
             garage_units = ef.get("garage_units") or 0
             if row.get("garage_spaces") is None and garage_units > 0:
                 update["garage_spaces"] = garage_units

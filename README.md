@@ -114,7 +114,7 @@ The platform is self-hosted and data-sovereign: all leads, notes, tasks, invoice
 | Database | PostgreSQL (primary), DuckDB (HCAD permit data) |
 | Auth | JWT (python-jose), bcrypt password hashing |
 | Scheduler | APScheduler 3.x |
-| Data Pipeline | RentCast API, ATTOM API, Google Geocoding API, US Census ACS API |
+| Data Pipeline | RentCast API, Google Geocoding API, US Census ACS API |
 | ORM | Raw SQL via psycopg2 |
 
 ---
@@ -145,7 +145,7 @@ axon-crm/
 │   ├── seed.py                 # Step 1: Seed addresses from RentCast
 │   ├── census.py               # Step 2: Enrich zip median income from Census ACS
 │   ├── geocode.py              # Step 3: Geocode addresses via Google Maps
-│   ├── property.py             # Step 4: Enrich property data from ATTOM
+│   ├── property.py             # Step 4: Enrich property data from RentCast
 │   ├── permits.py              # Step 5: Pull permit counts from HCAD DuckDB
 │   ├── score.py                # Step 6: Score and grade each lead
 │   ├── hcad_enrichment.py      # Harris County Appraisal District enrichment
@@ -231,7 +231,6 @@ JWT_SECRET_KEY=your-long-random-secret-key-here
 
 # Required for pipeline data enrichment
 RENTCAST_API_KEY=your_key
-ATTOM_API_KEY=your_key
 GOOGLE_GEOCODE_KEY=your_key
 
 # Optional (increases Census API rate limits)
@@ -323,7 +322,7 @@ The pipeline runs in 6 sequential steps for a given ZIP code and optional servic
 | 1 | `pipeline/seed.py` | Pulls property records from RentCast API for the target ZIP |
 | 2 | `pipeline/census.py` | Enriches each ZIP with median household income from US Census ACS |
 | 3 | `pipeline/geocode.py` | Geocodes addresses to lat/lng using Google Maps Geocoding API |
-| 4 | `pipeline/property.py` | Pulls home details (year built, sq ft, garage spaces, equity) from ATTOM |
+| 4 | `pipeline/property.py` | Pulls home details (year built, sq ft, garage spaces, equity) from RentCast |
 | 5 | `pipeline/permits.py` | Queries HCAD DuckDB for 24-month permit activity per address |
 | 6 | `pipeline/score.py` | Scores each property 0–100 and assigns a letter grade (A/B/C/D) |
 

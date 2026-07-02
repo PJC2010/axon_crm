@@ -91,7 +91,7 @@ STEP_SPEC = [
     },
     {
         "key": "property", "num": "5", "label": "Property detail",
-        "flag_keys": ["property"], "source": "RentCast / Attom",
+        "flag_keys": ["property"], "source": "RentCast",
         "fields": ["year_built", "square_footage", "lot_size", "estimated_value",
                    "estimated_equity", "last_sale_date", "last_sale_price",
                    "owner_name", "owner_occupied", "ownership_years",

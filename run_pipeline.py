@@ -35,6 +35,24 @@ def _fmt_counters(counters: dict) -> str:
     return "; ".join(parts) or "nothing to do"
 
 
+def _log_coverage(zip_code: str, account_id: int, stage: str) -> None:
+    """Log per-field null counts for the ZIP so the gap the next (paid) step
+    would spend money on is visible before it runs."""
+    from pipeline.coverage import fill_rates
+    from pipeline.db import get_conn
+    conn = get_conn()
+    try:
+        rates = fill_rates(conn, zip_code, account_id)
+    finally:
+        conn.close()
+    total = next(iter(rates.values()), {}).get("total", 0)
+    lines = [f"Coverage after {stage} — ZIP {zip_code}, {total} properties:"]
+    lines.append(f"    {'field':22}  {'null':>6}  {'filled':>7}")
+    for f, r in sorted(rates.items(), key=lambda kv: kv[1]["pct"]):
+        lines.append(f"    {f:22}  {r['total'] - r['filled']:>6}  {r['pct']:>6.1f}%")
+    log.info("%s", "\n".join(lines))
+
+
 def _zip_already_seeded(zip_code: str, account_id: int) -> bool:
     """Return True if the ZIP already has properties for this org in the DB."""
     from pipeline.db import get_conn
@@ -80,14 +98,17 @@ def run_zip(zip_code: str, args) -> None:
     else:
         log.info("[3/7] Geocode: skipped")
 
-    # HCAD runs BEFORE RentCast/ATTOM — it's free (local DuckDB) and fills many
+    # HCAD runs BEFORE RentCast — it's free (local DuckDB) and fills many
     # of the same fields (year_built, square_footage, estimated_value, etc.).
     # Running it first means fewer properties will have NULL fields, so RentCast
-    # and ATTOM see a smaller work queue and make fewer paid API calls.
+    # sees a smaller work queue and makes fewer paid API calls.
     if "hcad" not in skip:
         from pipeline.hcad_enrichment import enrich_hcad
         n = enrich_hcad(zip_code, account_id)
         log.info("[4/7] HCAD (free): %d fields backfilled", n)
+        # Checkpoint: what the free steps left NULL — i.e. what RentCast
+        # would be paid to fill. Inspect this before an unskipped paid run.
+        _log_coverage(zip_code, account_id, "HCAD (free steps done, before paid)")
     else:
         log.info("[4/7] HCAD: skipped")
 
@@ -113,8 +134,11 @@ def run_zip(zip_code: str, args) -> None:
     if "property" not in skip:
         from pipeline.property import enrich_property
         counters = enrich_property(zip_code, account_id, selected_only=capped)
-        log.info("[5/8] Property detail (RentCast/ATTOM): %s",
+        log.info("[5/8] Property detail (RentCast): %s",
                  _fmt_counters(counters))
+        # Checkpoint: what RentCast refined and what is still NULL for the
+        # skip-trace/demographics (BatchData) steps further down.
+        _log_coverage(zip_code, account_id, "property detail (before skip-trace)")
     else:
         log.info("[5/8] Property detail: skipped")
 
@@ -217,7 +241,7 @@ def main():
                         help="Cap the number of seeded records (useful for testing)")
     parser.add_argument("--top-n",      type=int, default=None, dest="top_n",
                         help="Keep only the top N leads per ZIP before paid enrichment "
-                             "(cuts RentCast/Attom/skip-trace cost)")
+                             "(cuts RentCast/skip-trace cost)")
     parser.add_argument("--address",    default=None,
                         help="Center address for radius narrowing (with --radius)")
     parser.add_argument("--radius",     type=float, default=None,

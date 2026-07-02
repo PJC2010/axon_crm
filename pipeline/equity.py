@@ -3,7 +3,7 @@ Equity estimation — replaces the old flat `value * 0.6` proxy.
 
 Pure functions (no DB / no network) so they're unit-testable like scoring.
 Estimation, best source first:
-  1. value - outstanding mortgage balance     (when a balance is known, e.g. Attom)
+  1. value - outstanding mortgage balance     (when a source supplies a balance)
   2. value - amortized remaining principal     (from last sale price + years held)
   3. value * EQUITY_FALLBACK_PCT               (configurable fallback)
 """

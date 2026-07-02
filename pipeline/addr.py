@@ -1,6 +1,6 @@
 """
 Shared address normalization — single source of truth for matching the same
-property across sources (HCAD, RentCast, Attom).
+property across sources (HCAD, RentCast).
 
 Enrichment steps key their upserts off the address already stored on the row,
 so the critical requirement is that any code comparing addresses uses the SAME

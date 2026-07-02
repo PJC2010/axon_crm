@@ -1,7 +1,7 @@
 """
 Shared HTTP helper with retry + exponential backoff.
 
-All outbound API calls (RentCast, Attom, Google, Census, contact provider)
+All outbound API calls (RentCast, Google, Census, contact provider)
 should go through get_json so transient 5xx / 429 / timeout failures are retried
 instead of silently dropping a property's enrichment.
 """

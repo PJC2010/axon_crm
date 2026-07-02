@@ -159,7 +159,7 @@ def delete_stage(stage_id: int, current_user: dict = Depends(require_owner), db:
             raise HTTPException(status_code=404, detail="Stage not found")
         if stage["is_default"]:
             raise HTTPException(status_code=400, detail="Cannot delete the default stage")
-        cur.execute("SELECT COUNT(*) FROM properties WHERE status = %s AND account_id = %s", (stage["key"], acct))
+        cur.execute("SELECT COUNT(*) FROM properties WHERE status = %s AND account_id = %s AND archived_at IS NULL", (stage["key"], acct))
         count = cur.fetchone()[0]
         if count > 0:
             raise HTTPException(status_code=400, detail=f"Cannot delete — {count} leads are in this stage")
@@ -176,7 +176,7 @@ def get_pipeline(
     user: dict = Depends(get_current_user),
     db: PGConn = Depends(get_db),
 ):
-    conditions, params = ["account_id = %s"], [user["account_id"]]
+    conditions, params = ["account_id = %s", "archived_at IS NULL"], [user["account_id"]]
     if vertical:
         conditions.append("vertical = %s"); params.append(vertical)
     if zip:
@@ -208,7 +208,7 @@ def pipeline_stats(user: dict = Depends(get_current_user), db: PGConn = Depends(
     with db.cursor() as cur:
         cur.execute(
             "SELECT status, COUNT(*) AS count, COALESCE(SUM(estimated_job_value), 0) AS total_value "
-            "FROM properties WHERE account_id = %s GROUP BY status",
+            "FROM properties WHERE account_id = %s AND archived_at IS NULL GROUP BY status",
             (user["account_id"],),
         )
         rows = dict_fetchall(cur)
@@ -232,7 +232,7 @@ def pipeline_analytics(
             f"SELECT "
             f"  COUNT(*) FILTER (WHERE status = 'won') AS won, "
             f"  COUNT(*) FILTER (WHERE status IN ('won','lost')) AS decided "
-            f"FROM properties WHERE account_id = %s AND stage_moved_at >= NOW() - INTERVAL '%s days' {vert_filter}",
+            f"FROM properties WHERE account_id = %s AND archived_at IS NULL AND stage_moved_at >= NOW() - INTERVAL '%s days' {vert_filter}",
             [acct, days] + vert_params,
         )
         wr = dict_fetchone(cur)
@@ -241,7 +241,7 @@ def pipeline_analytics(
         # Avg cycle time (created_at → stage_moved_at for won leads)
         cur.execute(
             f"SELECT AVG(EXTRACT(EPOCH FROM (stage_moved_at - created_at)) / 86400) AS avg_days "
-            f"FROM properties WHERE account_id = %s AND status = 'won' AND stage_moved_at IS NOT NULL AND created_at IS NOT NULL "
+            f"FROM properties WHERE account_id = %s AND archived_at IS NULL AND status = 'won' AND stage_moved_at IS NOT NULL AND created_at IS NOT NULL "
             f"AND stage_moved_at >= NOW() - INTERVAL '%s days' {vert_filter}",
             [acct, days] + vert_params,
         )
@@ -250,7 +250,7 @@ def pipeline_analytics(
 
         # Leads won in period
         cur.execute(
-            f"SELECT COUNT(*) AS count FROM properties WHERE account_id = %s AND status = 'won' "
+            f"SELECT COUNT(*) AS count FROM properties WHERE account_id = %s AND archived_at IS NULL AND status = 'won' "
             f"AND stage_moved_at >= NOW() - INTERVAL '%s days' {vert_filter}",
             [acct, days] + vert_params,
         )
@@ -258,7 +258,7 @@ def pipeline_analytics(
 
         # Funnel: count per stage from stage_transitions (scoped to this org's leads)
         acct_sub = (
-            "AND property_id IN (SELECT id FROM properties WHERE account_id = %s"
+            "AND property_id IN (SELECT id FROM properties WHERE account_id = %s AND archived_at IS NULL"
             + (" AND vertical = %s)" if vertical else ")")
         )
         cur.execute(
@@ -282,7 +282,7 @@ def pipeline_analytics(
             f"  ORDER BY t2.transitioned_at DESC LIMIT 1"
             f") t2 ON TRUE "
             f"WHERE t1.from_status IS NOT NULL AND t1.transitioned_at >= NOW() - INTERVAL '%s days' "
-            f"AND t1.property_id IN (SELECT id FROM properties WHERE account_id = %s) "
+            f"AND t1.property_id IN (SELECT id FROM properties WHERE account_id = %s AND archived_at IS NULL) "
             f"GROUP BY t1.from_status",
             [days, acct],
         )
@@ -313,7 +313,7 @@ def pipeline_forecast(
     with db.cursor() as cur:
         cur.execute(
             "SELECT status, COUNT(*) AS count, COALESCE(SUM(estimated_job_value), 0) AS raw_value "
-            "FROM properties WHERE account_id = %s AND status IN ('new','contacted','qualified','quote_sent') "
+            "FROM properties WHERE account_id = %s AND archived_at IS NULL AND status IN ('new','contacted','qualified','quote_sent') "
             "GROUP BY status",
             (user["account_id"],),
         )
@@ -370,7 +370,7 @@ def pipeline_alerts(
             f"SELECT {CARD_COLS}, stage_moved_at, "
             f"  EXTRACT(DAY FROM (NOW() - stage_moved_at))::int AS days_in_stage "
             f"FROM properties "
-            f"WHERE account_id = %s AND status NOT IN %s AND stage_moved_at IS NOT NULL "
+            f"WHERE account_id = %s AND archived_at IS NULL AND status NOT IN %s AND stage_moved_at IS NOT NULL "
             f"  AND NOW() - stage_moved_at > ({stuck_case}) "
             f"ORDER BY stage_moved_at ASC LIMIT %s",
             [acct, TERMINAL_STATUSES] + case_params + [limit],
@@ -398,7 +398,7 @@ def pipeline_alerts(
             f"    COALESCE((SELECT MAX(created_at) FROM contact_history WHERE property_id = properties.id), created_at)"
             f"  ) AS last_activity_at "
             f"  FROM properties "
-            f"  WHERE account_id = %s AND score_grade IN %s AND status IN %s"
+            f"  WHERE account_id = %s AND archived_at IS NULL AND score_grade IN %s AND status IN %s"
             f") s "
             f"WHERE last_activity_at < NOW() - make_interval(days => %s) "
             f"ORDER BY lead_score DESC NULLS LAST LIMIT %s",

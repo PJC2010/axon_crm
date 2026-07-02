@@ -163,7 +163,7 @@ def seed_from_hcad(region_id: str, zip_code: str, account_id: int,
 
     This replaces the RentCast `/properties` scan for Harris County region runs:
     every parcel already lives in the free assessor data, so we insert addresses
-    (and the HCAD fields RentCast/Attom would otherwise be paid to fetch) up
+    (and the HCAD fields RentCast would otherwise be paid to fetch) up
     front. Downstream geocode/scoring run unchanged on the seeded rows.
     """
     from pipeline import hcad_store
@@ -192,7 +192,7 @@ def seed_from_hcad_zip(zip_code: str, account_id: int, limit: int | None = None)
 
     Unlike seed_from_hcad (which is scoped to one HCAD neighborhood/region), this
     seeds the whole ZIP, so it slots straight into the ZIP-based pipeline. It also
-    pre-fills the assessor fields RentCast/Attom would otherwise be paid to fetch;
+    pre-fills the assessor fields RentCast would otherwise be paid to fetch;
     downstream geocode/scoring run unchanged on the seeded rows.
     """
     from pipeline import hcad_store

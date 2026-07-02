@@ -11,7 +11,6 @@ PERMIT_DB_PATH = os.getenv("PERMIT_DB_PATH", "/Users/petecastillo/property_data/
 
 # ── API keys ─────────────────────────────────────────────────────────────────
 RENTCAST_API_KEY    = os.getenv("RENTCAST_API_KEY", "")
-ATTOM_API_KEY       = os.getenv("ATTOM_API_KEY", "")
 GOOGLE_GEOCODE_KEY  = os.getenv("GOOGLE_GEOCODE_KEY", "")
 CENSUS_API_KEY      = os.getenv("CENSUS_API_KEY", "")   # optional; ACS works without one
 
@@ -55,21 +54,19 @@ HTTP_BACKOFF = float(os.getenv("HTTP_BACKOFF", "0.5"))   # seconds, exponential
 # Free HCAD already runs upstream. enrich_property tries these paid sources in
 # order; each only fills fields still NULL after the previous one (upsert writes
 # non-NULL only), so cost is spent only on genuine gaps.
-PROPERTY_FIELD_SOURCES = ["rentcast", "attom"]
+# Env-overridable (comma-separated); unknown names are dropped.
 SOURCE_FIELDS = {
     "rentcast": [
         "year_built", "square_footage", "estimated_value", "estimated_equity",
         "last_sale_date", "last_sale_price", "owner_name", "owner_occupied",
         "ownership_years", "garage_spaces", "garage_type",
     ],
-    "attom": [
-        "year_built", "square_footage", "lot_size", "estimated_value",
-        "estimated_equity", "last_sale_date", "last_sale_price", "owner_name",
-        "owner_occupied", "garage_spaces", "garage_type",
-    ],
 }
-# Cost guard: cap Attom (paid, ~10x RentCast) lookups per ZIP.
-ATTOM_MAX_ROWS_PER_ZIP = int(os.getenv("ATTOM_MAX_ROWS_PER_ZIP", "500"))
+PROPERTY_FIELD_SOURCES = [
+    s for s in (t.strip().lower() for t in
+                os.getenv("PROPERTY_FIELD_SOURCES", "rentcast").split(","))
+    if s in SOURCE_FIELDS
+]
 
 # ── Equity estimation ─────────────────────────────────────────────────────────
 # Fallback fraction of value treated as equity when no mortgage/sale data exists.
@@ -102,7 +99,7 @@ JOB_VALUE_FALLBACK_PCT = float(os.getenv("JOB_VALUE_FALLBACK_PCT", "0.04"))
 # Where the seed step (step 1) gets its address list:
 #   "rentcast" — RentCast /properties scan (paid; default).
 #   "hcad"     — local Harris County DuckDB/Postgres mirror (free). Seeds every
-#                parcel in the ZIP and pre-fills the assessor fields RentCast/Attom
+#                parcel in the ZIP and pre-fills the assessor fields RentCast
 #                would otherwise be paid to fetch. CLI: --seed-source hcad.
 # An explicit --seed-csv / --region still takes precedence over this default.
 SEED_SOURCE = os.getenv("SEED_SOURCE", "rentcast").strip().lower()
@@ -477,9 +474,6 @@ GRADE_BANDS = [
 
 # ── RentCast ─────────────────────────────────────────────────────────────────
 RENTCAST_BASE_URL = "https://api.rentcast.io/v1"
-
-# ── Attom ────────────────────────────────────────────────────────────────────
-ATTOM_BASE_URL = "https://api.gateway.attomdata.com/propertyapi/v1.0.0"
 
 # ── Google Geocoding ─────────────────────────────────────────────────────────
 GOOGLE_GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"

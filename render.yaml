@@ -44,7 +44,5 @@ services:
       # RentCast as a gap-filler; the property step no-ops while it is empty.
       - key: RENTCAST_API_KEY
         value: ""
-      - key: ATTOM_API_KEY
-        value: ""
       - key: GOOGLE_GEOCODE_KEY
         value: ""

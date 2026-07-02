@@ -98,8 +98,8 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
         n = enrich_geocode(zip_code, account_id)
         log.info("[3/8] run=%d Geocode: %d updated", run_id, n)
 
-        # Step 4 — HCAD fallback (free) — runs BEFORE paid RentCast/Attom so they
-        # only spend calls on fields HCAD couldn't fill.
+        # Step 4 — HCAD fallback (free) — runs BEFORE paid RentCast so it
+        # only spends calls on fields HCAD couldn't fill.
         if _check_cancel(): return None
         from pipeline.hcad_enrichment import enrich_hcad
         n = enrich_hcad(zip_code, account_id)
@@ -123,7 +123,7 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
             )
             log.info("[4.5/8] run=%d Selection: %s", run_id, sources["selection"])
 
-        # Step 5 — Property detail (RentCast → Attom)
+        # Step 5 — Property detail (RentCast)
         if _check_cancel(): return None
         from pipeline.property import enrich_property
         counters = enrich_property(zip_code, account_id, selected_only=capped)
