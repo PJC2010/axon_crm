@@ -116,7 +116,9 @@ export function ActivityPanel({ leadId }: { leadId: number }) {
               <li key={`${entry.type}-${entry.id}`} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12 }}>
                 <TimelineIcon entry={entry} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  {(entry.type === 'history' || entry.type === 'signal') && (
+                  {isMessage(entry) ? (
+                    <MessageBubble entry={entry} />
+                  ) : (entry.type === 'history' || entry.type === 'signal') && (
                     <>
                       <span style={{ fontWeight: 500, color: 'var(--color-ink-900)' }}>{entry.title}</span>
                       {entry.detail && <span style={{ color: 'var(--color-ink-500)' }}> · {entry.detail}</span>}
@@ -170,6 +172,43 @@ export function ActivityPanel({ leadId }: { leadId: number }) {
         )}
       </section>
     </>
+  )
+}
+
+/** History entries that are actual messages (two-way SMS / templated sends)
+ *  carry channel/direction/body and render as a conversation bubble. */
+function isMessage(entry: TimelineEntry): boolean {
+  return entry.type === 'history' && !!entry.body && !!entry.direction
+}
+
+function MessageBubble({ entry }: { entry: TimelineEntry }) {
+  const inbound = entry.direction === 'inbound'
+  return (
+    <div style={{ display: 'flex', justifyContent: inbound ? 'flex-start' : 'flex-end' }}>
+      <div style={{ maxWidth: '85%' }}>
+        <p style={{
+          fontSize: 13,
+          lineHeight: 1.5,
+          margin: 0,
+          padding: '8px 12px',
+          borderRadius: 'var(--radius-card)',
+          whiteSpace: 'pre-wrap',
+          overflowWrap: 'break-word',
+          background: inbound
+            ? 'var(--color-paper)'
+            : 'color-mix(in srgb, var(--color-accent) 12%, transparent)',
+          border: inbound
+            ? '1px solid var(--color-ink-200)'
+            : '1px solid color-mix(in srgb, var(--color-accent) 25%, transparent)',
+          color: 'var(--color-ink-900)',
+        }}>
+          {entry.body}
+        </p>
+        <p style={{ fontSize: 10, color: 'var(--color-ink-400)', margin: '3px 2px 0', textAlign: inbound ? 'left' : 'right', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          {entry.channel === 'sms' ? (inbound ? 'Text received' : 'Text sent') : (inbound ? 'Email received' : 'Email sent')}
+        </p>
+      </div>
+    </div>
   )
 }
 

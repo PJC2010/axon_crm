@@ -1,8 +1,8 @@
 'use client'
-import { useState } from 'react'
-import { X, CreditCard, Trash2, Send, FileText } from 'lucide-react'
-import { recordPayment, deletePayment, updateInvoice, sendInvoice, invoicePdfUrl } from '@/lib/api'
-import type { Invoice, InvoiceStatus } from '@/lib/types'
+import { useEffect, useState } from 'react'
+import { X, CreditCard, Trash2, Send, FileText, Link2, ExternalLink } from 'lucide-react'
+import { recordPayment, deletePayment, updateInvoice, sendInvoice, invoicePdfUrl, getStripeStatus } from '@/lib/api'
+import type { Invoice, InvoiceStatus, StripeStatus } from '@/lib/types'
 
 const STATUS_COLORS: Record<InvoiceStatus, { bg: string; text: string }> = {
   draft:   { bg: 'var(--color-ink-100)', text: 'var(--color-ink-600)' },
@@ -13,7 +13,7 @@ const STATUS_COLORS: Record<InvoiceStatus, { bg: string; text: string }> = {
   void:    { bg: 'var(--color-ink-50)', text: 'var(--color-ink-400)' },
 }
 
-const PAYMENT_METHODS = ['card', 'cash', 'check', 'zelle', 'other']
+const PAYMENT_METHODS = ['card', 'cash', 'check', 'zelle', 'stripe', 'other']
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 function fmt(n: number) { return n.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) }
@@ -43,6 +43,26 @@ export function InvoiceDetail({ invoice, onUpdate, onClose }: Props) {
   const [sendSms, setSendSms]           = useState(false)
   const [sending, setSending]           = useState(false)
   const [sendError, setSendError]       = useState<string | null>(null)
+
+  // Online payments: the pay-link row and send-form note only show when the
+  // account's Stripe connected account can actually take the charge.
+  const [stripeStatus, setStripeStatus] = useState<StripeStatus | null>(null)
+  const [linkCopied, setLinkCopied]     = useState(false)
+
+  useEffect(() => {
+    getStripeStatus().then(setStripeStatus).catch(() => {})
+  }, [])
+
+  const stripeReady = !!(stripeStatus?.available && stripeStatus.charges_enabled)
+  const payPath = invoice.pay_token ? `/pay/${invoice.pay_token}` : null
+  const showPayLink = stripeReady && !!payPath && invoice.status !== 'void' && invoice.balance_due > 0
+
+  async function handleCopyPayLink() {
+    if (!payPath) return
+    await navigator.clipboard.writeText(`${window.location.origin}${payPath}`)
+    setLinkCopied(true)
+    setTimeout(() => setLinkCopied(false), 2000)
+  }
 
   const colors = STATUS_COLORS[invoice.status] ?? STATUS_COLORS.draft
 
@@ -197,9 +217,12 @@ export function InvoiceDetail({ invoice, onUpdate, onClose }: Props) {
                     <span style={{ color: 'var(--color-ink-400)', marginLeft: 8 }}>{fmtDate(p.payment_date)} · {p.payment_method}</span>
                     {p.notes && <div style={{ fontSize: 12, color: 'var(--color-ink-400)' }}>{p.notes}</div>}
                   </div>
-                  <button onClick={() => handleDeletePayment(p.id)} className="dash-icon-btn" style={{ color: 'var(--color-danger)' }}>
-                    <Trash2 size={13} strokeWidth={1.5} />
-                  </button>
+                  {/* Stripe-collected payments can't be deleted — refund in Stripe instead. */}
+                  {!p.stripe_payment_intent_id && (
+                    <button onClick={() => handleDeletePayment(p.id)} className="dash-icon-btn" style={{ color: 'var(--color-danger)' }}>
+                      <Trash2 size={13} strokeWidth={1.5} />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -220,12 +243,27 @@ export function InvoiceDetail({ invoice, onUpdate, onClose }: Props) {
             </div>
           )}
 
+          {/* Online pay link */}
+          {showPayLink && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'var(--color-ink-50)', borderRadius: 'var(--radius-card)', fontSize: 13 }}>
+              <Link2 size={14} strokeWidth={1.5} style={{ color: 'var(--color-ink-500)', flexShrink: 0 }} />
+              <span style={{ flex: 1, color: 'var(--color-ink-600)' }}>Customers can pay this invoice online.</span>
+              <button onClick={handleCopyPayLink} className="btn-secondary" style={{ height: 32, padding: '0 12px', fontSize: 12 }}>
+                {linkCopied ? 'Copied!' : 'Copy link'}
+              </button>
+              <a href={payPath!} target="_blank" rel="noopener noreferrer" className="dash-icon-btn" title="Open pay page">
+                <ExternalLink size={13} strokeWidth={1.5} />
+              </a>
+            </div>
+          )}
+
           {/* Send invoice form */}
           {showSendForm && invoice.status !== 'void' && (
             <div style={{ padding: '16px', background: 'var(--color-ink-50)', borderRadius: 'var(--radius-card)', border: '1px solid var(--color-ink-200)', display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div className="t-eyebrow">Send Invoice</div>
               <div style={{ fontSize: 12, color: 'var(--color-ink-500)', marginTop: -4 }}>
                 The invoice PDF is attached to the email and linked in the text.
+                {showPayLink && ' Both include an online payment link.'}
               </div>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: invoice.client_email ? 'var(--color-ink-800)' : 'var(--color-ink-400)' }}>
                 <input type="checkbox" checked={sendEmail} disabled={!invoice.client_email} onChange={e => setSendEmail(e.target.checked)} />
