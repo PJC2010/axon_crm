@@ -173,6 +173,10 @@ export interface HistoryEntry {
   action: string
   outcome: string | null
   created_at: string
+  // Two-way messaging: null on legacy rows and manual log entries.
+  channel?: 'sms' | 'email' | null
+  direction?: 'inbound' | 'outbound' | null
+  body?: string | null
 }
 
 export interface TimelineEntry {
@@ -182,6 +186,10 @@ export interface TimelineEntry {
   title: string
   detail: string | null
   created_at: string
+  // Present on 'history' entries that are messages; renders as a chat bubble.
+  channel?: 'sms' | 'email' | null
+  direction?: 'inbound' | 'outbound' | null
+  body?: string | null
 }
 
 export interface LeadFilters {
@@ -500,6 +508,10 @@ export interface InvoicePayment {
   notes?: string | null
   created_by?: number | null
   created_at: string
+  // Set on payments the Stripe webhook recorded; these can't be deleted
+  // manually (refund via Stripe instead).
+  stripe_payment_intent_id?: string | null
+  stripe_charge_id?: string | null
 }
 
 export interface Invoice {
@@ -531,9 +543,34 @@ export interface Invoice {
   recurrence_next?: string | null
   recurrence_end?: string | null
   recurring_source_id?: number | null
+  // Public pay-page token (/pay/{pay_token}); separate from the PDF token.
+  pay_token?: string | null
 }
 
 export type InvoiceRecurrence = 'weekly' | 'monthly' | 'quarterly' | 'annual'
+
+// ── Online payments (Stripe Connect) ─────────────────────────────────────────
+
+export interface StripeStatus {
+  available: boolean          // platform key configured on the server
+  connected: boolean          // this account has a connected account
+  charges_enabled: boolean
+  payouts_enabled: boolean
+  details_submitted: boolean
+}
+
+export interface PublicPayInfo {
+  business_name: string
+  invoice_number: string
+  status: InvoiceStatus
+  total: number
+  amount_paid: number
+  balance_due: number
+  issue_date: string
+  due_date?: string | null
+  payable: boolean
+  pdf_url: string
+}
 
 export interface InvoiceCreate {
   property_id?: number

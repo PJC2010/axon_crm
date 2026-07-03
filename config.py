@@ -199,6 +199,17 @@ TWILIO_FROM_NUMBER  = os.getenv("TWILIO_FROM_NUMBER", "")
 # Frontend origin used to build customer-facing links (public quote pages).
 APP_BASE_URL        = os.getenv("APP_BASE_URL", "http://localhost:3000")
 
+# ── Online payments (Stripe Connect Express) ─────────────────────────────────
+# Owners onboard Express connected accounts; customers pay via Checkout Sessions
+# created on the connected account (direct charges) and Axon takes a platform
+# fee. STRIPE_WEBHOOK_SECRET is the signing secret of the *Connect* webhook
+# endpoint ("events on connected accounts") — direct charges emit their events
+# on the connected account, not the platform account.
+STRIPE_SECRET_KEY       = os.getenv("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET   = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+# Platform fee taken on each charge, as a percentage of the amount (e.g. 2.0).
+STRIPE_PLATFORM_FEE_PCT = float(os.getenv("STRIPE_PLATFORM_FEE_PCT", "2.0"))
+
 # ── Score weights (must sum to 1.0) ──────────────────────────────────────────
 # Default weights from context - score.docx.
 # Override per vertical by passing a weights dict to the scorer.

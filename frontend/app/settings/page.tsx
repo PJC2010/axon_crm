@@ -7,6 +7,7 @@ import { AuthGuard } from '@/components/AuthGuard'
 import { AutomationTemplates } from '@/components/AutomationTemplates'
 import { WorkflowRuleForm, describeTrigger } from '@/components/WorkflowRuleForm'
 import { ConnectionsSection } from '@/components/ConnectionsSection'
+import { StripeConnectSection } from '@/components/StripeConnectSection'
 import { CustomFieldsSettings } from '@/components/CustomFieldsSettings'
 import { MessageTemplatesSettings } from '@/components/MessageTemplatesSettings'
 import { ImportOrdersModal } from '@/components/ImportOrdersModal'
@@ -449,6 +450,9 @@ function SettingsPage() {
         )}
 
         <RescoreSection />
+
+        {/* Online payments (Stripe Connect) — rides the invoicing module */}
+        {hasModule('invoicing') && <StripeConnectSection />}
 
         {/* Connected accounts / integrations */}
         <ConnectionsSection />

@@ -1,4 +1,4 @@
-import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, MessageTemplate, MessageTemplateCreate, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType } from './types'
+import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, StripeStatus, PublicPayInfo, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, MessageTemplate, MessageTemplateCreate, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType } from './types'
 import { getToken, clearToken } from './auth'
 
 // Use 127.0.0.1 (not localhost): on macOS `localhost` resolves to IPv6 ::1
@@ -616,6 +616,29 @@ export function invoicePdfUrl(invoiceId: number): string {
 
 export function sendInvoice(invoiceId: number, channels: string[]): Promise<Invoice> {
   return req<Invoice>(`/invoices/${invoiceId}/send`, { method: 'POST', body: JSON.stringify({ channels }) })
+}
+
+// ── Online payments (Stripe Connect) ──────────────────────────────────────────
+
+export function getStripeStatus(): Promise<StripeStatus> {
+  return req('/stripe/status')
+}
+
+// Returns the hosted Stripe onboarding URL; navigate the browser to it.
+export function connectStripe(): Promise<{ url: string }> {
+  return req('/stripe/connect', { method: 'POST', body: '{}' })
+}
+
+export function createInvoiceCheckout(invoiceId: number): Promise<{ url: string }> {
+  return req(`/invoices/${invoiceId}/checkout`, { method: 'POST', body: '{}' })
+}
+
+export function getPublicPayInfo(token: string): Promise<PublicPayInfo> {
+  return publicReq<PublicPayInfo>(`/public/pay/${token}`)
+}
+
+export function createPublicCheckout(token: string): Promise<{ url: string }> {
+  return publicReq<{ url: string }>(`/public/pay/${token}/checkout`, { method: 'POST', body: '{}' })
 }
 
 // ── Bookkeeping reports ───────────────────────────────────────────────────────

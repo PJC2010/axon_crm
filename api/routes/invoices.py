@@ -76,6 +76,23 @@ def _business_name(db, account_id: int) -> str:
     return (row[0] if row and row[0] else "Axon")
 
 
+def _pay_url_if_ready(db, account_id: int, inv: dict) -> str | None:
+    """The hosted pay-page link — only when the account's Stripe connected
+    account can actually take the charge, so unready accounts keep sending
+    the plain arrange-payment message."""
+    from config import APP_BASE_URL
+    from api.integrations.stripe.stripe_client import stripe_configured
+    if not stripe_configured() or not inv.get("pay_token"):
+        return None
+    with db.cursor() as cur:
+        cur.execute("SELECT charges_enabled FROM stripe_accounts WHERE account_id = %s",
+                    (account_id,))
+        row = cur.fetchone()
+    if not row or not row[0]:
+        return None
+    return f"{APP_BASE_URL}/pay/{inv['pay_token']}"
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("/invoices/summary")
@@ -425,6 +442,18 @@ def delete_payment(
     _assert_invoice_account(db, invoice_id, user["account_id"])
     with db.cursor() as cur:
         cur.execute(
+            "SELECT stripe_payment_intent_id FROM invoice_payments WHERE id = %s AND invoice_id = %s",
+            (payment_id, invoice_id),
+        )
+        row = cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    if row[0]:
+        # Deleting the row wouldn't reverse the charge — the money already moved.
+        raise HTTPException(status_code=400,
+                            detail="This payment was collected through Stripe — refund it in Stripe instead")
+    with db.cursor() as cur:
+        cur.execute(
             "DELETE FROM invoice_payments WHERE id = %s AND invoice_id = %s RETURNING id",
             (payment_id, invoice_id),
         )
@@ -470,6 +499,7 @@ def send_invoice(
     # MMS media must be reachable over HTTPS — force it for non-local hosts.
     if pdf_url.startswith("http://") and "localhost" not in pdf_url and "127.0.0.1" not in pdf_url:
         pdf_url = "https://" + pdf_url[len("http://"):]
+    pay_url = _pay_url_if_ready(db, current_user["account_id"], inv)
     errors: list[str] = []
     sent: list[str] = []
 
@@ -481,7 +511,7 @@ def send_invoice(
                 send_invoice_email(
                     to_email=inv["client_email"], business_name=business_name,
                     invoice_number=inv["invoice_number"], amount_due=amount_due,
-                    pdf_bytes=pdf_bytes,
+                    pdf_bytes=pdf_bytes, pay_url=pay_url,
                 )
                 sent.append("email")
             except Exception as e:
@@ -495,7 +525,7 @@ def send_invoice(
                 send_invoice_sms(
                     to_phone=inv["client_phone"], business_name=business_name,
                     invoice_number=inv["invoice_number"], amount_due=amount_due,
-                    pdf_url=pdf_url,
+                    pdf_url=pdf_url, pay_url=pay_url,
                 )
                 sent.append("sms")
             except Exception as e:

@@ -171,9 +171,11 @@ def send_lead_message(lead_id: int, body: SendMessageRequest, user: dict = Depen
     label = template["name"] if template else "Message"
     with db.cursor() as cur:
         cur.execute(
-            "INSERT INTO contact_history (property_id, action, outcome, created_by) "
-            "VALUES (%s, %s, %s, %s)",
-            (lead_id, f"{channel.upper()} sent — {label}", "sent", user["id"]),
+            "INSERT INTO contact_history (property_id, action, outcome, created_by, "
+            "channel, direction, body) "
+            "VALUES (%s, %s, %s, %s, %s, 'outbound', %s)",
+            (lead_id, f"{channel.upper()} sent — {label}", "sent", user["id"],
+             channel, rendered_body),
         )
         db.commit()
 
