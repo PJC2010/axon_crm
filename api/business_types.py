@@ -55,6 +55,20 @@ BASE_TERMINOLOGY: dict[str, str] = {
 DEFAULT_KPIS: tuple[str, ...] = ("revenue_mtd", "outstanding_ar", "win_rate", "forecast")
 
 
+# Default lead-list columns (property / home-services). `record` is the primary
+# identifier cell; the rest map to renderers in the frontend column registry at
+# frontend/components/lead/leadColumns.tsx. Presets override to drop the property
+# columns for verticals where they're meaningless (insurance, retail, …).
+DEFAULT_LIST_COLUMNS: tuple[str, ...] = (
+    "record", "score", "year_built", "equity", "garage", "last_sale", "status",
+)
+# Non-property list layout: identity, score, the vertical's category + deal value,
+# then status. Reuses only fields already on the lead row (no policy/order join).
+_NON_PROPERTY_LIST_COLUMNS: tuple[str, ...] = (
+    "record", "score", "category", "job_value", "status",
+)
+
+
 @dataclass(frozen=True)
 class BusinessType:
     key: str
@@ -74,11 +88,19 @@ class BusinessType:
     # workflow_rules seeds (full rule shape incl. trigger_type/action_type).
     # Seeded separately from create_account because rules need a creator user
     # (scheduled rules run as created_by) — see accounts.seed_business_type_workflows.
+    # A rule may reference default_templates by name via action_config
+    # {"template_names": {"sms": name, "email": name}}; the seeder resolves
+    # them to this account's template ids ({"templates": {...}}).
     default_workflows: tuple = ()
+    # message_templates seeds: {"name", "channel", "subject"?, "body"}.
+    default_templates: tuple = ()
     # Dashboard KPI tile ids for this vertical (see HomeDashboard KPI config).
     kpis: tuple[str, ...] = DEFAULT_KPIS
     # Child-object modules this preset is built around (subset of MODULE_KEYS).
     objects: tuple[str, ...] = ()
+    # Ordered lead-list column keys (see DEFAULT_LIST_COLUMNS / the frontend
+    # registry). Defaults to the property columns for home-services parity.
+    list_columns: tuple[str, ...] = DEFAULT_LIST_COLUMNS
 
 
 # The 8 home-services verticals (keys match config.py JOB_VALUE_MODEL /
@@ -142,6 +164,30 @@ _RETAIL_STAGES = (
     ("lapsed",  "Lapsed",  "var(--color-danger)",  4, True,  False),
 )
 
+# Client-facing renewal reminders: sent to the policyholder (not the agent) by
+# the "Renewal reminder to client" rule below. SMS first with email fallback —
+# if the client has no phone on file the email goes out instead.
+_INSURANCE_TEMPLATES = (
+    {
+        "name": "Renewal reminder (SMS)",
+        "channel": "sms",
+        "body": ("Hi {{first_name}}, it's {{business_name}}. Your {{carrier}} "
+                 "{{policy_type}} policy is set to expire on {{expiration_date}}. "
+                 "Reply here or give us a call to review your renewal options."),
+    },
+    {
+        "name": "Renewal reminder (Email)",
+        "channel": "email",
+        "subject": "Your {{policy_type}} policy expires {{expiration_date}}",
+        "body": ("Hi {{first_name}},\n\n"
+                 "This is a reminder from {{business_name}} that your {{carrier}} "
+                 "{{policy_type}} policy is set to expire on {{expiration_date}}.\n\n"
+                 "Reply to this email or give us a call and we'll walk through your "
+                 "renewal options together.\n\n"
+                 "— {{business_name}}"),
+    },
+)
+
 # X-date automation: the whole reason an agency runs a CRM. Rules target the
 # policies child table via the Phase-4 date_offset trigger; the firings ledger
 # fires each policy's renewal exactly once per offset per expiration date.
@@ -159,6 +205,16 @@ _INSURANCE_WORKFLOWS = (
         "trigger_config": {"source": "policies", "date_field": "expiration_date", "offset_days": -30},
         "action_type": "create_task",
         "action_config": {"title": "Renewal in 30 days — present renewal terms", "due_days_offset": 3, "priority": "high"},
+    },
+    {
+        "name": "Renewal reminder to client — 30 days out",
+        "trigger_type": "date_offset",
+        "trigger_config": {"source": "policies", "date_field": "expiration_date", "offset_days": -30},
+        "action_type": "send_template",
+        "action_config": {
+            "template_names": {"sms": "Renewal reminder (SMS)", "email": "Renewal reminder (Email)"},
+            "delivery": "sms_first",
+        },
     },
     {
         "name": "Renewal — 7 days out",
@@ -216,6 +272,7 @@ BUSINESS_TYPES: dict[str, BusinessType] = {
             "lead": "Deal",
             "leads": "Deals",
         },
+        list_columns=_NON_PROPERTY_LIST_COLUMNS,
     ),
     "professional_services": BusinessType(
         key="professional_services",
@@ -234,6 +291,7 @@ BUSINESS_TYPES: dict[str, BusinessType] = {
             "categories": "Service lines",
             "owner": "Primary contact",
         },
+        list_columns=_NON_PROPERTY_LIST_COLUMNS,
     ),
     "insurance_agency": BusinessType(
         key="insurance_agency",
@@ -259,8 +317,11 @@ BUSINESS_TYPES: dict[str, BusinessType] = {
             {"key": "household_size", "label": "Household size", "field_type": "number"},
         ),
         default_workflows=_INSURANCE_WORKFLOWS,
+        default_templates=_INSURANCE_TEMPLATES,
         kpis=("premium_in_force", "active_policies", "renewals_30d", "win_rate"),
         objects=("policies", "appointments"),
+        # x_date (renewal) is the number an agency lives by — surface it in the list.
+        list_columns=("record", "score", "category", "job_value", "x_date", "status"),
     ),
     "retail": BusinessType(
         key="retail",
@@ -289,6 +350,7 @@ BUSINESS_TYPES: dict[str, BusinessType] = {
         default_workflows=_RETAIL_WORKFLOWS,
         kpis=("revenue_mtd", "orders_30d", "repeat_rate", "outstanding_ar"),
         objects=("orders",),
+        list_columns=_NON_PROPERTY_LIST_COLUMNS,
     ),
 }
 
@@ -316,6 +378,7 @@ def business_type_profile(key: str | None) -> dict:
         "categories": bt.categories,
         "kpis": list(bt.kpis),
         "objects": list(bt.objects),
+        "list_columns": list(bt.list_columns),
     }
 
 

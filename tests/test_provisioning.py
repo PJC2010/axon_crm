@@ -83,24 +83,61 @@ class TestCreateAccount:
 
 
 class TestSeedWorkflows:
+    # Insurance seeds its 2 default message templates first (INSERT … RETURNING
+    # id each), then its 5 rules (name-exists check + INSERT each).
     def test_seeds_all_when_none_exist(self):
-        # For each of the 4 insurance rules: name-exists check (empty) + INSERT.
-        conn = _ScriptedConn([[], [], [], [], [], [], [], []])
+        conn = _ScriptedConn([
+            [(201,)], [(202,)],                          # template inserts return ids
+            [], [], [], [], [], [], [], [], [], [],     # 5 × (exists-check + insert)
+        ])
         created = seed_business_type_workflows(conn, 11, "insurance_agency", user_id=9)
-        assert created == 4
+        assert created == 5
         inserts = [p for sql, p in conn.executed if "INSERT INTO workflow_rules" in sql]
-        assert len(inserts) == 4
+        assert len(inserts) == 5
         assert all(p[-2:] == [9, 11] for p in inserts)   # created_by, account_id
 
     def test_skips_existing_names(self):
         conn = _ScriptedConn([
+            [(201,)], [(202,)],   # template inserts
             [(1,)],    # rule 1 exists
             [], [],    # rule 2 missing → insert
             [(1,)],    # rule 3 exists
             [], [],    # rule 4 missing → insert
+            [(1,)],    # rule 5 exists
         ])
         created = seed_business_type_workflows(conn, 11, "insurance_agency", user_id=9)
         assert created == 2
+
+    def test_template_names_resolve_to_account_ids(self):
+        import json
+        conn = _ScriptedConn([
+            [(201,)], [(202,)],                          # sms id 201, email id 202
+            [], [], [], [], [], [], [], [], [], [],
+        ])
+        seed_business_type_workflows(conn, 11, "insurance_agency", user_id=9)
+        inserts = [p for sql, p in conn.executed if "INSERT INTO workflow_rules" in sql]
+        send_rules = [p for p in inserts if p[3] == "send_template"]
+        assert len(send_rules) == 1
+        cfg = json.loads(send_rules[0][4])
+        assert cfg["templates"] == {"sms": 201, "email": 202}
+        assert cfg["delivery"] == "sms_first"
+        assert "template_names" not in cfg
+
+    def test_existing_template_reused_not_duplicated(self):
+        import json
+        conn = _ScriptedConn([
+            [],          # sms template insert conflicts (already exists)
+            [(301,)],    # …fetch existing id
+            [(302,)],    # email template inserted fresh
+            [], [], [], [], [], [], [], [], [], [],
+        ])
+        seed_business_type_workflows(conn, 11, "insurance_agency", user_id=9)
+        template_inserts = [sql for sql, _ in conn.executed if "INSERT INTO message_templates" in sql]
+        assert len(template_inserts) == 2
+        assert all("ON CONFLICT" in sql for sql in template_inserts)
+        inserts = [p for sql, p in conn.executed if "INSERT INTO workflow_rules" in sql]
+        cfg = json.loads(next(p for p in inserts if p[3] == "send_template")[4])
+        assert cfg["templates"] == {"sms": 301, "email": 302}
 
 
 class TestSeedStages:

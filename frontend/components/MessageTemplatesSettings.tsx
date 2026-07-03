@@ -5,6 +5,8 @@ import { getMessageTemplates, createMessageTemplate, deleteMessageTemplate } fro
 import type { MessageChannel, MessageTemplate } from '@/lib/types'
 
 const MERGE_FIELDS = ['first_name', 'contact_name', 'address', 'owner_name', 'business_name']
+// Resolve from the policy a send is about (renewal reminders); empty otherwise.
+const POLICY_MERGE_FIELDS = ['policy_number', 'carrier', 'policy_type', 'premium', 'effective_date', 'expiration_date']
 
 /**
  * Owner-facing management of message templates (email/SMS with merge fields).
@@ -64,6 +66,8 @@ export function MessageTemplatesSettings() {
       <p style={{ fontSize: 13, color: 'var(--color-ink-400)', margin: '0 0 12px' }}>
         Reusable email/SMS with merge fields like <code>{'{{first_name}}'}</code> — send them from a
         record or a workflow. Available: {MERGE_FIELDS.map(f => <code key={f} style={{ marginRight: 6 }}>{`{{${f}}}`}</code>)}
+        <br />
+        For policy renewal reminders: {POLICY_MERGE_FIELDS.map(f => <code key={f} style={{ marginRight: 6 }}>{`{{${f}}}`}</code>)}
       </p>
 
       {templates.length > 0 && (

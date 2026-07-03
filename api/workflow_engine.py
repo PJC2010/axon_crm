@@ -353,7 +353,20 @@ def execute_date_offset_rules(conn, account_id: int) -> list[dict]:
             if not _claim_firing(conn, rule["id"], account_id, src["target_type"], target_id, anchor.isoformat()):
                 continue
             try:
-                result = _execute_action(conn, rule, lead_id, rule["created_by"], account_id)
+                # send_template renders child-object merge fields (e.g. a policy's
+                # carrier/expiration in a renewal reminder), so fetch the firing
+                # row for it. Other actions don't read context — skip the query.
+                extra = None
+                if source != "properties" and rule["action_type"] == "send_template":
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            f"SELECT * FROM {src['table']} WHERE id = %s AND account_id = %s",
+                            (target_id, account_id),
+                        )
+                        row = dict_fetchone(cur)
+                    if row:
+                        extra = {src["target_type"]: row}
+                result = _execute_action(conn, rule, lead_id, rule["created_by"], account_id, extra=extra)
                 if result:
                     results.append(result)
             except Exception as exc:
@@ -499,7 +512,10 @@ def _get_lead_vertical(conn, lead_id: int, account_id: int) -> str | None:
     return row[0] if row else None
 
 
-def _execute_action(conn, rule: dict, lead_id: int, user_id: int, account_id: int) -> dict | None:
+def _execute_action(conn, rule: dict, lead_id: int, user_id: int, account_id: int,
+                    extra: dict | None = None) -> dict | None:
+    """`extra` carries trigger context (e.g. {"policy": row} from a date_offset
+    firing on the policies table) for actions that render merge fields."""
     action_type = rule["action_type"]
     cfg = rule["action_config"]
     if isinstance(cfg, str):
@@ -514,7 +530,7 @@ def _execute_action(conn, rule: dict, lead_id: int, user_id: int, account_id: in
     if action_type == "send_notification":
         return _send_notification(conn, cfg, lead_id, rule, account_id)
     if action_type == "send_template":
-        return _send_template(conn, cfg, lead_id, rule, account_id)
+        return _send_template(conn, cfg, lead_id, rule, account_id, extra=extra)
 
     log.warning("Unknown action_type: %s", action_type)
     return None
@@ -618,33 +634,75 @@ def _send_notification(conn, cfg: dict, lead_id: int, rule: dict, account_id: in
     return {"action": "notification_sent", "rule_name": rule["name"], "to": to_email, "history_id": history_id}
 
 
-def _send_template(conn, cfg: dict, lead_id: int, rule: dict, account_id: int) -> dict | None:
-    """Message the matched record's own contact from a saved template.
+def _send_template(conn, cfg: dict, lead_id: int, rule: dict, account_id: int,
+                   extra: dict | None = None) -> dict | None:
+    """Message the matched record's own contact from saved template(s).
 
     Distinct from send_notification (which emails the rule's owner): this
-    renders a message_templates row against the record and sends it to the
-    record's contact email/phone. Fails soft — a missing template, an
-    unconfigured channel, or a contact with no address on file is skipped
-    (surfaced in the results), never raised.
+    renders message_templates rows against the record and sends to the record's
+    contact email/phone. Two config shapes:
+
+      {"template_id": 5}                                     — single template,
+        sent on that template's own channel (legacy rules).
+      {"templates": {"sms": 5, "email": 7}, "delivery": m}   — multi-channel;
+        m is "sms_first" / "email_first" (send on the preferred channel, fall
+        back to the other when the contact has no address for it or the
+        provider isn't configured) or "both" (send on every deliverable one).
+
+    `extra` (e.g. {"policy": row}) adds child-object merge fields so a renewal
+    reminder can name the expiring policy. Fails soft — missing templates,
+    unconfigured channels, or a contact with no address are skipped (surfaced
+    in the results), never raised. A provider error on one channel doesn't
+    void another channel's completed send: the failure is only re-raised (to
+    release the firing claim for retry) when nothing was delivered at all.
     """
     from api import messaging, notifications
 
-    template_id = cfg.get("template_id")
-    if not template_id:
+    # Resolve the template set and channel plan.
+    template_ids: list[int] = []
+    delivery = None
+    if cfg.get("templates"):
+        template_ids = [tid for tid in cfg["templates"].values() if tid]
+        delivery = cfg.get("delivery") or "both"
+    elif cfg.get("template_id"):
+        template_ids = [cfg["template_id"]]
+    if not template_ids:
         return None
-    with conn.cursor() as cur:
-        cur.execute("SELECT * FROM message_templates WHERE id = %s AND account_id = %s",
-                    (template_id, account_id))
-        template = dict_fetchone(cur)
-    if not template:
-        log.warning("send_template rule %r references missing template %s", rule["name"], template_id)
+
+    by_channel: dict[str, dict] = {}
+    for template_id in template_ids:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM message_templates WHERE id = %s AND account_id = %s",
+                        (template_id, account_id))
+            template = dict_fetchone(cur)
+        if template:
+            by_channel[template["channel"]] = template
+        else:
+            log.warning("send_template rule %r references missing template %s", rule["name"], template_id)
+    if not by_channel:
         return {"action": "template_skipped", "rule_name": rule["name"], "reason": "template_not_found"}
 
-    channel = template["channel"]
-    configured = notifications.email_configured() if channel == "email" else notifications.sms_configured()
-    if not configured:
-        log.info("send_template skipped for rule %r — %s not configured", rule["name"], channel)
-        return {"action": "template_skipped", "rule_name": rule["name"], "reason": f"{channel}_not_configured"}
+    if delivery:
+        channels, send_all = messaging.channel_order(delivery)
+    else:
+        channels, send_all = [next(iter(by_channel))], False
+
+    def _configured(ch: str) -> bool:
+        return notifications.email_configured() if ch == "email" else notifications.sms_configured()
+
+    skipped: dict[str, str] = {}
+    viable = []
+    for ch in channels:
+        if ch not in by_channel:
+            skipped[ch] = "no_template"
+        elif not _configured(ch):
+            skipped[ch] = "not_configured"
+        else:
+            viable.append(ch)
+    if not viable:
+        reason = f"{channels[0]}_not_configured" if by_channel else "template_not_found"
+        log.info("send_template skipped for rule %r — %s", rule["name"], skipped)
+        return {"action": "template_skipped", "rule_name": rule["name"], "reason": reason, "skipped": skipped}
 
     with conn.cursor() as cur:
         cur.execute(
@@ -655,31 +713,66 @@ def _send_template(conn, cfg: dict, lead_id: int, rule: dict, account_id: int) -
         record = dict_fetchone(cur)
     if not record:
         return None
-    recipient = messaging.recipient_for_channel(record, channel)
-    if not recipient:
-        return {"action": "template_skipped", "rule_name": rule["name"], "reason": f"no_{channel}_address"}
+
+    deliverable = []
+    for ch in viable:
+        recipient = messaging.recipient_for_channel(record, ch)
+        if recipient:
+            deliverable.append((ch, recipient))
+        else:
+            skipped[ch] = "no_address"
+    if not deliverable:
+        return {"action": "template_skipped", "rule_name": rule["name"],
+                "reason": f"no_{viable[0]}_address", "skipped": skipped}
 
     with conn.cursor() as cur:
         cur.execute("SELECT name FROM accounts WHERE id = %s", (account_id,))
         row = cur.fetchone()
-    ctx = messaging.build_context(record, row[0] if row else None)
+    ctx = messaging.build_context(record, row[0] if row else None,
+                                  policy=(extra or {}).get("policy"))
 
-    body = messaging.render_template(template["body"], ctx)
-    if channel == "email":
-        subject = messaging.render_template(template["subject"], ctx) or template["name"]
-        notifications.send_email(to_email=recipient, subject=subject, html=body.replace("\n", "<br>"))
-    else:
-        notifications.send_sms(to_phone=recipient, body=body)
+    sent = []
+    last_error: Exception | None = None
+    for channel, recipient in deliverable:
+        template = by_channel[channel]
+        body = messaging.render_template(template["body"], ctx)
+        try:
+            if channel == "email":
+                subject = messaging.render_template(template["subject"], ctx) or template["name"]
+                notifications.send_email(to_email=recipient, subject=subject, html=body.replace("\n", "<br>"))
+            else:
+                notifications.send_sms(to_phone=recipient, body=body)
+        except Exception as exc:
+            log.exception("send_template rule %r failed on %s", rule["name"], channel)
+            skipped[channel] = f"send_failed: {exc}"
+            last_error = exc
+            continue
 
-    with conn.cursor() as cur:
-        cur.execute(
-            "INSERT INTO contact_history (property_id, action, outcome, created_by) "
-            "VALUES (%s, %s, %s, %s) RETURNING id",
-            (lead_id, f"{channel.upper()} sent — {template['name']}", "sent", rule.get("created_by")),
-        )
-        history_id = cur.fetchone()[0]
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO contact_history (property_id, action, outcome, created_by, "
+                "channel, direction, body) "
+                "VALUES (%s, %s, %s, %s, %s, 'outbound', %s) RETURNING id",
+                (lead_id, f"{channel.upper()} sent — {template['name']}", "sent",
+                 rule.get("created_by"), channel, body),
+            )
+            history_id = cur.fetchone()[0]
+        sent.append({"channel": channel, "to": recipient, "history_id": history_id})
+        if not send_all:
+            break
+
+    if not sent:
+        if last_error is not None:
+            raise last_error
+        return {"action": "template_skipped", "rule_name": rule["name"],
+                "reason": "not_delivered", "skipped": skipped}
+
     conn.commit()
-    return {"action": "template_sent", "rule_name": rule["name"], "to": recipient, "history_id": history_id}
+    result = {"action": "template_sent", "rule_name": rule["name"],
+              "to": sent[0]["to"], "history_id": sent[0]["history_id"], "sent": sent}
+    if skipped:
+        result["skipped"] = skipped
+    return result
 
 
 def _log_history(conn, cfg: dict, lead_id: int, user_id: int) -> dict:

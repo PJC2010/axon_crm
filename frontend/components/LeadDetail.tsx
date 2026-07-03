@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Archive } from 'lucide-react'
 import type { Lead } from '@/lib/types'
 import { getLead, archiveLead } from '@/lib/api'
+import { useTerminology } from '@/hooks/useTerminology'
 import { StatusSelect } from './StatusSelect'
 import { ScoreBadge } from './ScoreBadge'
 import { ToastStack, useToast } from './Toast'
@@ -19,6 +20,7 @@ import { ActivityPanel } from './lead/ActivityPanel'
 
 export function LeadDetail({ leadId }: { leadId: number }) {
   const router = useRouter()
+  const { propertyBased } = useTerminology()
   const [lead, setLead] = useState<Lead | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -42,9 +44,12 @@ export function LeadDetail({ leadId }: { leadId: number }) {
     } finally { setArchiving(false) }
   }
 
-  const address = lead
-    ? ([lead.address, lead.city, lead.state].filter(Boolean).join(', ') || lead.contact_name || '—')
+  // Property businesses lead with the address; everyone else with the person.
+  const addressLine = lead ? [lead.address, lead.city, lead.state].filter(Boolean).join(', ') : ''
+  const title = lead
+    ? (propertyBased ? (addressLine || lead.contact_name || '—') : (lead.contact_name || lead.owner_name || addressLine || '—'))
     : ''
+  const eyebrow = lead ? (propertyBased ? lead.zip : lead.account_number) : null
 
   return (
     <div style={{ minHeight: '100vh', background: 'transparent' }}>
@@ -91,7 +96,7 @@ export function LeadDetail({ leadId }: { leadId: number }) {
               }}
             >
               <div>
-                <p className="t-eyebrow" style={{ marginBottom: 4 }}>{lead.zip}</p>
+                <p className="t-eyebrow" style={{ marginBottom: 4 }}>{eyebrow}</p>
                 <h1
                   style={{
                     fontFamily: 'var(--font-display)',
@@ -102,7 +107,7 @@ export function LeadDetail({ leadId }: { leadId: number }) {
                     margin: 0,
                   }}
                 >
-                  {address}
+                  {title}
                 </h1>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
                   <ScoreBadge grade={lead.score_grade} score={lead.lead_score} />
@@ -124,8 +129,8 @@ export function LeadDetail({ leadId }: { leadId: number }) {
             <PoliciesSection leadId={lead.id} />
             <OrdersSection leadId={lead.id} />
             <AppointmentsSection leadId={lead.id} />
-            <PropertySignals lead={lead} />
-            <WhyThisScore leadId={lead.id} />
+            {propertyBased && <PropertySignals lead={lead} />}
+            {propertyBased && <WhyThisScore leadId={lead.id} />}
             <ActivityPanel leadId={lead.id} />
           </div>
         )}

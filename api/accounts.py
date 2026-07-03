@@ -77,6 +77,37 @@ def seed_business_type_fields(conn, account_id: int, business_type: str) -> int:
     return created
 
 
+def seed_business_type_templates(conn, account_id: int, business_type: str, user_id: int) -> dict[str, int]:
+    """Seed the preset's default message templates (idempotent per name).
+
+    Returns name → id for every preset template — created now or already
+    present — so workflow seeding can resolve template_names references.
+    """
+    from api.business_types import get_business_type
+
+    bt = get_business_type(business_type)
+    ids: dict[str, int] = {}
+    with conn.cursor() as cur:
+        for t in bt.default_templates:
+            cur.execute(
+                "INSERT INTO message_templates (account_id, name, channel, subject, body, created_by) "
+                "VALUES (%s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT (account_id, name) DO NOTHING RETURNING id",
+                (account_id, t["name"], t.get("channel", "email"), t.get("subject"),
+                 t["body"], user_id),
+            )
+            row = cur.fetchone()
+            if row is None:
+                cur.execute(
+                    "SELECT id FROM message_templates WHERE account_id = %s AND name = %s",
+                    (account_id, t["name"]),
+                )
+                row = cur.fetchone()
+            if row:
+                ids[t["name"]] = row[0]
+    return ids
+
+
 def seed_business_type_workflows(conn, account_id: int, business_type: str, user_id: int) -> int:
     """Seed the preset's default workflow rules, skipping names already present.
 
@@ -84,11 +115,17 @@ def seed_business_type_workflows(conn, account_id: int, business_type: str, user
     (date_offset/inactivity) execute as ``created_by``, and at account-creation
     time no user exists yet. Callers run this right after the first user insert
     (scripts/create_user.py) or as the acting owner (business-type switch).
+
+    The preset's default templates are seeded first; a rule whose action_config
+    carries {"template_names": {channel: name}} gets them resolved to this
+    account's template ids ({"templates": {channel: id}}). A send rule none of
+    whose templates resolved is skipped rather than seeded broken.
     """
     import json as _json
     from api.business_types import get_business_type
 
     bt = get_business_type(business_type)
+    template_ids = seed_business_type_templates(conn, account_id, business_type, user_id)
     created = 0
     with conn.cursor() as cur:
         for rule in bt.default_workflows:
@@ -98,13 +135,20 @@ def seed_business_type_workflows(conn, account_id: int, business_type: str, user
             )
             if cur.fetchone():
                 continue
+            action_config = dict(rule.get("action_config", {}))
+            names = action_config.pop("template_names", None)
+            if names:
+                resolved = {ch: template_ids[n] for ch, n in names.items() if n in template_ids}
+                if not resolved:
+                    continue
+                action_config["templates"] = resolved
             cur.execute(
                 "INSERT INTO workflow_rules (name, trigger_type, trigger_config, action_type, "
                 "action_config, created_by, account_id) VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (rule["name"], rule.get("trigger_type", "status_change"),
                  _json.dumps(rule.get("trigger_config", {})),
                  rule.get("action_type", "create_task"),
-                 _json.dumps(rule.get("action_config", {})),
+                 _json.dumps(action_config),
                  user_id, account_id),
             )
             created += 1

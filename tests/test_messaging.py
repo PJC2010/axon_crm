@@ -24,8 +24,9 @@ class TestRenderer:
 
     def test_missing_values_render_empty(self):
         ctx = messaging.build_context({}, None)
-        assert ctx == {"contact_name": "", "first_name": "", "address": "",
-                       "owner_name": "", "business_name": ""}
+        assert all(v == "" for v in ctx.values())
+        assert set(messaging.MERGE_FIELDS) <= set(ctx)
+        assert set(messaging.POLICY_MERGE_FIELDS) <= set(ctx)
 
     def test_known_placeholders_substituted(self):
         ctx = messaging.build_context({"contact_name": "Sam Lee"}, "Acme")
@@ -45,6 +46,44 @@ class TestRenderer:
         assert messaging.recipient_for_channel(rec, "email") == "a@b.com"
         assert messaging.recipient_for_channel(rec, "sms") == "+15551234567"
         assert messaging.recipient_for_channel({}, "email") is None
+
+
+class TestPolicyContext:
+    _POLICY = {"id": 7, "policy_number": "PN-123", "carrier": "Progressive",
+               "policy_type": "auto", "premium": 1250.5,
+               "effective_date": "2025-07-15", "expiration_date": "2026-07-15"}
+
+    def test_policy_fields_formatted(self):
+        ctx = messaging.build_context({"contact_name": "Sam Lee"}, "Acme", policy=self._POLICY)
+        assert ctx["carrier"] == "Progressive"
+        assert ctx["policy_type"] == "auto"
+        assert ctx["policy_number"] == "PN-123"
+        assert ctx["premium"] == "$1,250.50"
+        assert ctx["expiration_date"] == "July 15, 2026"
+        assert ctx["effective_date"] == "July 15, 2025"
+
+    def test_date_objects_also_format(self):
+        from datetime import date
+        ctx = messaging.build_context({}, None, policy={"expiration_date": date(2026, 1, 3)})
+        assert ctx["expiration_date"] == "January 3, 2026"
+
+    def test_policy_placeholders_render(self):
+        ctx = messaging.build_context({"contact_name": "Sam Lee"}, "Acme", policy=self._POLICY)
+        out = messaging.render_template(
+            "Hi {{first_name}}, your {{carrier}} {{policy_type}} policy expires {{expiration_date}}.", ctx)
+        assert out == "Hi Sam, your Progressive auto policy expires July 15, 2026."
+
+    def test_without_policy_placeholders_render_empty(self):
+        ctx = messaging.build_context({}, "Acme")
+        out = messaging.render_template("Policy {{policy_number}} from {{carrier}}", ctx)
+        assert out == "Policy  from "
+
+
+class TestChannelOrder:
+    def test_modes(self):
+        assert messaging.channel_order("sms_first") == (["sms", "email"], False)
+        assert messaging.channel_order("email_first") == (["email", "sms"], False)
+        assert messaging.channel_order("both") == (["sms", "email"], True)
 
 
 # ── fake DB ─────────────────────────────────────────────────────────────────────
@@ -152,6 +191,48 @@ class TestSendLeadMessage:
             user=USER, db=conn)
         assert result["sent"] is True
 
+    def test_policy_id_merges_policy_fields(self, monkeypatch):
+        sent = {}
+        monkeypatch.setattr(messaging_route.notifications, "email_configured", lambda: True)
+        monkeypatch.setattr(messaging_route.notifications, "send_email",
+                            lambda *, to_email, subject, html: sent.update(subject=subject, html=html))
+        template = self._template(subject="{{carrier}} renewal {{expiration_date}}",
+                                  body="Hi {{first_name}}, your {{policy_type}} policy expires {{expiration_date}}.")
+        policy = {"id": 7, "account_id": 3, "property_id": 42, "policy_number": "PN-1",
+                  "carrier": "Progressive", "policy_type": "auto", "premium": 900,
+                  "effective_date": "2025-08-01", "expiration_date": "2026-08-01"}
+        conn = _Conn([
+            [self._record()],       # record
+            [template],             # template
+            [policy],               # policy (org- and lead-scoped)
+            [("Acme",)],            # account name
+            [(77,)],                # history
+        ])
+        result = messaging_route.send_lead_message(
+            42, SendMessageRequest(template_id=5, policy_id=7), user=USER, db=conn)
+        assert result["sent"] is True
+        assert sent["subject"] == "Progressive renewal August 1, 2026"
+        assert "your auto policy expires August 1, 2026" in sent["html"]
+        # The policy lookup is scoped to this account AND this lead.
+        policy_sql, policy_params = conn.executed[2]
+        assert "policies" in policy_sql
+        assert policy_params == [7, 3, 42]
+        # Timeline label names the policy.
+        history_params = next(p for sql, p in conn.executed if "contact_history" in sql)
+        assert "(Progressive auto)" in history_params[1]
+
+    def test_policy_on_other_record_404(self, monkeypatch):
+        monkeypatch.setattr(messaging_route.notifications, "email_configured", lambda: True)
+        conn = _Conn([
+            [self._record()],
+            [self._template()],
+            [],                     # policy lookup empty (wrong lead/org)
+        ])
+        with pytest.raises(HTTPException) as exc:
+            messaging_route.send_lead_message(
+                42, SendMessageRequest(template_id=5, policy_id=7), user=USER, db=conn)
+        assert exc.value.status_code == 404
+
 
 # ── send_template workflow action ───────────────────────────────────────────────
 
@@ -208,14 +289,189 @@ class TestSendTemplateAction:
     def test_dispatched_from_execute_action(self, monkeypatch):
         called = {}
 
-        def fake_send_template(conn, cfg, lead_id, rule, account_id):
+        def fake_send_template(conn, cfg, lead_id, rule, account_id, extra=None):
             called["hit"] = lead_id
+            called["extra"] = extra
             return {"action": "template_sent"}
 
         monkeypatch.setattr(we, "_send_template", fake_send_template)
-        result = we._execute_action(_Conn([]), self._rule(), 42, 9, 3)
+        result = we._execute_action(_Conn([]), self._rule(), 42, 9, 3, extra={"policy": {"id": 7}})
         assert result == {"action": "template_sent"}
         assert called["hit"] == 42
+        assert called["extra"] == {"policy": {"id": 7}}
+
+
+class TestSendTemplateMultiChannel:
+    """The {"templates": {...}, "delivery": mode} shape: channel fallback and
+    both-channel sends."""
+
+    def _rule(self, **over):
+        r = {"id": 1, "name": "Renewal reminder", "action_type": "send_template",
+             "action_config": {}, "created_by": 9, "account_id": 3}
+        r.update(over)
+        return r
+
+    def _sms_template(self):
+        return {"id": 5, "account_id": 3, "name": "Reminder SMS", "channel": "sms",
+                "subject": None, "body": "Hi {{first_name}}, {{carrier}} expires {{expiration_date}}."}
+
+    def _email_template(self):
+        return {"id": 7, "account_id": 3, "name": "Reminder Email", "channel": "email",
+                "subject": "Renewal {{expiration_date}}", "body": "Hi {{first_name}}"}
+
+    def _record(self, **over):
+        r = {"id": 42, "contact_name": "Jane Doe", "contact_email": "jane@x.com",
+             "contact_phone": "+15551112222", "address": "1 Main", "owner_name": "Jane Doe"}
+        r.update(over)
+        return r
+
+    _CFG = {"templates": {"sms": 5, "email": 7}, "delivery": "sms_first"}
+
+    def _configure(self, monkeypatch, email=True, sms=True):
+        from api import notifications
+        monkeypatch.setattr(notifications, "email_configured", lambda: email)
+        monkeypatch.setattr(notifications, "sms_configured", lambda: sms)
+
+    def test_sms_first_sends_sms_only(self, monkeypatch):
+        self._configure(monkeypatch)
+        sent = {}
+        from api import notifications
+        monkeypatch.setattr(notifications, "send_sms", lambda *, to_phone, body: sent.update(sms=(to_phone, body)))
+        monkeypatch.setattr(notifications, "send_email", lambda **kw: sent.update(email=kw))
+        conn = _Conn([
+            [self._sms_template()], [self._email_template()],   # template loads
+            [self._record()],                                    # record
+            [("Acme",)],                                         # account name
+            [(88,)],                                             # history (sms)
+        ])
+        result = we._send_template(conn, self._CFG, 42, self._rule(), 3)
+        assert result["action"] == "template_sent"
+        assert [s["channel"] for s in result["sent"]] == ["sms"]
+        assert "email" not in sent
+        assert sent["sms"][0] == "+15551112222"
+
+    def test_sms_first_falls_back_to_email_without_phone(self, monkeypatch):
+        self._configure(monkeypatch)
+        sent = {}
+        from api import notifications
+        monkeypatch.setattr(notifications, "send_sms", lambda **kw: sent.update(sms=kw))
+        monkeypatch.setattr(notifications, "send_email",
+                            lambda *, to_email, subject, html: sent.update(email=(to_email, subject)))
+        conn = _Conn([
+            [self._sms_template()], [self._email_template()],
+            [self._record(contact_phone=None)],
+            [("Acme",)],
+            [(88,)],
+        ])
+        result = we._send_template(conn, self._CFG, 42, self._rule(), 3)
+        assert [s["channel"] for s in result["sent"]] == ["email"]
+        assert result["skipped"]["sms"] == "no_address"
+        assert sent["email"][0] == "jane@x.com"
+
+    def test_sms_first_falls_back_when_sms_unconfigured(self, monkeypatch):
+        self._configure(monkeypatch, sms=False)
+        sent = {}
+        from api import notifications
+        monkeypatch.setattr(notifications, "send_email",
+                            lambda *, to_email, subject, html: sent.update(email=to_email))
+        conn = _Conn([
+            [self._sms_template()], [self._email_template()],
+            [self._record()],
+            [("Acme",)],
+            [(88,)],
+        ])
+        result = we._send_template(conn, self._CFG, 42, self._rule(), 3)
+        assert [s["channel"] for s in result["sent"]] == ["email"]
+        assert result["skipped"]["sms"] == "not_configured"
+
+    def test_both_sends_on_every_channel(self, monkeypatch):
+        self._configure(monkeypatch)
+        sent = {}
+        from api import notifications
+        monkeypatch.setattr(notifications, "send_sms", lambda *, to_phone, body: sent.update(sms=to_phone))
+        monkeypatch.setattr(notifications, "send_email",
+                            lambda *, to_email, subject, html: sent.update(email=to_email))
+        cfg = {"templates": {"sms": 5, "email": 7}, "delivery": "both"}
+        conn = _Conn([
+            [self._sms_template()], [self._email_template()],
+            [self._record()],
+            [("Acme",)],
+            [(88,)], [(89,)],                                    # two history inserts
+        ])
+        result = we._send_template(conn, cfg, 42, self._rule(), 3)
+        assert sorted(s["channel"] for s in result["sent"]) == ["email", "sms"]
+        assert sent == {"sms": "+15551112222", "email": "jane@x.com"}
+        history = [p for sql, p in conn.executed if "contact_history" in sql]
+        assert len(history) == 2
+
+    def test_neither_channel_reachable_skips(self, monkeypatch):
+        self._configure(monkeypatch)
+        conn = _Conn([
+            [self._sms_template()], [self._email_template()],
+            [self._record(contact_phone=None, contact_email=None)],
+        ])
+        result = we._send_template(conn, self._CFG, 42, self._rule(), 3)
+        assert result["action"] == "template_skipped"
+        assert result["skipped"] == {"sms": "no_address", "email": "no_address"}
+
+    def test_provider_error_falls_through_to_next_channel(self, monkeypatch):
+        self._configure(monkeypatch)
+        sent = {}
+        from api import notifications
+
+        def boom(**kw):
+            raise RuntimeError("twilio down")
+
+        monkeypatch.setattr(notifications, "send_sms", boom)
+        monkeypatch.setattr(notifications, "send_email",
+                            lambda *, to_email, subject, html: sent.update(email=to_email))
+        conn = _Conn([
+            [self._sms_template()], [self._email_template()],
+            [self._record()],
+            [("Acme",)],
+            [(88,)],
+        ])
+        result = we._send_template(conn, self._CFG, 42, self._rule(), 3)
+        assert [s["channel"] for s in result["sent"]] == ["email"]
+        assert "send_failed" in result["skipped"]["sms"]
+
+    def test_all_channels_error_reraises(self, monkeypatch):
+        self._configure(monkeypatch)
+        from api import notifications
+
+        def boom(**kw):
+            raise RuntimeError("provider down")
+
+        monkeypatch.setattr(notifications, "send_sms", boom)
+        monkeypatch.setattr(notifications, "send_email", boom)
+        conn = _Conn([
+            [self._sms_template()], [self._email_template()],
+            [self._record()],
+            [("Acme",)],
+        ])
+        with pytest.raises(RuntimeError):
+            we._send_template(conn, self._CFG, 42, self._rule(), 3)
+
+    def test_policy_context_renders_into_body(self, monkeypatch):
+        self._configure(monkeypatch)
+        sent = {}
+        from api import notifications
+        monkeypatch.setattr(notifications, "send_sms", lambda *, to_phone, body: sent.update(body=body))
+        conn = _Conn([
+            [self._sms_template()], [self._email_template()],
+            [self._record()],
+            [("Acme",)],
+            [(88,)],
+        ])
+        policy = {"id": 7, "carrier": "Progressive", "policy_type": "auto",
+                  "policy_number": "PN-1", "premium": 900,
+                  "effective_date": "2025-08-01", "expiration_date": "2026-08-01"}
+        result = we._send_template(conn, self._CFG, 42, self._rule(), 3,
+                                   extra={"policy": policy})
+        assert result["action"] == "template_sent"
+        assert sent["body"] == "Hi Jane, Progressive expires August 1, 2026."
+        history_params = next(p for sql, p in conn.executed if "contact_history" in sql)
+        assert "Progressive expires August 1, 2026" in history_params[5]
 
 
 class TestValidation:
@@ -228,3 +484,31 @@ class TestValidation:
     def test_send_template_valid(self):
         from api.routes.workflows import _validate_rule
         _validate_rule("status_change", {"to_status": "won"}, "send_template", {"template_id": 5})
+
+    def test_send_template_multi_channel_valid(self):
+        from api.routes.workflows import _validate_rule
+        _validate_rule("status_change", {"to_status": "won"}, "send_template",
+                       {"templates": {"sms": 5, "email": 7}, "delivery": "sms_first"})
+        _validate_rule("status_change", {"to_status": "won"}, "send_template",
+                       {"templates": {"sms": 5}, "delivery": "both"})
+
+    def test_send_template_bad_delivery_rejected(self):
+        from api.routes.workflows import _validate_rule
+        with pytest.raises(HTTPException) as exc:
+            _validate_rule("status_change", {"to_status": "won"}, "send_template",
+                           {"templates": {"sms": 5, "email": 7}, "delivery": "carrier_pigeon"})
+        assert exc.value.status_code == 400
+
+    def test_fallback_needs_both_templates(self):
+        from api.routes.workflows import _validate_rule
+        with pytest.raises(HTTPException) as exc:
+            _validate_rule("status_change", {"to_status": "won"}, "send_template",
+                           {"templates": {"sms": 5}, "delivery": "sms_first"})
+        assert exc.value.status_code == 400
+
+    def test_bad_channel_key_rejected(self):
+        from api.routes.workflows import _validate_rule
+        with pytest.raises(HTTPException) as exc:
+            _validate_rule("status_change", {"to_status": "won"}, "send_template",
+                           {"templates": {"fax": 5}, "delivery": "both"})
+        assert exc.value.status_code == 400

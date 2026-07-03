@@ -33,7 +33,11 @@ export function ContactDrawer({ lead, onClose, onStatusChange, onLeadChange, onT
 
   if (!lead) return null
 
-  const address = [lead.address, lead.city, lead.state].filter(Boolean).join(', ') || lead.contact_name || '—'
+  // Property businesses lead with the address; everyone else with the person.
+  const addressLine = [lead.address, lead.city, lead.state].filter(Boolean).join(', ')
+  const title = propertyBased
+    ? (addressLine || lead.contact_name || '—')
+    : (lead.contact_name || lead.owner_name || addressLine || '—')
 
   async function handleArchive() {
     if (!lead) return
@@ -93,7 +97,7 @@ export function ContactDrawer({ lead, onClose, onStatusChange, onLeadChange, onT
                 margin: 0,
               }}
             >
-              {address}
+              {title}
             </h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
               <ScoreBadge grade={lead.score_grade} score={lead.lead_score} />

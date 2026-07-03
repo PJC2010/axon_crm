@@ -1,13 +1,12 @@
 'use client'
 import { useState } from 'react'
-import { ChevronLeft, ChevronRight, Home, Search, Settings, Archive, MoreVertical } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Search, Settings, Archive, MoreVertical } from 'lucide-react'
 import Link from 'next/link'
 import type { Lead, LeadFilters, LeadStatus } from '@/lib/types'
 import { archiveBulk, archiveByFilter } from '@/lib/api'
-import { ScoreBadge } from './ScoreBadge'
-import { StatusSelect } from './StatusSelect'
 import { ConfirmModal } from './ConfirmModal'
 import { useTerminology } from '@/hooks/useTerminology'
+import { resolveLeadColumns } from './lead/leadColumns'
 
 interface Props {
   leads: Lead[]
@@ -18,17 +17,6 @@ interface Props {
   onFiltersChange: (f: LeadFilters) => void
   onStatusChange: (id: number, s: LeadStatus) => void
   onToast?: (msg: string, variant?: 'success' | 'error') => void
-}
-
-function fmt(d: string | null) {
-  if (!d) return '—'
-  return new Date(d).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-}
-function fmtCurrency(n: number | null) {
-  if (n == null) return '—'
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000)     return `$${(n / 1_000).toFixed(0)}K`
-  return `$${n}`
 }
 
 const PAGE_SIZE = 50
@@ -46,7 +34,8 @@ const TH_STYLE: React.CSSProperties = {
 }
 
 export function LeadTable({ leads, total, filters, loading, onRowClick, onFiltersChange, onStatusChange, onToast }: Props) {
-  const { t } = useTerminology()
+  const { t, listColumns, categories, propertyBased } = useTerminology()
+  const columns = resolveLeadColumns(listColumns, { t, categories, propertyBased })
   const page      = filters.page ?? 1
   const pageSize  = filters.page_size ?? PAGE_SIZE
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
@@ -179,22 +168,24 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
                   style={{ cursor: 'pointer' }}
                 />
               </th>
-              {['Address', 'Score', 'Year built', 'Equity', 'Garage', 'Last sale', 'Status', ''].map(h => (
-                <th key={h} style={TH_STYLE}>{h}</th>
+              {columns.map(col => (
+                <th key={col.key} style={TH_STYLE}>{col.header}</th>
               ))}
+              <th style={TH_STYLE} aria-hidden />
+
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={9} style={{ textAlign: 'center', padding: '64px 0', fontSize: 13, color: 'var(--color-ink-400)' }}>
+                <td colSpan={columns.length + 2} style={{ textAlign: 'center', padding: '64px 0', fontSize: 13, color: 'var(--color-ink-400)' }}>
                   Loading…
                 </td>
               </tr>
             )}
             {!loading && leads.length === 0 && total === 0 && (
               <tr>
-                <td colSpan={9} style={{ textAlign: 'center', padding: '64px 20px' }}>
+                <td colSpan={columns.length + 2} style={{ textAlign: 'center', padding: '64px 20px' }}>
                   <Search size={48} strokeWidth={1} style={{ color: 'var(--color-ink-300)', marginBottom: 12 }} />
                   <p style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 600, color: 'var(--color-ink-700)' }}>No leads yet</p>
                   <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--color-ink-400)', maxWidth: 320, marginLeft: 'auto', marginRight: 'auto' }}>
@@ -212,7 +203,7 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
             )}
             {!loading && leads.length === 0 && total > 0 && (
               <tr>
-                <td colSpan={9} style={{ textAlign: 'center', padding: '64px 0', fontSize: 13, color: 'var(--color-ink-400)' }}>
+                <td colSpan={columns.length + 2} style={{ textAlign: 'center', padding: '64px 0', fontSize: 13, color: 'var(--color-ink-400)' }}>
                   No leads match the current filters.
                 </td>
               </tr>
@@ -238,37 +229,16 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
                     style={{ cursor: 'pointer' }}
                   />
                 </td>
-                <td style={{ padding: '12px 14px', maxWidth: 240 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Home size={13} strokeWidth={1.5} style={{ color: 'var(--color-ink-300)', flexShrink: 0 }} />
-                    <div>
-                      <p style={{ fontWeight: 500, color: 'var(--color-ink-900)', fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {lead.address || lead.contact_name || '—'}
-                      </p>
-                      <p style={{ fontSize: 11, color: 'var(--color-ink-500)', marginTop: 1 }}>
-                        {[lead.city, lead.state, lead.zip].filter(Boolean).join(', ')}
-                      </p>
-                    </div>
-                  </div>
-                </td>
-                <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>
-                  <ScoreBadge grade={lead.score_grade} score={lead.lead_score} />
-                </td>
-                <td className="tabular" style={{ padding: '12px 14px', fontSize: 13.5, color: 'var(--color-ink-800)' }}>
-                  {lead.year_built ?? '—'}
-                </td>
-                <td className="tabular" style={{ padding: '12px 14px', fontSize: 13.5, color: 'var(--color-ink-800)' }}>
-                  {fmtCurrency(lead.estimated_equity)}
-                </td>
-                <td className="tabular" style={{ padding: '12px 14px', fontSize: 13.5, color: 'var(--color-ink-800)' }}>
-                  {lead.garage_spaces != null ? `${lead.garage_spaces}-car` : '—'}
-                </td>
-                <td className="tabular" style={{ padding: '12px 14px', fontSize: 13.5, color: 'var(--color-ink-800)', whiteSpace: 'nowrap' }}>
-                  {fmt(lead.last_sale_date)}
-                </td>
-                <td style={{ padding: '12px 14px' }} onClick={e => e.stopPropagation()}>
-                  <StatusSelect leadId={lead.id} value={lead.status} onChange={s => onStatusChange(lead.id, s)} />
-                </td>
+                {columns.map(col => (
+                  <td
+                    key={col.key}
+                    className={col.cellClassName}
+                    style={{ padding: '12px 14px', fontSize: 13.5, color: 'var(--color-ink-800)', ...col.cellStyle }}
+                    onClick={col.stopPropagation ? e => e.stopPropagation() : undefined}
+                  >
+                    {col.render(lead, { onStatusChange })}
+                  </td>
+                ))}
                 <td style={{ padding: '12px 14px', color: 'var(--color-ink-300)' }}>
                   <ChevronRight size={14} strokeWidth={1.5} />
                 </td>

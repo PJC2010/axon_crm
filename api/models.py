@@ -790,6 +790,9 @@ class SendMessageRequest(BaseModel):
     channel: Optional[str] = None
     subject: Optional[str] = None
     body: Optional[str] = None
+    # When set, that policy's merge fields ({{carrier}}, {{expiration_date}}, …)
+    # render into the message — the manual renewal-reminder path.
+    policy_id: Optional[int] = None
 
 
 # ── Saved segments ──────────────────────────────────────────────────────────────
