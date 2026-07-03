@@ -750,7 +750,7 @@ export function deleteMessageTemplate(id: number): Promise<void> {
 }
 
 export function sendLeadMessage(leadId: number, body: {
-  template_id?: number; channel?: string; subject?: string; body?: string
+  template_id?: number; channel?: string; subject?: string; body?: string; policy_id?: number
 }): Promise<{ sent: boolean; channel: string; to: string }> {
   return req(`/leads/${leadId}/message`, { method: 'POST', body: JSON.stringify(body) })
 }

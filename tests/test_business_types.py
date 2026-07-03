@@ -5,6 +5,7 @@ import pytest
 
 from api.business_types import (
     BASE_TERMINOLOGY, BUSINESS_TYPES, DEFAULT_BUSINESS_TYPE, DEFAULT_KPIS,
+    DEFAULT_LIST_COLUMNS,
     business_type_catalog, business_type_profile, get_business_type, resolve_terminology,
 )
 from api.entitlements import MODULE_KEYS
@@ -17,6 +18,13 @@ KNOWN_KPIS = {
     "revenue_mtd", "outstanding_ar", "win_rate", "forecast",
     "premium_in_force", "active_policies", "renewals_30d",
     "orders_30d", "repeat_rate",
+}
+
+# Every list-table column key a preset may reference; each must have a renderer
+# in frontend/components/lead/leadColumns.tsx.
+KNOWN_LIST_COLUMNS = {
+    "record", "score", "status", "category", "job_value", "x_date",
+    "year_built", "equity", "garage", "last_sale",
 }
 
 ALL_PRESETS = list(BUSINESS_TYPES)
@@ -54,6 +62,16 @@ class TestPresetInvariants:
         assert set(BUSINESS_TYPES[key].kpis) <= KNOWN_KPIS
 
     @pytest.mark.parametrize("key", ALL_PRESETS)
+    def test_list_columns_are_known(self, key):
+        cols = BUSINESS_TYPES[key].list_columns
+        assert cols, f"{key}: needs at least one list column"
+        assert len(cols) == len(set(cols)), f"{key}: duplicate list columns"
+        assert set(cols) <= KNOWN_LIST_COLUMNS, (
+            f"{key}: unknown list column(s) — add a renderer in "
+            f"frontend/components/lead/leadColumns.tsx"
+        )
+
+    @pytest.mark.parametrize("key", ALL_PRESETS)
     def test_stages_shape(self, key):
         bt = BUSINESS_TYPES[key]
         if bt.default_stages is None:
@@ -81,13 +99,22 @@ class TestPresetInvariants:
     @pytest.mark.parametrize("key", ALL_PRESETS)
     def test_default_workflows_pass_route_validation(self, key):
         """Every seeded rule must be one the workflows API would accept — a
-        pack must never provision a rule the engine silently skips."""
+        pack must never provision a rule the engine silently skips. Rules
+        referencing default templates by name are validated as the seeder
+        resolves them (template_names → per-channel ids)."""
+        template_names = {t["name"] for t in BUSINESS_TYPES[key].default_templates}
         for rule in BUSINESS_TYPES[key].default_workflows:
+            action_config = dict(rule.get("action_config", {}))
+            names = action_config.pop("template_names", None)
+            if names:
+                # every referenced template must exist in the pack
+                assert set(names.values()) <= template_names, rule["name"]
+                action_config["templates"] = {ch: i + 1 for i, ch in enumerate(names)}
             _validate_rule(
                 rule.get("trigger_type", "status_change"),
                 rule.get("trigger_config", {}),
                 rule.get("action_type", "create_task"),
-                rule.get("action_config", {}),
+                action_config,
             )
             assert rule.get("name")
 
@@ -99,11 +126,24 @@ class TestInsurancePack:
             r["trigger_config"]["offset_days"]
             for r in bt.default_workflows if r["trigger_type"] == "date_offset"
         )
-        assert offsets == [-90, -30, -7]
+        # -30 twice: the agent's task and the client-facing reminder message.
+        assert offsets == [-90, -30, -30, -7]
         for r in bt.default_workflows:
             if r["trigger_type"] == "date_offset":
                 assert r["trigger_config"]["source"] == "policies"
                 assert r["trigger_config"]["date_field"] == "expiration_date"
+
+    def test_client_reminder_rule_and_templates(self):
+        bt = BUSINESS_TYPES["insurance_agency"]
+        reminder = next(r for r in bt.default_workflows if r["action_type"] == "send_template")
+        assert reminder["action_config"]["delivery"] == "sms_first"
+        names = reminder["action_config"]["template_names"]
+        by_name = {t["name"]: t for t in bt.default_templates}
+        assert by_name[names["sms"]]["channel"] == "sms"
+        assert by_name[names["email"]]["channel"] == "email"
+        # Reminder templates must name the expiring policy and its date.
+        for t in by_name.values():
+            assert "{{expiration_date}}" in t["body"] or "{{expiration_date}}" in (t.get("subject") or "")
 
     def test_modules(self):
         bt = BUSINESS_TYPES["insurance_agency"]
@@ -132,6 +172,17 @@ class TestProfilePayload:
 
     def test_default_profile_keeps_classic_kpis(self):
         assert business_type_profile("home_services")["kpis"] == list(DEFAULT_KPIS)
+
+    def test_profile_includes_list_columns(self):
+        cols = business_type_profile("insurance_agency")["list_columns"]
+        assert cols == ["record", "score", "category", "job_value", "x_date", "status"]
+        # Property columns are dropped for non-property verticals.
+        assert "year_built" not in cols
+
+    def test_default_profile_keeps_property_columns(self):
+        cols = business_type_profile("home_services")["list_columns"]
+        assert cols == list(DEFAULT_LIST_COLUMNS)
+        assert "year_built" in cols
 
     def test_catalog_shape(self):
         catalog = business_type_catalog()

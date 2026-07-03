@@ -358,6 +358,8 @@ export interface AccountFeatures {
   // Dashboard KPI tile ids + child objects for this business type (Phase 6).
   kpis?: string[]
   objects?: string[]
+  // Ordered lead-list column keys (see frontend/components/lead/leadColumns.tsx).
+  list_columns?: string[]
 }
 
 export interface BusinessTypeInfo {
@@ -846,8 +848,12 @@ export interface WorkflowActionConfig {
   channel?: string
   subject?: string
   message?: string
-  // send_template
+  // send_template — either a single template_id, or per-channel templates with
+  // a delivery mode ("sms_first" / "email_first" fall back when the preferred
+  // channel has no address; "both" sends on every deliverable channel)
   template_id?: number
+  templates?: { sms?: number; email?: number }
+  delivery?: 'sms_first' | 'email_first' | 'both'
 }
 
 export interface WorkflowRule {

@@ -160,6 +160,50 @@ class TestDateOffsetRules:
         assert results[0]["action"] == "rule_failed"
         assert conn.rollbacks == 1                       # unclaims the firing for retry
 
+    def test_policy_source_threads_context_to_send_template(self, monkeypatch):
+        """A policies-source firing with a send_template action fetches the
+        policy row and hands it to the action as merge-field context."""
+        rule = _rule(
+            trigger_config={"source": "policies", "date_field": "expiration_date", "offset_days": -30},
+            action_type="send_template",
+            action_config={"templates": {"sms": 5, "email": 7}, "delivery": "sms_first"},
+        )
+        policy_row = {"id": 77, "account_id": 3, "property_id": 42, "carrier": "Progressive",
+                      "policy_type": "auto", "expiration_date": date(2026, 8, 1)}
+        captured = {}
+
+        def fake_execute_action(conn, r, lead_id, user_id, account_id, extra=None):
+            captured.update(lead_id=lead_id, extra=extra)
+            return {"action": "template_sent"}
+
+        monkeypatch.setattr(we, "_execute_action", fake_execute_action)
+        conn = _ScriptedConn([
+            [rule],
+            [(77, 42, date(2026, 8, 1))],                # candidate: policy 77 → lead 42
+            [(100,)],                                    # claim ok
+            [policy_row],                                # policy fetch for context
+        ])
+        results = we.execute_date_offset_rules(conn, 3)
+        assert results == [{"action": "template_sent"}]
+        assert captured["lead_id"] == 42
+        assert captured["extra"] == {"policy": policy_row}
+        fetch_sql, fetch_params = conn.executed[3]
+        assert "FROM policies" in fetch_sql
+        assert fetch_params == [77, 3]
+
+    def test_policy_source_task_action_skips_context_fetch(self):
+        """create_task doesn't render merge fields — no extra query for it."""
+        rule = _rule(trigger_config={"source": "policies", "date_field": "expiration_date",
+                                     "offset_days": -30})
+        conn = _ScriptedConn([
+            [rule],
+            [(77, 42, date(2026, 8, 1))],
+            [(100,)],                                    # claim ok
+            [(6, "Call about renewal", date(2026, 7, 3), "high")],   # task insert directly
+        ])
+        results = we.execute_date_offset_rules(conn, 3)
+        assert results and results[0]["action"] == "task_created"
+
 
 # ── inactivity rules ────────────────────────────────────────────────────────────
 

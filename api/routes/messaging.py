@@ -143,12 +143,24 @@ def send_lead_message(lead_id: int, body: SendMessageRequest, user: dict = Depen
     if not recipient:
         raise HTTPException(status_code=400, detail=f"This contact has no {channel} address on file")
 
+    # Per-policy sends (renewal reminders) merge that policy's fields.
+    policy = None
+    if body.policy_id is not None:
+        with db.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM policies WHERE id = %s AND account_id = %s AND property_id = %s",
+                (body.policy_id, account_id, lead_id),
+            )
+            policy = dict_fetchone(cur)
+        if not policy:
+            raise HTTPException(status_code=404, detail="Policy not found on this record")
+
     with db.cursor() as cur:
         cur.execute("SELECT name FROM accounts WHERE id = %s", (account_id,))
         row = cur.fetchone()
     business_name = row[0] if row else None
 
-    ctx = messaging.build_context(record, business_name)
+    ctx = messaging.build_context(record, business_name, policy=policy)
     rendered_subject = messaging.render_template(subject, ctx)
     rendered_body = messaging.render_template(text_body, ctx)
 
@@ -169,6 +181,10 @@ def send_lead_message(lead_id: int, body: SendMessageRequest, user: dict = Depen
         raise HTTPException(status_code=502, detail=f"Send failed: {exc}")
 
     label = template["name"] if template else "Message"
+    if policy:
+        policy_label = " ".join(x for x in (policy.get("carrier"), policy.get("policy_type")) if x) \
+            or f"policy #{policy['id']}"
+        label = f"{label} ({policy_label})"
     with db.cursor() as cur:
         cur.execute(
             "INSERT INTO contact_history (property_id, action, outcome, created_by, "

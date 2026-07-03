@@ -2,16 +2,22 @@
 import { useState, useEffect, FormEvent } from 'react'
 import { createWorkflow, getMessageTemplates } from '@/lib/api'
 import { useTerminology } from '@/hooks/useTerminology'
-import type { MessageTemplate, WorkflowActionConfig, WorkflowTriggerConfig } from '@/lib/types'
+import { useEntitlements } from '@/hooks/useEntitlements'
+import type { MessageTemplate, ModuleKey, WorkflowActionConfig, WorkflowTriggerConfig } from '@/lib/types'
 
 const STATUSES = ['new', 'contacted', 'qualified', 'quote_sent', 'won', 'lost', 'not_interested']
 
-// Mirrors DATE_TRIGGER_SOURCES["properties"] in api/workflow_engine.py.
-const DATE_FIELDS = [
-  { value: 'last_sale_date', label: 'Last sale date' },
-  { value: 'refi_date', label: 'Refinance date' },
-  { value: 'last_storm_date', label: 'Last storm date' },
-  { value: 'created_at', label: 'Record created' },
+// Mirrors DATE_TRIGGER_SOURCES in api/workflow_engine.py. Values are
+// "source.field"; entries with a module only show when it's enabled.
+const DATE_SOURCES: { value: string; label: string; module?: ModuleKey }[] = [
+  { value: 'properties.last_sale_date', label: 'Last sale date' },
+  { value: 'properties.refi_date', label: 'Refinance date' },
+  { value: 'properties.last_storm_date', label: 'Last storm date' },
+  { value: 'properties.created_at', label: 'Record created' },
+  { value: 'policies.expiration_date', label: 'Policy expiration', module: 'policies' },
+  { value: 'policies.effective_date', label: 'Policy effective date', module: 'policies' },
+  { value: 'orders.order_date', label: 'Order date', module: 'orders' },
+  { value: 'appointments.starts_at', label: 'Appointment start', module: 'appointments' },
 ]
 
 const TRIGGER_OPTIONS = [
@@ -27,19 +33,28 @@ const ACTION_OPTIONS = [
   { value: 'send_template', label: 'Message the contact' },
 ]
 
+// send_template delivery modes ("single" is the one-template legacy shape).
+const DELIVERY_OPTIONS = [
+  { value: 'single', label: 'One template' },
+  { value: 'sms_first', label: 'Text, or email if no phone' },
+  { value: 'email_first', label: 'Email, or text if no email' },
+  { value: 'both', label: 'Both text & email' },
+]
+
 const LABEL_STYLE = { fontSize: 12, color: 'var(--color-ink-500)', fontWeight: 500 } as const
 const HINT_STYLE = { fontSize: 12, color: 'var(--color-ink-500)' } as const
 
 export function WorkflowRuleForm({ onCreated, onCancel }: { onCreated: () => void; onCancel: () => void }) {
   const { categories, t } = useTerminology()
+  const { hasModule } = useEntitlements()
   const [name, setName] = useState('')
   const [vertical, setVertical] = useState('')
   const [triggerType, setTriggerType] = useState('status_change')
   // status_change
   const [fromStatus, setFromStatus] = useState('')
   const [toStatus, setToStatus] = useState('')
-  // date_offset
-  const [dateField, setDateField] = useState('last_sale_date')
+  // date_offset — "source.field"
+  const [dateSource, setDateSource] = useState('properties.last_sale_date')
   const [offsetDays, setOffsetDays] = useState(30)
   const [offsetDirection, setOffsetDirection] = useState<'before' | 'after'>('after')
   // inactivity
@@ -54,6 +69,9 @@ export function WorkflowRuleForm({ onCreated, onCancel }: { onCreated: () => voi
   const [subject, setSubject] = useState('')
   const [message, setMessage] = useState('')
   const [templateId, setTemplateId] = useState<number | ''>('')
+  const [delivery, setDelivery] = useState('single')
+  const [smsTemplateId, setSmsTemplateId] = useState<number | ''>('')
+  const [emailTemplateId, setEmailTemplateId] = useState<number | ''>('')
   const [templates, setTemplates] = useState<MessageTemplate[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -62,6 +80,10 @@ export function WorkflowRuleForm({ onCreated, onCancel }: { onCreated: () => voi
     getMessageTemplates().then(setTemplates).catch(() => setTemplates([]))
   }, [])
 
+  const dateOptions = DATE_SOURCES.filter(f => !f.module || hasModule(f.module))
+  const smsTemplates = templates.filter(tp => tp.channel === 'sms')
+  const emailTemplates = templates.filter(tp => tp.channel === 'email')
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
@@ -69,15 +91,19 @@ export function WorkflowRuleForm({ onCreated, onCancel }: { onCreated: () => voi
     if (triggerType === 'status_change' && !toStatus) return
     if (actionType === 'create_task' && !taskTitle.trim()) return
     if (actionType === 'send_notification' && !subject.trim()) return
-    if (actionType === 'send_template' && templateId === '') return
+    if (actionType === 'send_template') {
+      if (delivery === 'single' && templateId === '') return
+      if (delivery !== 'single' && (smsTemplateId === '' || emailTemplateId === '')) return
+    }
 
     let trigger_config: WorkflowTriggerConfig = {}
     if (triggerType === 'status_change') {
       trigger_config = { ...(fromStatus ? { from_status: fromStatus } : {}), to_status: toStatus }
     } else if (triggerType === 'date_offset') {
+      const [source, date_field] = dateSource.split('.')
       trigger_config = {
-        source: 'properties',
-        date_field: dateField,
+        source,
+        date_field,
         offset_days: offsetDirection === 'before' ? -Math.abs(offsetDays) : Math.abs(offsetDays),
       }
     } else if (triggerType === 'inactivity') {
@@ -90,7 +116,12 @@ export function WorkflowRuleForm({ onCreated, onCancel }: { onCreated: () => voi
     if (actionType === 'create_task') {
       action_config = { title: taskTitle.trim(), due_days_offset: dueDays, priority }
     } else if (actionType === 'send_template') {
-      action_config = { template_id: templateId as number }
+      action_config = delivery === 'single'
+        ? { template_id: templateId as number }
+        : {
+            templates: { sms: smsTemplateId as number, email: emailTemplateId as number },
+            delivery: delivery as 'sms_first' | 'email_first' | 'both',
+          }
     } else {
       action_config = { channel: 'email', subject: subject.trim(), ...(message.trim() ? { message: message.trim() } : {}) }
     }
@@ -158,8 +189,8 @@ export function WorkflowRuleForm({ onCreated, onCancel }: { onCreated: () => voi
               <option value="after">after</option>
               <option value="before">before</option>
             </select>
-            <select value={dateField} onChange={e => setDateField(e.target.value)} className="drawer-input" style={{ width: 160 }}>
-              {DATE_FIELDS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+            <select value={dateSource} onChange={e => setDateSource(e.target.value)} className="drawer-input" style={{ width: 170 }}>
+              {dateOptions.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
             </select>
           </>
         )}
@@ -211,10 +242,28 @@ export function WorkflowRuleForm({ onCreated, onCancel }: { onCreated: () => voi
 
         {actionType === 'send_template' && (
           templates.length > 0 ? (
-            <select value={templateId} onChange={e => setTemplateId(e.target.value ? Number(e.target.value) : '')} className="drawer-input" style={{ flex: 1, minWidth: 180 }} required>
-              <option value="">Choose a template…</option>
-              {templates.map(tpl => <option key={tpl.id} value={tpl.id}>{tpl.name} ({tpl.channel})</option>)}
-            </select>
+            <>
+              <select value={delivery} onChange={e => setDelivery(e.target.value)} className="drawer-input" style={{ width: 190 }}>
+                {DELIVERY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              {delivery === 'single' ? (
+                <select value={templateId} onChange={e => setTemplateId(e.target.value ? Number(e.target.value) : '')} className="drawer-input" style={{ flex: 1, minWidth: 180 }} required>
+                  <option value="">Choose a template…</option>
+                  {templates.map(tpl => <option key={tpl.id} value={tpl.id}>{tpl.name} ({tpl.channel})</option>)}
+                </select>
+              ) : (
+                <>
+                  <select value={smsTemplateId} onChange={e => setSmsTemplateId(e.target.value ? Number(e.target.value) : '')} className="drawer-input" style={{ flex: 1, minWidth: 150 }} required>
+                    <option value="">SMS template…</option>
+                    {smsTemplates.map(tpl => <option key={tpl.id} value={tpl.id}>{tpl.name}</option>)}
+                  </select>
+                  <select value={emailTemplateId} onChange={e => setEmailTemplateId(e.target.value ? Number(e.target.value) : '')} className="drawer-input" style={{ flex: 1, minWidth: 150 }} required>
+                    <option value="">Email template…</option>
+                    {emailTemplates.map(tpl => <option key={tpl.id} value={tpl.id}>{tpl.name}</option>)}
+                  </select>
+                </>
+              )}
+            </>
           ) : (
             <span style={HINT_STYLE}>Create a message template in Settings first.</span>
           )
@@ -249,7 +298,8 @@ export function describeTrigger(w: { trigger_type: string; trigger_config: Workf
       return 'on import'
     case 'date_offset': {
       const n = c.offset_days ?? 0
-      const fieldLabel = DATE_FIELDS.find(f => f.value === c.date_field)?.label || c.date_field
+      const key = `${c.source || 'properties'}.${c.date_field}`
+      const fieldLabel = DATE_SOURCES.find(f => f.value === key)?.label || c.date_field
       if (n === 0) return `on ${fieldLabel}`
       return `${Math.abs(n)}d ${n < 0 ? 'before' : 'after'} ${fieldLabel}`
     }

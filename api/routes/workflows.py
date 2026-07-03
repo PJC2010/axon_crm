@@ -77,9 +77,24 @@ def _validate_rule(trigger_type: str, trigger_config: dict, action_type: str, ac
         raise HTTPException(status_code=400, detail="send_notification supports only the email channel")
 
     if action_type == "send_template":
-        tid = action_config.get("template_id")
-        if not isinstance(tid, int) or isinstance(tid, bool):
-            raise HTTPException(status_code=400, detail="send_template needs a template_id")
+        templates = action_config.get("templates")
+        if templates is not None:
+            from api.messaging import DELIVERY_MODES
+            if not isinstance(templates, dict) or not templates:
+                raise HTTPException(status_code=400, detail="templates must map channels to template ids")
+            for ch, tid in templates.items():
+                if ch not in ("sms", "email") or not isinstance(tid, int) or isinstance(tid, bool):
+                    raise HTTPException(status_code=400, detail="templates must map 'sms'/'email' to template ids")
+            delivery = action_config.get("delivery", "both")
+            if delivery not in DELIVERY_MODES:
+                raise HTTPException(status_code=400, detail=f"delivery must be one of {sorted(DELIVERY_MODES)}")
+            # Fallback modes only fall back when both channels have a template.
+            if delivery in ("sms_first", "email_first") and len(templates) < 2:
+                raise HTTPException(status_code=400, detail="fallback delivery needs both an SMS and an email template")
+        else:
+            tid = action_config.get("template_id")
+            if not isinstance(tid, int) or isinstance(tid, bool):
+                raise HTTPException(status_code=400, detail="send_template needs a template_id")
 
 
 @router.get("/workflows")
