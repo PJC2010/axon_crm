@@ -199,6 +199,15 @@ TWILIO_FROM_NUMBER  = os.getenv("TWILIO_FROM_NUMBER", "")
 # Frontend origin used to build customer-facing links (public quote pages).
 APP_BASE_URL        = os.getenv("APP_BASE_URL", "http://localhost:3000")
 
+# ── Website lead intake (insure-auto public site) ────────────────────────────
+# Shared-secret header (X-Axon-Api-Key) that authenticates server-to-server
+# calls from the insure-auto Next.js API routes — never exposed to a browser.
+# Both must be set for POST /api/public/website-lead to accept requests; it
+# returns 503 while either is empty. PUBLIC_INTAKE_ACCOUNT_ID pins every
+# website lead to this single agency's account (this deployment serves one).
+PUBLIC_INTAKE_API_KEY    = os.getenv("PUBLIC_INTAKE_API_KEY", "")
+PUBLIC_INTAKE_ACCOUNT_ID = os.getenv("PUBLIC_INTAKE_ACCOUNT_ID", "")
+
 # ── Online payments (Stripe Connect Express) ─────────────────────────────────
 # Owners onboard Express connected accounts; customers pay via Checkout Sessions
 # created on the connected account (direct charges) and Axon takes a platform
