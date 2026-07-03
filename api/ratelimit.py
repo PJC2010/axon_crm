@@ -50,3 +50,4 @@ receipt_scan_limiter = RateLimiter(max_calls=60, per_seconds=3600, name="receipt
 pipeline_run_limiter = RateLimiter(max_calls=10, per_seconds=3600, name="pipeline run")
 public_quote_limiter = RateLimiter(max_calls=30, per_seconds=60, name="public quote")
 public_pay_limiter = RateLimiter(max_calls=30, per_seconds=60, name="public payment")
+public_intake_limiter = RateLimiter(max_calls=30, per_seconds=60, name="website intake")

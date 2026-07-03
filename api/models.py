@@ -1,4 +1,5 @@
 """Pydantic schemas for request/response bodies."""
+import re
 from datetime import date, datetime
 from typing import Optional
 from pydantic import BaseModel
@@ -509,6 +510,39 @@ class ImportResult(BaseModel):
     updated: int = 0                 # existing rows matched and updated
     skipped: int = 0                 # rows with no usable data
     errors: list[str] = []
+
+
+# ── Public website lead intake (insure-auto) ───────────────────────────────────
+
+WEBSITE_FORM_TYPES = {"quote", "contact"}
+WEBSITE_QUOTE_TYPES = {"personal-auto", "home-insurance", "renters-insurance", "commercial-auto"}
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+class WebsiteLeadCreate(BaseModel):
+    """Body of POST /api/public/website-lead — a quote request or contact-form
+    submission from the insure-auto marketing site. Sent server-to-server by
+    insure-auto's own Next.js API routes, never directly by a visitor's browser."""
+    form_type: str
+    full_name: str
+    email: str
+    phone: Optional[str] = None
+    quote_type: Optional[str] = None
+    fields: dict = {}                 # dynamic per-quote-type fields (vehicleYear, propertyAddress, ...)
+    subject: Optional[str] = None     # contact form only
+    message: Optional[str] = None     # contact form only
+    is_preview: bool = False          # true for Vercel Preview-deploy submissions
+
+    def validate_lead(self):
+        if self.form_type not in WEBSITE_FORM_TYPES:
+            raise ValueError(f"form_type must be one of {WEBSITE_FORM_TYPES}")
+        if self.quote_type and self.quote_type not in WEBSITE_QUOTE_TYPES:
+            raise ValueError(f"quote_type must be one of {WEBSITE_QUOTE_TYPES}")
+        if not self.full_name.strip():
+            raise ValueError("full_name is required")
+        if not _EMAIL_RE.match(self.email or ""):
+            raise ValueError("email is not a valid address")
+        return self
 
 
 # ── Notes ─────────────────────────────────────────────────────────────────────

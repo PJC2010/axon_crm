@@ -46,3 +46,11 @@ services:
         value: ""
       - key: GOOGLE_GEOCODE_KEY
         value: ""
+      # Website lead intake (insure-auto). Generate a long random value, set it
+      # here, and copy the same value into insure-auto's Vercel AXON_API_KEY env
+      # var (Preview + Production). Find PUBLIC_INTAKE_ACCOUNT_ID via
+      # `SELECT id FROM accounts;` for this agency's account.
+      - key: PUBLIC_INTAKE_API_KEY
+        sync: false
+      - key: PUBLIC_INTAKE_ACCOUNT_ID
+        sync: false
