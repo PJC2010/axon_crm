@@ -24,6 +24,8 @@ from config import (
     GEO_SERVICE_AREA_BUFFER_KM,
     GEO_ROAD_CIRCUITY,
     GEO_DEFAULT_CONFIG,
+    GEO_EVENT_BONUS,
+    GEO_EVENT_DEFAULT_BONUS,
 )
 from pipeline import geo_scoring
 
@@ -83,6 +85,38 @@ def load_customers(conn, account_id: int) -> list[dict]:
         return [dict(r) for r in cur.fetchall()]
 
 
+def load_active_events(conn, account_id: int) -> list[dict]:
+    """Active event polygons for the account (Phase 4), each resolved to a ring of
+    (lng, lat) and a numeric bonus so scoring's geometry test stays pure. "Active"
+    means now falls within [starts_at, ends_at] (NULL bounds are open)."""
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            "SELECT id, event_type, name, bonus, polygon FROM geo_events "
+            "WHERE account_id = %s "
+            "  AND (starts_at IS NULL OR starts_at <= NOW()) "
+            "  AND (ends_at IS NULL OR ends_at >= NOW())",
+            (account_id,),
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+
+    events = []
+    for r in rows:
+        ring = _ring_from_geojson(r["polygon"])
+        if not ring:
+            continue
+        bonus = r["bonus"]
+        if bonus is None:
+            bonus = GEO_EVENT_BONUS.get(r["event_type"], GEO_EVENT_DEFAULT_BONUS)
+        events.append({
+            "id": r["id"],
+            "event_type": r["event_type"],
+            "name": r["name"],
+            "bonus": float(bonus),
+            "ring": ring,
+        })
+    return events
+
+
 def get_service_area(conn, account_id: int, customers: list[dict] | None = None) -> tuple[list | None, str]:
     """Return (polygon_ring, source) for the account. A user-drawn/stored area
     wins; otherwise derive the customer convex hull on the fly. `customers` may be
@@ -132,7 +166,8 @@ def refresh_service_area(conn, account_id: int) -> bool:
 
 # ── Scoring ───────────────────────────────────────────────────────────────────
 
-def _spatial_facts(lead: dict, customers: list[dict], ring: list | None, source: str) -> dict:
+def _spatial_facts(lead: dict, customers: list[dict], ring: list | None, source: str,
+                   events: list[dict] | None = None) -> dict:
     """Measure the spatial inputs the score needs for one lead."""
     lat, lng = lead["latitude"], lead["longitude"]
     density_km = GEO_DENSITY_RADIUS_M / 1000.0
@@ -158,11 +193,23 @@ def _spatial_facts(lead: dict, customers: list[dict], ring: list | None, source:
                 neighbor_days = days
 
     inside = geo_scoring.in_service_area(lat, lng, ring, source, GEO_SERVICE_AREA_BUFFER_KM)
+
+    # Event bonus (Phase 4): the highest-bonus active event polygon containing the lead.
+    event_bonus = 0.0
+    event = None
+    if events:
+        hit = geo_scoring.best_event_for_point(lat, lng, events)
+        if hit:
+            event_bonus = hit["bonus"]
+            event = {"type": hit["event_type"], "id": hit["id"], "name": hit["name"]}
+
     return {
         "nearest_customer_km": nearest_km,
         "customers_within_radius": within,
         "days_since_completed_job": neighbor_days,
         "inside_service_area": inside,
+        "event_bonus": event_bonus,
+        "event": event,
         "property_score": lead.get("lead_score") or 0.0,
     }
 
@@ -186,13 +233,14 @@ def _days_since(when) -> float | None:
 
 
 def _score_and_store(conn, account_id: int, leads: list[dict], customers: list[dict],
-                     ring: list | None, source: str, resolve_config) -> int:
+                     ring: list | None, source: str, resolve_config,
+                     events: list[dict] | None = None) -> int:
     """Score `leads` and upsert into lead_geo_scores. Caller owns transaction."""
     upserts = []
     for lead in leads:
         if lead["latitude"] is None or lead["longitude"] is None:
             continue  # can't geo-score without coordinates — leave for the geocode queue
-        facts = _spatial_facts(lead, customers, ring, source)
+        facts = _spatial_facts(lead, customers, ring, source, events)
         config = resolve_config(lead.get("vertical"))
         result = geo_scoring.score_geo(facts, config)
         nearest_m = round(facts["nearest_customer_km"] * 1000) if facts["nearest_customer_km"] is not None else None
@@ -224,6 +272,7 @@ def rescore_leads(conn, account_id: int, property_ids: list[int] | None = None) 
     entry point for the batch endpoint and the nightly job."""
     customers = load_customers(conn, account_id)
     ring, source = get_service_area(conn, account_id, customers)
+    events = load_active_events(conn, account_id)
     resolve_config = _config_cache(conn, account_id)
 
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -243,7 +292,7 @@ def rescore_leads(conn, account_id: int, property_ids: list[int] | None = None) 
             )
         leads = [dict(r) for r in cur.fetchall()]
 
-    n = _score_and_store(conn, account_id, leads, customers, ring, source, resolve_config)
+    n = _score_and_store(conn, account_id, leads, customers, ring, source, resolve_config, events)
     conn.commit()
     log.info("Geo-scored %d lead(s) for account %d", n, account_id)
     return n

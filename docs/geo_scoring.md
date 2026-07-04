@@ -12,7 +12,8 @@ H3-cell cost control.*
 *Phase 3 — neighbor / visible-work component wired into scoring, the blast-radius
 endpoint, and the map UI (heatmap overlay, cluster hulls + "prospect this area",
 "Route fit" chip).*
-*Still to come: event layers (Phase 4).*
+*Phase 4 — event layers: `geo_events` (manual polygon upload), an additive event
+bonus in scoring named in the breakdown, and an event overlay on the map.*
 
 Companion: `juncto-geospatial-layer-plan.md` (the full four-phase plan).
 
@@ -136,6 +137,40 @@ from 2 active customers") read straight off the lead's `nearest_customer_m` /
 `customers_within_1600m`. Verified with `tsc --noEmit`, `eslint`, and a full
 `next build`. Service-area polygon draw/edit is deferred (needs mapbox-gl-draw);
 the derived area is already returned by `GET /geo/service-area`.
+
+## What shipped in Phase 4 (event layers)
+
+| Area | File(s) |
+|---|---|
+| Migration (`geo_events`) | `db/migrations/052_geo_events.sql` |
+| Event bonus in scoring + `best_event_for_point` | `pipeline/geo_scoring.py` |
+| Active-event loading + per-lead containment/bonus | `pipeline/geo_score_store.py` |
+| `GET`/`POST`/`DELETE /geo/events` (+ rescore on change) | `api/routes/geo.py` |
+| Event overlay toggle on the map; event chip on the lead drawer | `frontend/components/PropertyMap.tsx`, `frontend/components/ContactDrawer.tsx` |
+| Config (`GEO_EVENT_BONUS`, `GEO_EVENT_DEFAULT_BONUS`) | `config.py` |
+| Tests | `tests/test_geo_events.py` |
+
+Some demand is created by events that hit whole polygons at once — hail swaths
+(roofing), new-construction phases (lawn/pest/pools), HOA sweeps, heat waves
+(HVAC). A lead inside an **active** event polygon (now within `[starts_at,
+ends_at]`, NULL bounds open) gets an additive **event bonus**:
+
+```
+geo_score = min(100, weighted_base + event_bonus) * territory_gate
+```
+
+The bonus is per `event_type` (`config.GEO_EVENT_BONUS`, e.g. hail_swath 40), with
+an optional per-event override (`geo_events.bonus`). The winning event is named in
+the component breakdown (`components.event = {type, id, name}`), so the lift is
+explainable — the lead drawer shows an event chip ("May hail +40"). The gate still
+applies, so an out-of-territory lead in a swath stays suppressed.
+
+MVP ingestion is manual: an admin uploads a polygon via `POST /geo/events`, which
+re-scores the account so the bonus lands immediately; `GET /geo/events` returns a
+FeatureCollection (with an `active` flag) for the map overlay. NOAA / storm-data
+automation waits until a roofing tenant exists. As with the rest of the layer,
+`geo_events.polygon` is GeoJSON in JSONB and containment runs in Python — the
+PostGIS `geometry(Polygon,4326)` + `ST_Contains` upgrade is a drop-in.
 
 ---
 
@@ -274,6 +309,9 @@ penalized.
 | POST | `/api/geo/cluster/recompute` | Re-run DBSCAN + H3 backfill for the account |
 | POST | `/api/geo/prospect` | Cluster-seeded RentCast pull → dedupe → ingest → score |
 | POST | `/api/geo/neighbors` | Blast radius around a completed job — ranked targets |
+| GET | `/api/geo/events` | Event polygons as a GeoJSON FeatureCollection |
+| POST | `/api/geo/events` | Upload an event polygon (e.g. a hail swath) |
+| DELETE | `/api/geo/events/{id}` | Remove an event |
 
 The leads list (`GET /api/leads`) LEFT JOINs `lead_geo_scores`, exposes
 `geo_score` / `final_score` / `geo_components` / `nearest_customer_m` /
@@ -290,4 +328,5 @@ The leads list (`GET /api/leads`) LEFT JOINs `lead_geo_scores`, exposes
 `CUSTOMER_STATUSES`, `GEOCODE_PROVIDER`, `CENSUS_GEOCODER_URL`,
 `GEO_CLUSTER_EPS_M`, `GEO_CLUSTER_MIN_POINTS`, `GEO_H3_RESOLUTION`,
 `PROPERTY_PROVIDER`, `PROSPECT_DEFAULT_RADIUS_M`, `PROSPECT_MAX_RECORDS`,
-`PROSPECT_SKIP_DAYS`, `PROSPECT_MAX_PULLS_PER_CYCLE`, `PROSPECT_DEDUPE_M`.
+`PROSPECT_SKIP_DAYS`, `PROSPECT_MAX_PULLS_PER_CYCLE`, `PROSPECT_DEDUPE_M`,
+`GEO_EVENT_BONUS`, `GEO_EVENT_DEFAULT_BONUS`.

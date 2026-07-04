@@ -57,6 +57,16 @@ class NeighborsRequest(BaseModel):
     limit: int = Field(default=25, ge=1, le=100)
 
 
+class EventCreate(BaseModel):
+    event_type: str                       # 'hail_swath' | 'storm' | 'new_construction' | ...
+    name: str | None = None
+    polygon: dict                         # GeoJSON Polygon
+    bonus: float | None = None            # override the per-type default
+    starts_at: str | None = None          # ISO 8601; null = active from now
+    ends_at: str | None = None            # ISO 8601; null = never expires
+    metadata: dict | None = None
+
+
 @router.get("/config")
 def get_geo_config(db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
     """Effective geo config for the account: each vertical's platform default with
@@ -285,6 +295,93 @@ def neighbors(body: NeighborsRequest, db: PGConn = Depends(get_db),
         db, user["account_id"], body.job_id, radius_m=body.radius_m, limit=body.limit
     )
     return {"job_id": body.job_id, "radius_m": body.radius_m, "count": len(hits), "neighbors": hits}
+
+
+def _enqueue_full_rescore(db: PGConn, account_id: int):
+    """Background full-account rescore (sync fallback if no scheduler) — shared by
+    the event mutations so the event bonus lands on affected leads promptly."""
+    try:
+        from api.scheduler import scheduler
+
+        def _job():
+            import psycopg2
+            from config import DATABASE_URL
+            conn = psycopg2.connect(DATABASE_URL)
+            try:
+                geo_score_store.rescore_leads(conn, account_id)
+            finally:
+                conn.close()
+
+        scheduler.add_job(_job, id=f"geo_event_rescore_{account_id}", replace_existing=True)
+    except Exception:
+        geo_score_store.rescore_leads(db, account_id)
+
+
+@router.get("/events")
+def list_events(db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
+    """The account's event polygons as a GeoJSON FeatureCollection for the map
+    overlay. Each feature flags whether it's currently active."""
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT id, event_type, name, bonus, polygon, starts_at, ends_at, "
+            "  ((starts_at IS NULL OR starts_at <= NOW()) AND "
+            "   (ends_at IS NULL OR ends_at >= NOW())) AS active "
+            "FROM geo_events WHERE account_id = %s ORDER BY created_at DESC",
+            (user["account_id"],),
+        )
+        rows = dict_fetchall(cur)
+    features = [
+        {
+            "type": "Feature",
+            "geometry": r["polygon"],
+            "properties": {
+                "id": r["id"], "event_type": r["event_type"], "name": r["name"],
+                "bonus": float(r["bonus"]) if r["bonus"] is not None else None,
+                "starts_at": r["starts_at"], "ends_at": r["ends_at"], "active": r["active"],
+            },
+        }
+        for r in rows
+    ]
+    return {"type": "FeatureCollection", "features": features}
+
+
+@router.post("/events")
+def create_event(body: EventCreate, db: PGConn = Depends(get_db),
+                 user: dict = Depends(get_current_user)):
+    """Upload an event polygon (MVP ingestion is manual — e.g. a hail swath) and
+    re-score the account so leads inside it get the bonus, named in their
+    breakdown."""
+    import psycopg2.extras
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO geo_events "
+            "(account_id, event_type, name, polygon, bonus, starts_at, ends_at, metadata, created_by) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (user["account_id"], body.event_type, body.name,
+             psycopg2.extras.Json(body.polygon), body.bonus, body.starts_at, body.ends_at,
+             psycopg2.extras.Json(body.metadata or {}), user["id"]),
+        )
+        event_id = dict_fetchone(cur)["id"]
+    db.commit()
+    _enqueue_full_rescore(db, user["account_id"])
+    return {"id": event_id}
+
+
+@router.delete("/events/{event_id}")
+def delete_event(event_id: int, db: PGConn = Depends(get_db),
+                 user: dict = Depends(get_current_user)):
+    """Remove an event and re-score the account so the bonus is withdrawn."""
+    with db.cursor() as cur:
+        cur.execute(
+            "DELETE FROM geo_events WHERE id = %s AND account_id = %s RETURNING id",
+            (event_id, user["account_id"]),
+        )
+        row = dict_fetchone(cur)
+    db.commit()
+    if not row:
+        raise HTTPException(status_code=404, detail="Event not found")
+    _enqueue_full_rescore(db, user["account_id"])
+    return {"deleted": event_id}
 
 
 @router.get("/service-area")

@@ -66,6 +66,8 @@ export interface GeoComponents {
   density: number
   neighbor: number
   territory_gate: number
+  event_bonus?: number
+  event?: { type: string; id: number; name: string | null } | null
   inside_service_area?: boolean
   route_weight?: number
   neighbor_weight?: number
@@ -228,6 +230,34 @@ export interface BlastRadiusResult {
 export interface ServiceArea {
   polygon: { type: 'Polygon'; coordinates: number[][][] } | null
   source: string | null
+}
+
+// Event layer (Phase 4): polygons whose leads get a scoring bonus.
+export interface EventFeature {
+  type: 'Feature'
+  geometry: { type: 'Polygon'; coordinates: number[][][] } | null
+  properties: {
+    id: number
+    event_type: string
+    name: string | null
+    bonus: number | null
+    starts_at: string | null
+    ends_at: string | null
+    active: boolean
+  }
+}
+export interface EventCollection {
+  type: 'FeatureCollection'
+  features: EventFeature[]
+}
+export interface EventCreate {
+  event_type: string
+  name?: string
+  polygon: object
+  bonus?: number
+  starts_at?: string
+  ends_at?: string
+  metadata?: Record<string, unknown>
 }
 
 export interface ScoreFactor {

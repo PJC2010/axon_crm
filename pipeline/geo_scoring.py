@@ -126,6 +126,8 @@ def score_geo(row: dict, config: dict) -> dict:
     `row` carries the spatial facts the DB layer measured:
         nearest_customer_km, customers_within_radius, days_since_completed_job,
         inside_service_area, property_score
+    and, when the lead falls inside an active event polygon (Phase 4):
+        event_bonus (0–100 additive) and event ({type, id, name}).
     `config` carries route_weight / neighbor_weight / geo_blend.
 
     Returns geo_score, final_score, and the component breakdown stored as JSONB so
@@ -140,24 +142,46 @@ def score_geo(row: dict, config: dict) -> dict:
     neighbor = round(neighbor_component(row.get("days_since_completed_job")), 2)
     inside = row.get("inside_service_area", True)
     gate = territory_gate(inside)
+    event_bonus = float(row.get("event_bonus") or 0.0)
 
-    geo = round(geo_score(proximity, density, neighbor, rw, nw, gate), 2)
+    # Weighted base, then the event bonus (clamped to 100), then the territory
+    # gate. Bonus is additive so an active event visibly lifts an otherwise-cold
+    # lead, but the gate still suppresses out-of-territory noise.
+    base = geo_score(proximity, density, neighbor, rw, nw, gate=1.0)
+    geo = round(min(100.0, base + event_bonus) * gate, 2)
     final = round(blend_final_score(row.get("property_score") or 0.0, geo, blend), 2)
 
-    return {
-        "geo_score": geo,
-        "final_score": final,
-        "components": {
-            "proximity": proximity,
-            "density": density,
-            "neighbor": neighbor,
-            "territory_gate": gate,
-            "inside_service_area": bool(inside),
-            "route_weight": rw,
-            "neighbor_weight": nw,
-            "geo_blend": blend,
-        },
+    components = {
+        "proximity": proximity,
+        "density": density,
+        "neighbor": neighbor,
+        "territory_gate": gate,
+        "event_bonus": round(event_bonus, 2),
+        "event": row.get("event"),  # {type, id, name} or None
+        "inside_service_area": bool(inside),
+        "route_weight": rw,
+        "neighbor_weight": nw,
+        "geo_blend": blend,
     }
+    return {"geo_score": geo, "final_score": final, "components": components}
+
+
+def best_event_for_point(lat: float | None, lng: float | None, events: list[dict]) -> dict | None:
+    """The highest-bonus active event whose polygon contains the point, or None.
+
+    Each event dict must carry a precomputed `ring` (list of (lng, lat)) and a
+    resolved numeric `bonus`; the DB layer filters to *active* events and resolves
+    the per-type bonus before calling this, keeping the geometry test pure.
+    """
+    if lat is None or lng is None:
+        return None
+    best = None
+    for e in events:
+        ring = e.get("ring")
+        if ring and point_in_polygon(lng, lat, ring):
+            if best is None or (e.get("bonus") or 0) > (best.get("bonus") or 0):
+                best = e
+    return best
 
 
 # ── Geometry (GeoJSON (lng, lat) order) ───────────────────────────────────────

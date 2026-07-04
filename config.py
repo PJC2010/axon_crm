@@ -570,3 +570,16 @@ PROSPECT_MAX_RECORDS    = int(os.getenv("PROSPECT_MAX_RECORDS", "500"))         
 PROSPECT_SKIP_DAYS      = int(os.getenv("PROSPECT_SKIP_DAYS", "14"))
 PROSPECT_MAX_PULLS_PER_CYCLE = int(os.getenv("PROSPECT_MAX_PULLS_PER_CYCLE", "20"))
 PROSPECT_DEDUPE_M       = float(os.getenv("PROSPECT_DEDUPE_M", "25"))
+
+# ── Geo Phase 4: event layers (hail swaths, new construction, HOA sweeps) ──────
+# A lead inside an active event polygon gets an additive geo bonus, named in the
+# component breakdown. Bonus is per event_type (a geo_events row may override via
+# its own `bonus` column); unknown types fall back to the default.
+GEO_EVENT_DEFAULT_BONUS = float(os.getenv("GEO_EVENT_DEFAULT_BONUS", "30"))
+GEO_EVENT_BONUS = {
+    "hail_swath":       40.0,   # roofing — the whole game
+    "storm":            35.0,
+    "new_construction": 25.0,   # lawn, pest, pools
+    "hoa_sweep":        20.0,   # lawn enforcement
+    "heat_wave":        20.0,   # HVAC
+}

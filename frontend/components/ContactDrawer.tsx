@@ -1,6 +1,6 @@
 'use client'
 import Link from 'next/link'
-import { X, Archive, ArrowUpRight, MapPin } from 'lucide-react'
+import { X, Archive, ArrowUpRight, MapPin, Zap } from 'lucide-react'
 import type { Lead, LeadStatus } from '@/lib/types'
 import { archiveLead } from '@/lib/api'
 import { useState } from 'react'
@@ -103,9 +103,17 @@ export function ContactDrawer({ lead, onClose, onStatusChange, onLeadChange, onT
               <ScoreBadge grade={lead.score_grade} score={lead.lead_score} />
               <StatusSelect leadId={lead.id} value={lead.status} onChange={s => onStatusChange(lead.id, s)} />
             </div>
-            {lead.nearest_customer_m != null && (
-              <RouteFitChip meters={lead.nearest_customer_m} count={lead.customers_within_1600m ?? 0} />
-            )}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {lead.nearest_customer_m != null && (
+                <RouteFitChip meters={lead.nearest_customer_m} count={lead.customers_within_1600m ?? 0} />
+              )}
+              {lead.geo_components?.event && (lead.geo_components.event_bonus ?? 0) > 0 && (
+                <EventChip
+                  name={lead.geo_components.event.name || lead.geo_components.event.type}
+                  bonus={lead.geo_components.event_bonus ?? 0}
+                />
+              )}
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 12 }}>
               <Link
                 href={`/leads/${lead.id}`}
@@ -172,6 +180,24 @@ function RouteFitChip({ meters, count }: { meters: number; count: number }) {
       }}
     >
       <MapPin size={12} strokeWidth={1.5} /> {label}
+    </div>
+  )
+}
+
+// Event chip (Phase 4): names the active event polygon the lead sits in and the
+// score bonus it earned, so the boost is explainable rather than a mystery jump.
+function EventChip({ name, bonus }: { name: string; bonus: number }) {
+  return (
+    <div
+      title="This lead sits inside an active event area (e.g. a hail swath), lifting its geo score"
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 10,
+        padding: '4px 10px', fontSize: 12, fontWeight: 500,
+        borderRadius: 'var(--radius-pill)', background: 'var(--color-danger)',
+        color: '#ffffff',
+      }}
+    >
+      <Zap size={12} strokeWidth={1.5} /> {name} +{Math.round(bonus)}
     </div>
   )
 }

@@ -17,11 +17,11 @@
  */
 import { useEffect, useRef, useState, useCallback, type CSSProperties } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Home, RefreshCw, Signal, Award, Grid3x3, Sparkles, X } from 'lucide-react'
+import { ArrowLeft, Home, RefreshCw, Signal, Award, Grid3x3, Sparkles, Zap, X } from 'lucide-react'
 import ngeohash from 'ngeohash'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Map as MLMap, GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
-import { getMapCells, getMapProperties, getLead, getGeoHeatmap, getGeoClusters, prospectArea } from '@/lib/api'
+import { getMapCells, getMapProperties, getLead, getGeoHeatmap, getGeoClusters, prospectArea, getGeoEvents } from '@/lib/api'
 import { AuthGuard } from '@/components/AuthGuard'
 import { ContactDrawer } from '@/components/ContactDrawer'
 import { ToastStack, useToast } from '@/components/Toast'
@@ -175,6 +175,13 @@ function clustersToGeoJSON(fc: { features: Array<{ geometry: unknown }> } | null
   return { type: 'FeatureCollection' as const, features: features as GeoJSON.Feature[] }
 }
 
+// Event polygons come back as a GeoJSON FeatureCollection (properties carry an
+// `active` flag used to shade them); drop any null geometry.
+function eventsToGeoJSON(fc: { features: Array<{ geometry: unknown }> } | null) {
+  const features = (fc?.features ?? []).filter(f => f.geometry != null)
+  return { type: 'FeatureCollection' as const, features: features as GeoJSON.Feature[] }
+}
+
 // ── component ─────────────────────────────────────────────────────────────────────
 
 function PropertyMapInner() {
@@ -203,6 +210,7 @@ function PropertyMapInner() {
   const [showClusters, setShowClusters] = useState(false)
   const [selectedCluster, setSelectedCluster] = useState<{ label: number; count: number } | null>(null)
   const [prospecting, setProspecting] = useState(false)
+  const [showEvents, setShowEvents] = useState(false)
   const { toasts, show: showToast, dismiss: dismissToast } = useToast()
 
   const filters = { vertical: vertical || undefined, status: status || undefined, signal_days: signalDays }
@@ -298,6 +306,17 @@ function PropertyMapInner() {
       ;(map.getSource('clusters-hull') as GeoJSONSource | undefined)?.setData(clustersToGeoJSON(fc))
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Failed to load clusters', 'error')
+    }
+  }, [showToast])
+
+  const loadEvents = useCallback(async () => {
+    const map = mapRef.current
+    if (!map) return
+    try {
+      const fc = await getGeoEvents()
+      ;(map.getSource('events') as GeoJSONSource | undefined)?.setData(eventsToGeoJSON(fc))
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Failed to load events', 'error')
     }
   }, [showToast])
 
@@ -410,6 +429,26 @@ function PropertyMapInner() {
           paint: { 'line-color': paletteRef.current!.moss, 'line-width': 2, 'line-dasharray': [2, 1] },
         })
 
+        // Event polygons (Phase 4) — hidden until toggled. Active events shade
+        // hot; expired ones fade to the neutral line color.
+        map.addSource('events', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
+        map.addLayer({
+          id: 'event-fill', type: 'fill', source: 'events',
+          layout: { visibility: 'none' },
+          paint: {
+            'fill-color': ['case', ['get', 'active'], paletteRef.current!.danger, paletteRef.current!.line],
+            'fill-opacity': 0.18,
+          },
+        })
+        map.addLayer({
+          id: 'event-line', type: 'line', source: 'events',
+          layout: { visibility: 'none' },
+          paint: {
+            'line-color': ['case', ['get', 'active'], paletteRef.current!.danger, paletteRef.current!.line],
+            'line-width': 2,
+          },
+        })
+
         // Interactions
         map.on('click', 'pin', (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
           const id = e.features?.[0]?.properties?.id
@@ -508,7 +547,22 @@ function PropertyMapInner() {
     if (showClusters) loadClusters()
   }, [showClusters, loadClusters])
 
-  const refresh = () => { loadCells(); if (zoomedIn) loadPoints(); if (heatmap) loadHeatmap(); if (showClusters) loadClusters() }
+  // Event-polygon overlay: show/hide and load on demand.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !map.getLayer('event-fill')) return
+    const vis = showEvents ? 'visible' : 'none'
+    for (const l of ['event-fill', 'event-line']) map.setLayoutProperty(l, 'visibility', vis)
+    if (showEvents) loadEvents()
+  }, [showEvents, loadEvents])
+
+  const refresh = () => {
+    loadCells()
+    if (zoomedIn) loadPoints()
+    if (heatmap) loadHeatmap()
+    if (showClusters) loadClusters()
+    if (showEvents) loadEvents()
+  }
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -590,6 +644,13 @@ function PropertyMapInner() {
           style={overlayBtn(showClusters)}
         >
           <Sparkles size={13} strokeWidth={1.5} /> Clusters
+        </button>
+        <button
+          onClick={() => setShowEvents(v => !v)}
+          title="Toggle event polygons (hail swaths, new construction, …)"
+          style={overlayBtn(showEvents)}
+        >
+          <Zap size={13} strokeWidth={1.5} /> Events
         </button>
 
         <div style={{ flex: 1 }} />
