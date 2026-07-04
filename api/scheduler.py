@@ -471,6 +471,95 @@ def schedule_recurring_invoices():
     log.info("Scheduled daily recurring invoices at %02d:30 UTC", WORKFLOW_TICK_HOUR)
 
 
+GEO_RESCORE_LOCK_KEY = 742026004
+
+
+def _run_customer_geo_rescore(account_id: int, customer_id: int):
+    """Background worker: re-score leads within the blast radius of a new customer."""
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        from pipeline.geo_score_store import refresh_service_area, rescore_nearby_leads_for_customer
+        # A new customer both grows the derived service area and shifts nearby
+        # proximity/density — refresh the area first so the gate is current.
+        refresh_service_area(conn, account_id)
+        n = rescore_nearby_leads_for_customer(conn, account_id, customer_id)
+        log.info("Customer geo rescore: account=%d customer=%d rescored=%d", account_id, customer_id, n)
+    except Exception:
+        conn.rollback()
+        log.exception("Customer geo rescore failed (account=%d customer=%d)", account_id, customer_id)
+    finally:
+        conn.close()
+
+
+def enqueue_customer_geo_rescore(account_id: int, customer_id: int):
+    """Fire-and-forget: a lead just became a customer — re-score its neighbors off
+    the request path (juncto geo layer). Safe no-op if the scheduler isn't running
+    (e.g. under tests), so the status-change path never fails because of geo."""
+    try:
+        scheduler.add_job(
+            _run_customer_geo_rescore,
+            id=f"geo_rescore_customer_{account_id}_{customer_id}",
+            args=[account_id, customer_id],
+            replace_existing=True,
+            misfire_grace_time=3600,
+        )
+    except Exception:
+        log.exception("Could not enqueue customer geo rescore (account=%d customer=%d)",
+                      account_id, customer_id)
+
+
+def run_geo_rescore_tick():
+    """Nightly: drain the geocode queue, refresh derived service areas, and
+    re-score every account's leads whose geo inputs may have drifted."""
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_try_advisory_lock(%s)", (GEO_RESCORE_LOCK_KEY,))
+            if not cur.fetchone()[0]:
+                log.info("Geo rescore skipped — another worker holds the lock")
+                return
+        try:
+            from pipeline.geocode_provider import process_queue
+            from pipeline.geo_score_store import refresh_service_area, rescore_leads
+            process_queue(conn, limit=1000)
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM accounts")
+                account_ids = [r[0] for r in cur.fetchall()]
+            total = 0
+            for account_id in account_ids:
+                try:
+                    refresh_service_area(conn, account_id)
+                    total += rescore_leads(conn, account_id)
+                except Exception:
+                    conn.rollback()
+                    log.exception("Geo rescore failed for account %d", account_id)
+            log.info("Geo rescore tick finished: %d lead(s) across %d account(s)",
+                     total, len(account_ids))
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_unlock(%s)", (GEO_RESCORE_LOCK_KEY,))
+            conn.commit()
+    except Exception:
+        log.exception("Geo rescore tick failed")
+    finally:
+        conn.close()
+
+
+def schedule_geo_rescore():
+    """Register the nightly geo-rescore cron (idempotent)."""
+    from config import WORKFLOW_TICK_HOUR
+    scheduler.add_job(
+        run_geo_rescore_tick,
+        # After the account rescore (…:45) so property scores are fresh before the
+        # geo blend reads them.
+        trigger=CronTrigger(hour=WORKFLOW_TICK_HOUR, minute=50, timezone="UTC"),
+        id="geo_rescore_nightly",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    log.info("Scheduled nightly geo rescore at %02d:50 UTC", WORKFLOW_TICK_HOUR)
+
+
 def load_active_schedules():
     """Called at startup — restore all active schedules from the DB into APScheduler."""
     try:

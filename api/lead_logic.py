@@ -52,4 +52,14 @@ def apply_status_change(conn, lead_id: int, new_status: str, user_id: int, accou
         except Exception:
             log.exception("Neighbor task creation failed for lead %d", lead_id)
 
+    # Becoming a customer (won/converted) reshapes the geo landscape for nearby
+    # leads — enqueue a blast-radius re-score off the request path.
+    from config import CUSTOMER_STATUSES
+    if new_status in CUSTOMER_STATUSES and old_status not in CUSTOMER_STATUSES:
+        try:
+            from api.scheduler import enqueue_customer_geo_rescore
+            enqueue_customer_geo_rescore(account_id, lead_id)
+        except Exception:
+            log.exception("Could not enqueue geo rescore for new customer %d", lead_id)
+
     return row, workflow_results

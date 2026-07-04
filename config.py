@@ -506,3 +506,42 @@ GOOGLE_GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 # ── Census ACS ───────────────────────────────────────────────────────────────
 CENSUS_ACS_URL = "https://api.census.gov/data/2022/acs/acs5"
 CENSUS_INCOME_VAR = "B19013_001E"   # median household income
+
+# ── Geospatial scoring layer (Juncto geo layer, Phase 1) ──────────────────────
+# Proximity + density + territory scoring on top of the property score. Distance
+# uses haversine × a road-circuity factor (no routing engine at MVP — see
+# docs/geo_scoring.md for the OSRM upgrade path). "Customers" are properties in
+# a won/converted status; their locations drive proximity/density.
+CUSTOMER_STATUSES = ("won", "converted")
+
+GEO_ROAD_CIRCUITY        = float(os.getenv("GEO_ROAD_CIRCUITY", "1.3"))   # straight-line → road
+GEO_PROXIMITY_DECAY_KM   = float(os.getenv("GEO_PROXIMITY_DECAY_KM", "2.0"))  # 100*exp(-d/decay)
+GEO_DENSITY_RADIUS_M     = int(os.getenv("GEO_DENSITY_RADIUS_M", "1600"))
+GEO_DENSITY_CAP          = int(os.getenv("GEO_DENSITY_CAP", "8"))
+GEO_NEIGHBOR_RADIUS_M    = int(os.getenv("GEO_NEIGHBOR_RADIUS_M", "150"))  # Phase 3
+GEO_NEIGHBOR_FRESH_DAYS  = int(os.getenv("GEO_NEIGHBOR_FRESH_DAYS", "60"))
+GEO_NEIGHBOR_DECAY_DAYS  = int(os.getenv("GEO_NEIGHBOR_DECAY_DAYS", "90"))
+GEO_TERRITORY_GATE_OUT   = float(os.getenv("GEO_TERRITORY_GATE_OUT", "0.1"))  # penalty outside area
+GEO_RESCORE_RADIUS_KM    = float(os.getenv("GEO_RESCORE_RADIUS_KM", "8.0"))   # blast radius on new customer
+GEO_SERVICE_AREA_BUFFER_KM = float(os.getenv("GEO_SERVICE_AREA_BUFFER_KM", "2.0"))
+GEO_BLEND_RECURRING      = float(os.getenv("GEO_BLEND_RECURRING", "0.35"))
+GEO_BLEND_PROJECT        = float(os.getenv("GEO_BLEND_PROJECT", "0.25"))
+
+# Code-side fallback when a vertical has no vertical_geo_config row (the DB table
+# seeded by migration 049 is the source of truth; this keeps scoring resolvable
+# for any vertical, mirroring how score_zip falls back to DEFAULT_WEIGHTS).
+GEO_DEFAULT_CONFIG = {
+    "route_weight":    0.60,
+    "neighbor_weight": 0.40,
+    "geo_blend":       GEO_BLEND_RECURRING,
+}
+
+# Geocoding provider for tenant-entered addresses missing coordinates. RentCast
+# leads arrive pre-geocoded and never hit this. "census" (free batch, no key) is
+# the default; "google" reuses GOOGLE_GEOCODE_KEY. Provider-pluggable — see
+# pipeline/geocode_provider.py.
+GEOCODE_PROVIDER   = os.getenv("GEOCODE_PROVIDER", "census")
+CENSUS_GEOCODER_URL = os.getenv(
+    "CENSUS_GEOCODER_URL",
+    "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress",
+)

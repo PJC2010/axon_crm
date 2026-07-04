@@ -239,13 +239,18 @@ def _normalize_rentcast(p: dict, origin_zip: str | None = None) -> dict:
     # Garage data lives in the nested `features` object; owner name lives in the
     # nested `owner.names` list (NOT a flat `ownerName` field — confirmed live).
     features = p.get("features") or {}
+    lat, lng = p.get("latitude"), p.get("longitude")
+    # RentCast records arrive pre-geocoded — persist provenance so these leads
+    # never enter the Census geocode queue (juncto geo layer, Phase 1).
+    geocode_source = "rentcast" if lat is not None and lng is not None else None
     return {
         "address":         p.get("addressLine1", ""),
         "city":            p.get("city", ""),
         "state":           p.get("state", ""),
         "zip":             p.get("zipCode", ""),
-        "latitude":        p.get("latitude"),
-        "longitude":       p.get("longitude"),
+        "latitude":        lat,
+        "longitude":       lng,
+        "geocode_source":  geocode_source,
         "year_built":      p.get("yearBuilt"),
         "square_footage":  p.get("squareFootage"),
         "property_type":   p.get("propertyType"),

@@ -33,6 +33,8 @@ SORT_MAP = {
     "grade":               "score_grade ASC",
     "value":               "estimated_value DESC NULLS LAST",
     "neighborhood_pctile": "neighborhood_value_pctile DESC NULLS LAST",
+    # Geo blend — falls back to the property score for leads not yet geo-scored.
+    "final_score":         "COALESCE(lgs.final_score, p.lead_score) DESC NULLS LAST",
 }
 
 
@@ -53,8 +55,10 @@ def list_leads(
     user: dict = Depends(get_current_user),
 ):
     order = SORT_MAP.get(sort, SORT_MAP["score"])
+    # Prefix filters with the properties alias — the query LEFT JOINs
+    # lead_geo_scores, which also has an account_id, so bare names are ambiguous.
     conditions, params = _build_filters(
-        user["account_id"], zip=zip, grade=grade, vertical=vertical, status=status,
+        user["account_id"], prefix="p.", zip=zip, grade=grade, vertical=vertical, status=status,
         min_value=min_value, max_value=max_value, neighborhood=neighborhood,
         min_neighborhood_pctile=min_neighborhood_pctile,
     )
@@ -62,11 +66,18 @@ def list_leads(
     offset = (page - 1) * page_size
 
     with db.cursor() as cur:
-        cur.execute(f"SELECT COUNT(*) FROM properties {where}", params)
+        cur.execute(f"SELECT COUNT(*) FROM properties p {where}", params)
         total = cur.fetchone()[0]
 
+        # LEFT JOIN the geo scores so the list carries final_score / geo components
+        # and can sort by the blend. Leads not yet geo-scored simply have NULLs.
         cur.execute(
-            f"SELECT * FROM properties {where} ORDER BY {order} LIMIT %s OFFSET %s",
+            f"SELECT p.*, lgs.geo_score, lgs.final_score, "
+            f"       lgs.components AS geo_components, lgs.nearest_customer_m, "
+            f"       lgs.customers_within_1600m "
+            f"FROM properties p "
+            f"LEFT JOIN lead_geo_scores lgs ON lgs.property_id = p.id "
+            f"{where} ORDER BY {order} LIMIT %s OFFSET %s",
             params + [page_size, offset],
         )
         rows = dict_fetchall(cur)
@@ -511,23 +522,26 @@ def archive_by_filter(
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def _build_filters(account_id: int, **kwargs) -> tuple[list[str], list]:
-    conditions, params = ["account_id = %s"], [account_id]
+def _build_filters(account_id: int, prefix: str = "", **kwargs) -> tuple[list[str], list]:
+    # `prefix` (e.g. "p.") qualifies column names for queries that JOIN another
+    # table; it defaults to "" so single-table callers are unchanged.
+    p = prefix
+    conditions, params = [f"{p}account_id = %s"], [account_id]
     # Each entry maps a kwarg to a single-placeholder SQL fragment. Range and
     # geohash filters fit the same shape (one %s each) as the equality filters.
     mapping = {
-        "zip":                     "zip = %s",
-        "grade":                   "score_grade = %s",
-        "vertical":                "vertical = %s",
-        "status":                  "status = %s",
-        "min_value":               "estimated_value >= %s",
-        "max_value":               "estimated_value <= %s",
-        "neighborhood":            "LEFT(geohash, 6) = %s",
-        "min_neighborhood_pctile": "neighborhood_value_pctile >= %s",
-        "min_lat":                 "latitude >= %s",
-        "max_lat":                 "latitude <= %s",
-        "min_lng":                 "longitude >= %s",
-        "max_lng":                 "longitude <= %s",
+        "zip":                     f"{p}zip = %s",
+        "grade":                   f"{p}score_grade = %s",
+        "vertical":                f"{p}vertical = %s",
+        "status":                  f"{p}status = %s",
+        "min_value":               f"{p}estimated_value >= %s",
+        "max_value":               f"{p}estimated_value <= %s",
+        "neighborhood":            f"LEFT({p}geohash, 6) = %s",
+        "min_neighborhood_pctile": f"{p}neighborhood_value_pctile >= %s",
+        "min_lat":                 f"{p}latitude >= %s",
+        "max_lat":                 f"{p}latitude <= %s",
+        "min_lng":                 f"{p}longitude >= %s",
+        "max_lng":                 f"{p}longitude <= %s",
     }
     for key, sql in mapping.items():
         val = kwargs.get(key)
@@ -536,5 +550,5 @@ def _build_filters(account_id: int, **kwargs) -> tuple[list[str], list]:
             params.append(val)
     # Always exclude archived leads unless explicitly included
     if not kwargs.get("include_archived"):
-        conditions.append("archived_at IS NULL")
+        conditions.append(f"{p}archived_at IS NULL")
     return conditions, params
