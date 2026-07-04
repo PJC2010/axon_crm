@@ -1,4 +1,4 @@
-import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, StripeStatus, PublicPayInfo, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, MessageTemplate, MessageTemplateCreate, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType } from './types'
+import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, StripeStatus, PublicPayInfo, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, MessageTemplate, MessageTemplateCreate, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType, HeatmapMetric, HeatmapResponse, ClusterCollection, ProspectSeed, ProspectResult, BlastRadiusResult, ServiceArea, EventCollection, EventCreate } from './types'
 import { getToken, clearToken } from './auth'
 
 // Use 127.0.0.1 (not localhost): on macOS `localhost` resolves to IPv6 ::1
@@ -194,6 +194,52 @@ export function getMapProperties(bounds: MapBounds, filters: MapFilters = {}): P
     if (v !== undefined && v !== '') p.set(k, String(v))
   })
   return req<MapPoint[]>(`/map/properties?${p}`)
+}
+
+// ── Geo layer (Phase 2–3): clusters, heatmap, prospecting, neighbors ────────────
+
+// H3-hex aggregates for the heatmap overlay (customer density or average score).
+export function getGeoHeatmap(metric: HeatmapMetric = 'density'): Promise<HeatmapResponse> {
+  return req<HeatmapResponse>(`/geo/heatmap?metric=${metric}`)
+}
+
+// Customer clusters (DBSCAN hulls) as a GeoJSON FeatureCollection.
+export function getGeoClusters(): Promise<ClusterCollection> {
+  return req<ClusterCollection>('/geo/clusters')
+}
+
+// Cluster-seeded prospecting: pull → dedupe → ingest → score around a seed.
+export function prospectArea(body: {
+  seed: ProspectSeed; radius_m?: number; vertical?: string; preset?: Record<string, unknown>
+}): Promise<ProspectResult> {
+  return req<ProspectResult>('/geo/prospect', { method: 'POST', body: JSON.stringify(body) })
+}
+
+// Blast radius around a completed job — ranked door-knock/mail targets.
+export function getBlastRadius(job_id: number, radius_m = 150, limit = 25): Promise<BlastRadiusResult> {
+  return req<BlastRadiusResult>('/geo/neighbors', {
+    method: 'POST', body: JSON.stringify({ job_id, radius_m, limit }),
+  })
+}
+
+// The account's service-area polygon (derived hull or user-drawn), as GeoJSON.
+export function getServiceArea(): Promise<ServiceArea> {
+  return req<ServiceArea>('/geo/service-area')
+}
+
+export function putServiceArea(polygon: object): Promise<{ id: number; source: string }> {
+  return req('/geo/service-area', { method: 'PUT', body: JSON.stringify({ polygon }) })
+}
+
+// Event layer (Phase 4): polygons whose leads get a scoring bonus.
+export function getGeoEvents(): Promise<EventCollection> {
+  return req<EventCollection>('/geo/events')
+}
+export function createGeoEvent(body: EventCreate): Promise<{ id: number }> {
+  return req('/geo/events', { method: 'POST', body: JSON.stringify(body) })
+}
+export function deleteGeoEvent(id: number): Promise<{ deleted: number }> {
+  return req(`/geo/events/${id}`, { method: 'DELETE' })
 }
 
 export function updateStatus(id: number, status: LeadStatus): Promise<Lead> {

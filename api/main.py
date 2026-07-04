@@ -9,7 +9,7 @@ from api.entitlements import require_module
 from api.routes import leads, notes, history, export, record_fields, segments, messaging
 from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, hcad, workflows, imports, quotes
 from api.routes import policies, orders, appointments, objects, order_imports
-from api.routes import connections, insights, ml, oauth, map as map_routes
+from api.routes import connections, insights, ml, oauth, map as map_routes, geo
 from api.routes import stripe_payments, twilio_inbound, public_intake
 
 log = logging.getLogger(__name__)
@@ -40,6 +40,7 @@ async def lifespan(app: FastAPI):
     from api.scheduler import (
         scheduler, load_active_schedules, schedule_retraining,
         schedule_workflow_tick, schedule_account_rescore, schedule_recurring_invoices,
+        schedule_geo_rescore,
     )
     scheduler.start()
     load_active_schedules()
@@ -47,6 +48,7 @@ async def lifespan(app: FastAPI):
     schedule_workflow_tick()
     schedule_account_rescore()
     schedule_recurring_invoices()
+    schedule_geo_rescore()
     _check_hcad_source()
     yield
     scheduler.shutdown(wait=False)
@@ -143,6 +145,7 @@ app.include_router(ml.router,          prefix="/api", tags=["ML"],
                    dependencies=[Depends(require_module("prospecting"))])
 app.include_router(map_routes.router,  prefix="/api", tags=["Map"],
                    dependencies=[Depends(require_module("map"))])
+app.include_router(geo.router,         prefix="/api", tags=["Geo"])
 
 
 @app.get("/api/health")

@@ -61,6 +61,14 @@ class Lead(BaseModel):
     # Populated only when SCORER_MODE is 'shadow' or 'learned' and a model exists.
     ml_conversion_prob: Optional[float] = None
     ml_model_version: Optional[int] = None
+    # Geospatial layer (juncto geo layer, Phase 1). geo_score is the standalone
+    # location score; final_score blends it with the property score and is what the
+    # leads list sorts on when sort=final_score. Populated once a lead is geo-scored.
+    geo_score: Optional[float] = None
+    final_score: Optional[float] = None
+    geo_components: Optional[dict] = None
+    nearest_customer_m: Optional[float] = None
+    customers_within_1600m: Optional[int] = None
     # Account-defined custom field values (see api/routes/record_fields.py). Keyed
     # by record_field_defs.key; empty for accounts that define no custom fields.
     custom_fields: dict = {}
