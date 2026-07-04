@@ -12,12 +12,14 @@ per-lead nearest-customer search is a straightforward O(leads × customers) scan
 in Python; the docs note the PostGIS/GIST upgrade path for larger books.
 """
 import logging
+from datetime import date, datetime
 
 import psycopg2.extras
 
 from config import (
     CUSTOMER_STATUSES,
     GEO_DENSITY_RADIUS_M,
+    GEO_NEIGHBOR_RADIUS_M,
     GEO_RESCORE_RADIUS_KM,
     GEO_SERVICE_AREA_BUFFER_KM,
     GEO_ROAD_CIRCUITY,
@@ -65,10 +67,14 @@ def _config_cache(conn, account_id: int):
 # ── Customers + service area ──────────────────────────────────────────────────
 
 def load_customers(conn, account_id: int) -> list[dict]:
-    """Active customers with coordinates: {id, latitude, longitude}."""
+    """Active customers with coordinates: {id, latitude, longitude, completed_at}.
+
+    completed_at (stage_moved_at, when the lead reached its terminal won/converted
+    state) dates the "completed job" for the neighbor / visible-work component.
+    """
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
-            "SELECT id, latitude, longitude FROM properties "
+            "SELECT id, latitude, longitude, stage_moved_at AS completed_at FROM properties "
             "WHERE account_id = %s AND status = ANY(%s) "
             "  AND latitude IS NOT NULL AND longitude IS NOT NULL "
             "  AND archived_at IS NULL",
@@ -130,9 +136,11 @@ def _spatial_facts(lead: dict, customers: list[dict], ring: list | None, source:
     """Measure the spatial inputs the score needs for one lead."""
     lat, lng = lead["latitude"], lead["longitude"]
     density_km = GEO_DENSITY_RADIUS_M / 1000.0
+    neighbor_km = GEO_NEIGHBOR_RADIUS_M / 1000.0
 
     nearest_km = None
     within = 0
+    neighbor_days = None  # freshest completed job within the neighbor radius
     for c in customers:
         if c["id"] == lead["id"]:
             continue  # a won lead is itself a customer — don't score it against itself
@@ -142,15 +150,39 @@ def _spatial_facts(lead: dict, customers: list[dict], ring: list | None, source:
         road = straight * GEO_ROAD_CIRCUITY
         if nearest_km is None or road < nearest_km:
             nearest_km = road
+        # Visible-work contagion: a completed job the prospect can see, within a
+        # tight radius. Keep the most recent one.
+        if straight <= neighbor_km:
+            days = _days_since(c.get("completed_at"))
+            if days is not None and (neighbor_days is None or days < neighbor_days):
+                neighbor_days = days
 
     inside = geo_scoring.in_service_area(lat, lng, ring, source, GEO_SERVICE_AREA_BUFFER_KM)
     return {
         "nearest_customer_km": nearest_km,
         "customers_within_radius": within,
-        "days_since_completed_job": None,  # Phase 3 (no jobs table yet)
+        "days_since_completed_job": neighbor_days,
         "inside_service_area": inside,
         "property_score": lead.get("lead_score") or 0.0,
     }
+
+
+def _days_since(when) -> float | None:
+    """Whole days since a timestamp/date, or None. Tolerant of date, datetime
+    (naive or tz-aware), and ISO strings so it works across cursor factories."""
+    if when is None:
+        return None
+    try:
+        if isinstance(when, str):
+            when = datetime.fromisoformat(when)
+        if isinstance(when, datetime):
+            now = datetime.now(when.tzinfo) if when.tzinfo else datetime.now()
+            return max(0.0, (now - when).total_seconds() / 86400.0)
+        if isinstance(when, date):
+            return max(0.0, float((date.today() - when).days))
+    except (ValueError, TypeError):
+        return None
+    return None
 
 
 def _score_and_store(conn, account_id: int, leads: list[dict], customers: list[dict],
@@ -244,6 +276,50 @@ def rescore_nearby_leads_for_customer(conn, account_id: int, customer_id: int,
     if not ids:
         return 0
     return rescore_leads(conn, account_id, property_ids=ids)
+
+
+# ── Neighbor "blast radius" (Phase 3) ─────────────────────────────────────────
+
+def blast_radius(conn, account_id: int, job_id: int, radius_m: float = GEO_NEIGHBOR_RADIUS_M,
+                 limit: int = 25) -> list[dict]:
+    """Ranked door-knock/mail targets around a just-completed job.
+
+    Returns open (non-terminal, unarchived) leads within `radius_m` of the job
+    property, nearest-and-best first — ordered by distance then blended score.
+    This is the radius-precise complement to api/neighbors.find_neighbors (which
+    buckets by geohash cell); the geo layer measures true distance.
+    """
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            "SELECT latitude, longitude FROM properties WHERE id = %s AND account_id = %s",
+            (job_id, account_id),
+        )
+        job = cur.fetchone()
+        if not job or job["latitude"] is None or job["longitude"] is None:
+            return []
+        cur.execute(
+            "SELECT p.id, p.address, p.zip, p.latitude, p.longitude, p.status, "
+            "       p.score_grade, p.vertical, "
+            "       COALESCE(lgs.final_score, p.lead_score) AS final_score "
+            "FROM properties p LEFT JOIN lead_geo_scores lgs ON lgs.property_id = p.id "
+            "WHERE p.account_id = %s AND p.id <> %s AND p.archived_at IS NULL "
+            "  AND p.status NOT IN ('won','lost','not_interested','converted') "
+            "  AND p.latitude IS NOT NULL AND p.longitude IS NOT NULL",
+            (account_id, job_id),
+        )
+        candidates = [dict(r) for r in cur.fetchall()]
+
+    radius_km = radius_m / 1000.0
+    hits = []
+    for c in candidates:
+        d_km = geo_scoring.haversine_km(job["latitude"], job["longitude"], c["latitude"], c["longitude"])
+        if d_km <= radius_km:
+            c["distance_m"] = round(d_km * 1000)
+            c["final_score"] = float(c["final_score"]) if c["final_score"] is not None else None
+            hits.append(c)
+
+    hits.sort(key=lambda h: (h["distance_m"], -(h["final_score"] or 0)))
+    return hits[:limit]
 
 
 # ── GeoJSON helpers ───────────────────────────────────────────────────────────

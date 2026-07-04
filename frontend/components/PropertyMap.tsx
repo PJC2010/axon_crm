@@ -15,17 +15,17 @@
  * MapLibre is imported lazily inside an effect (never at module scope) so it
  * never touches `window` during SSR.
  */
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, type CSSProperties } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Home, RefreshCw, Signal, Award } from 'lucide-react'
+import { ArrowLeft, Home, RefreshCw, Signal, Award, Grid3x3, Sparkles, X } from 'lucide-react'
 import ngeohash from 'ngeohash'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Map as MLMap, GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
-import { getMapCells, getMapProperties, getLead } from '@/lib/api'
+import { getMapCells, getMapProperties, getLead, getGeoHeatmap, getGeoClusters, prospectArea } from '@/lib/api'
 import { AuthGuard } from '@/components/AuthGuard'
 import { ContactDrawer } from '@/components/ContactDrawer'
 import { ToastStack, useToast } from '@/components/Toast'
-import type { MapCell, MapPoint, Lead, LeadStatus } from '@/lib/types'
+import type { MapCell, MapPoint, Lead, LeadStatus, HeatmapCell, HeatmapMetric } from '@/lib/types'
 
 type ColorMode = 'signals' | 'score'
 
@@ -144,6 +144,37 @@ function pointsToGeoJSON(points: MapPoint[], mode: ColorMode, p: Palette) {
   }
 }
 
+// H3 heatmap hexes → GeoJSON, with a normalized 0–1 `intensity` for shading.
+function heatToGeoJSON(cells: HeatmapCell[]) {
+  const max = Math.max(1, ...cells.map(c => c.value ?? 0))
+  return {
+    type: 'FeatureCollection' as const,
+    features: cells
+      .filter(c => c.boundary && c.boundary.length >= 3)
+      .map(c => ({
+        type: 'Feature' as const,
+        properties: {
+          h3: c.h3,
+          value: c.value ?? 0,
+          intensity: (c.value ?? 0) / max,
+          leads: c.leads,
+          customers: c.customers,
+        },
+        geometry: {
+          type: 'Polygon' as const,
+          coordinates: [[...c.boundary!, c.boundary![0]]],
+        },
+      })),
+  }
+}
+
+// Cluster hulls come back as a GeoJSON FeatureCollection; drop the null-geometry
+// (too-small) clusters before handing it to MapLibre.
+function clustersToGeoJSON(fc: { features: Array<{ geometry: unknown }> } | null) {
+  const features = (fc?.features ?? []).filter(f => f.geometry != null)
+  return { type: 'FeatureCollection' as const, features: features as GeoJSON.Feature[] }
+}
+
 // ── component ─────────────────────────────────────────────────────────────────────
 
 function PropertyMapInner() {
@@ -154,6 +185,9 @@ function PropertyMapInner() {
   const pointsRef = useRef<MapPoint[]>([])
   const fittedRef = useRef(false)
   const moveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Mirrors `heatmap` state so the zoom handler (created once at init) can keep
+  // the choropleth hidden while the heatmap overlay is on.
+  const heatmapRef = useRef(false)
 
   const [mode, setMode] = useState<ColorMode>('signals')
   const [vertical, setVertical] = useState('')
@@ -162,6 +196,13 @@ function PropertyMapInner() {
   const [loading, setLoading] = useState(false)
   const [zoomedIn, setZoomedIn] = useState(false)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
+  // Geo overlays (Phase 3): H3 heatmap + customer-cluster hulls with a
+  // "prospect this area" action.
+  const [heatmap, setHeatmap] = useState(false)
+  const [heatMetric, setHeatMetric] = useState<HeatmapMetric>('density')
+  const [showClusters, setShowClusters] = useState(false)
+  const [selectedCluster, setSelectedCluster] = useState<{ label: number; count: number } | null>(null)
+  const [prospecting, setProspecting] = useState(false)
   const { toasts, show: showToast, dismiss: dismissToast } = useToast()
 
   const filters = { vertical: vertical || undefined, status: status || undefined, signal_days: signalDays }
@@ -232,6 +273,54 @@ function PropertyMapInner() {
     }
   }, [showToast])
 
+  const loadHeatmap = useCallback(async () => {
+    const map = mapRef.current
+    if (!map) return
+    setLoading(true)
+    try {
+      const res = await getGeoHeatmap(heatMetric)
+      if (!res.available) {
+        showToast('Heatmap needs the H3 index — run cluster recompute or install h3.', 'error')
+      }
+      ;(map.getSource('heat') as GeoJSONSource | undefined)?.setData(heatToGeoJSON(res.cells))
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Failed to load heatmap', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }, [heatMetric, showToast])
+
+  const loadClusters = useCallback(async () => {
+    const map = mapRef.current
+    if (!map) return
+    try {
+      const fc = await getGeoClusters()
+      ;(map.getSource('clusters-hull') as GeoJSONSource | undefined)?.setData(clustersToGeoJSON(fc))
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Failed to load clusters', 'error')
+    }
+  }, [showToast])
+
+  const handleProspect = useCallback(async (clusterLabel: number) => {
+    setProspecting(true)
+    try {
+      const r = await prospectArea({ seed: { cluster_id: clusterLabel }, vertical: vertical || undefined })
+      if (r.status === 'skipped_recent_cell') {
+        showToast('Already prospected this area in the last 14 days.', 'success')
+      } else {
+        showToast(`Prospected: ${r.ingested ?? 0} new lead(s) ingested, ${r.scored ?? 0} scored.`, 'success')
+      }
+      setSelectedCluster(null)
+      // Reflect the freshly ingested leads.
+      loadCells()
+      loadPoints()
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Prospecting failed', 'error')
+    } finally {
+      setProspecting(false)
+    }
+  }, [vertical, showToast, loadCells, loadPoints])
+
   // ── map init (once) ───────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false
@@ -295,6 +384,32 @@ function PropertyMapInner() {
           },
         })
 
+        // H3 heatmap (Phase 3) — hidden until toggled on. Shaded by normalized
+        // intensity from cool → gold → hot.
+        map.addSource('heat', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
+        map.addLayer({
+          id: 'heat-fill', type: 'fill', source: 'heat',
+          layout: { visibility: 'none' },
+          paint: {
+            'fill-color': ['interpolate', ['linear'], ['get', 'intensity'],
+              0, paletteRef.current!.cool, 0.5, paletteRef.current!.gold, 1, paletteRef.current!.danger],
+            'fill-opacity': 0.55,
+          },
+        })
+
+        // Customer-cluster hulls (Phase 3) — hidden until toggled; click to prospect.
+        map.addSource('clusters-hull', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
+        map.addLayer({
+          id: 'cluster-hull-fill', type: 'fill', source: 'clusters-hull',
+          layout: { visibility: 'none' },
+          paint: { 'fill-color': paletteRef.current!.moss, 'fill-opacity': 0.12 },
+        })
+        map.addLayer({
+          id: 'cluster-hull-line', type: 'line', source: 'clusters-hull',
+          layout: { visibility: 'none' },
+          paint: { 'line-color': paletteRef.current!.moss, 'line-width': 2, 'line-dasharray': [2, 1] },
+        })
+
         // Interactions
         map.on('click', 'pin', (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
           const id = e.features?.[0]?.properties?.id
@@ -311,7 +426,13 @@ function PropertyMapInner() {
           const zoom = await src.getClusterExpansionZoom(cid as number)
           map!.easeTo({ center: (f!.geometry as GeoJSON.Point).coordinates as [number, number], zoom })
         })
-        for (const layer of ['pin', 'cell-fill', 'clusters']) {
+        // Clicking a customer-cluster hull opens the "prospect this area" panel.
+        map.on('click', 'cluster-hull-fill', (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+          const props = e.features?.[0]?.properties
+          if (!props) return
+          setSelectedCluster({ label: Number(props.cluster_label), count: Number(props.customer_count) })
+        })
+        for (const layer of ['pin', 'cell-fill', 'clusters', 'cluster-hull-fill']) {
           map.on('mouseenter', layer, () => { map!.getCanvas().style.cursor = 'pointer' })
           map.on('mouseleave', layer, () => { map!.getCanvas().style.cursor = '' })
         }
@@ -320,7 +441,9 @@ function PropertyMapInner() {
           if (!map) return
           const inPins = map.getZoom() >= PIN_ZOOM
           setZoomedIn(inPins)
-          const cellVis = inPins ? 'none' : 'visible'
+          // The heatmap overlay replaces the choropleth, so keep cells hidden
+          // while it's on regardless of zoom.
+          const cellVis = (inPins || heatmapRef.current) ? 'none' : 'visible'
           const pinVis = inPins ? 'visible' : 'none'
           for (const l of ['cell-fill', 'cell-line']) map.setLayoutProperty(l, 'visibility', cellVis)
           for (const l of ['clusters', 'cluster-count', 'pin']) map.setLayoutProperty(l, 'visibility', pinVis)
@@ -363,7 +486,29 @@ function PropertyMapInner() {
   // Toggle recolors in place — instant, no refetch.
   useEffect(() => { recolor(mode) }, [mode, recolor])
 
-  const refresh = () => { loadCells(); if (zoomedIn) loadPoints() }
+  // Heatmap overlay: show/hide the hex layer, keep the choropleth suppressed
+  // while it's on, and (re)load when turned on or the metric changes.
+  useEffect(() => {
+    const map = mapRef.current
+    heatmapRef.current = heatmap
+    if (!map || !map.getLayer('heat-fill')) return
+    map.setLayoutProperty('heat-fill', 'visibility', heatmap ? 'visible' : 'none')
+    const inPins = map.getZoom() >= PIN_ZOOM
+    const cellVis = (inPins || heatmap) ? 'none' : 'visible'
+    for (const l of ['cell-fill', 'cell-line']) map.setLayoutProperty(l, 'visibility', cellVis)
+    if (heatmap) loadHeatmap()
+  }, [heatmap, heatMetric, loadHeatmap])
+
+  // Cluster-hull overlay: show/hide and load on demand.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !map.getLayer('cluster-hull-fill')) return
+    const vis = showClusters ? 'visible' : 'none'
+    for (const l of ['cluster-hull-fill', 'cluster-hull-line']) map.setLayoutProperty(l, 'visibility', vis)
+    if (showClusters) loadClusters()
+  }, [showClusters, loadClusters])
+
+  const refresh = () => { loadCells(); if (zoomedIn) loadPoints(); if (heatmap) loadHeatmap(); if (showClusters) loadClusters() }
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -424,6 +569,29 @@ function PropertyMapInner() {
           </select>
         )}
 
+        {/* Geo overlays (Phase 3) */}
+        <button
+          onClick={() => setHeatmap(v => !v)}
+          title="Toggle the H3 heatmap overlay"
+          style={overlayBtn(heatmap)}
+        >
+          <Grid3x3 size={13} strokeWidth={1.5} /> Heatmap
+        </button>
+        {heatmap && (
+          <select value={heatMetric} onChange={e => setHeatMetric(e.target.value as HeatmapMetric)}
+            style={{ padding: '6px 10px', fontSize: 12, borderRadius: 'var(--radius-pill)', border: '1px solid var(--color-ink-200)', background: 'var(--color-paper)' }}>
+            <option value="density">Customer density</option>
+            <option value="avg_score">Avg score</option>
+          </select>
+        )}
+        <button
+          onClick={() => { if (showClusters) setSelectedCluster(null); setShowClusters(v => !v) }}
+          title="Toggle customer clusters"
+          style={overlayBtn(showClusters)}
+        >
+          <Sparkles size={13} strokeWidth={1.5} /> Clusters
+        </button>
+
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 11, color: 'var(--color-ink-400)' }}>
           {zoomedIn ? 'Properties' : 'Regions'} · zoom {zoomedIn ? 'out for blocks' : 'in for pins'}
@@ -436,6 +604,14 @@ function PropertyMapInner() {
       <div style={{ flex: 1, position: 'relative', minHeight: 400 }}>
         <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
         <Legend mode={mode} />
+        {showClusters && selectedCluster && (
+          <ClusterActionPanel
+            cluster={selectedCluster}
+            busy={prospecting}
+            onProspect={() => handleProspect(selectedCluster.label)}
+            onClose={() => setSelectedCluster(null)}
+          />
+        )}
       </div>
 
       <ContactDrawer
@@ -446,6 +622,61 @@ function PropertyMapInner() {
         onToast={showToast}
       />
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
+    </div>
+  )
+}
+
+// Pill style for the geo-overlay toggles, active state matching the mode toggle.
+function overlayBtn(active: boolean): CSSProperties {
+  return {
+    display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px',
+    fontSize: 12, fontWeight: 500, borderRadius: 'var(--radius-pill)', cursor: 'pointer',
+    border: '1px solid var(--color-ink-200)',
+    background: active ? 'var(--color-ink-900)' : 'var(--color-paper)',
+    color: active ? 'var(--color-paper)' : 'var(--color-ink-700)',
+  }
+}
+
+// Floating panel shown when a customer cluster is clicked — fires the Section 5
+// "prospect this area" flow with the map's current vertical filter.
+function ClusterActionPanel({
+  cluster, busy, onProspect, onClose,
+}: {
+  cluster: { label: number; count: number }
+  busy: boolean
+  onProspect: () => void
+  onClose: () => void
+}) {
+  return (
+    <div style={{
+      position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
+      background: 'var(--color-paper)', border: '1px solid var(--color-ink-200)',
+      borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)',
+      padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12, maxWidth: '92%',
+    }}>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-ink-900)' }}>
+          Cluster #{cluster.label}
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--color-ink-500)' }}>
+          {cluster.count} active customer{cluster.count === 1 ? '' : 's'} here
+        </div>
+      </div>
+      <button
+        onClick={onProspect}
+        disabled={busy}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
+          fontSize: 12, fontWeight: 600, borderRadius: 'var(--radius-pill)', border: 'none',
+          cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1,
+          background: 'var(--color-accent)', color: '#ffffff',
+        }}
+      >
+        <Sparkles size={13} strokeWidth={1.5} /> {busy ? 'Prospecting…' : 'Prospect this area'}
+      </button>
+      <button onClick={onClose} className="dash-icon-btn borderless" title="Close">
+        <X size={15} strokeWidth={1.5} />
+      </button>
     </div>
   )
 }

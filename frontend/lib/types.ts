@@ -49,8 +49,27 @@ export interface Lead {
   created_at: string | null
   updated_at: string | null
   archived_at: string | null
+  // Geo layer (juncto geo layer): standalone location score, the blend of it with
+  // the property score, and the component breakdown. Populated once geo-scored.
+  geo_score?: number | null
+  final_score?: number | null
+  geo_components?: GeoComponents | null
+  nearest_customer_m?: number | null
+  customers_within_1600m?: number | null
   // Account-defined custom field values, keyed by RecordFieldDef.key.
   custom_fields?: Record<string, unknown>
+}
+
+// The geo score's explainable breakdown (stored as JSONB, surfaced on the lead).
+export interface GeoComponents {
+  proximity: number
+  density: number
+  neighbor: number
+  territory_gate: number
+  inside_service_area?: boolean
+  route_weight?: number
+  neighbor_weight?: number
+  geo_blend?: number
 }
 
 // Account-defined custom field (the generic record-model layer; see
@@ -128,6 +147,87 @@ export interface MapFilters {
   vertical?: string
   status?: string
   signal_days?: number
+}
+
+// ── Geo layer (Phase 2–3) ──────────────────────────────────────────────────────
+
+export type HeatmapMetric = 'density' | 'avg_score'
+
+export interface HeatmapCell {
+  h3: string
+  value: number | null            // customers (density) or avg score, per metric
+  leads: number
+  customers: number
+  avg_score: number | null
+  boundary: [number, number][] | null  // ring of [lng, lat] for the hex outline
+  center: [number, number] | null      // [lat, lng]
+}
+
+export interface HeatmapResponse {
+  metric: HeatmapMetric
+  resolution: number
+  available: boolean              // false when h3 isn't installed / no cells yet
+  cells: HeatmapCell[]
+}
+
+// GeoJSON-ish cluster feature collection (hulls). geometry is null for a cluster
+// too small to form a polygon.
+export interface ClusterFeature {
+  type: 'Feature'
+  geometry: { type: 'Polygon'; coordinates: number[][][] } | null
+  properties: {
+    cluster_label: number
+    customer_count: number
+    centroid: [number, number]    // [lng, lat]
+    computed_at: string | null
+  }
+}
+export interface ClusterCollection {
+  type: 'FeatureCollection'
+  features: ClusterFeature[]
+}
+
+export interface ProspectSeed {
+  cluster_id?: number
+  customer_id?: number
+  lat?: number
+  lng?: number
+}
+export interface ProspectResult {
+  status: string
+  seed_type?: string
+  center?: [number, number]
+  h3?: string | null
+  records_returned?: number
+  after_refine?: number
+  after_dedupe?: number
+  ingested?: number
+  scored?: number
+  api_requests?: number
+}
+
+export interface NeighborHit {
+  id: number
+  address: string | null
+  zip: string | null
+  latitude: number
+  longitude: number
+  status: LeadStatus
+  score_grade: ScoreGrade | null
+  vertical: string | null
+  final_score: number | null
+  distance_m: number
+}
+export interface BlastRadiusResult {
+  job_id: number
+  radius_m: number
+  count: number
+  neighbors: NeighborHit[]
+}
+
+export interface ServiceArea {
+  polygon: { type: 'Polygon'; coordinates: number[][][] } | null
+  source: string | null
 }
 
 export interface ScoreFactor {

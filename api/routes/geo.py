@@ -51,6 +51,12 @@ class ProspectRequest(BaseModel):
     preset: dict | None = None
 
 
+class NeighborsRequest(BaseModel):
+    job_id: int
+    radius_m: int = Field(default=150, ge=25, le=1600)
+    limit: int = Field(default=25, ge=1, le=100)
+
+
 @router.get("/config")
 def get_geo_config(db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
     """Effective geo config for the account: each vertical's platform default with
@@ -268,6 +274,17 @@ def prospect(body: ProspectRequest, db: PGConn = Depends(get_db),
     if result.get("status") == "unresolved_seed":
         raise HTTPException(status_code=422, detail="Could not resolve the prospecting seed.")
     return result
+
+
+@router.post("/neighbors")
+def neighbors(body: NeighborsRequest, db: PGConn = Depends(get_db),
+              user: dict = Depends(get_current_user)):
+    """Blast radius around a completed job: ranked open leads within radius_m,
+    nearest-and-best first. The door-knock/mail list for visible-work verticals."""
+    hits = geo_score_store.blast_radius(
+        db, user["account_id"], body.job_id, radius_m=body.radius_m, limit=body.limit
+    )
+    return {"job_id": body.job_id, "radius_m": body.radius_m, "count": len(hits), "neighbors": hits}
 
 
 @router.get("/service-area")

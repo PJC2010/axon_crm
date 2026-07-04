@@ -9,7 +9,10 @@ assignment, and the heatmap + clusters endpoints.*
 *Phase 2 (prospecting) — cluster-seeded RentCast radius pull behind a swappable
 provider, with client-side refinement, dedupe, ingest, immediate scoring, and
 H3-cell cost control.*
-*Still to come: the Next.js map UI (Phase 3) and event layers (Phase 4).*
+*Phase 3 — neighbor / visible-work component wired into scoring, the blast-radius
+endpoint, and the map UI (heatmap overlay, cluster hulls + "prospect this area",
+"Route fit" chip).*
+*Still to come: event layers (Phase 4).*
 
 Companion: `juncto-geospatial-layer-plan.md` (the full four-phase plan).
 
@@ -101,6 +104,38 @@ returns a funnel summary: returned → refined → deduped → ingested → scor
 derives estimated equity from sale price/date via the existing
 `pipeline/equity.estimate_equity` — serviceable for home services, and the
 property-score equity factor already treats it as a proxy.
+
+## What shipped in Phase 3 (neighbor effect + map UI)
+
+| Area | File(s) |
+|---|---|
+| Neighbor / visible-work component wired into scoring | `pipeline/geo_score_store.py` |
+| Blast-radius helper + `POST /geo/neighbors` | `pipeline/geo_score_store.py`, `api/routes/geo.py` |
+| Map overlays: H3 heatmap, cluster hulls, "prospect this area" | `frontend/components/PropertyMap.tsx` |
+| "Route fit" chip on the lead detail | `frontend/components/ContactDrawer.tsx` |
+| Geo types + API client (`getGeoHeatmap`/`getGeoClusters`/`prospectArea`/`getBlastRadius`/service-area) | `frontend/lib/types.ts`, `frontend/lib/api.ts` |
+| Tests | `tests/test_geo_neighbor.py` |
+
+**Neighbor effect:** `_spatial_facts` now derives `days_since_completed_job` from
+won/converted customers within `GEO_NEIGHBOR_RADIUS_M` (150 m), dated by
+`stage_moved_at` (when the lead reached its terminal state — the "completed job").
+The freshest such job feeds `neighbor_component` (100 within 60 days, linear decay
+to 0 at 90). Winning a lead already triggers a nearby re-score (Phase 1's
+`apply_status_change` hook) and the geohash door-knock task, so the neighbor bump
+propagates automatically; `POST /geo/neighbors {job_id, radius_m}` returns the
+radius-precise ranked blast-radius list on demand (the complement to the
+geohash-bucketed `api/neighbors.find_neighbors`).
+
+**Map UI (Section 8):** the existing MapLibre `PropertyMap` gains a **Heatmap**
+toggle (H3 hexes from `/geo/heatmap`, shaded by density or avg score — rendered
+from the cell boundary polygons the endpoint returns, so no deck.gl dependency),
+a **Clusters** toggle (DBSCAN hulls from `/geo/clusters`) whose hulls are
+clickable to fire the Section 5 **"prospect this area"** flow with the map's
+current vertical filter, and a **"Route fit"** chip on the lead drawer ("0.3 mi
+from 2 active customers") read straight off the lead's `nearest_customer_m` /
+`customers_within_1600m`. Verified with `tsc --noEmit`, `eslint`, and a full
+`next build`. Service-area polygon draw/edit is deferred (needs mapbox-gl-draw);
+the derived area is already returned by `GET /geo/service-area`.
 
 ---
 
@@ -238,6 +273,7 @@ penalized.
 | GET | `/api/geo/heatmap` | H3-hex aggregates (`metric=density\|avg_score`) |
 | POST | `/api/geo/cluster/recompute` | Re-run DBSCAN + H3 backfill for the account |
 | POST | `/api/geo/prospect` | Cluster-seeded RentCast pull → dedupe → ingest → score |
+| POST | `/api/geo/neighbors` | Blast radius around a completed job — ranked targets |
 
 The leads list (`GET /api/leads`) LEFT JOINs `lead_geo_scores`, exposes
 `geo_score` / `final_score` / `geo_components` / `nearest_customer_m` /

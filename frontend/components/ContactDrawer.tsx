@@ -1,6 +1,6 @@
 'use client'
 import Link from 'next/link'
-import { X, Archive, ArrowUpRight } from 'lucide-react'
+import { X, Archive, ArrowUpRight, MapPin } from 'lucide-react'
 import type { Lead, LeadStatus } from '@/lib/types'
 import { archiveLead } from '@/lib/api'
 import { useState } from 'react'
@@ -103,6 +103,9 @@ export function ContactDrawer({ lead, onClose, onStatusChange, onLeadChange, onT
               <ScoreBadge grade={lead.score_grade} score={lead.lead_score} />
               <StatusSelect leadId={lead.id} value={lead.status} onChange={s => onStatusChange(lead.id, s)} />
             </div>
+            {lead.nearest_customer_m != null && (
+              <RouteFitChip meters={lead.nearest_customer_m} count={lead.customers_within_1600m ?? 0} />
+            )}
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 12 }}>
               <Link
                 href={`/leads/${lead.id}`}
@@ -146,5 +149,29 @@ export function ContactDrawer({ lead, onClose, onStatusChange, onLeadChange, onT
         </div>
       </aside>
     </>
+  )
+}
+
+// "Route fit" chip (juncto geo layer, Phase 3): how this lead sits relative to the
+// tenant's book of business — the plain-language read of the geo proximity/density
+// components (e.g. "0.3 mi from 2 active customers").
+function RouteFitChip({ meters, count }: { meters: number; count: number }) {
+  const miles = meters / 1609.34
+  const dist = miles < 0.1 ? `${Math.round(meters)} m` : `${miles.toFixed(1)} mi`
+  const label = count > 0
+    ? `${dist} from ${count} active customer${count === 1 ? '' : 's'}`
+    : `Nearest customer ${dist} away`
+  return (
+    <div
+      title="Distance to your nearest active customer and how many are within ~1 mile"
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 10,
+        padding: '4px 10px', fontSize: 12, fontWeight: 500,
+        borderRadius: 'var(--radius-pill)', background: 'var(--color-ink-100)',
+        color: 'var(--color-ink-700)',
+      }}
+    >
+      <MapPin size={12} strokeWidth={1.5} /> {label}
+    </div>
   )
 }
