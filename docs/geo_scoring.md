@@ -6,8 +6,10 @@ persistence, an async geocoding queue, per-vertical geo config, and the
 final-score blend wired into the leads list.*
 *Phase 2 (data) — customer clustering (DBSCAN), cluster hulls + membership, H3
 assignment, and the heatmap + clusters endpoints.*
-*Still to come: Phase 2 prospecting (the RentCast radius pull), the Next.js map
-UI (Phase 3), and event layers (Phase 4).*
+*Phase 2 (prospecting) — cluster-seeded RentCast radius pull behind a swappable
+provider, with client-side refinement, dedupe, ingest, immediate scoring, and
+H3-cell cost control.*
+*Still to come: the Next.js map UI (Phase 3) and event layers (Phase 4).*
 
 Companion: `juncto-geospatial-layer-plan.md` (the full four-phase plan).
 
@@ -58,6 +60,47 @@ average blended score — returning each cell's H3 id (for deck.gl's
 `H3HexagonLayer`) plus its boundary polygon. When `h3` isn't installed the
 endpoint reports `available: false` and the frontend falls back to the existing
 geohash-6 choropleth at `/api/map/cells`.
+
+## What shipped in Phase 2 (cluster-seeded prospecting, Section 5)
+
+| Area | File(s) |
+|---|---|
+| Migration (`prospect_pulls`, `properties.subdivision`) | `db/migrations/051_prospecting.sql` |
+| Swappable provider (`PropertyDataProvider`, RentCast radius search) | `pipeline/property_provider.py` |
+| Flow: seed → pull → refine → dedupe → ingest → score | `pipeline/prospecting.py` |
+| `POST /geo/prospect` | `api/routes/geo.py` |
+| `subdivision` writable column | `pipeline/db.py` |
+| Config knobs | `config.py` (prospecting section) |
+| Tests | `tests/test_geo_prospecting.py` |
+
+**Flow:** `pipeline/prospecting.prospect` resolves a seed — a cluster centroid, a
+customer, or a user-dropped `{lat,lng}` pin — then pulls a radius of records from
+the property-data provider, refines client-side on schema fields the vendor can't
+filter server-side (lotSize/yearBuilt ranges, `ownerOccupied` for absentee
+targeting, `features.pool`, `hoa.fee` presence), dedupes against existing
+properties (normalized address first, then geometry within `PROSPECT_DEDUPE_M`,
+default 25 m — also collapsing duplicates within the pull), ingests via
+`upsert_properties` with `geocode_source='rentcast'` and the `subdivision`
+cluster key, and immediately geo-scores exactly the new leads. By construction
+these sit near customer density, so the geo components run high and the property
+score does the differentiating.
+
+**Provider swappability:** RentCast lives behind `PropertyDataProvider`
+(`search_radius`, `get_by_address`), mirroring `GeocodeProvider`. RentCast's
+`/properties` handles the circular geo search (lat/lng + radius in miles) and the
+server-side `propertyType` filter; everything else is client-side refinement.
+BatchData/ATTOM/BigDBM slot in by adding a provider class.
+
+**Cost control:** every pull is logged in `prospect_pulls`, keyed by the seed's
+H3 cell; a cell pulled within `PROSPECT_SKIP_DAYS` (14) is skipped *before* any
+API call. `api_requests` is metered per pull (requests, not records, are the
+binding constraint — one request returns up to 500 records). `POST /geo/prospect`
+returns a funnel summary: returned → refined → deduped → ingested → scored.
+
+**Equity proxy (RentCast):** RentCast carries no mortgage/lien data, so ingest
+derives estimated equity from sale price/date via the existing
+`pipeline/equity.estimate_equity` — serviceable for home services, and the
+property-score equity factor already treats it as a proxy.
 
 ---
 
@@ -194,6 +237,7 @@ penalized.
 | GET | `/api/geo/clusters` | Customer clusters as a GeoJSON FeatureCollection |
 | GET | `/api/geo/heatmap` | H3-hex aggregates (`metric=density\|avg_score`) |
 | POST | `/api/geo/cluster/recompute` | Re-run DBSCAN + H3 backfill for the account |
+| POST | `/api/geo/prospect` | Cluster-seeded RentCast pull → dedupe → ingest → score |
 
 The leads list (`GET /api/leads`) LEFT JOINs `lead_geo_scores`, exposes
 `geo_score` / `final_score` / `geo_components` / `nearest_customer_m` /
@@ -208,4 +252,6 @@ The leads list (`GET /api/leads`) LEFT JOINs `lead_geo_scores`, exposes
 `GEO_TERRITORY_GATE_OUT`, `GEO_RESCORE_RADIUS_KM`, `GEO_SERVICE_AREA_BUFFER_KM`,
 `GEO_BLEND_RECURRING`, `GEO_BLEND_PROJECT`, `GEO_DEFAULT_CONFIG`,
 `CUSTOMER_STATUSES`, `GEOCODE_PROVIDER`, `CENSUS_GEOCODER_URL`,
-`GEO_CLUSTER_EPS_M`, `GEO_CLUSTER_MIN_POINTS`, `GEO_H3_RESOLUTION`.
+`GEO_CLUSTER_EPS_M`, `GEO_CLUSTER_MIN_POINTS`, `GEO_H3_RESOLUTION`,
+`PROPERTY_PROVIDER`, `PROSPECT_DEFAULT_RADIUS_M`, `PROSPECT_MAX_RECORDS`,
+`PROSPECT_SKIP_DAYS`, `PROSPECT_MAX_PULLS_PER_CYCLE`, `PROSPECT_DEDUPE_M`.

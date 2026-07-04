@@ -34,6 +34,23 @@ class ServiceAreaUpdate(BaseModel):
     polygon: dict
 
 
+class ProspectSeed(BaseModel):
+    # Exactly one of these identifies the seed; a point is a user-dropped pin.
+    cluster_id: int | None = None
+    customer_id: int | None = None
+    lat: float | None = None
+    lng: float | None = None
+
+
+class ProspectRequest(BaseModel):
+    seed: ProspectSeed
+    radius_m: int | None = Field(default=None, ge=100, le=16000)
+    vertical: str | None = None
+    # Optional override; when omitted, the vertical's prospect_filter_preset from
+    # vertical_geo_config is used.
+    preset: dict | None = None
+
+
 @router.get("/config")
 def get_geo_config(db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
     """Effective geo config for the account: each vertical's platform default with
@@ -210,6 +227,47 @@ def recompute_clusters(db: PGConn = Depends(get_db), user: dict = Depends(get_cu
         backfill_h3(db, account_id)
         summary = _recompute(db, account_id)
         return {"mode": "sync", **summary}
+
+
+@router.post("/prospect")
+def prospect(body: ProspectRequest, db: PGConn = Depends(get_db),
+             user: dict = Depends(get_current_user)):
+    """Cluster-seeded prospecting (Section 5): pull a radius of pre-geocoded,
+    pre-enriched properties around a seed, refine + dedupe, ingest as leads, and
+    score them. Returns a funnel summary (returned → refined → deduped →
+    ingested → scored)."""
+    from config import RENTCAST_API_KEY, PROPERTY_PROVIDER
+    from pipeline import prospecting
+
+    if PROPERTY_PROVIDER == "rentcast" and not RENTCAST_API_KEY:
+        raise HTTPException(
+            status_code=409,
+            detail="Prospecting isn't configured — set RENTCAST_API_KEY.",
+        )
+
+    account_id = user["account_id"]
+    preset = body.preset
+    if preset is None and body.vertical:
+        # Fall back to the vertical's configured RentCast filter preset.
+        with db.cursor() as cur:
+            cur.execute(
+                "SELECT prospect_filter_preset FROM vertical_geo_config "
+                "WHERE vertical = %s AND (account_id = %s OR account_id IS NULL) "
+                "ORDER BY account_id NULLS LAST LIMIT 1",
+                (body.vertical, account_id),
+            )
+            row = cur.fetchone()
+        if row and row[0]:
+            preset = row[0]
+
+    result = prospecting.prospect(
+        db, account_id, body.seed.model_dump(),
+        radius_m=body.radius_m, preset=preset, vertical=body.vertical,
+        user_id=user["id"],
+    )
+    if result.get("status") == "unresolved_seed":
+        raise HTTPException(status_code=422, detail="Could not resolve the prospecting seed.")
+    return result
 
 
 @router.get("/service-area")

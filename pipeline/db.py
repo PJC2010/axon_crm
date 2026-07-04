@@ -23,6 +23,8 @@ ALL_COLS = [
     "enrichment_flags",
     # Geo provenance (migration 049) — RentCast leads arrive pre-geocoded
     "geocode_source", "geocode_confidence", "h3_r8",
+    # Prospecting cluster key (migration 051) — RentCast subdivision name
+    "subdivision",
     # Lead attribution — rep ownership + acquisition source (migration 030)
     "assigned_to", "lead_source",
     # Storm/hail enrichment (migration 027)

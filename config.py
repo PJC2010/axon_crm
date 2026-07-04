@@ -557,3 +557,16 @@ GEO_CLUSTER_MIN_POINTS = int(os.getenv("GEO_CLUSTER_MIN_POINTS", "3"))
 # optional `h3` package; the layer degrades gracefully (h3_r8 stays NULL, the
 # heatmap reports available=false) when it isn't installed.
 GEO_H3_RESOLUTION      = int(os.getenv("GEO_H3_RESOLUTION", "8"))
+
+# ── Geo Phase 2: cluster-seeded prospecting (Section 5) ───────────────────────
+# Pull pre-geocoded, pre-enriched prospects from a property-data vendor around a
+# seed, dedupe, ingest, and score. Provider-pluggable (pipeline/property_provider.py).
+PROPERTY_PROVIDER       = os.getenv("PROPERTY_PROVIDER", "rentcast")
+PROSPECT_DEFAULT_RADIUS_M = int(os.getenv("PROSPECT_DEFAULT_RADIUS_M", "1600"))  # ~1 mile
+PROSPECT_MAX_RECORDS    = int(os.getenv("PROSPECT_MAX_RECORDS", "500"))          # per pull
+# Cost control: skip a seed whose H3 cell was pulled within this many days, and
+# cap pulls per account per cycle. Dedupe radius matches a record to an existing
+# property by geometry when addresses don't normalize equal.
+PROSPECT_SKIP_DAYS      = int(os.getenv("PROSPECT_SKIP_DAYS", "14"))
+PROSPECT_MAX_PULLS_PER_CYCLE = int(os.getenv("PROSPECT_MAX_PULLS_PER_CYCLE", "20"))
+PROSPECT_DEDUPE_M       = float(os.getenv("PROSPECT_DEDUPE_M", "25"))
