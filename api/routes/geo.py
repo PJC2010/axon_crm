@@ -11,12 +11,13 @@ Clustering, heatmaps, prospecting, and the map UI are later phases.
 """
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 from psycopg2.extensions import connection as PGConn
 from pydantic import BaseModel, Field
 
 from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user
-from pipeline import geo_score_store
+from config import CUSTOMER_STATUSES, GEO_H3_RESOLUTION
+from pipeline import geo_score_store, geo_h3
 from pipeline.geocode_provider import enqueue_missing
 
 router = APIRouter(prefix="/geo")
@@ -105,6 +106,110 @@ def geocode_backfill(db: PGConn = Depends(get_db), user: dict = Depends(get_curr
     except Exception:
         log.info("Scheduler unavailable — %d row(s) enqueued for the next geo tick", n)
     return {"enqueued": n}
+
+
+@router.get("/clusters")
+def get_clusters(db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
+    """The account's customer clusters as a GeoJSON FeatureCollection — each hull
+    a polygon feature carrying its label, customer count, and centroid. Powers the
+    cluster overlay and the 'prospect this area' action."""
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT cluster_label, hull, centroid_lat, centroid_lng, customer_count, computed_at "
+            "FROM customer_clusters WHERE account_id = %s ORDER BY customer_count DESC",
+            (user["account_id"],),
+        )
+        rows = dict_fetchall(cur)
+    features = [
+        {
+            "type": "Feature",
+            "geometry": r["hull"],  # GeoJSON Polygon, or null for tiny clusters
+            "properties": {
+                "cluster_label": r["cluster_label"],
+                "customer_count": r["customer_count"],
+                "centroid": [r["centroid_lng"], r["centroid_lat"]],
+                "computed_at": r["computed_at"],
+            },
+        }
+        for r in rows
+    ]
+    return {"type": "FeatureCollection", "features": features}
+
+
+@router.get("/heatmap")
+def get_heatmap(
+    metric: str = Query("density", pattern="^(density|avg_score)$"),
+    db: PGConn = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """H3-hex aggregates for the heatmap. metric=density → customers per hex;
+    metric=avg_score → average final (blended) score per hex. Each cell includes
+    its H3 id (for deck.gl's H3HexagonLayer) and boundary polygon. Reports
+    available=false when the optional h3 package isn't installed / no rows have a
+    hex yet, so the frontend can fall back to the geohash choropleth."""
+    account_id = user["account_id"]
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT p.h3_r8, "
+            "  COUNT(*) AS leads, "
+            "  COUNT(*) FILTER (WHERE p.status = ANY(%s)) AS customers, "
+            "  AVG(COALESCE(lgs.final_score, p.lead_score)) AS avg_score "
+            "FROM properties p "
+            "LEFT JOIN lead_geo_scores lgs ON lgs.property_id = p.id "
+            "WHERE p.account_id = %s AND p.h3_r8 IS NOT NULL AND p.archived_at IS NULL "
+            "GROUP BY p.h3_r8",
+            (list(CUSTOMER_STATUSES), account_id),
+        )
+        rows = dict_fetchall(cur)
+
+    cells = []
+    for r in rows:
+        avg_score = float(r["avg_score"]) if r["avg_score"] is not None else None
+        value = r["customers"] if metric == "density" else avg_score
+        cells.append({
+            "h3": r["h3_r8"],
+            "value": value,
+            "leads": r["leads"],
+            "customers": r["customers"],
+            "avg_score": round(avg_score, 2) if avg_score is not None else None,
+            "boundary": geo_h3.cell_boundary(r["h3_r8"]),
+            "center": geo_h3.cell_center(r["h3_r8"]),
+        })
+
+    return {
+        "metric": metric,
+        "resolution": GEO_H3_RESOLUTION,
+        "available": geo_h3.available() and bool(cells),
+        "cells": cells,
+    }
+
+
+@router.post("/cluster/recompute")
+def recompute_clusters(db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
+    """Re-run DBSCAN clustering + H3 backfill for the account. Runs in the
+    background when the scheduler is available, else synchronously."""
+    account_id = user["account_id"]
+    try:
+        from api.scheduler import scheduler
+
+        def _job():
+            import psycopg2
+            from config import DATABASE_URL
+            from pipeline.geo_cluster_store import backfill_h3, recompute_clusters as _recompute
+            conn = psycopg2.connect(DATABASE_URL)
+            try:
+                backfill_h3(conn, account_id)
+                _recompute(conn, account_id)
+            finally:
+                conn.close()
+
+        scheduler.add_job(_job, id=f"geo_cluster_{account_id}", replace_existing=True)
+        return {"mode": "queued"}
+    except Exception:
+        from pipeline.geo_cluster_store import backfill_h3, recompute_clusters as _recompute
+        backfill_h3(db, account_id)
+        summary = _recompute(db, account_id)
+        return {"mode": "sync", **summary}
 
 
 @router.get("/service-area")

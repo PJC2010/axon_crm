@@ -545,3 +545,15 @@ CENSUS_GEOCODER_URL = os.getenv(
     "CENSUS_GEOCODER_URL",
     "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress",
 )
+
+# ── Geo Phase 2: clustering + heatmap ─────────────────────────────────────────
+# Customer clustering (pure-Python DBSCAN over haversine distance — the
+# ST_ClusterDBSCAN stand-in while the layer stays PostGIS-free; see
+# docs/geo_scoring.md). eps in meters, minpoints includes the point itself, both
+# matching the plan's Section 6 example.
+GEO_CLUSTER_EPS_M      = int(os.getenv("GEO_CLUSTER_EPS_M", "800"))
+GEO_CLUSTER_MIN_POINTS = int(os.getenv("GEO_CLUSTER_MIN_POINTS", "3"))
+# H3 resolution for heatmap aggregation. 8 ≈ 0.74 km² hexes. Requires the
+# optional `h3` package; the layer degrades gracefully (h3_r8 stays NULL, the
+# heatmap reports available=false) when it isn't installed.
+GEO_H3_RESOLUTION      = int(os.getenv("GEO_H3_RESOLUTION", "8"))

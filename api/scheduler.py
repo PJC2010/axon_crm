@@ -521,6 +521,7 @@ def run_geo_rescore_tick():
         try:
             from pipeline.geocode_provider import process_queue
             from pipeline.geo_score_store import refresh_service_area, rescore_leads
+            from pipeline.geo_cluster_store import backfill_h3, recompute_clusters
             process_queue(conn, limit=1000)
             with conn.cursor() as cur:
                 cur.execute("SELECT id FROM accounts")
@@ -528,8 +529,12 @@ def run_geo_rescore_tick():
             total = 0
             for account_id in account_ids:
                 try:
+                    # H3 first so freshly geocoded rows land in a hex; rescore before
+                    # clustering so cluster_id tags rows that carry current scores.
+                    backfill_h3(conn, account_id)
                     refresh_service_area(conn, account_id)
                     total += rescore_leads(conn, account_id)
+                    recompute_clusters(conn, account_id)
                 except Exception:
                     conn.rollback()
                     log.exception("Geo rescore failed for account %d", account_id)
