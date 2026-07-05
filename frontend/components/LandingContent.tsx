@@ -80,30 +80,60 @@ export default function LandingContent() {
     root.querySelectorAll('[data-reveal]').forEach((el) => io.observe(el))
     cleanups.push(() => io.disconnect())
 
-    // Count-up on the proof stats (parses the leading number, keeps suffix).
+    // Count-up helper (parses the leading number on an element, keeps its suffix).
+    const tickCount = (el: HTMLElement, dur = 1100) => {
+      const raw = (el.textContent || '').trim()
+      const m = raw.match(/^([\d.]+)(.*)$/)
+      if (!m) return
+      const target = parseFloat(m[1]); const suffix = m[2]
+      const decimals = (m[1].split('.')[1] || '').length
+      const t0 = performance.now()
+      const tick = (now: number) => {
+        const p = Math.min(1, (now - t0) / dur)
+        const eased = 1 - Math.pow(1 - p, 3) // easeOutCubic
+        el.textContent = (target * eased).toFixed(decimals) + suffix
+        if (p < 1) requestAnimationFrame(tick)
+        else el.textContent = m[1] + suffix
+      }
+      requestAnimationFrame(tick)
+    }
+
+    // Count-up on the proof stats.
     const cio = new IntersectionObserver((entries) => {
       entries.forEach((e) => {
         if (!e.isIntersecting) return
-        const el = e.target as HTMLElement
-        cio.unobserve(el)
-        const raw = (el.textContent || '').trim()
-        const m = raw.match(/^([\d.]+)(.*)$/)
-        if (!m) return
-        const target = parseFloat(m[1]); const suffix = m[2]
-        const decimals = (m[1].split('.')[1] || '').length
-        const dur = 1100; const t0 = performance.now()
-        const tick = (now: number) => {
-          const p = Math.min(1, (now - t0) / dur)
-          const eased = 1 - Math.pow(1 - p, 3) // easeOutCubic
-          el.textContent = (target * eased).toFixed(decimals) + suffix
-          if (p < 1) requestAnimationFrame(tick)
-          else el.textContent = m[1] + suffix
-        }
-        requestAnimationFrame(tick)
+        cio.unobserve(e.target)
+        tickCount(e.target as HTMLElement)
       })
     }, { threshold: 0.5 })
     root.querySelectorAll('.lp-stat-v').forEach((el) => cio.observe(el))
     cleanups.push(() => cio.disconnect())
+
+    // Feature-card demos: play their mini animation once in view, replay on hover.
+    const demoCards = [...root.querySelectorAll<HTMLElement>('.lp-feature')]
+    const playDemo = (card: HTMLElement) => {
+      card.classList.add('is-demo-in')
+      card.querySelectorAll<HTMLElement>('.lp-demo-count').forEach((el) => tickCount(el, 900))
+    }
+    const dio = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (e.isIntersecting) { playDemo(e.target as HTMLElement); dio.unobserve(e.target) }
+      })
+    }, { threshold: 0.35 })
+    demoCards.forEach((card) => dio.observe(card))
+    cleanups.push(() => dio.disconnect())
+
+    const onDemoReplay: Array<() => void> = []
+    demoCards.forEach((card) => {
+      const replay = () => {
+        card.classList.remove('is-demo-in')
+        void card.offsetWidth // force reflow so the transition restarts from 0
+        playDemo(card)
+      }
+      card.addEventListener('mouseenter', replay)
+      onDemoReplay.push(() => card.removeEventListener('mouseenter', replay))
+    })
+    cleanups.push(() => onDemoReplay.forEach((fn) => fn()))
 
     // Scroll-pinned process — activate the step straddling the viewport center.
     const pSteps = [...root.querySelectorAll<HTMLElement>('.lp-pstep')]
@@ -248,31 +278,83 @@ export default function LandingContent() {
               <div className="lp-feature-ic" style={{ background: 'var(--color-accent-100)', color: 'var(--color-accent-300)' }}><Star size={18} /></div>
               <h3>Lead scoring engine</h3>
               <p>Axon pulls public property records for your target ZIP codes and scores every address by opportunity size, condition signals, and vertical fit.</p>
+              <div className="lp-feature-demo lp-demo-score" aria-hidden="true">
+                <div className="lp-demo-score-head">
+                  <span className="lp-demo-score-addr">1842 Westheimer Rd</span>
+                  <span className="lp-demo-score-grade">A</span>
+                </div>
+                <div className="lp-demo-score-track"><div className="lp-demo-score-fill" /></div>
+                <div className="lp-demo-score-foot">
+                  <span><b className="lp-demo-count">94</b> score</span>
+                  <span>Size · Condition · Fit</span>
+                </div>
+              </div>
             </div>
             <div className="lp-feature">
               <div className="lp-feature-ic" style={{ background: 'var(--color-info-bg)', color: 'var(--color-ocean)' }}><Columns3 size={18} /></div>
               <h3>Visual pipeline</h3>
               <p>Drag leads through your stages — New, Contacted, Quoted, Won — on a live Kanban board. See pipeline value update in real time.</p>
+              <div className="lp-feature-demo lp-demo-pipeline" aria-hidden="true">
+                <span className="lp-demo-pipe-chip">Lead</span>
+                <div className="lp-demo-pipe-track">
+                  <span className="lp-demo-pipe-col">New</span>
+                  <span className="lp-demo-pipe-col">Contacted</span>
+                  <span className="lp-demo-pipe-col">Quoted</span>
+                  <span className="lp-demo-pipe-col">Won</span>
+                </div>
+              </div>
             </div>
             <div className="lp-feature">
               <div className="lp-feature-ic" style={{ background: 'var(--color-success-bg)', color: 'var(--color-moss)' }}><Check size={18} /></div>
               <h3>Task management</h3>
               <p>Create tasks linked to properties and leads, set priorities, and get overdue alerts. Your follow-up list and CRM, finally in sync.</p>
+              <div className="lp-feature-demo lp-demo-tasks" aria-hidden="true">
+                <div className="lp-demo-task">
+                  <span className="lp-demo-check"><Check size={12} /></span>
+                  <span className="lp-demo-task-label">Follow up — 1842 Westheimer</span>
+                </div>
+                <div className="lp-demo-task">
+                  <span className="lp-demo-check"><Check size={12} /></span>
+                  <span className="lp-demo-task-label">Send quote — River Oaks Blvd</span>
+                </div>
+              </div>
             </div>
             <div className="lp-feature">
               <div className="lp-feature-ic" style={{ background: 'var(--color-gold-soft)', color: 'var(--color-gold)' }}><DollarSign size={18} /></div>
               <h3>Expense tracker</h3>
               <p>Log every business expense by category — fuel, materials, subs. Flag tax-deductible items and export a clean CSV for your accountant.</p>
+              <div className="lp-feature-demo lp-demo-expense" aria-hidden="true">
+                <div className="lp-demo-bars">
+                  <span className="lp-demo-bar" />
+                  <span className="lp-demo-bar" />
+                  <span className="lp-demo-bar" />
+                </div>
+                <div className="lp-demo-expense-labels">
+                  <span>Fuel</span><span>Materials</span><span>Subs</span>
+                </div>
+              </div>
             </div>
             <div className="lp-feature">
               <div className="lp-feature-ic" style={{ background: 'var(--color-plum-soft)', color: 'var(--color-plum)' }}><FileText size={18} /></div>
               <h3>Invoicing &amp; AR</h3>
               <p>Build invoices with line items, record partial payments, and pull an AR aging report with one click. Know exactly who owes you.</p>
+              <div className="lp-feature-demo lp-demo-invoice" aria-hidden="true">
+                <span className="lp-demo-inv-stamp">Paid</span>
+                <div className="lp-demo-inv-line"><span>HVAC replacement</span><span>$18,400</span></div>
+                <div className="lp-demo-inv-line"><span>Labor — 2 crew</span><span>$3,600</span></div>
+                <div className="lp-demo-inv-total"><span>Total due</span><span>$22,000</span></div>
+              </div>
             </div>
             <div className="lp-feature">
               <div className="lp-feature-ic" style={{ background: 'var(--color-rose-soft)', color: 'var(--color-rose)' }}><BookOpen size={18} /></div>
               <h3>Bookkeeping &amp; P&amp;L</h3>
               <p>See your monthly profit and loss and per-property job costing — revenue versus expenses and margin per job. No separate app needed.</p>
+              <div className="lp-feature-demo lp-demo-books" aria-hidden="true">
+                <svg className="lp-demo-chart" viewBox="0 0 120 40">
+                  <polyline points="2,34 22,28 42,30 62,18 82,20 100,8 118,6" />
+                </svg>
+                <div className="lp-demo-books-foot"><span>P&amp;L trend</span><span className="lp-demo-books-up">+18%</span></div>
+              </div>
             </div>
           </div>
         </div>
