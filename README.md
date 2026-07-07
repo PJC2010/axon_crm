@@ -770,6 +770,7 @@ To rotate credentials, update `JWT_SECRET_KEY` in your environment. All existing
 
 ## Further Reading
 
+- [`docs/TECHNICAL_DEEP_DIVE.md`](docs/TECHNICAL_DEEP_DIVE.md) — the ground-up, implementation-level reference: every subsystem, the exact scoring/geo/ML math, the SQL invariants, and the design decisions baked into the code
 - [`docs/DATA_PIPELINE.md`](docs/DATA_PIPELINE.md) — the primary pipeline architecture reference (NULL-only upsert, enrichment provenance, full step walkthrough)
 - [`docs/geo_scoring.md`](docs/geo_scoring.md) — the geo scoring/clustering/prospecting layer, phase by phase
 - [`docs/GENERALIZATION_ROADMAP.md`](docs/GENERALIZATION_ROADMAP.md) — the multi-vertical platform strategy (plans, business types, custom fields, child objects)
