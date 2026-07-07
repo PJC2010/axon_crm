@@ -30,6 +30,13 @@ PIPELINE_STAGES = ["new", "contacted", "qualified", "quote_sent", "won", "lost",
 
 CARD_COLS = "id, address, owner_name, contact_name, contact_phone, lead_score, score_grade, estimated_job_value, status, vertical, zip"
 
+# The board is a triage view, not a full export. Ingested prospecting datasets can
+# hold tens of thousands of properties (all defaulting to status 'new'), and
+# rendering every one as a card locks up the browser tab. Return only the
+# highest-scoring N per stage; column headers show the true total from
+# /pipeline/stats. Bump this if a stage legitimately needs deeper triage.
+CARD_LIMIT_PER_STAGE = 100
+
 # ── Command-Center alert thresholds ───────────────────────────────────────────
 # Stages that close a deal — excluded from "stuck"/"cooling" detection.
 TERMINAL_STATUSES = ("won", "lost", "not_interested")
@@ -191,8 +198,18 @@ def get_pipeline(
         stage_keys = [r[0] for r in cur.fetchall()] or PIPELINE_STAGES
 
         cur.execute(
-            f"SELECT {CARD_COLS} FROM properties {where} ORDER BY lead_score DESC NULLS LAST",
-            params,
+            f"""
+            SELECT {CARD_COLS} FROM (
+                SELECT {CARD_COLS},
+                       ROW_NUMBER() OVER (
+                           PARTITION BY status ORDER BY lead_score DESC NULLS LAST, id DESC
+                       ) AS _rn
+                FROM properties {where}
+            ) ranked
+            WHERE _rn <= %s
+            ORDER BY lead_score DESC NULLS LAST
+            """,
+            params + [CARD_LIMIT_PER_STAGE],
         )
         rows = dict_fetchall(cur)
 

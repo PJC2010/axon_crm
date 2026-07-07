@@ -63,6 +63,7 @@ function PipelinePage() {
 
   const moveLead = useCallback(async (lead: PipelineCardLead, stage: string) => {
     if (lead.status === stage) return
+    const from = lead.status
     // Optimistic update
     setGroups(prev => {
       const next = { ...prev }
@@ -71,6 +72,18 @@ function PipelinePage() {
       })
       next[stage] = [{ ...lead, status: stage as LeadStatus }, ...(next[stage] ?? [])]
       return next
+    })
+    // Keep the true column counts (rendered from stats, since a column may hold
+    // more leads than we render) in sync with the optimistic move.
+    setStats(prev => {
+      const value = lead.estimated_job_value ?? 0
+      const src = prev[from] ?? { count: 0, total_value: 0 }
+      const dst = prev[stage] ?? { count: 0, total_value: 0 }
+      return {
+        ...prev,
+        [from]: { count: Math.max(0, src.count - 1), total_value: Math.max(0, src.total_value - value) },
+        [stage]: { count: dst.count + 1, total_value: dst.total_value + value },
+      }
     })
     try {
       await updateStatus(lead.id, stage as LeadStatus)
@@ -209,7 +222,7 @@ function PipelinePage() {
                       </span>
                     </div>
                     <span style={{ fontSize: 11, color: 'var(--color-ink-400)' }}>
-                      {leads.length}
+                      {stageStat?.count ?? leads.length}
                       {stageStat?.total_value ? ` · ${fmtValue(stageStat.total_value)}` : ''}
                     </span>
                   </div>
@@ -231,6 +244,11 @@ function PipelinePage() {
                         <KanbanCard lead={lead} onQuickTask={setQuickTaskLead} />
                       </div>
                     ))}
+                    {stageStat && stageStat.count > leads.length && (
+                      <div style={{ fontSize: 11, color: 'var(--color-ink-400)', textAlign: 'center', padding: '8px 4px' }}>
+                        Showing top {leads.length} of {stageStat.count.toLocaleString()} — highest-scoring leads first
+                      </div>
+                    )}
                   </div>
                 </div>
               )
