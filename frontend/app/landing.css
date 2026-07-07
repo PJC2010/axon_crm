@@ -96,6 +96,56 @@
 .lp-feature h3 { font-family: var(--font-display); font-size: 18px; margin: 0 0 8px; color: var(--color-ink-900); }
 .lp-feature p { font-size: 14px; line-height: 1.6; color: var(--color-ink-700); margin: 0; }
 
+/* Feature demos — a tiny, literal preview of what each card describes.
+   Base rules below are the settled/final look (shown as-is with JS off or
+   reduced-motion); the `.lp-anim` motion section further down defines the
+   "before" state + transition so the demo plays once the card is revealed
+   (and replays on hover — see the `is-demo-in` toggle in LandingContent). */
+.lp-feature-demo { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--color-ink-100); }
+
+/* Lead scoring engine */
+.lp-demo-score-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.lp-demo-score-addr { font-size: 12px; font-weight: 600; color: var(--color-ink-700); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lp-demo-score-grade { width: 22px; height: 22px; border-radius: 50%; background: var(--color-success-bg); color: var(--color-success); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.lp-demo-score-track { height: 6px; border-radius: 3px; background: var(--color-ink-100); overflow: hidden; }
+.lp-demo-score-fill { height: 100%; width: 94%; border-radius: 3px; background: linear-gradient(90deg, var(--color-accent-300), var(--color-accent)); }
+.lp-demo-score-foot { display: flex; align-items: baseline; justify-content: space-between; margin-top: 8px; font-size: 11px; color: var(--color-ink-500); }
+.lp-demo-count { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--color-ink-900); }
+
+/* Visual pipeline */
+.lp-demo-pipeline { position: relative; padding-top: 22px; }
+.lp-demo-pipe-track { display: flex; gap: 6px; }
+.lp-demo-pipe-col { flex: 1; text-align: center; font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-ink-500); background: var(--color-ink-100); border-radius: 5px; padding: 12px 2px 6px; }
+.lp-demo-pipe-chip { position: absolute; top: 0; left: 74%; background: var(--color-moss); color: #fff; font-size: 10px; font-weight: 600; padding: 3px 9px; border-radius: var(--radius-pill); box-shadow: var(--shadow-card); white-space: nowrap; }
+
+/* Task management */
+.lp-demo-task { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.lp-demo-task + .lp-demo-task { border-top: 1px solid var(--color-ink-100); }
+.lp-demo-check { width: 18px; height: 18px; border-radius: 5px; background: var(--color-moss); border: 1.5px solid var(--color-moss); display: flex; align-items: center; justify-content: center; color: #fff; flex-shrink: 0; }
+.lp-demo-check svg { opacity: 1; }
+.lp-demo-task-label { font-size: 12px; color: var(--color-ink-700); }
+
+/* Expense tracker */
+.lp-demo-bars { display: flex; align-items: flex-end; gap: 8px; height: 52px; }
+.lp-demo-bar { flex: 1; border-radius: 3px 3px 0 0; background: linear-gradient(180deg, var(--color-gold), var(--color-gold-soft)); }
+.lp-demo-bar:nth-child(1) { height: 38%; }
+.lp-demo-bar:nth-child(2) { height: 70%; }
+.lp-demo-bar:nth-child(3) { height: 52%; }
+.lp-demo-expense-labels { display: flex; gap: 8px; margin-top: 6px; }
+.lp-demo-expense-labels span { flex: 1; text-align: center; font-size: 9px; color: var(--color-ink-500); text-transform: uppercase; letter-spacing: 0.03em; }
+
+/* Invoicing & AR */
+.lp-demo-invoice { position: relative; }
+.lp-demo-inv-line { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--color-ink-600); padding: 4px 0; }
+.lp-demo-inv-total { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; font-weight: 700; color: var(--color-ink-900); padding-top: 6px; margin-top: 2px; border-top: 1px solid var(--color-ink-100); }
+.lp-demo-inv-stamp { position: absolute; top: -4px; right: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-moss); border: 1.5px solid var(--color-moss); border-radius: 4px; padding: 2px 8px; transform: rotate(-8deg); }
+
+/* Bookkeeping & P&L */
+.lp-demo-chart { display: block; width: 100%; height: 44px; overflow: visible; }
+.lp-demo-chart polyline { fill: none; stroke: var(--color-accent); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.lp-demo-books-foot { display: flex; justify-content: space-between; font-size: 11px; color: var(--color-ink-500); margin-top: 6px; }
+.lp-demo-books-up { color: var(--color-moss); font-weight: 700; }
+
 /* Split */
 .lp-split { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
 .lp-points { margin-top: 22px; display: flex; flex-direction: column; gap: 16px; }
@@ -188,6 +238,44 @@
 
 /* Feature icon lift handled by .lp-feature:hover; add a subtle accent glow */
 .lp-feature:hover .lp-feature-ic { transform: scale(1.06); transition: transform var(--dur-base) var(--ease-out); }
+
+/* Feature-card demos — each plays its "before" state below, then transitions
+   to the settled look (defined above) once the card gets `.is-demo-in`
+   (added on scroll-into-view, replayed on hover — see LandingContent.tsx). */
+.lp-anim .lp-demo-score-fill { width: 0%; transition: width 900ms var(--ease-out); }
+.lp-anim .lp-demo-score-grade { opacity: 0; transform: scale(0.5); transition: opacity 320ms var(--ease-out), transform 320ms var(--ease-out); transition-delay: 760ms; }
+.lp-anim .lp-feature.is-demo-in .lp-demo-score-fill { width: 94%; }
+.lp-anim .lp-feature.is-demo-in .lp-demo-score-grade { opacity: 1; transform: none; }
+
+.lp-anim .lp-demo-pipe-chip { left: 2%; transition: left 1000ms var(--ease-out), background 1000ms var(--ease-out); }
+.lp-anim .lp-feature.is-demo-in .lp-demo-pipe-chip { left: 74%; background: var(--color-moss); }
+
+.lp-anim .lp-demo-check { background: transparent; border-color: var(--color-ink-300); transition: background 220ms var(--ease-out), border-color 220ms var(--ease-out); transition-delay: 460ms; }
+.lp-anim .lp-demo-check svg { opacity: 0; transform: scale(0.4); transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out); transition-delay: 560ms; }
+.lp-anim .lp-demo-task:nth-child(2) .lp-demo-check { transition-delay: 860ms; }
+.lp-anim .lp-demo-task:nth-child(2) .lp-demo-check svg { transition-delay: 960ms; }
+.lp-anim .lp-feature.is-demo-in .lp-demo-check { background: var(--color-moss); border-color: var(--color-moss); }
+.lp-anim .lp-feature.is-demo-in .lp-demo-check svg { opacity: 1; transform: none; }
+
+.lp-anim .lp-demo-bar { height: 0%; transition: height 700ms var(--ease-out); }
+.lp-anim .lp-demo-bar:nth-child(2) { transition-delay: 90ms; }
+.lp-anim .lp-demo-bar:nth-child(3) { transition-delay: 180ms; }
+.lp-anim .lp-feature.is-demo-in .lp-demo-bar:nth-child(1) { height: 38%; }
+.lp-anim .lp-feature.is-demo-in .lp-demo-bar:nth-child(2) { height: 70%; }
+.lp-anim .lp-feature.is-demo-in .lp-demo-bar:nth-child(3) { height: 52%; }
+
+.lp-anim .lp-demo-inv-line { opacity: 0; transform: translateX(-8px); transition: opacity 340ms var(--ease-out), transform 340ms var(--ease-out); }
+.lp-anim .lp-demo-inv-line:nth-child(2) { transition-delay: 160ms; }
+.lp-anim .lp-demo-inv-total { opacity: 0; transition: opacity 300ms var(--ease-out); transition-delay: 340ms; }
+.lp-anim .lp-demo-inv-stamp { opacity: 0; transform: rotate(-8deg) scale(1.6); transition: opacity 260ms var(--ease-out), transform 260ms var(--ease-out); transition-delay: 620ms; }
+.lp-anim .lp-feature.is-demo-in .lp-demo-inv-line { opacity: 1; transform: none; }
+.lp-anim .lp-feature.is-demo-in .lp-demo-inv-total { opacity: 1; }
+.lp-anim .lp-feature.is-demo-in .lp-demo-inv-stamp { opacity: 1; transform: rotate(-8deg) scale(1); }
+
+.lp-anim .lp-demo-chart polyline { stroke-dasharray: 124; stroke-dashoffset: 124; transition: stroke-dashoffset 1000ms var(--ease-out); }
+.lp-anim .lp-demo-books-foot { opacity: 0; transition: opacity 300ms var(--ease-out); transition-delay: 900ms; }
+.lp-anim .lp-feature.is-demo-in .lp-demo-chart polyline { stroke-dashoffset: 0; }
+.lp-anim .lp-feature.is-demo-in .lp-demo-books-foot { opacity: 1; }
 
 @media (prefers-reduced-motion: reduce) {
   .lp-anim [data-reveal],
