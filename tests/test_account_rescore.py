@@ -92,6 +92,35 @@ class TestRetailRollup:
         assert compute_score(lapsed, PROFILES["retail_rfm"]) < compute_score(recent, PROFILES["retail_rfm"])
 
 
+class TestPipelineEngagementRollup:
+    def test_perfect_row_scores_100(self):
+        row = ar.pipeline_engagement_rollup_row(10000, TODAY, 5, today=TODAY)
+        assert row == {"activity_count_90d": 5, "days_since_last_activity": 0, "deal_value": 10000.0}
+        assert compute_score(row, PROFILES["pipeline_engagement"]) == pytest.approx(100.0, abs=1.0)
+
+    def test_untouched_lead_is_cold(self):
+        row = ar.pipeline_engagement_rollup_row(None, None, 0, today=TODAY)
+        assert row["days_since_last_activity"] is None
+        assert compute_score(row, PROFILES["pipeline_engagement"]) == 0.0
+
+    def test_dormant_lead_decays(self):
+        worked = ar.pipeline_engagement_rollup_row(5000, TODAY, 4, today=TODAY)
+        dormant = ar.pipeline_engagement_rollup_row(5000, date(2026, 4, 2), 4, today=TODAY)
+        assert compute_score(dormant, PROFILES["pipeline_engagement"]) < compute_score(worked, PROFILES["pipeline_engagement"])
+
+    def test_engagement_outweighs_deal_value(self):
+        # A big deal nobody is working should rank below a small deal being worked.
+        big_idle = ar.pipeline_engagement_rollup_row(10000, None, 0, today=TODAY)
+        small_active = ar.pipeline_engagement_rollup_row(1000, TODAY, 5, today=TODAY)
+        assert compute_score(small_active, PROFILES["pipeline_engagement"]) > compute_score(big_idle, PROFILES["pipeline_engagement"])
+
+    def test_timestamp_last_activity_is_coerced(self):
+        # contact_history.created_at arrives as a TIMESTAMP, not a DATE.
+        from datetime import datetime
+        row = ar.pipeline_engagement_rollup_row(5000, datetime(2026, 7, 1, 14, 30), 3, today=TODAY)
+        assert row["days_since_last_activity"] == 1
+
+
 # ── Orchestration ─────────────────────────────────────────────────────────────
 
 class TestRescoreAccount:
@@ -122,6 +151,26 @@ class TestRescoreAccount:
         assert updated == 1
         select_sql, _ = conn.executed[0]
         assert "LEFT JOIN orders" in select_sql
+
+    def test_general_sales_uses_engagement_rollup(self):
+        conn = _ScriptedConn([[(300, 8000, date(2026, 7, 1), 5)]])
+        updated = ar.rescore_account(conn, 9, business_type="general_sales")
+        assert updated == 1
+        select_sql, select_params = conn.executed[0]
+        assert "FROM properties p" in select_sql
+        assert "contact_history" in select_sql
+        assert "LEFT JOIN policies" not in select_sql and "LEFT JOIN orders" not in select_sql
+        assert select_params == [9]
+        # A well-worked recent lead grades A.
+        _, update_rows = conn.executed[1]
+        assert update_rows[0][1] == "A"
+
+    def test_professional_services_uses_engagement_rollup(self):
+        conn = _ScriptedConn([[(301, 2000, date(2026, 7, 2), 5)]])
+        updated = ar.rescore_account(conn, 11, business_type="professional_services")
+        assert updated == 1
+        select_sql, _ = conn.executed[0]
+        assert "contact_history" in select_sql
 
     def test_unscored_business_type_noop(self):
         conn = _ScriptedConn([])
@@ -160,7 +209,8 @@ class TestRescoreAllAccounts:
         assert calls == [(3, "insurance_agency"), (5, "retail")]
         select_sql, select_params = conn.executed[0]
         assert "business_type = ANY(%s)" in select_sql
-        assert set(select_params[0]) == {"insurance_agency", "retail"}
+        # Every account-wide scored business type is swept (not just the two seen here).
+        assert set(select_params[0]) == set(ar.SCORING_PROFILE_BY_BUSINESS_TYPE)
 
 
 class TestProfileKeyLookup:
