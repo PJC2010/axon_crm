@@ -92,6 +92,34 @@ def _monetary_signal(lifetime_spend) -> float:
     return min(1.0, lifetime_spend / 1000)
 
 
+def _engagement_signal(activity_count_90d) -> float:
+    """How actively the lead is being worked: calls/texts logged, tasks
+    completed, and notes added in the last 90 days. For pipeline businesses
+    (general sales, professional services) engagement is the single strongest
+    conversion predictor — a lead nobody is touching is going cold regardless of
+    its deal value. Saturates at 5 touches."""
+    if not activity_count_90d or activity_count_90d <= 0:
+        return 0.0
+    return min(1.0, activity_count_90d / 5)
+
+
+def _activity_recency_signal(days_since_last_activity) -> float:
+    """Freshness of the last touch: 1.0 for activity today, fading linearly to 0
+    at 60 days of silence. A recently-worked lead is hotter than a dormant one."""
+    if days_since_last_activity is None or days_since_last_activity < 0:
+        return 0.0
+    return max(0.0, 1.0 - days_since_last_activity / 60)
+
+
+def _deal_value_signal(deal_value) -> float:
+    """Deal / engagement value from the lead's estimated value, saturating at
+    $10,000. Bigger deals earn more of the rep's attention, but value is the
+    tie-breaker behind engagement and recency — not the headline signal."""
+    if not deal_value or deal_value <= 0:
+        return 0.0
+    return min(1.0, deal_value / 10000)
+
+
 INSURANCE_RENEWAL_PROFILE = ScoringProfile(
     key="insurance_renewal",
     label="Insurance renewal & cross-sell",
@@ -149,11 +177,41 @@ RETAIL_RFM_PROFILE = ScoringProfile(
 )
 
 
+PIPELINE_ENGAGEMENT_PROFILE = ScoringProfile(
+    key="pipeline_engagement",
+    label="Pipeline engagement",
+    weights={"engagement": 0.45, "recency": 0.30, "deal_value": 0.25},
+    factor_meta={
+        "engagement": {
+            "label": "Engagement",
+            "field": "activity_count_90d",
+            "description": "Calls, tasks, and notes logged on the lead in the last 90 days — an actively worked lead converts best.",
+        },
+        "recency": {
+            "label": "Last activity",
+            "field": "days_since_last_activity",
+            "description": "How recently the lead was touched; a fresh follow-up beats a dormant deal.",
+        },
+        "deal_value": {
+            "label": "Deal value",
+            "field": "deal_value",
+            "description": "Estimated deal / engagement value (toward $10,000) — the tie-breaker behind engagement.",
+        },
+    },
+    signal_fns={
+        "engagement": _engagement_signal,
+        "recency": _activity_recency_signal,
+        "deal_value": _deal_value_signal,
+    },
+)
+
+
 PROFILES: dict[str, ScoringProfile] = {
     DEFAULT_PROFILE_KEY: _property_profile(DEFAULT_PROFILE_KEY, config.DEFAULT_WEIGHTS),
     **{key: _property_profile(key, weights) for key, weights in config.VERTICAL_WEIGHTS.items()},
     INSURANCE_RENEWAL_PROFILE.key: INSURANCE_RENEWAL_PROFILE,
     RETAIL_RFM_PROFILE.key: RETAIL_RFM_PROFILE,
+    PIPELINE_ENGAGEMENT_PROFILE.key: PIPELINE_ENGAGEMENT_PROFILE,
 }
 
 # Rows that max out every signal of the non-property profiles — used by the
@@ -161,6 +219,7 @@ PROFILES: dict[str, ScoringProfile] = {
 PROFILE_PERFECT_ROWS: dict[str, dict] = {
     "insurance_renewal": {"days_to_expiration": 15, "policy_count": 1, "premium_in_force": 2500},
     "retail_rfm": {"days_since_last_order": 0, "order_count_365d": 6, "lifetime_spend": 1000},
+    "pipeline_engagement": {"activity_count_90d": 5, "days_since_last_activity": 0, "deal_value": 10000},
 }
 
 # Which scoring profile an account uses when it isn't property/vertical-driven.
@@ -171,6 +230,11 @@ PROFILE_PERFECT_ROWS: dict[str, dict] = {
 SCORING_PROFILE_BY_BUSINESS_TYPE: dict[str, str] = {
     "insurance_agency": "insurance_renewal",
     "retail": "retail_rfm",
+    # Non-property pipeline businesses have no child-object roll-up; they score
+    # from the lead's own engagement, freshness, and deal value (see
+    # pipeline/account_rescore.py _ROLLUPS["pipeline_engagement"]).
+    "general_sales": "pipeline_engagement",
+    "professional_services": "pipeline_engagement",
 }
 
 

@@ -12,7 +12,7 @@ runs daily and can be triggered manually by an owner. The pure row-builders are
 DB-free and tested; rescore_account is thin SQL orchestration.
 """
 import logging
-from datetime import date
+from datetime import date, datetime
 
 from pipeline.profiles import PROFILES, SCORING_PROFILE_BY_BUSINESS_TYPE
 from pipeline.scoring import compute_score, _grade
@@ -50,6 +50,23 @@ def retail_rollup_row(last_order_date: date | None, order_count_365d: int,
     }
 
 
+def pipeline_engagement_rollup_row(deal_value, last_activity, activity_count_90d: int,
+                                   *, today: date | None = None) -> dict:
+    """Build the pipeline_engagement profile's input row for a non-property lead
+    (general sales / professional services): how much it's being worked, how
+    fresh the last touch is, and the deal value. `last_activity` is the most
+    recent of any logged call/task/note and may arrive as a TIMESTAMP, so it's
+    coerced to a date before the recency math."""
+    today = today or date.today()
+    if isinstance(last_activity, datetime):
+        last_activity = last_activity.date()
+    return {
+        "activity_count_90d": activity_count_90d or 0,
+        "days_since_last_activity": _days_between(today, last_activity),
+        "deal_value": float(deal_value or 0),
+    }
+
+
 # Per-profile roll-up query + row-builder. Each query returns
 # (property_id, *raw aggregates) for every non-archived record in the account;
 # the builder turns the raw aggregates into the profile's input row.
@@ -81,6 +98,31 @@ _ROLLUPS = {
             "GROUP BY p.id"
         ),
         "builder": lambda raw: retail_rollup_row(raw[0], raw[1], raw[2]),
+    },
+    "pipeline_engagement": {
+        # Non-property leads have no child-object table to roll up, so engagement
+        # comes from the activity trail: logged contacts (contact_history),
+        # completed tasks, and notes. Scalar subqueries (not JOINs) keep the
+        # three one-to-many trails from fanning out each other's counts. Each is
+        # scoped by property_id, which is already account-scoped through p.
+        "sql": (
+            "SELECT p.id, "
+            "p.estimated_job_value, "
+            "GREATEST("
+            "  (SELECT MAX(ch.created_at) FROM contact_history ch WHERE ch.property_id = p.id), "
+            "  (SELECT MAX(t.completed_at) FROM tasks t WHERE t.property_id = p.id AND t.is_complete), "
+            "  (SELECT MAX(cn.created_at) FROM contact_notes cn WHERE cn.property_id = p.id)"
+            "), "
+            "  (SELECT COUNT(*) FROM contact_history ch WHERE ch.property_id = p.id "
+            "                   AND ch.created_at >= CURRENT_DATE - 90) "
+            "+ (SELECT COUNT(*) FROM tasks t WHERE t.property_id = p.id AND t.is_complete "
+            "                   AND t.completed_at >= CURRENT_DATE - 90) "
+            "+ (SELECT COUNT(*) FROM contact_notes cn WHERE cn.property_id = p.id "
+            "                   AND cn.created_at >= CURRENT_DATE - 90) "
+            "FROM properties p "
+            "WHERE p.account_id = %s AND p.archived_at IS NULL"
+        ),
+        "builder": lambda raw: pipeline_engagement_rollup_row(raw[0], raw[1], raw[2]),
     },
 }
 
