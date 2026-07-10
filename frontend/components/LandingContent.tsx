@@ -6,6 +6,19 @@ import {
   Crosshair, Map, Bell, Play, Star, Check, Users, HardHat, Wrench,
 } from 'lucide-react'
 
+// Verticals strip — first entry doubles as the static fallback under reduced motion.
+const VERTICALS = [
+  'HVAC Services', 'Pool & Spa', 'Solar Install', 'Epoxy Flooring', 'Roofing Co.',
+  'Pest Control', 'Insurance', 'Real Estate', 'Security', 'Lawn & Landscaping',
+]
+
+// Rotating audience in the hero badge — the inclusive umbrella term leads so it's
+// what shows when animations are off.
+const AUDIENCES = [
+  'local service businesses', 'HVAC contractors', 'insurance agents',
+  'solar installers', 'real estate teams', 'pest control pros',
+]
+
 const AxonMark = ({ size = 28, maskId }: { size?: number; maskId: string }) => (
   <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true">
     <mask id={maskId}>
@@ -37,6 +50,16 @@ export default function LandingContent() {
     }
   }, [])
 
+  // ── Nav elevation on scroll (style state, not motion — runs even with reduced motion). ──
+  useEffect(() => {
+    const nav = rootRef.current?.querySelector('.lp-nav')
+    if (!nav) return
+    const onScroll = () => nav.classList.toggle('is-scrolled', window.scrollY > 8)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
   // ── Scroll/entrance animations (ported from the marketing kit). ──
   useEffect(() => {
     const root = rootRef.current
@@ -53,7 +76,7 @@ export default function LandingContent() {
       ['#pipeline .lp-split > div:first-child', null],
       ['#pipeline .lp-panel', null],
       ['.lp-proof-grid', '.lp-stat'],
-      ['.lp-strip-row', 'span'],
+      ['.lp-strip .lp-container', null],
       ['.lp-cta h2', null], ['.lp-cta-actions', null],
       ['.lp-footer-inner', '> div'],
     ]
@@ -166,6 +189,28 @@ export default function LandingContent() {
       })
     }
 
+    // Hero pointer parallax — the ambient glow drifts a few px toward the cursor.
+    const hero = root.querySelector<HTMLElement>('.lp-hero')
+    const heroBg = root.querySelector<HTMLElement>('.lp-hero-bg')
+    if (hero && heroBg) {
+      let moveRaf = 0
+      const onMove = (e: MouseEvent) => {
+        if (moveRaf) return
+        moveRaf = requestAnimationFrame(() => {
+          const r = hero.getBoundingClientRect()
+          const px = (e.clientX - r.left) / r.width - 0.5
+          const py = (e.clientY - r.top) / r.height - 0.5
+          heroBg.style.transform = `translate(${(px * 26).toFixed(1)}px, ${(py * 18).toFixed(1)}px)`
+          moveRaf = 0
+        })
+      }
+      hero.addEventListener('mousemove', onMove)
+      cleanups.push(() => {
+        hero.removeEventListener('mousemove', onMove)
+        cancelAnimationFrame(moveRaf)
+      })
+    }
+
     // Hero entrance — fire on next frame so transitions run.
     const raf = requestAnimationFrame(() => requestAnimationFrame(() => root.classList.add('lp-ready')))
     cleanups.push(() => cancelAnimationFrame(raf))
@@ -197,9 +242,19 @@ export default function LandingContent() {
 
       {/* ── Hero ── */}
       <header className="lp-hero">
+        <div className="lp-hero-bg" aria-hidden="true">
+          <span className="lp-orb lp-orb-a" />
+          <span className="lp-orb lp-orb-b" />
+          <span className="lp-orb lp-orb-c" />
+        </div>
         <div className="lp-container">
           <span className="lp-badge" data-hero style={{ '--i': 0 } as CSSProperties}>
-            <Zap size={14} /> Automated lead scoring for service businesses
+            <Zap size={14} /> Automated lead scoring for
+            <span className="lp-rotate">
+              {AUDIENCES.map((w, i) => (
+                <span key={w} style={{ animationDelay: `${i * 3}s` }}>{w}</span>
+              ))}
+            </span>
           </span>
           <h1 data-hero style={{ '--i': 1 } as CSSProperties}>
             Built on data,<br /><em>powered by people.</em>
@@ -223,44 +278,78 @@ export default function LandingContent() {
               <span style={{ background: 'var(--color-plum)' }}>SL</span>
               <span style={{ background: 'var(--color-accent)' }}>RF</span>
             </div>
-            <span>Used by HVAC, pool, solar, and flooring contractors</span>
+            <span>Built for local service businesses — from contractors to insurance agents</span>
           </div>
 
-          {/* ── Video header ── */}
-          <div className="lp-video-wrap">
-            <div className="lp-video-chrome">
-              <span className="lp-dot" style={{ background: '#E26A6A' }} />
-              <span className="lp-dot" style={{ background: '#E2B06A' }} />
-              <span className="lp-dot" style={{ background: '#6AE28B' }} />
+          {/* ── Video header + floating scored-lead chips ── */}
+          <div className="lp-hero-visual">
+            <div className="lp-video-wrap">
+              <div className="lp-video-chrome">
+                <span className="lp-dot" style={{ background: '#E26A6A' }} />
+                <span className="lp-dot" style={{ background: '#E2B06A' }} />
+                <span className="lp-dot" style={{ background: '#6AE28B' }} />
+              </div>
+              <div className="lp-video-stage">
+                <video ref={videoRef} autoPlay muted loop playsInline poster="" preload="auto">
+                  <source src="/hero-demo.mp4" type="video/mp4" />
+                </video>
+                <div className="lp-video-poster" ref={posterRef}>
+                  <button
+                    type="button"
+                    className="lp-play"
+                    aria-label="Play product demo"
+                    onClick={() => videoRef.current?.play().catch(() => {})}
+                  >
+                    <Play size={30} color="#fff" style={{ marginLeft: 4 }} />
+                  </button>
+                  <div className="lp-video-caption">See Axon in action</div>
+                </div>
+              </div>
             </div>
-            <div className="lp-video-stage">
-              <video ref={videoRef} autoPlay muted loop playsInline poster="" preload="auto">
-                <source src="/hero-demo.mp4" type="video/mp4" />
-              </video>
-              <div className="lp-video-poster" ref={posterRef}>
-                <button
-                  type="button"
-                  className="lp-play"
-                  aria-label="Play product demo"
-                  onClick={() => videoRef.current?.play().catch(() => {})}
-                >
-                  <Play size={30} color="#fff" style={{ marginLeft: 4 }} />
-                </button>
-                <div className="lp-video-caption">See Axon in action</div>
+
+            <div className="lp-chip lp-chip-a" aria-hidden="true">
+              <div className="lp-chip-in">
+                <span className="lp-chip-grade">A</span>
+                <div>
+                  <b>1842 Westheimer Rd</b>
+                  <span className="lp-chip-sub">Score 94 · HVAC replacement</span>
+                </div>
+              </div>
+            </div>
+            <div className="lp-chip lp-chip-b" aria-hidden="true">
+              <div className="lp-chip-in">
+                <span className="lp-chip-grade">A</span>
+                <div>
+                  <b>5120 Kirby Dr</b>
+                  <span className="lp-chip-sub">Score 91 · $2.4k policy renewal</span>
+                </div>
+              </div>
+            </div>
+            <div className="lp-chip lp-chip-c" aria-hidden="true">
+              <div className="lp-chip-in">
+                <span className="lp-chip-dot" />
+                <div>
+                  <b>124 new leads</b>
+                  <span className="lp-chip-sub">Scored overnight in your territory</span>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </header>
 
-      {/* ── Industry strip ── */}
+      {/* ── Industry strip — continuous marquee; tags are duplicated once for the loop ── */}
       <div className="lp-strip">
         <div className="lp-container">
-          <p className="lp-strip-label">Built for service contractors across verticals</p>
-          <div className="lp-strip-row">
-            <span>HVAC Services</span><span>Pool &amp; Spa</span><span>Solar Install</span>
-            <span>Epoxy Flooring</span><span>Roofing Co.</span><span>Pest Control</span>
+          <p className="lp-strip-label">Built for local service businesses across verticals</p>
+          <div className="lp-marquee" aria-label={VERTICALS.join(', ')}>
+            <div className="lp-marquee-track">
+              {VERTICALS.map((v) => <span key={v}>{v}</span>)}
+              {VERTICALS.map((v) => <span key={`${v}-dup`} className="lp-marquee-dup" aria-hidden="true">{v}</span>)}
+            </div>
           </div>
+          <p className="lp-strip-tail">…and any business that sells territory by territory</p>
+          <p className="lp-strip-inclusion">If your customers have an address, Axon can find and rank them.</p>
         </div>
       </div>
 
@@ -277,7 +366,7 @@ export default function LandingContent() {
             <div className="lp-feature">
               <div className="lp-feature-ic" style={{ background: 'var(--color-accent-100)', color: 'var(--color-accent-300)' }}><Star size={18} /></div>
               <h3>Lead scoring engine</h3>
-              <p>Axon pulls public property records for your target ZIP codes and scores every address by opportunity size, condition signals, and vertical fit.</p>
+              <p>Axon pulls public property records for your territory and scores every address by opportunity size, condition signals, and vertical fit.</p>
               <div className="lp-feature-demo lp-demo-score" aria-hidden="true">
                 <div className="lp-demo-score-head">
                   <span className="lp-demo-score-addr">1842 Westheimer Rd</span>
@@ -411,6 +500,14 @@ export default function LandingContent() {
                     <span className="lp-panel-metric" style={{ color: 'var(--color-accent-300)' }}>94</span>
                   </div>
                   <div className="lp-panel-item">
+                    <span className="lp-panel-dot" style={{ background: 'var(--color-gold)' }} />
+                    <div>
+                      <h5>5120 Kirby Dr — Grade A</h5>
+                      <p>Long-tenure homeowner, renewal window open. $2.4k policy renewal opportunity.</p>
+                    </div>
+                    <span className="lp-panel-metric" style={{ color: 'var(--color-gold)' }}>91</span>
+                  </div>
+                  <div className="lp-panel-item">
                     <span className="lp-panel-dot" style={{ background: 'var(--color-moss)' }} />
                     <div>
                       <h5>504 River Oaks Blvd — Quote sent</h5>
@@ -483,7 +580,7 @@ export default function LandingContent() {
             <div className="lp-eyebrow" style={{ justifyContent: 'center' }}><Map size={12} /> How it works</div>
             <h2 className="lp-h2">From territory to closed job — in one workflow</h2>
             <p className="lp-section-sub" style={{ margin: '0 auto' }}>
-              Point Axon at your ZIP codes and vertical, and it handles the rest — from lead discovery to invoicing.
+              Point Axon at your territory and vertical, and it handles the rest — from lead discovery to invoicing.
             </p>
           </div>
           <div className="lp-process-grid">
@@ -491,7 +588,7 @@ export default function LandingContent() {
               <div className="lp-pstep" data-step="0">
                 <div className="lp-pstep-n"><b>01</b><span>Set your territory</span></div>
                 <h3>Tell Axon where to look</h3>
-                <p>Choose your ZIP codes and service vertical. Schedule scoring runs daily, weekly, or on demand — then let the engine work the public property records for you.</p>
+                <p>Choose the ZIP codes that make up your territory and pick your vertical. Schedule scoring runs daily, weekly, or on demand — then let the engine work the public property records for you.</p>
               </div>
               <div className="lp-pstep" data-step="1">
                 <div className="lp-pstep-n"><b>02</b><span>Work your ranked leads</span></div>
@@ -522,6 +619,7 @@ export default function LandingContent() {
                 <div className="lp-pvis" data-vis="1">
                   <div className="lp-pvis-head"><span className="t-eyebrow">Ranked leads</span></div>
                   <div className="lp-mini-row"><span className="grade" style={{ background: 'var(--color-success-bg)', color: 'var(--color-success)' }}>A</span><span className="addr">1842 Westheimer Rd</span><span className="val">$14k</span></div>
+                  <div className="lp-mini-row"><span className="grade" style={{ background: 'var(--color-success-bg)', color: 'var(--color-success)' }}>A</span><span className="addr">5120 Kirby Dr</span><span className="val">$2.4k</span></div>
                   <div className="lp-mini-row"><span className="grade" style={{ background: 'var(--color-success-bg)', color: 'var(--color-success)' }}>A</span><span className="addr">504 River Oaks Blvd</span><span className="val">$6.2k</span></div>
                   <div className="lp-mini-row"><span className="grade" style={{ background: 'var(--color-info-bg)', color: 'var(--color-info)' }}>B</span><span className="addr">3300 Kirby Dr</span><span className="val">$9.8k</span></div>
                   <div className="lp-mini-row"><span className="grade" style={{ background: 'var(--color-info-bg)', color: 'var(--color-info)' }}>B</span><span className="addr">77 Tanglewood Ln</span><span className="val">$12k</span></div>

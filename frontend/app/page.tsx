@@ -3,7 +3,7 @@ import LandingContent from '@/components/LandingContent'
 
 export const metadata = {
   title: 'Axon — Built on data, focused on people',
-  description: 'Axon turns public property data into ranked leads and runs your entire service-business back-office in one place.',
+  description: 'Axon turns public property data into ranked leads and runs your entire local service business back office in one place.',
 }
 
 export default function LandingPage() {
