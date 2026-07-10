@@ -42,7 +42,8 @@ def _job_id(schedule_id: int) -> str:
 
 def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: int,
                   top_n: int | None = None, center_address: str | None = None,
-                  radius_mi: float | None = None, region_id: str | None = None):
+                  radius_mi: float | None = None, region_id: str | None = None,
+                  seed_source: str | None = None):
     """Execute the enrichment pipeline step-by-step, checking for cancellation between steps.
 
     `top_n` (Top-N cap) and `center_address` + `radius_mi` (radius-from-address)
@@ -54,6 +55,12 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
     ZIP the region touches, seeding each ZIP from the free local HCAD data
     instead of the paid RentCast scan. When it is None the run targets the single
     `zip_code` exactly as before.
+
+    `seed_source` picks where step 1 gets its addresses for a plain ZIP run:
+    "hcad" (free, local Harris County data) or "rentcast" (paid address scan).
+    None defers to the SEED_SOURCE env default. Region runs ignore it — they
+    always seed from HCAD. Choosing "hcad" does not skip RentCast entirely: the
+    later property step still gap-fills whatever HCAD left NULL.
     """
     conn = psycopg2.connect(DATABASE_URL)
     capped = bool(top_n or (center_address and radius_mi))
@@ -79,12 +86,15 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
         None if the run was cancelled mid-way (status already set)."""
         sources: dict = {}
 
-        # Step 1 — Seed (free HCAD for region runs, else RentCast/CSV)
+        # Step 1 — Seed (free HCAD for region runs and for seed_source="hcad",
+        # else RentCast/CSV). `seed()` resolves the default when seed_source is None.
         if _check_cancel(): return None
+        from config import SEED_SOURCE
         from pipeline.seed import seed
-        n = seed(zip_code, account_id, csv_path=None, limit=None, region_id=region_id)
-        log.info("[1/8] run=%d Seed (%s): %d records", run_id,
-                 "hcad" if region_id else "rentcast", n)
+        n = seed(zip_code, account_id, csv_path=None, limit=None, region_id=region_id,
+                 seed_source=seed_source)
+        resolved = "hcad" if region_id else (seed_source or SEED_SOURCE or "rentcast")
+        log.info("[1/8] run=%d Seed (%s): %d records", run_id, resolved, n)
 
         # Step 2 — Census
         if _check_cancel(): return None
@@ -295,12 +305,13 @@ def remove_schedule_job(schedule_id: int):
 
 def enqueue_run(run_id: int, zip_code: str, vertical: str | None, account_id: int,
                 top_n: int | None = None, center_address: str | None = None,
-                radius_mi: float | None = None):
+                radius_mi: float | None = None, seed_source: str | None = None):
     """Fire a one-off pipeline run immediately in the thread pool."""
     scheduler.add_job(
         _run_pipeline,
         id=f"run_{run_id}",
         args=[run_id, zip_code, vertical, account_id, top_n, center_address, radius_mi],
+        kwargs={"seed_source": seed_source},
         replace_existing=True,
     )
 
