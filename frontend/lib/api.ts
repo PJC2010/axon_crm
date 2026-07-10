@@ -453,8 +453,13 @@ export function deleteSchedule(id: number): Promise<void> {
 // neighborhood, seeded free from local HCAD data across its ZIPs).
 export type RunTarget = { zip?: string; region_id?: string }
 
-export function triggerRun(target: RunTarget, vertical?: string, controls: VolumeControls = {}): Promise<PipelineRun> {
-  return req('/pipeline/run', { method: 'POST', body: JSON.stringify({ ...target, vertical, ...controls }) })
+// Where step 1 gets addresses. 'hcad' seeds free from local Harris County data
+// (RentCast then only gap-fills NULLs); 'rentcast' pays for the address scan.
+// Omit to use the server's SEED_SOURCE default. Region runs always use HCAD.
+export type SeedSource = 'rentcast' | 'hcad'
+
+export function triggerRun(target: RunTarget, vertical?: string, controls: VolumeControls = {}, seedSource?: SeedSource): Promise<PipelineRun> {
+  return req('/pipeline/run', { method: 'POST', body: JSON.stringify({ ...target, vertical, ...controls, seed_source: seedSource }) })
 }
 
 export function getPipelineRuns(limit = 20): Promise<PipelineRun[]> {

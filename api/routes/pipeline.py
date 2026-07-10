@@ -10,7 +10,7 @@ POST /api/pipeline/run                   — trigger manual run (owner only)
 GET  /api/pipeline/runs                  — recent runs
 GET  /api/pipeline/runs/{id}             — single run detail
 """
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from psycopg2.extensions import connection as PGConn
@@ -101,6 +101,11 @@ class RunCreate(BaseModel):
     top_n: Optional[int] = None
     center_address: Optional[str] = None
     radius_mi: Optional[float] = None
+    # Where step 1 gets its addresses. "hcad" seeds free from the local Harris
+    # County data (RentCast then only gap-fills NULLs downstream); "rentcast"
+    # pays for the address scan. None falls back to the SEED_SOURCE env default.
+    # Ignored for region runs, which always seed free from HCAD.
+    seed_source: Optional[Literal["rentcast", "hcad"]] = None
 
 
 # ── Pipeline Stages ──────────────────────────────────────────────────────
@@ -628,7 +633,8 @@ def trigger_run(body: RunCreate, current_user: dict = Depends(require_owner), db
                            top_n=body.top_n, center_address=body.center_address, radius_mi=body.radius_mi)
     else:
         enqueue_run(run["id"], body.zip, body.vertical, current_user["account_id"], top_n=body.top_n,
-                    center_address=body.center_address, radius_mi=body.radius_mi)
+                    center_address=body.center_address, radius_mi=body.radius_mi,
+                    seed_source=body.seed_source)
     return run
 
 
