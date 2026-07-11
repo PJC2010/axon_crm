@@ -40,6 +40,37 @@ ALL_COLS = [
 ]
 
 
+# Rows sharing one INSERT statement per batched round-trip. Postgres handles
+# large multi-row VALUES fine; this bounds per-statement size and memory.
+UPSERT_PAGE_SIZE = 500
+
+
+def _upsert_sql(data_cols: tuple) -> str:
+    """Build the INSERT ... ON CONFLICT statement for one column signature.
+
+    `data_cols` is the ordered tuple of non-None columns shared by every row in
+    a batch. account_id is prepended (it is part of the conflict key). Uses the
+    ``VALUES %s`` placeholder that psycopg2's execute_values expands.
+    """
+    col_names = ", ".join(["account_id", *data_cols])
+    updates = ", ".join(
+        f"{c} = EXCLUDED.{c}" for c in data_cols if c not in ("address", "zip")
+    )
+    # Merge enrichment_flags rather than overwrite so earlier steps' flags survive.
+    if "enrichment_flags" in data_cols:
+        updates = updates.replace(
+            "enrichment_flags = EXCLUDED.enrichment_flags",
+            "enrichment_flags = properties.enrichment_flags || EXCLUDED.enrichment_flags",
+        )
+    # A row whose only non-key columns are address/zip has nothing to update; skip
+    # the write on conflict rather than emit an invalid empty SET clause.
+    conflict = f"DO UPDATE SET {updates}" if updates else "DO NOTHING"
+    return (
+        f"INSERT INTO properties ({col_names}) VALUES %s "
+        f"ON CONFLICT (account_id, address, zip) {conflict} RETURNING 1"
+    )
+
+
 def upsert_properties(conn, rows: list[dict], account_id: int) -> int:
     """
     Upsert a list of property dicts into the properties table for one org.
@@ -47,47 +78,40 @@ def upsert_properties(conn, rows: list[dict], account_id: int) -> int:
     copy of a property. Only non-None values are written so a partial
     enrichment step does not clobber fields set by an earlier step.
     Returns the number of rows affected.
+
+    Rows are grouped by their set of non-None columns and each group is written
+    with a single batched multi-row INSERT (execute_values), so a ZIP of N
+    properties costs a handful of round-trips instead of N.
     """
     if not rows:
         return 0
 
-    all_cols = ALL_COLS
+    # Group by column signature: rows with the same non-None columns share one
+    # INSERT statement. account_id is written first and is part of the conflict key.
+    groups: dict[tuple, list[list]] = {}
+    for row in rows:
+        data_cols = tuple(c for c in ALL_COLS if row.get(c) is not None)
+        if not data_cols:
+            continue
+        values = [account_id] + [
+            psycopg2.extras.Json(row[c])
+            if c == "enrichment_flags" and isinstance(row[c], dict)
+            else row[c]
+            for c in data_cols
+        ]
+        groups.setdefault(data_cols, []).append(values)
 
+    count = 0
     with conn.cursor() as cur:
-        count = 0
-        for row in rows:
-            data_cols = [c for c in all_cols if row.get(c) is not None]
-            if not data_cols:
-                continue
-            # account_id is always written first and is part of the conflict key.
-            cols = ["account_id"] + data_cols
-            values = [account_id] + [
-                psycopg2.extras.Json(row[c]) if c == "enrichment_flags" and isinstance(row[c], dict) else row[c]
-                for c in data_cols
-            ]
-            placeholders = ", ".join(["%s"] * len(cols))
-            col_names = ", ".join(cols)
-            updates = ", ".join(
-                f"{c} = EXCLUDED.{c}" for c in data_cols
-                if c not in ("address", "zip")
+        for data_cols, argslist in groups.items():
+            # fetch=True aggregates the RETURNING rows across all internal pages,
+            # so len() is an exact affected-row count (insert + update) even when
+            # execute_values splits the batch by page_size.
+            returned = psycopg2.extras.execute_values(
+                cur, _upsert_sql(data_cols), argslist,
+                page_size=UPSERT_PAGE_SIZE, fetch=True,
             )
-            # Merge enrichment_flags rather than overwrite
-            flags_merge = (
-                "enrichment_flags = properties.enrichment_flags || EXCLUDED.enrichment_flags"
-                if "enrichment_flags" in data_cols else ""
-            )
-            if flags_merge and updates:
-                updates = updates.replace(
-                    "enrichment_flags = EXCLUDED.enrichment_flags",
-                    flags_merge,
-                )
-            sql = f"""
-                INSERT INTO properties ({col_names})
-                VALUES ({placeholders})
-                ON CONFLICT (account_id, address, zip) DO UPDATE SET {updates}
-            """
-            cur.execute(sql, values)
-            count += cur.rowcount
+            count += len(returned)
         conn.commit()
     return count
 
