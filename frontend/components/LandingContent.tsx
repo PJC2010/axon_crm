@@ -4,6 +4,7 @@ import { useEffect, useRef, type CSSProperties } from 'react'
 import {
   ArrowRight, BookOpen, Columns3, FileText, DollarSign, GitBranch, Layers, Zap,
   Crosshair, Map, Bell, Play, Star, Check, Users, HardHat, Wrench,
+  Database, HelpCircle, X, Mail,
 } from 'lucide-react'
 
 const AxonMark = ({ size = 28, maskId }: { size?: number; maskId: string }) => (
@@ -50,10 +51,16 @@ export default function LandingContent() {
     const groups: Array<[string, string | null]> = [
       ['#features .lp-eyebrow', null], ['#features .lp-h2', null], ['#features .lp-section-sub', null],
       ['.lp-features', '.lp-feature'],
+      ['#compare .lp-eyebrow', null], ['#compare .lp-h2', null], ['#compare .lp-section-sub', null],
+      ['.lp-compare-grid', '.lp-compare-col'],
       ['#pipeline .lp-split > div:first-child', null],
       ['#pipeline .lp-panel', null],
       ['.lp-proof-grid', '.lp-stat'],
       ['.lp-strip-row', 'span'],
+      ['#pricing .lp-eyebrow', null], ['#pricing .lp-h2', null], ['#pricing .lp-section-sub', null],
+      ['.lp-pricing-grid', '.lp-price-card'],
+      ['#faq .lp-eyebrow', null], ['#faq .lp-h2', null],
+      ['.lp-faq-list', 'details'],
       ['.lp-cta h2', null], ['.lp-cta-actions', null],
       ['.lp-footer-inner', '> div'],
     ]
@@ -184,13 +191,14 @@ export default function LandingContent() {
           </a>
           <div className="lp-nav-links">
             <a href="#features">Features</a>
-            <a href="#pipeline">Pipeline</a>
             <a href="#how">How it works</a>
             <a href="#pricing">Pricing</a>
+            <a href="#faq">FAQ</a>
+            <a href="/preview">Live demo</a>
           </div>
           <div className="lp-nav-actions">
             <a href="/login" className="lp-btn lp-btn-ghost">Sign in</a>
-            <a href="/login" className="lp-btn lp-btn-accent">Get started</a>
+            <a href="/signup" className="lp-btn lp-btn-accent">Start free</a>
           </div>
         </div>
       </nav>
@@ -199,31 +207,30 @@ export default function LandingContent() {
       <header className="lp-hero">
         <div className="lp-container">
           <span className="lp-badge" data-hero style={{ '--i': 0 } as CSSProperties}>
-            <Zap size={14} /> Automated lead scoring for service businesses
+            <Zap size={14} /> Exclusive, scored leads for service businesses
           </span>
           <h1 data-hero style={{ '--i': 1 } as CSSProperties}>
-            Built on data,<br /><em>powered by people.</em>
+            Know which homeowners in your ZIP need you —<br /><em>before they call anyone.</em>
           </h1>
           <p className="lp-hero-sub" data-hero style={{ '--i': 2 } as CSSProperties}>
-            Axon gives small businesses enterprise-grade intelligence — without the complexity. Surface
-            the insights that matter, understand your customers, and make confident decisions every day.
+            Axon scores every property in your service area using county records, permits, equity,
+            and storm data — then hands you a ranked call list with the reason behind every score.
+            No shared leads. No contracts.
           </p>
           <div className="lp-hero-ctas" data-hero style={{ '--i': 3 } as CSSProperties}>
-            <a className="lp-btn lp-btn-accent lp-btn-lg" href="/login">
-              Open your dashboard <ArrowRight size={16} />
+            <a className="lp-btn lp-btn-accent lp-btn-lg" href="/signup">
+              Start free — no credit card <ArrowRight size={16} />
             </a>
-            <a className="lp-btn lp-btn-outline lp-btn-lg" href="#how">
-              <Play size={16} /> See how it works
+            <a className="lp-btn lp-btn-outline lp-btn-lg" href="/preview">
+              <Play size={16} /> Try the live demo
             </a>
           </div>
           <div className="lp-hero-trust" data-hero style={{ '--i': 4 } as CSSProperties}>
-            <div className="lp-avatars">
-              <span style={{ background: 'var(--color-moss)' }}>HC</span>
-              <span style={{ background: 'var(--color-ocean)' }}>PS</span>
-              <span style={{ background: 'var(--color-plum)' }}>SL</span>
-              <span style={{ background: 'var(--color-accent)' }}>RF</span>
-            </div>
-            <span>Used by HVAC, pool, solar, and flooring contractors</span>
+            <Database size={15} style={{ flexShrink: 0 }} />
+            <span>
+              Scores built from Harris County appraisal records, US Census data, NOAA storm
+              reports, and building permits — and every lead shows its work.
+            </span>
           </div>
 
           {/* ── Video header ── */}
@@ -259,10 +266,45 @@ export default function LandingContent() {
           <p className="lp-strip-label">Built for service contractors across verticals</p>
           <div className="lp-strip-row">
             <span>HVAC Services</span><span>Pool &amp; Spa</span><span>Solar Install</span>
-            <span>Epoxy Flooring</span><span>Roofing Co.</span><span>Pest Control</span>
+            <span>Epoxy Flooring</span><span>Roofing Co.</span><span>Pressure Washing</span>
           </div>
         </div>
       </div>
+
+      {/* ── Name the enemy: shared leads vs. Axon ── */}
+      <section className="lp-section" id="compare" style={{ paddingTop: 72, paddingBottom: 72 }}>
+        <div className="lp-container">
+          <div className="lp-eyebrow"><Crosshair size={12} /> Why contractors switch</div>
+          <h2 className="lp-h2">The same lead, sold to five of you, for $80.<br />Sound familiar?</h2>
+          <p className="lp-section-sub">
+            Lead marketplaces sell one homeowner to every contractor in the ZIP and bill you per
+            name. Axon works the other way: it scores the properties around you and builds a list
+            that&apos;s yours alone.
+          </p>
+          <div className="lp-compare-grid">
+            <div className="lp-compare-col">
+              <h3>Buying shared leads</h3>
+              <ul>
+                <li><X size={15} /> The same lead sold to 4–6 competitors</li>
+                <li><X size={15} /> $15–$120 per shared lead, win or lose</li>
+                <li><X size={15} /> Annual contracts and cancellation fees</li>
+                <li><X size={15} /> No idea why you got the lead</li>
+                <li><X size={15} /> The platform owns the customer relationship</li>
+              </ul>
+            </div>
+            <div className="lp-compare-col lp-compare-axon">
+              <h3>Working an Axon list</h3>
+              <ul>
+                <li><Check size={15} /> Exclusive — generated from your territory, nobody else has it</li>
+                <li><Check size={15} /> Flat monthly price, however many leads you work</li>
+                <li><Check size={15} /> Month to month, cancel anytime</li>
+                <li><Check size={15} /> Every score explained: age, equity, permits, storms</li>
+                <li><Check size={15} /> Your list, your customers, your data — exportable anytime</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* ── Features ── */}
       <section className="lp-section" id="features" style={{ paddingTop: 80 }}>
@@ -433,15 +475,20 @@ export default function LandingContent() {
         </div>
       </section>
 
-      {/* ── Stats ── */}
+      {/* ── Where the data comes from (transparency band) ── */}
       <section className="lp-proof">
         <div className="lp-container">
+          <p className="lp-proof-label"><Database size={13} /> Where the data comes from</p>
           <div className="lp-proof-grid">
-            <div className="lp-stat"><span className="lp-stat-v accent">50k+</span><span className="lp-stat-l">Property leads<br />scored per territory</span></div>
-            <div className="lp-stat"><span className="lp-stat-v">5 hrs</span><span className="lp-stat-l">Saved per week vs.<br />manual spreadsheets</span></div>
-            <div className="lp-stat"><span className="lp-stat-v accent">3.8×</span><span className="lp-stat-l">Higher contact rate<br />on grade-A leads</span></div>
-            <div className="lp-stat"><span className="lp-stat-v">1 app</span><span className="lp-stat-l">Replacing CRM, tasks,<br />expenses &amp; invoicing</span></div>
+            <div className="lp-stat"><span className="lp-stat-v accent" style={{ fontSize: 22 }}>County records</span><span className="lp-stat-l">Harris County appraisal data:<br />year built, value, owner, pool, garage</span></div>
+            <div className="lp-stat"><span className="lp-stat-v" style={{ fontSize: 22 }}>US Census</span><span className="lp-stat-l">Neighborhood income &amp;<br />demographic context by ZIP</span></div>
+            <div className="lp-stat"><span className="lp-stat-v accent" style={{ fontSize: 22 }}>NOAA storms</span><span className="lp-stat-l">Hail, wind &amp; tornado reports<br />matched to each address</span></div>
+            <div className="lp-stat"><span className="lp-stat-v" style={{ fontSize: 22 }}>Building permits</span><span className="lp-stat-l">Renovation history that signals<br />budget and project timing</span></div>
           </div>
+          <p className="lp-proof-foot">
+            No black boxes: open any lead and the &ldquo;Why this score&rdquo; panel lists the exact
+            signals behind its grade.
+          </p>
         </div>
       </section>
 
@@ -542,13 +589,133 @@ export default function LandingContent() {
         </div>
       </section>
 
+      {/* ── Pricing ── */}
+      <section className="lp-section" id="pricing" style={{ paddingTop: 88 }}>
+        <div className="lp-container">
+          <div className="lp-eyebrow"><DollarSign size={12} /> Pricing</div>
+          <h2 className="lp-h2">The advertised price is the real price</h2>
+          <p className="lp-section-sub">
+            Flat monthly plans. No contracts, no per-lead fees, no cancellation penalties — cancel
+            anytime and your data leaves with you. Every plan starts with 14 days free, no credit
+            card required.
+          </p>
+          <div className="lp-pricing-grid">
+            <div className="lp-price-card">
+              <h3>Starter</h3>
+              <div className="lp-price"><span className="lp-price-n">$49</span><span className="lp-price-per">/mo</span></div>
+              <p className="lp-price-blurb">Get organized: every lead, task, and conversation in one place.</p>
+              <ul>
+                <li><Check size={15} /> Leads, Kanban pipeline &amp; tasks</li>
+                <li><Check size={15} /> Notes, history &amp; saved segments</li>
+                <li><Check size={15} /> Two-way texting &amp; templates</li>
+                <li><Check size={15} /> CSV import &amp; full export</li>
+              </ul>
+              <a className="lp-btn lp-btn-outline" href="/signup">Start free</a>
+            </div>
+            <div className="lp-price-card">
+              <h3>Growth</h3>
+              <div className="lp-price"><span className="lp-price-n">$129</span><span className="lp-price-per">/mo</span></div>
+              <p className="lp-price-blurb">Run the back office: from quote to paid, in the same tab.</p>
+              <ul>
+                <li><Check size={15} /> Everything in Starter</li>
+                <li><Check size={15} /> Quotes with public accept links</li>
+                <li><Check size={15} /> Invoicing, online payments &amp; AR aging</li>
+                <li><Check size={15} /> Bookkeeping, receipts &amp; P&amp;L</li>
+                <li><Check size={15} /> Workflow automations &amp; appointments</li>
+              </ul>
+              <a className="lp-btn lp-btn-outline" href="/signup">Start free</a>
+            </div>
+            <div className="lp-price-card lp-price-featured">
+              <span className="lp-price-flag">Replaces your lead budget</span>
+              <h3>Pro</h3>
+              <div className="lp-price"><span className="lp-price-n">$249</span><span className="lp-price-per">/mo</span></div>
+              <p className="lp-price-blurb">The lead machine: exclusive scored lists for your territory.</p>
+              <ul>
+                <li><Check size={15} /> Everything in Growth</li>
+                <li><Check size={15} /> Scored, graded property lists by ZIP</li>
+                <li><Check size={15} /> &ldquo;Why this score&rdquo; on every lead</li>
+                <li><Check size={15} /> Storm &amp; permit timing signals</li>
+                <li><Check size={15} /> Property map, territories &amp; heatmaps</li>
+                <li><Check size={15} /> Marketing insights</li>
+              </ul>
+              <a className="lp-btn lp-btn-accent" href="/signup">Start free</a>
+            </div>
+          </div>
+          <p className="lp-pricing-foot">
+            One extra job pays for a year of Axon — a single $4,800 pool deck or $12,500 HVAC
+            change-out covers the Pro plan several times over.
+          </p>
+        </div>
+      </section>
+
+      {/* ── FAQ ── */}
+      <section className="lp-section" id="faq" style={{ paddingTop: 24 }}>
+        <div className="lp-container">
+          <div className="lp-eyebrow"><HelpCircle size={12} /> Questions, answered straight</div>
+          <h2 className="lp-h2">What skeptical owners ask us</h2>
+          <div className="lp-faq-list">
+            <details>
+              <summary>Where does the lead data actually come from?</summary>
+              <p>
+                Public records: county appraisal rolls (year built, value, owner, pool, garage),
+                US Census neighborhood data, NOAA/NWS storm reports, and building permits. Axon
+                combines them into a 0–100 score with a letter grade — and every lead shows the
+                exact signals behind its score, so you never have to take a number on faith.
+              </p>
+            </details>
+            <details>
+              <summary>How is this different from buying leads?</summary>
+              <p>
+                A purchased lead is one homeowner who filled out a form — sold to you and several
+                competitors at once. An Axon list is every promising property in your service
+                area, ranked, with owner and contact details where available — and it&apos;s
+                exclusively yours. You pay a flat monthly price, not per name.
+              </p>
+            </details>
+            <details>
+              <summary>Is there a contract?</summary>
+              <p>
+                No. Month to month, cancel anytime, and the advertised price is the price. We
+                built Axon for contractors burned by auto-renewing lead-gen contracts — we&apos;re
+                not going to run the same play.
+              </p>
+            </details>
+            <details>
+              <summary>Do I have to rip out QuickBooks or my field-service app?</summary>
+              <p>
+                No. Axon owns the front of your business — where the next customer comes from and
+                how the deal gets worked. Keep QuickBooks for accounting or Jobber for dispatch as
+                long as you like: Axon imports and exports clean CSVs, so nothing is trapped.
+              </p>
+            </details>
+            <details>
+              <summary>Is contacting these homeowners legal?</summary>
+              <p>
+                The data comes from public records, and lots of businesses market from the same
+                sources. Outreach rules still apply to you as the caller — telemarketing laws like
+                the federal Do-Not-Call registry for cold calls, and consent requirements for
+                texting. Axon shows where every contact came from so you can make honest, informed
+                outreach decisions. Details in our <a href="/privacy">Privacy Policy</a>.
+              </p>
+            </details>
+            <details>
+              <summary>What happens to my data if I cancel?</summary>
+              <p>
+                It leaves with you. Every list, contact, note, invoice, and expense exports to CSV
+                at any time — no exit fees, no data hostage-taking.
+              </p>
+            </details>
+          </div>
+        </div>
+      </section>
+
       {/* ── CTA ── */}
       <section className="lp-cta">
         <div className="lp-container">
-          <h2>Predictive insights,<br /><em>personal connections</em></h2>
+          <h2>Stop paying for shared leads.<br /><em>Start working your own list.</em></h2>
           <div className="lp-cta-actions">
-            <a className="lp-btn lp-btn-accent lp-btn-lg" href="/login">Open your dashboard</a>
-            <a className="lp-btn lp-btn-ghost lp-btn-lg" href="#how" style={{ color: 'rgba(255,255,255,0.85)' }}>See how it works</a>
+            <a className="lp-btn lp-btn-accent lp-btn-lg" href="/signup">Start free — no credit card</a>
+            <a className="lp-btn lp-btn-ghost lp-btn-lg" href="/preview" style={{ color: 'rgba(255,255,255,0.85)' }}>Try the live demo</a>
           </div>
         </div>
       </section>
@@ -565,31 +732,30 @@ export default function LandingContent() {
               <div className="lp-footer-ct">Product</div>
               <ul className="lp-footer-links">
                 <li><a href="#features">Features</a></li>
-                <li><a href="#pipeline">Pipeline</a></li>
                 <li><a href="#how">How it works</a></li>
-              </ul>
-            </div>
-            <div>
-              <div className="lp-footer-ct">Platform</div>
-              <ul className="lp-footer-links">
-                <li><a href="/login">Lead scoring</a></li>
-                <li><a href="/login">Kanban pipeline</a></li>
-                <li><a href="/login">Invoicing &amp; AR</a></li>
-                <li><a href="/login">Bookkeeping</a></li>
+                <li><a href="#pricing">Pricing</a></li>
+                <li><a href="/preview">Live demo</a></li>
               </ul>
             </div>
             <div>
               <div className="lp-footer-ct">Account</div>
               <ul className="lp-footer-links">
+                <li><a href="/signup">Start free</a></li>
                 <li><a href="/login">Sign in</a></li>
-                <li><a href="#">Privacy</a></li>
-                <li><a href="#">Terms</a></li>
+                <li><a href="mailto:castillop92@gmail.com"><Mail size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} />Contact us</a></li>
+              </ul>
+            </div>
+            <div>
+              <div className="lp-footer-ct">Legal</div>
+              <ul className="lp-footer-links">
+                <li><a href="/privacy">Privacy Policy</a></li>
+                <li><a href="/terms">Terms of Service</a></li>
               </ul>
             </div>
           </div>
           <div className="lp-footer-bottom">
             <span>© 2026 Axon, a Castillo &amp; Co LLC company.</span>
-            <span>Predictive insights, personal connections</span>
+            <span>Built on data, powered by people</span>
           </div>
         </div>
       </footer>
