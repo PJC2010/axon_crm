@@ -482,6 +482,46 @@ def schedule_recurring_invoices():
     log.info("Scheduled daily recurring invoices at %02d:30 UTC", WORKFLOW_TICK_HOUR)
 
 
+TRIAL_EXPIRY_LOCK_KEY = 742026005
+
+
+def run_trial_expiry_tick():
+    """Daily: downgrade expired self-serve trials with no subscription to starter."""
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_try_advisory_lock(%s)", (TRIAL_EXPIRY_LOCK_KEY,))
+            if not cur.fetchone()[0]:
+                log.info("Trial expiry tick skipped — another worker holds the lock")
+                return
+        try:
+            from api.billing import expire_stale_trials
+            n = expire_stale_trials(conn)
+            if n:
+                log.info("Trial expiry tick: downgraded %d account(s) to starter", n)
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_unlock(%s)", (TRIAL_EXPIRY_LOCK_KEY,))
+            conn.commit()
+    except Exception:
+        log.exception("Trial expiry tick failed")
+    finally:
+        conn.close()
+
+
+def schedule_trial_expiry():
+    """Register the daily trial-expiry cron (idempotent)."""
+    from config import WORKFLOW_TICK_HOUR
+    scheduler.add_job(
+        run_trial_expiry_tick,
+        trigger=CronTrigger(hour=WORKFLOW_TICK_HOUR, minute=50, timezone="UTC"),
+        id="trial_expiry_daily",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    log.info("Scheduled daily trial expiry at %02d:50 UTC", WORKFLOW_TICK_HOUR)
+
+
 GEO_RESCORE_LOCK_KEY = 742026004
 
 

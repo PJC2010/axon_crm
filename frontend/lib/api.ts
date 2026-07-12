@@ -1,4 +1,4 @@
-import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, StripeStatus, PublicPayInfo, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, MessageTemplate, MessageTemplateCreate, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType, HeatmapMetric, HeatmapResponse, ClusterCollection, ProspectSeed, ProspectResult, BlastRadiusResult, ServiceArea, EventCollection, EventCreate } from './types'
+import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, StripeStatus, PublicPayInfo, BillingInfo, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, MessageTemplate, MessageTemplateCreate, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType, HeatmapMetric, HeatmapResponse, ClusterCollection, ProspectSeed, ProspectResult, BlastRadiusResult, ServiceArea, EventCollection, EventCreate } from './types'
 import { getToken, clearToken } from './auth'
 
 // Use 127.0.0.1 (not localhost): on macOS `localhost` resolves to IPv6 ::1
@@ -67,6 +67,57 @@ export function loginWithApple(idToken: string): Promise<{ access_token: string 
 
 export function getMe(): Promise<User> {
   return req('/auth/me')
+}
+
+// Self-serve signup: creates a fresh org + owner user and returns a JWT with the
+// same shape as login(), so the caller stores access_token the same way.
+export function signup(companyName: string, email: string, password: string): Promise<{ access_token: string }> {
+  return req('/auth/signup', {
+    method: 'POST',
+    body: JSON.stringify({ company_name: companyName, email, password }),
+  })
+}
+
+// Whether self-serve signup is enabled server-side (SELF_SERVE_SIGNUP).
+export function getSignupStatus(): Promise<{ enabled: boolean }> {
+  return req('/auth/signup-status')
+}
+
+// Always resolves with a generic ok — the server never reveals whether the
+// email has an account.
+export function requestPasswordReset(email: string): Promise<{ ok: boolean; detail?: string }> {
+  return req('/auth/request-password-reset', { method: 'POST', body: JSON.stringify({ email }) })
+}
+
+export function resetPassword(token: string, newPassword: string): Promise<{ ok: boolean }> {
+  return req('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ token, new_password: newPassword }),
+  })
+}
+
+export function verifyEmail(token: string): Promise<{ ok: boolean }> {
+  return req('/auth/verify-email', { method: 'POST', body: JSON.stringify({ token }) })
+}
+
+export function resendVerification(): Promise<{ ok: boolean; sent: boolean }> {
+  return req('/auth/resend-verification', { method: 'POST' })
+}
+
+// ── Subscription billing (the account paying for Axon) ───────────────────────
+
+export function getBilling(): Promise<BillingInfo> {
+  return req('/billing')
+}
+
+// Owner-only; returns a Stripe Checkout URL to subscribe to a plan.
+export function startPlanCheckout(plan: string): Promise<{ url: string }> {
+  return req('/billing/checkout', { method: 'POST', body: JSON.stringify({ plan }) })
+}
+
+// Owner-only; returns a Stripe customer-portal URL (change plan, card, cancel).
+export function openBillingPortal(): Promise<{ url: string }> {
+  return req('/billing/portal', { method: 'POST' })
 }
 
 // Resolved plan + enabled-module map for the current account. Powers entitlement

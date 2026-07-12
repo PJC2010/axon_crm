@@ -219,6 +219,30 @@ STRIPE_WEBHOOK_SECRET   = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 # Platform fee taken on each charge, as a percentage of the amount (e.g. 2.0).
 STRIPE_PLATFORM_FEE_PCT = float(os.getenv("STRIPE_PLATFORM_FEE_PCT", "2.0"))
 
+# ── Self-serve signup ─────────────────────────────────────────────────────────
+# POST /auth/signup and OAuth first-login provisioning create a new account +
+# owner user (api/routes/signup.py). Set to "false" to return to the invite-only
+# model (signup 403s and unknown OAuth identities are rejected again).
+SELF_SERVE_SIGNUP = os.getenv("SELF_SERVE_SIGNUP", "true").lower() != "false"
+# New self-serve accounts start on the full `pro` module set for this many days
+# (status 'trialing' in account_billing). A daily scheduler job downgrades
+# expired trials with no subscription to `starter` — core is never locked out.
+TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "14"))
+
+# ── Subscription billing (Stripe Billing for Axon plans) ─────────────────────
+# How accounts pay for Axon itself — separate from Stripe Connect above, where
+# an account's customers pay that account's invoices. Uses the same platform
+# STRIPE_SECRET_KEY; each plan maps to a recurring Price created in the Stripe
+# dashboard. Leave the price ids empty to disable self-serve billing (the
+# billing endpoints return 503 and plans stay admin-managed via
+# scripts/set_account_plan.py). STRIPE_BILLING_WEBHOOK_SECRET is the signing
+# secret of a *platform* ("events on your account") webhook endpoint pointed at
+# /api/public/stripe/billing-webhook — distinct from the Connect endpoint.
+STRIPE_BILLING_WEBHOOK_SECRET = os.getenv("STRIPE_BILLING_WEBHOOK_SECRET", "")
+STRIPE_PRICE_STARTER = os.getenv("STRIPE_PRICE_STARTER", "")
+STRIPE_PRICE_GROWTH  = os.getenv("STRIPE_PRICE_GROWTH", "")
+STRIPE_PRICE_PRO     = os.getenv("STRIPE_PRICE_PRO", "")
+
 # ── Score weights (must sum to 1.0) ──────────────────────────────────────────
 # Default weights from context - score.docx.
 # Override per vertical by passing a weights dict to the scorer.

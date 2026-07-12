@@ -517,6 +517,9 @@ export interface User {
   role: string
   is_active: boolean
   onboarding_complete: boolean
+  // Whether the login email has been confirmed (self-serve signups verify via
+  // an emailed link; admin-created and OAuth users arrive verified).
+  email_verified?: boolean
   // Populated by GET /auth/me; enabled feature modules for this user's account.
   modules?: Partial<ModuleMap>
   business_type?: string
@@ -689,6 +692,28 @@ export interface StripeStatus {
   charges_enabled: boolean
   payouts_enabled: boolean
   details_submitted: boolean
+}
+
+// ── Subscription billing (the account paying for Axon) — GET /billing ────────
+
+export interface BillingPlan {
+  plan: string                // 'starter' | 'growth' | 'pro'
+  label: string
+  monthly_usd: number
+  blurb: string
+  modules: string[]           // module keys this plan grants
+  purchasable: boolean        // a Stripe price id is configured for it
+}
+
+export interface BillingInfo {
+  configured: boolean         // self-serve billing available on this server
+  plan_name: string           // the account's current entitlement plan
+  status?: string | null      // trialing | trial_expired | active | past_due | canceled…
+  trial_ends_at?: string | null
+  current_period_end?: string | null
+  cancel_at_period_end: boolean
+  has_subscription: boolean
+  plans: BillingPlan[]
 }
 
 export interface PublicPayInfo {
