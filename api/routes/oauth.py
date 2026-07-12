@@ -1,23 +1,28 @@
 """
-Social login (Sign in with Google / Apple) — authentication only.
+Social login (Sign in with Google / Apple).
 
 POST /api/auth/oauth/google  — body {id_token} → JWT (same shape as password login)
 POST /api/auth/oauth/apple   — body {id_token} → JWT
 
 The frontend obtains an OIDC ID token from Google Identity Services / Sign in
 with Apple JS and posts it here. We verify the token (api/oauth_verify.py),
-match an EXISTING active user by the provider's stable subject id (or, on first
-use, by verified email), record the identity link, and issue our own JWT via the
-same create_access_token used by password login. No new account/org is ever
-created — this preserves the invite-only model (a user must already exist).
-Data sync (contacts/documents/calendars) is a separate, later phase that reuses
-the connections framework (migration 032), not this route.
+match a user by the provider's stable subject id (or, on first use, by verified
+email), record the identity link, and issue our own JWT via the same
+create_access_token used by password login.
+
+An identity that matches no user PROVISIONS a fresh org + owner (same defaults
+as POST /auth/signup, via api.accounts.provision_owner) when SELF_SERVE_SIGNUP
+is on; with it off the old invite-only 403 applies. Data sync
+(contacts/documents/calendars) is a separate, later phase that reuses the
+connections framework (migration 032), not this route.
 """
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from psycopg2.extensions import connection as PGConn
 
+from config import SELF_SERVE_SIGNUP
+from api.accounts import provision_owner
 from api.deps import dict_fetchone, get_db
 from api.oauth_verify import (
     OAuthConfigError,
@@ -28,21 +33,52 @@ from api.oauth_verify import (
 )
 from api.ratelimit import client_ip, login_limiter
 from api.routes.auth import IdTokenRequest, TokenResponse
-from api.security import create_access_token
+from api.security import create_access_token, hash_password
+from api.signup_logic import derive_username, new_token
 
 log = logging.getLogger(__name__)
 router = APIRouter()
 
-# Human-readable provider names for the invite-only error message.
+# Human-readable provider names for error messages.
 _PROVIDER_LABEL = {"google": "Google", "apple": "Apple"}
 
 
-def _login_with_identity(identity: OAuthIdentity, db: PGConn) -> TokenResponse:
-    """Resolve a verified social identity to an existing user and mint a JWT.
+def _provision_from_identity(identity: OAuthIdentity, db: PGConn) -> dict:
+    """First-ever login with this identity: create a fresh org + owner user.
 
-    Matching order: (1) a previously-linked (provider, sub); (2) on first use, an
-    existing user by verified email — which then records the link. An unknown
-    identity is rejected (403) rather than provisioning a new account.
+    The org is named after the person (they rename it in onboarding/settings);
+    the unusable random password means the login works only via OAuth until the
+    owner sets one through the reset flow. Email arrives provider-verified.
+    """
+    company = (identity.name or derive_username(identity.email)).strip() or "My business"
+    created = provision_owner(
+        db,
+        company=company,
+        email=identity.email.lower(),
+        username_base=derive_username(identity.email),
+        hashed_pw=hash_password(new_token()[0]),
+        email_verified=True,
+    )
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO oauth_identities (user_id, provider, provider_sub, email) "
+            "VALUES (%s, %s, %s, %s) ON CONFLICT (provider, provider_sub) DO NOTHING",
+            (created["user_id"], identity.provider, identity.sub, identity.email),
+        )
+    db.commit()
+    log.info("Provisioned account %d via %s signup for %s",
+             created["account_id"], identity.provider, identity.email)
+    return {"id": created["user_id"], "username": created["username"],
+            "role": "owner", "is_active": True}
+
+
+def _login_with_identity(identity: OAuthIdentity, db: PGConn) -> TokenResponse:
+    """Resolve a verified social identity to a user (provisioning one on first
+    use when self-serve signup is enabled) and mint a JWT.
+
+    Matching order: (1) a previously-linked (provider, sub); (2) on first use,
+    an existing user by verified email — which then records the link;
+    (3) nobody → provision a fresh org + owner (or 403 in invite-only mode).
     """
     label = _PROVIDER_LABEL.get(identity.provider, identity.provider)
 
@@ -56,7 +92,7 @@ def _login_with_identity(identity: OAuthIdentity, db: PGConn) -> TokenResponse:
         )
         user = dict_fetchone(cur)
 
-        # 2. First use: match an existing invited user by verified email, then link.
+        # 2. First use: match an existing user by verified email, then link.
         if user is None:
             if not identity.email or not identity.email_verified:
                 raise HTTPException(
@@ -69,22 +105,34 @@ def _login_with_identity(identity: OAuthIdentity, db: PGConn) -> TokenResponse:
                 (identity.email,),
             )
             user = dict_fetchone(cur)
-            if user is None:
-                raise HTTPException(
-                    status_code=403,
-                    detail=(
-                        f"No Axon account is linked to this {label} address. "
-                        "Ask your administrator to invite you first."
-                    ),
+            if user is not None:
+                if not user["is_active"]:
+                    raise HTTPException(status_code=403, detail="Account disabled")
+                cur.execute(
+                    "INSERT INTO oauth_identities (user_id, provider, provider_sub, email) "
+                    "VALUES (%s, %s, %s, %s) ON CONFLICT (provider, provider_sub) DO NOTHING",
+                    (user["id"], identity.provider, identity.sub, identity.email),
                 )
-            if not user["is_active"]:
-                raise HTTPException(status_code=403, detail="Account disabled")
-            cur.execute(
-                "INSERT INTO oauth_identities (user_id, provider, provider_sub, email) "
-                "VALUES (%s, %s, %s, %s) ON CONFLICT (provider, provider_sub) DO NOTHING",
-                (user["id"], identity.provider, identity.sub, identity.email),
+                db.commit()
+
+    # 3. Genuinely new: self-serve provisioning (or invite-only rejection).
+    if user is None:
+        if not SELF_SERVE_SIGNUP:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"No Axon account is linked to this {label} address. "
+                    "Ask your administrator to invite you first."
+                ),
             )
-            db.commit()
+        try:
+            user = _provision_from_identity(identity, db)
+        except Exception:
+            db.rollback()
+            log.exception("OAuth provisioning failed for %s via %s",
+                          identity.email, identity.provider)
+            raise HTTPException(status_code=500,
+                                detail="Could not create your account — try again.")
 
     if not user["is_active"]:
         raise HTTPException(status_code=403, detail="Account disabled")

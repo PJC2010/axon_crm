@@ -162,16 +162,16 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit}>
             <div style={{ marginBottom: 14 }}>
               <Input
-                label="Username"
+                label="Username or email"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="admin"
+                placeholder="you@company.com"
                 autoFocus
                 required
                 fill
               />
             </div>
-            <div style={{ marginBottom: error ? 14 : 22 }}>
+            <div style={{ marginBottom: 6 }}>
               <Input
                 label="Password"
                 type="password"
@@ -181,6 +181,11 @@ export default function LoginPage() {
                 fill
               />
             </div>
+            <p style={{ margin: `0 0 ${error ? 14 : 22}px`, textAlign: 'right' }}>
+              <a href="/reset-password" style={{ fontSize: 12, color: 'var(--color-ink-400)' }}>
+                Forgot password?
+              </a>
+            </p>
 
             {error && (
               <p
@@ -233,7 +238,10 @@ export default function LoginPage() {
           )}
 
           <p style={{ fontSize: 12, color: 'var(--color-ink-400)', margin: '18px 0 0', textAlign: 'center' }}>
-            Built on data, powered by people.
+            New to Axon? <a href="/signup" style={{ color: 'var(--color-accent)' }}>Start free</a>
+          </p>
+          <p style={{ fontSize: 12, color: 'var(--color-ink-400)', margin: '8px 0 0', textAlign: 'center' }}>
+            Just looking? <a href="/preview" style={{ color: 'var(--color-accent)' }}>Explore the live demo</a>
           </p>
         </div>
       </Card>

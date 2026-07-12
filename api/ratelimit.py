@@ -44,6 +44,9 @@ def client_ip(request: Request) -> str:
 
 # Shared limiter instances (per-process).
 login_limiter = RateLimiter(max_calls=10, per_seconds=60, name="login")
+# Account creation and reset emails are abuse magnets — keep both tight per IP.
+signup_limiter = RateLimiter(max_calls=5, per_seconds=3600, name="signup")
+password_reset_limiter = RateLimiter(max_calls=5, per_seconds=3600, name="password reset")
 import_limiter = RateLimiter(max_calls=20, per_seconds=3600, name="import")
 # Receipt OCR calls cost money per request — cap per account.
 receipt_scan_limiter = RateLimiter(max_calls=60, per_seconds=3600, name="receipt scan")

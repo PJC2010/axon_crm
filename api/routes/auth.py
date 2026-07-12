@@ -63,6 +63,9 @@ class UserOut(BaseModel):
     is_active: bool
     account_id: int
     onboarding_complete: bool = False
+    # Whether the login email has been confirmed (self-serve signups verify via
+    # emailed link; admin-created and OAuth users arrive verified).
+    email_verified: bool = True
     # Enabled feature modules for this user's account. Populated by /auth/me so the
     # frontend can gate nav/UI on first load; empty on the team-management endpoints
     # that don't need it.
@@ -97,10 +100,13 @@ def _account_business_type(account_id: int, db: PGConn) -> str:
 @router.post("/auth/login", response_model=TokenResponse)
 def login(body: LoginRequest, request: Request, db: PGConn = Depends(get_db)):
     login_limiter.check(client_ip(request))
+    # Self-serve signups know their email better than their derived username,
+    # so the identifier field accepts either.
     with db.cursor() as cur:
         cur.execute(
-            "SELECT id, username, hashed_pw, role, is_active FROM users WHERE username = %s",
-            (body.username,),
+            "SELECT id, username, hashed_pw, role, is_active FROM users "
+            "WHERE username = %s OR lower(email) = lower(%s)",
+            (body.username, body.username),
         )
         row = dict_fetchone(cur)
 
@@ -117,7 +123,8 @@ def login(body: LoginRequest, request: Request, db: PGConn = Depends(get_db)):
 def me(current_user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
     with db.cursor() as cur:
         cur.execute(
-            "SELECT id, username, email, role, is_active, account_id, onboarding_complete FROM users WHERE id = %s",
+            "SELECT id, username, email, role, is_active, account_id, onboarding_complete, "
+            "email_verified FROM users WHERE id = %s",
             (current_user["id"],),
         )
         row = dict_fetchone(cur)

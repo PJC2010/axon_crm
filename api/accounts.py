@@ -57,6 +57,52 @@ def create_account(conn, name: str, plan_name: str = "pro",
     return account_id
 
 
+def provision_owner(conn, *, company: str, email: str, username_base: str,
+                    hashed_pw: str, business_type: str = "home_services",
+                    email_verified: bool = False) -> dict:
+    """Self-serve provisioning: fresh org + its owner user in one transaction.
+
+    Shared by POST /auth/signup and the OAuth first-login path so both funnels
+    produce identical accounts (same defaults as scripts/create_user.py: stages,
+    fields, plan, then the preset's workflows once the owner exists). New
+    self-serve accounts start on the full `pro` module set with a local trial
+    row in account_billing (see api/billing.py for what happens at expiry).
+
+    ``username_base`` collides with existing users occasionally (emails share
+    local parts), so numbered variants are tried before giving up. Caller owns
+    the transaction (commits) — everything rolls back together on failure.
+    Returns {"user_id", "account_id", "username"}.
+    """
+    from api.signup_logic import username_candidates
+    from config import TRIAL_DAYS
+
+    account_id = create_account(conn, company, plan_name="pro",
+                                business_type=business_type)
+    user_id = username = None
+    with conn.cursor() as cur:
+        for candidate in username_candidates(username_base):
+            cur.execute("SELECT 1 FROM users WHERE username = %s", (candidate,))
+            if cur.fetchone():
+                continue
+            cur.execute(
+                "INSERT INTO users (username, email, hashed_pw, role, account_id, email_verified) "
+                "VALUES (%s, %s, %s, 'owner', %s, %s) RETURNING id",
+                (candidate, email, hashed_pw, account_id, email_verified),
+            )
+            user_id, username = cur.fetchone()[0], candidate
+            break
+        if user_id is None:
+            raise RuntimeError(f"Could not find a free username for {username_base!r}")
+        cur.execute(
+            "INSERT INTO account_billing (account_id, plan_name, status, trial_ends_at) "
+            "VALUES (%s, 'pro', 'trialing', NOW() + make_interval(days => %s)) "
+            "ON CONFLICT (account_id) DO NOTHING",
+            (account_id, TRIAL_DAYS),
+        )
+    seed_business_type_workflows(conn, account_id, business_type, user_id)
+    return {"user_id": user_id, "account_id": account_id, "username": username}
+
+
 def seed_business_type_fields(conn, account_id: int, business_type: str) -> int:
     """Seed the preset's custom-field definitions (idempotent per key)."""
     from psycopg2.extras import Json
