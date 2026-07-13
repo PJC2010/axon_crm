@@ -243,6 +243,20 @@ STRIPE_PRICE_STARTER = os.getenv("STRIPE_PRICE_STARTER", "")
 STRIPE_PRICE_GROWTH  = os.getenv("STRIPE_PRICE_GROWTH", "")
 STRIPE_PRICE_PRO     = os.getenv("STRIPE_PRICE_PRO", "")
 
+# ── Public ZIP-sample widget (landing-page growth loop) ───────────────────────
+# "Enter your ZIP, see your best leads free": the landing page serves a masked
+# teaser of scored properties from this designated sample account. Empty =
+# widget disabled (the endpoint reports configured=false). The account should
+# be a dedicated demo org — its scored data is shown (masked) to strangers.
+PUBLIC_SAMPLE_ACCOUNT_ID = os.getenv("PUBLIC_SAMPLE_ACCOUNT_ID", "")
+# Queue a free HCAD-seeded pipeline run when a visitor asks for a ZIP the
+# sample account hasn't scored yet (Harris County only; costs CPU, not API
+# dollars). Capped globally per hour to keep strangers from soaking the worker.
+PUBLIC_SAMPLE_AUTORUN = os.getenv("PUBLIC_SAMPLE_AUTORUN", "true").lower() != "false"
+PUBLIC_SAMPLE_RUNS_PER_HOUR = int(os.getenv("PUBLIC_SAMPLE_RUNS_PER_HOUR", "4"))
+# How many teaser rows the endpoint returns.
+PUBLIC_SAMPLE_TOP_N = int(os.getenv("PUBLIC_SAMPLE_TOP_N", "10"))
+
 # ── Score weights (must sum to 1.0) ──────────────────────────────────────────
 # Default weights from context - score.docx.
 # Override per vertical by passing a weights dict to the scorer.

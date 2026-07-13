@@ -4,8 +4,9 @@ import { useEffect, useRef, type CSSProperties } from 'react'
 import {
   ArrowRight, BookOpen, Columns3, FileText, DollarSign, GitBranch, Layers, Zap,
   Crosshair, Map, Bell, Play, Star, Check, Users, HardHat, Wrench,
-  Database, HelpCircle, X, Mail,
+  Database, HelpCircle, X, Mail, MapPin, CloudLightning,
 } from 'lucide-react'
+import { ZipSampleWidget } from '@/components/ZipSampleWidget'
 
 const AxonMark = ({ size = 28, maskId }: { size?: number; maskId: string }) => (
   <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true">
@@ -218,8 +219,8 @@ export default function LandingContent() {
             No shared leads. No contracts.
           </p>
           <div className="lp-hero-ctas" data-hero style={{ '--i': 3 } as CSSProperties}>
-            <a className="lp-btn lp-btn-accent lp-btn-lg" href="/signup">
-              Start free — no credit card <ArrowRight size={16} />
+            <a className="lp-btn lp-btn-accent lp-btn-lg" href="#zip-sample">
+              See your ZIP&apos;s top leads — free <ArrowRight size={16} />
             </a>
             <a className="lp-btn lp-btn-outline lp-btn-lg" href="/preview">
               <Play size={16} /> Try the live demo
@@ -259,6 +260,19 @@ export default function LandingContent() {
           </div>
         </div>
       </header>
+
+      {/* ── ZIP-sample widget: the 60-second personal proof ── */}
+      <section className="lp-section" id="zip-sample" style={{ paddingTop: 72, paddingBottom: 64 }}>
+        <div className="lp-container">
+          <div className="lp-eyebrow"><MapPin size={12} /> Try it on your own turf</div>
+          <h2 className="lp-h2">Enter your ZIP. See the list.</h2>
+          <p className="lp-section-sub">
+            Real properties, real scores, straight from county records — addresses partially
+            hidden until you create a free account. No email required to look.
+          </p>
+          <ZipSampleWidget />
+        </div>
+      </section>
 
       {/* ── Industry strip ── */}
       <div className="lp-strip">
@@ -426,6 +440,13 @@ export default function LandingContent() {
                   <div>
                     <strong>Grade-based prioritization</strong>
                     <span>Each lead gets an A–F grade by score percentile. Filter by grade so your team focuses on the best properties.</span>
+                  </div>
+                </div>
+                <div className="lp-point">
+                  <div className="lp-point-ic"><CloudLightning size={16} /></div>
+                  <div>
+                    <strong>Storm Mode</strong>
+                    <span>The morning after hail hits, Axon emails you the affected homes in your territory, already ranked — before the out-of-town crews finish loading their trucks.</span>
                   </div>
                 </div>
                 <div className="lp-point">

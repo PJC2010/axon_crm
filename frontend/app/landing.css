@@ -202,6 +202,37 @@
 .lp-price-flag { position: absolute; top: -12px; left: 24px; background: var(--color-accent); color: #fff; font-size: 11px; font-weight: 600; letter-spacing: 0.03em; padding: 4px 12px; border-radius: var(--radius-pill); box-shadow: var(--shadow-card); }
 .lp-pricing-foot { margin: 28px 0 0; font-size: 14px; color: var(--color-ink-600); max-width: 560px; line-height: 1.55; }
 
+/* ZIP-sample widget (the 60-second personal proof) */
+.lp-zip-widget { margin-top: 36px; max-width: 720px; }
+.lp-zip-form { display: flex; gap: 10px; flex-wrap: wrap; }
+.lp-zip-form input, .lp-zip-form select {
+  height: 44px; padding: 0 14px; font-size: 15px; font-family: var(--font-sans);
+  color: var(--color-ink-900); background: var(--color-surface);
+  border: 1px solid var(--color-ink-300); border-radius: var(--radius-button);
+}
+.lp-zip-form input { width: 180px; }
+.lp-zip-form input:focus, .lp-zip-form select:focus { outline: 2px solid var(--color-accent); outline-offset: -1px; }
+.lp-zip-form .lp-btn { height: 44px; }
+.lp-zip-note { display: flex; align-items: flex-start; gap: 8px; margin: 16px 0 0; font-size: 14px; color: var(--color-ink-600); line-height: 1.55; max-width: 560px; }
+.lp-zip-note a { color: var(--color-accent-300); }
+.lp-zip-error { color: var(--color-danger); }
+.lp-spin { animation: lp-spin 0.9s linear infinite; flex-shrink: 0; margin-top: 2px; }
+@keyframes lp-spin { to { transform: rotate(360deg); } }
+.lp-zip-results { margin-top: 24px; background: var(--color-surface); border-radius: var(--radius-card); box-shadow: var(--shadow-pop); overflow: hidden; }
+.lp-zip-stats { display: flex; gap: 22px; flex-wrap: wrap; padding: 14px 20px; border-bottom: 1px solid var(--color-ink-100); font-size: 13px; color: var(--color-ink-600); }
+.lp-zip-stats b { color: var(--color-ink-900); }
+.lp-zip-list { list-style: none; margin: 0; padding: 8px 12px; display: flex; flex-direction: column; }
+.lp-zip-list li { display: flex; align-items: center; gap: 12px; padding: 11px 8px; }
+.lp-zip-list li + li { border-top: 1px solid var(--color-ink-100); }
+.lp-zip-grade { width: 30px; height: 22px; border-radius: var(--radius-pill); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; font-family: var(--font-display); flex-shrink: 0; }
+.lp-zip-addr { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; color: var(--color-ink-900); }
+.lp-zip-addr em { display: block; font-style: normal; font-weight: 400; font-size: 12px; color: var(--color-ink-500); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lp-zip-meta { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--color-ink-500); flex-shrink: 0; }
+.lp-zip-meta b { color: var(--color-moss); font-family: var(--font-mono); }
+.lp-zip-score { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--color-accent-300); }
+.lp-zip-gate { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 16px 20px; border-top: 1px solid var(--color-ink-100); background: var(--color-paper-deep); }
+.lp-zip-gate p { margin: 0; font-size: 13px; color: var(--color-ink-600); }
+
 /* FAQ */
 .lp-faq-list { margin-top: 36px; max-width: 720px; display: flex; flex-direction: column; gap: 10px; }
 .lp-faq-list details { background: var(--color-surface); border-radius: var(--radius-card); box-shadow: var(--shadow-card); padding: 0 22px; }
@@ -235,6 +266,8 @@
   .lp-compare-grid, .lp-pricing-grid { grid-template-columns: 1fr; }
   .lp-nav-links { display: none; }
   .lp-price-featured { order: -1; }
+  .lp-zip-list li { flex-wrap: wrap; }
+  .lp-zip-form input { flex: 1; min-width: 120px; }
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
