@@ -16,7 +16,7 @@ export function PropertySignals({ lead }: { lead: Lead }) {
             padding: '2px 8px',
             borderRadius: 'var(--radius-pill)',
             background: 'var(--color-accent-100)',
-            color: 'var(--color-accent-800)',
+            color: 'var(--color-accent-300)',
             textTransform: 'uppercase',
             letterSpacing: '0.05em',
           }}>
@@ -24,7 +24,7 @@ export function PropertySignals({ lead }: { lead: Lead }) {
           </span>
         )}
       </div>
-      <dl style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 16, rowGap: 10 }}>
+      <dl style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 16, rowGap: 14 }}>
         {[
           ['Year built',     lead.year_built],
           ['Sq footage',     lead.square_footage ? `${lead.square_footage.toLocaleString()} sqft` : null],
@@ -43,7 +43,7 @@ export function PropertySignals({ lead }: { lead: Lead }) {
             <dt className="t-eyebrow" style={{ marginBottom: 2 }}>{label}</dt>
             <dd
               className="tabular"
-              style={{ fontWeight: 500, color: 'var(--color-ink-900)', fontSize: 13, margin: 0 }}
+              style={{ fontWeight: 500, color: 'var(--color-ink-900)', fontSize: 14, margin: 0 }}
             >
               {val ?? '—'}
             </dd>
