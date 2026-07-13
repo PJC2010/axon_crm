@@ -8,6 +8,7 @@ import { AutomationTemplates } from '@/components/AutomationTemplates'
 import { WorkflowRuleForm, describeTrigger } from '@/components/WorkflowRuleForm'
 import { ConnectionsSection } from '@/components/ConnectionsSection'
 import { StripeConnectSection } from '@/components/StripeConnectSection'
+import { BillingSection } from '@/components/BillingSection'
 import { CustomFieldsSettings } from '@/components/CustomFieldsSettings'
 import { MessageTemplatesSettings } from '@/components/MessageTemplatesSettings'
 import { ImportOrdersModal } from '@/components/ImportOrdersModal'
@@ -165,6 +166,9 @@ function SettingsPage() {
       </header>
 
       <div style={{ maxWidth: 760, margin: '0 auto', padding: '28px 20px', display: 'flex', flexDirection: 'column', gap: 32 }}>
+
+        {/* The account's own Axon subscription (plan, trial, upgrades). */}
+        <BillingSection />
 
         {hasModule('prospecting') && (
         <>

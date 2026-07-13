@@ -65,6 +65,7 @@ Optional features are grouped into **modules** (`prospecting`, `map`, `invoicing
 - Whole-module routers are gated in `api/main.py` with `dependencies=[Depends(require_module("x"))]`. Mixed-concern routers (e.g. `pipeline.py`) gate **per-endpoint** instead.
 - Public, token-addressed routers (pay page, public quote/invoice, Stripe/Twilio webhooks, public intake) stay **ungated** — they must work without a login or plan.
 - Gating is **permissive**: an account with no `account_plans` row gets the full set, so gating never silently strips access. Keep `MODULE_KEYS` in sync with the frontend nav (`frontend/lib/nav.ts`).
+- Plans are **sold** via Stripe subscription billing (`api/billing.py`, `api/routes/billing.py`): Checkout + customer portal + a platform webhook that writes `plan_name` back to `account_plans`. Advertised prices live in `billing.PLAN_PRICING` — keep them in sync with `PLAN_CATALOG` and the landing page's pricing section. Self-serve signups (`api/routes/signup.py`, provisioning in `api/accounts.py::provision_owner`) start on a `pro` trial; a daily scheduler tick downgrades expired trials to `starter`.
 
 ### Business-type presets (generalization layer)
 Axon began home-services-specific but is general. Each account has a **business type** (`api/business_types.py`) that bundles terminology overrides (lead↔deal, property↔record), category picklists, whether the property pipeline applies, and default modules. Same code-defined-catalog pattern as entitlements. Terminology resolves in layers: `home_services` is the base, other presets merge on top; frontend ships matching defaults (`frontend/lib/terminology.ts`, `useTerminology.ts`). Keep terminology keys in sync across `api/business_types.py`, `frontend/lib/terminology.ts`, and the frontend fallback.
@@ -97,7 +98,7 @@ A recurring pattern: pure, dependency-free logic lives in its own module so it c
 - Design-system primitives in `frontend/components/ds/`.
 
 ## Database migrations
-Sequential numbered SQL files in `db/migrations/` (currently 53, `0000`–`052`), tracked in a `schema_migrations` table. **Always create new migrations with `python db/migrate.py create <name>`** — never hand-edit an already-applied migration; add a new one. Render runs `python db/migrate.py` as its pre-deploy command.
+Sequential numbered SQL files in `db/migrations/` (currently 56, `0000`–`0056`), tracked in a `schema_migrations` table. **Always create new migrations with `python db/migrate.py create <name>`** — never hand-edit an already-applied migration; add a new one. Render runs `python db/migrate.py` as its pre-deploy command.
 
 ## Git workflow for this task
 - Work on branch `claude/claude-md-docs-hg7dzp`. Create it from latest `master` if needed.

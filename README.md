@@ -307,7 +307,7 @@ python db/migrate.py status
 python db/migrate.py create add_customers
 ```
 
-5. Create your first owner (admin) user:
+5. Create your first owner (admin) user — either sign up in the app at `/signup` (self-serve signup is on by default; set `SELF_SERVE_SIGNUP=false` for invite-only), or bootstrap from the CLI:
 ```bash
 python scripts/create_user.py --username admin --email you@example.com --role owner
 ```
@@ -504,7 +504,15 @@ The FastAPI server exposes interactive docs at `http://localhost:8000/docs` (Swa
 | POST | `/api/users` | Create team member (owner) |
 | GET | `/api/team` / `/api/users` | List team roster / full user list (owner) |
 | PATCH | `/api/users/{id}` | Update a user's role/active status (owner) |
-| POST | `/api/auth/oauth/google` / `/apple` | Sign in with Google/Apple (existing invited user only) |
+| POST | `/api/auth/oauth/google` / `/apple` | Sign in with Google/Apple (provisions a new org on first login when self-serve signup is enabled) |
+| POST | `/api/auth/signup` | Self-serve signup: new org + owner user → JWT |
+| GET | `/api/auth/signup-status` | Whether self-serve signup is enabled (public) |
+| POST | `/api/auth/verify-email` / `/api/auth/resend-verification` | Email verification (one-time token / authed resend) |
+| POST | `/api/auth/request-password-reset` / `/api/auth/reset-password` | Password reset via emailed one-time link |
+| GET | `/api/billing` | Plan catalog + this account's subscription/trial state |
+| POST | `/api/billing/checkout` | Stripe Checkout URL to subscribe to a plan (owner) |
+| POST | `/api/billing/portal` | Stripe customer-portal URL (owner) |
+| POST | `/api/public/stripe/billing-webhook` | Subscription lifecycle sink (platform webhook, signature-verified) |
 
 ### Leads
 | Method | Path | Description |
@@ -761,8 +769,9 @@ Always test on a development database before applying to production.
 - Passwords are hashed with bcrypt via `passlib`
 - JWTs are signed with HS256 using `JWT_SECRET_KEY` from the environment — the app **hard-fails at startup** if it's unset (bypass for local dev only with `ALLOW_INSECURE_DEV_JWT=true`)
 - Tokens expire after 8 hours
-- Login is rate-limited (`api/ratelimit.py`) to slow brute-force attempts
-- Sign in with Google/Apple is also supported (`api/oauth_verify.py`) — it's invite-only: it links to an existing user by verified email rather than self-registering a new account
+- Login accepts a username **or** email and is rate-limited (`api/ratelimit.py`) to slow brute-force attempts
+- Self-serve signup (`POST /api/auth/signup`, on by default via `SELF_SERVE_SIGNUP`) provisions a fresh org + owner with the same defaults as the CLI bootstrap; email verification and password reset ride one-time hashed tokens (`user_tokens`, migration 0055) and send via Resend when configured
+- Sign in with Google/Apple (`api/oauth_verify.py`) links to an existing user by verified email, or — when self-serve signup is enabled — provisions a new org on first login; with `SELF_SERVE_SIGNUP=false` it stays invite-only
 
 To rotate credentials, update `JWT_SECRET_KEY` in your environment. All existing tokens will be immediately invalidated.
 

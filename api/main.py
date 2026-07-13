@@ -10,7 +10,7 @@ from api.routes import leads, notes, history, export, record_fields, segments, m
 from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, hcad, workflows, imports, quotes
 from api.routes import policies, orders, appointments, objects, order_imports
 from api.routes import connections, insights, ml, oauth, map as map_routes, geo
-from api.routes import stripe_payments, twilio_inbound, public_intake
+from api.routes import stripe_payments, twilio_inbound, public_intake, signup, billing
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ async def lifespan(app: FastAPI):
     from api.scheduler import (
         scheduler, load_active_schedules, schedule_retraining,
         schedule_workflow_tick, schedule_account_rescore, schedule_recurring_invoices,
-        schedule_geo_rescore,
+        schedule_geo_rescore, schedule_trial_expiry,
     )
     scheduler.start()
     load_active_schedules()
@@ -49,6 +49,7 @@ async def lifespan(app: FastAPI):
     schedule_account_rescore()
     schedule_recurring_invoices()
     schedule_geo_rescore()
+    schedule_trial_expiry()
     _check_hcad_source()
     yield
     scheduler.shutdown(wait=False)
@@ -76,6 +77,13 @@ app.add_middleware(
 
 app.include_router(auth.router,     prefix="/api", tags=["Auth"])
 app.include_router(oauth.router,    prefix="/api", tags=["Auth"])
+# Self-serve signup + email verification + password reset. Ungated by design —
+# these are how a stranger becomes a customer.
+app.include_router(signup.router,   prefix="/api", tags=["Auth"])
+# Subscription billing (the account paying for Axon). Core account management,
+# not a module; the public webhook is Stripe-called and stays ungated.
+app.include_router(billing.router,        prefix="/api", tags=["Billing"])
+app.include_router(billing.public_router, prefix="/api", tags=["Billing"])
 app.include_router(leads.router,    prefix="/api", tags=["Leads"])
 # Custom record fields are part of the core record model — always available.
 app.include_router(record_fields.router, prefix="/api", tags=["RecordFields"])
