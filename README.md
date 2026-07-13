@@ -513,6 +513,8 @@ The FastAPI server exposes interactive docs at `http://localhost:8000/docs` (Swa
 | POST | `/api/billing/checkout` | Stripe Checkout URL to subscribe to a plan (owner) |
 | POST | `/api/billing/portal` | Stripe customer-portal URL (owner) |
 | POST | `/api/public/stripe/billing-webhook` | Subscription lifecycle sink (platform webhook, signature-verified) |
+| GET/PATCH | `/api/account/profile` | Business name + review link (powers `{{review_link}}`; write = owner) |
+| GET | `/api/public/zip-sample` **(public)** | Landing-page ZIP teaser: masked top leads from the demo org (rate-limited) |
 
 ### Leads
 | Method | Path | Description |
@@ -539,6 +541,8 @@ The FastAPI server exposes interactive docs at `http://localhost:8000/docs` (Swa
 | GET/POST | `/api/leads/{id}/notes` | Notes for a lead |
 | GET/POST | `/api/leads/{id}/history` | Contact/activity history |
 | GET | `/api/export` | CSV download of leads (respects current filters) |
+| GET | `/api/export/qbo/invoices` | Invoices in QuickBooks Online invoice-import format (`start`/`end` optional) |
+| GET | `/api/export/qbo/expenses` | Expenses in QBO 3-column bank-transaction format (`start`/`end` optional) |
 
 ### Custom Fields, Segments & Messaging (core)
 | Method | Path | Description |
