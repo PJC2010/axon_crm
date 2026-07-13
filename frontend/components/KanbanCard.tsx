@@ -29,17 +29,17 @@ export function KanbanCard({ lead, onQuickTask, ghost = false }: Props) {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-        <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-ink-900)', lineHeight: 1.3, flex: 1 }}>
+        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-ink-900)', lineHeight: 1.35, flex: 1 }}>
           {lead.address || lead.contact_name || '—'}
         </span>
         {lead.score_grade && <ScoreBadge grade={lead.score_grade} score={lead.lead_score} />}
       </div>
       {(lead.owner_name || lead.contact_name) && (
-        <span style={{ fontSize: 11, color: 'var(--color-ink-400)' }}>{lead.owner_name || lead.contact_name}</span>
+        <span style={{ fontSize: 12.5, color: 'var(--color-ink-500)' }}>{lead.owner_name || lead.contact_name}</span>
       )}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         {lead.estimated_job_value != null ? (
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-accent)' }}>
+          <span className="tabular" style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-accent-300)' }}>
             {fmt(lead.estimated_job_value)}
           </span>
         ) : <span />}
@@ -49,8 +49,9 @@ export function KanbanCard({ lead, onQuickTask, ghost = false }: Props) {
             data-no-drag
             onClick={e => { e.stopPropagation(); onQuickTask(lead) }}
             title="Add a task for this lead"
+            aria-label="Add a task for this lead"
             style={{
-              width: 22, height: 22, borderRadius: '50%',
+              width: 28, height: 28, borderRadius: '50%',
               background: 'var(--color-ink-100)',
               border: '1px solid var(--color-ink-200)',
               color: 'var(--color-ink-500)',
@@ -68,7 +69,7 @@ export function KanbanCard({ lead, onQuickTask, ghost = false }: Props) {
               e.currentTarget.style.borderColor = 'var(--color-ink-200)'
             }}
           >
-            <Plus size={12} strokeWidth={2.5} />
+            <Plus size={14} strokeWidth={2.5} />
           </button>
         )}
       </div>

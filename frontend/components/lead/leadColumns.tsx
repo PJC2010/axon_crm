@@ -66,7 +66,7 @@ function CategoryPill({ label }: { label: string }) {
       padding: '2px 8px',
       borderRadius: 'var(--radius-pill)',
       background: 'var(--color-accent-100)',
-      color: 'var(--color-accent-800)',
+      color: 'var(--color-accent-300)',
       textTransform: 'uppercase',
       letterSpacing: '0.05em',
       whiteSpace: 'nowrap',

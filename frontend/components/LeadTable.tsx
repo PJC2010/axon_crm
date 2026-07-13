@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ChevronLeft, ChevronRight, Search, Settings, Archive, MoreVertical } from 'lucide-react'
 import Link from 'next/link'
 import type { Lead, LeadFilters, LeadStatus } from '@/lib/types'
@@ -7,6 +7,7 @@ import { archiveBulk, archiveByFilter } from '@/lib/api'
 import { ConfirmModal } from './ConfirmModal'
 import { useTerminology } from '@/hooks/useTerminology'
 import { resolveLeadColumns } from './lead/leadColumns'
+import { LeadCard } from './lead/LeadCard'
 
 interface Props {
   leads: Lead[]
@@ -44,6 +45,16 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
   const [archiving, setArchiving] = useState(false)
   const [showBulkMenu, setShowBulkMenu] = useState(false)
   const [confirmArchiveAll, setConfirmArchiveAll] = useState(false)
+  // Below 640px the column table forces a horizontal scroll, so switch to a
+  // stacked card list that reads top-to-bottom on a phone.
+  const [wide, setWide] = useState(true)
+
+  useEffect(() => {
+    const check = () => setWide(window.innerWidth >= 640)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
 
   const toggleSelect = (id: number) => {
     const next = new Set(selected)
@@ -156,6 +167,50 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
         </div>
       )}
 
+      {/* ── Mobile: stacked card list ── */}
+      {!wide && (
+        <div className="flex-1 overflow-auto" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {loading && (
+            <p style={{ textAlign: 'center', padding: '48px 0', fontSize: 13, color: 'var(--color-ink-400)' }}>Loading…</p>
+          )}
+          {!loading && leads.length === 0 && total === 0 && (
+            <div style={{ textAlign: 'center', padding: '56px 20px' }}>
+              <Search size={44} strokeWidth={1} style={{ color: 'var(--color-ink-300)', marginBottom: 12 }} />
+              <p style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 600, color: 'var(--color-ink-700)' }}>No {t('leads').toLowerCase()} yet</p>
+              <p style={{ margin: '0 auto 16px', maxWidth: 320, fontSize: 13, color: 'var(--color-ink-400)' }}>
+                Run the pipeline to import {t('leads').toLowerCase()} from your target area and start scoring them.
+              </p>
+              <Link href="/settings" style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 20px', minHeight: 44,
+                borderRadius: 'var(--radius-pill)', background: 'var(--color-accent)', color: 'white',
+                fontSize: 14, fontWeight: 500, textDecoration: 'none',
+              }}>
+                <Settings size={15} strokeWidth={1.5} /> Go to Settings
+              </Link>
+            </div>
+          )}
+          {!loading && leads.length === 0 && total > 0 && (
+            <p style={{ textAlign: 'center', padding: '48px 0', fontSize: 13, color: 'var(--color-ink-400)' }}>
+              No {t('leads').toLowerCase()} match the current filters.
+            </p>
+          )}
+          {!loading && leads.map(lead => (
+            <LeadCard
+              key={lead.id}
+              lead={lead}
+              propertyBased={propertyBased}
+              categories={categories}
+              selected={selected.has(lead.id)}
+              onToggleSelect={toggleSelect}
+              onClick={onRowClick}
+              onStatusChange={onStatusChange}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* ── Desktop: column table ── */}
+      {wide && (
       <div className="flex-1 overflow-auto">
         <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--font-sans)' }}>
           <thead>
@@ -247,6 +302,7 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
           </tbody>
         </table>
       </div>
+      )}
 
       {/* Pagination footer */}
       <div
