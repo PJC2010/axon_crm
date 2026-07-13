@@ -141,8 +141,11 @@ class TestInsurancePack:
         by_name = {t["name"]: t for t in bt.default_templates}
         assert by_name[names["sms"]]["channel"] == "sms"
         assert by_name[names["email"]]["channel"] == "email"
-        # Reminder templates must name the expiring policy and its date.
-        for t in by_name.values():
+        # Reminder templates must name the expiring policy and its date. (Only
+        # the rule's own templates — the pack also ships non-renewal templates
+        # like the website auto-reply.)
+        for name in names.values():
+            t = by_name[name]
             assert "{{expiration_date}}" in t["body"] or "{{expiration_date}}" in (t.get("subject") or "")
 
     def test_modules(self):

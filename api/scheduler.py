@@ -40,6 +40,81 @@ def _job_id(schedule_id: int) -> str:
     return f"pipeline_schedule_{schedule_id}"
 
 
+def _run_summary(conn, zip_code: str, account_id: int, sources: dict) -> dict:
+    """Plain-language outcome of a pipeline run for the ZIP: how many properties
+    are scored, how many at each top grade, and how many paid skip-traces this
+    run spent (prospective-user audit P1: per-run transparency kills the fear
+    of variable data costs)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FILTER (WHERE lead_score IS NOT NULL), "
+            "       COUNT(*) FILTER (WHERE score_grade = 'A'), "
+            "       COUNT(*) FILTER (WHERE score_grade = 'B'), "
+            "       COUNT(*) FILTER (WHERE contact_phone IS NOT NULL OR contact_email IS NOT NULL) "
+            "FROM properties WHERE zip = %s AND account_id = %s AND archived_at IS NULL",
+            (zip_code, account_id),
+        )
+        scored, grade_a, grade_b, with_contact = cur.fetchone()
+    contact = sources.get("contact") or {}
+    return {
+        "properties_scored": scored,
+        "grade_a": grade_a,
+        "grade_b": grade_b,
+        "with_contact": with_contact,
+        "skip_traces_used": contact.get("ok", 0),
+        "storm_hits": (sources.get("signals") or {}).get("storm_event", 0),
+    }
+
+
+def _send_storm_mode_alert(conn, account_id: int, zip_code: str, hits: int) -> None:
+    """Storm Mode: one aggregated owner email when a run detects fresh storm
+    damage in a ZIP — the addresses are already scored and waiting. Fails soft
+    (no email config / no owner = skip); an alert failure never fails the run."""
+    from api import notifications
+    from config import APP_BASE_URL
+
+    try:
+        if not notifications.email_configured():
+            return
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT email FROM users WHERE account_id = %s AND role = 'owner' "
+                "AND is_active = TRUE ORDER BY id LIMIT 1",
+                (account_id,),
+            )
+            owner = cur.fetchone()
+        if not owner or not owner[0]:
+            return
+        # Grade split of the just-hit homes (signal_events written moments ago).
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FILTER (WHERE p.score_grade IN ('A','B')) "
+                "FROM signal_events se JOIN properties p ON p.id = se.property_id "
+                "WHERE se.account_id = %s AND se.signal_type = 'storm_event' "
+                "  AND p.zip = %s AND se.created_at > NOW() - INTERVAL '2 hours'",
+                (account_id, zip_code),
+            )
+            top_grades = cur.fetchone()[0] or 0
+        subject = f"Storm Mode: {hits} home{'s' if hits != 1 else ''} in {zip_code} just took storm damage"
+        html = (
+            '<div style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">'
+            f'<h2 style="margin:0 0 8px">Storm activity in {zip_code}</h2>'
+            f"<p>Axon just matched fresh NOAA storm reports to <strong>{hits}</strong> "
+            f"propert{'ies' if hits != 1 else 'y'} in your territory"
+            + (f" — <strong>{top_grades}</strong> of them grade A or B" if top_grades else "")
+            + ". The out-of-town crews are loading their trucks; your list is already ranked.</p>"
+            f'<p style="margin:24px 0"><a href="{APP_BASE_URL}/dashboard" '
+            'style="background:#1a5a75;color:#fff;text-decoration:none;padding:12px 24px;'
+            'border-radius:8px;font-weight:600">Open your leads</a></p>'
+            "</div>"
+        )
+        notifications.send_email(to_email=owner[0], subject=subject, html=html)
+        log.info("Storm Mode alert sent: account=%d zip=%s hits=%d", account_id, zip_code, hits)
+    except Exception:
+        log.warning("Storm Mode alert failed for account %d zip %s", account_id, zip_code,
+                    exc_info=True)
+
+
 def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: int,
                   top_n: int | None = None, center_address: str | None = None,
                   radius_mi: float | None = None, region_id: str | None = None,
@@ -192,10 +267,19 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
         sources["signals"] = detect_signals(zip_code, account_id)
         log.info("[signals] run=%d %s", run_id, sources["signals"])
 
-        # Coverage snapshot for the frontend.
+        # Storm Mode (audit P1): the morning-after moment. When this run found
+        # fresh storm hits, email the owner the headline while the 48-hour
+        # window is open — one aggregated email, not one per property.
+        storm_hits = (sources["signals"] or {}).get("storm_event", 0)
+        if storm_hits:
+            _send_storm_mode_alert(conn, account_id, zip_code, storm_hits)
+
+        # Coverage snapshot for the frontend + the plain-language run summary
+        # ("what did this run cost / produce") shown in Settings → Recent runs.
         from pipeline.coverage import fill_rates
         coverage = fill_rates(conn, zip_code, account_id)
-        return {"zip": zip_code, "sources": sources, "coverage": coverage}
+        return {"zip": zip_code, "sources": sources, "coverage": coverage,
+                "summary": _run_summary(conn, zip_code, account_id, sources)}
 
     try:
         with conn.cursor() as cur:
@@ -241,6 +325,7 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
                 "zip": zip_code,
                 "sources": single["sources"],
                 "coverage": single["coverage"],
+                "summary": single["summary"],
             })
         log.info("Pipeline run %d done", run_id)
 
