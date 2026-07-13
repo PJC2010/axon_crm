@@ -88,6 +88,13 @@ class BusinessTypeUpdate(BaseModel):
     apply_defaults: bool = False
 
 
+class AccountProfileUpdate(BaseModel):
+    """Owner-editable org profile. review_link powers the {{review_link}} merge
+    field (review-request automation) — empty string clears it."""
+    name: Optional[str] = None
+    review_link: Optional[str] = None
+
+
 def _account_business_type(account_id: int, db: PGConn) -> str:
     with db.cursor() as cur:
         cur.execute("SELECT business_type FROM accounts WHERE id = %s", (account_id,))
@@ -269,6 +276,46 @@ def list_business_types(current_user: dict = Depends(get_current_user)):
     """The business-type catalog for the onboarding picker."""
     from api.business_types import business_type_catalog
     return business_type_catalog()
+
+
+@router.get("/account/profile")
+def account_profile(current_user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+    with db.cursor() as cur:
+        cur.execute("SELECT name, review_link FROM accounts WHERE id = %s",
+                    (current_user["account_id"],))
+        row = cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return {"name": row[0], "review_link": row[1]}
+
+
+@router.patch("/account/profile")
+def update_account_profile(
+    body: AccountProfileUpdate,
+    current_user: dict = Depends(require_owner),
+    db: PGConn = Depends(get_db),
+):
+    sets, params = [], []
+    if body.name is not None:
+        if not body.name.strip():
+            raise HTTPException(status_code=400, detail="Business name cannot be empty")
+        sets.append("name = %s"); params.append(body.name.strip())
+    if body.review_link is not None:
+        link = body.review_link.strip()
+        if link and not link.lower().startswith(("http://", "https://")):
+            raise HTTPException(status_code=400, detail="Review link must be a full URL (https://…)")
+        sets.append("review_link = %s"); params.append(link or None)
+    if not sets:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+    params.append(current_user["account_id"])
+    with db.cursor() as cur:
+        cur.execute(
+            f"UPDATE accounts SET {', '.join(sets)} WHERE id = %s RETURNING name, review_link",
+            params,
+        )
+        row = cur.fetchone()
+        db.commit()
+    return {"name": row[0], "review_link": row[1]}
 
 
 @router.patch("/auth/onboarding-complete")

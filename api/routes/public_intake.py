@@ -102,11 +102,77 @@ async def create_website_lead(
         )
         db.commit()
 
+    # Speed-to-lead (prospective-user audit P1): most website leads hire the
+    # first responder, so acknowledge instantly and put a call on someone's
+    # plate now — never at the cost of the intake itself.
+    if inserted and not payload.is_preview:
+        try:
+            _speed_to_lead_response(db, account_id, lead_id, row)
+        except Exception:
+            db.rollback()
+            log.exception("Speed-to-lead response failed for lead %s", lead_id)
+
     log.info(
         "Website lead intake: account=%s lead=%s form=%s inserted=%s",
         account_id, lead_id, payload.form_type, inserted,
     )
     return {"ok": True, "created": inserted}
+
+
+def _speed_to_lead_response(db: PGConn, account_id: int, lead_id: int, row: dict) -> None:
+    """Instant follow-through on a brand-new website lead.
+
+    1. An urgent same-day task for the account's owner ("call within 5 minutes"),
+       so the lead lands on the Command Center immediately.
+    2. An SMS acknowledgment from the account's "Website lead auto-reply (SMS)"
+       template (seeded by the business-type packs; owners can edit or delete it
+       to change/disable the auto-reply). Fails soft: no Twilio, no template, or
+       no phone simply skips the send.
+    """
+    from api import messaging, notifications
+
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT id FROM users WHERE account_id = %s AND role = 'owner' AND is_active = TRUE "
+            "ORDER BY id LIMIT 1",
+            (account_id,),
+        )
+        owner = cur.fetchone()
+    if not owner:
+        return  # nobody to assign work to — skip quietly
+
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO tasks (property_id, title, due_date, priority, created_by, account_id) "
+            "VALUES (%s, %s, CURRENT_DATE, 'urgent', %s, %s)",
+            (lead_id, "New website lead — call within 5 minutes", owner[0], account_id),
+        )
+        db.commit()
+
+    if not (row.get("contact_phone") and notifications.sms_configured()):
+        return
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT body FROM message_templates WHERE account_id = %s "
+            "AND name = 'Website lead auto-reply (SMS)' AND channel = 'sms'",
+            (account_id,),
+        )
+        template = cur.fetchone()
+    if not template:
+        return  # owner removed the template = auto-reply off
+    with db.cursor() as cur:
+        cur.execute("SELECT name FROM accounts WHERE id = %s", (account_id,))
+        acct = cur.fetchone()
+    body = messaging.render_template(
+        template[0], messaging.build_context(row, acct[0] if acct else None))
+    notifications.send_sms(to_phone=row["contact_phone"], body=body)
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO contact_history (property_id, action, outcome, channel, direction, body) "
+            "VALUES (%s, 'SMS sent — Website lead auto-reply', 'sent', 'sms', 'outbound', %s)",
+            (lead_id, body),
+        )
+        db.commit()
 
 
 def _upsert_lead(cur, account_id: int, row: dict) -> tuple[bool, int]:

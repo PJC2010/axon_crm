@@ -98,7 +98,7 @@ class TestSeedWorkflows:
 
     def test_skips_existing_names(self):
         conn = _ScriptedConn([
-            [(201,)], [(202,)],   # template inserts
+            [(201,)], [(202,)], [(203,)],   # template inserts (incl. website auto-reply)
             [(1,)],    # rule 1 exists
             [], [],    # rule 2 missing → insert
             [(1,)],    # rule 3 exists
@@ -111,7 +111,7 @@ class TestSeedWorkflows:
     def test_template_names_resolve_to_account_ids(self):
         import json
         conn = _ScriptedConn([
-            [(201,)], [(202,)],                          # sms id 201, email id 202
+            [(201,)], [(202,)], [(203,)],   # sms 201, email 202, auto-reply 203
             [], [], [], [], [], [], [], [], [], [],
         ])
         seed_business_type_workflows(conn, 11, "insurance_agency", user_id=9)
@@ -129,11 +129,12 @@ class TestSeedWorkflows:
             [],          # sms template insert conflicts (already exists)
             [(301,)],    # …fetch existing id
             [(302,)],    # email template inserted fresh
+            [(303,)],    # website auto-reply inserted fresh
             [], [], [], [], [], [], [], [], [], [],
         ])
         seed_business_type_workflows(conn, 11, "insurance_agency", user_id=9)
         template_inserts = [sql for sql, _ in conn.executed if "INSERT INTO message_templates" in sql]
-        assert len(template_inserts) == 2
+        assert len(template_inserts) == 3
         assert all("ON CONFLICT" in sql for sql in template_inserts)
         inserts = [p for sql, p in conn.executed if "INSERT INTO workflow_rules" in sql]
         cfg = json.loads(next(p for p in inserts if p[3] == "send_template")[4])

@@ -9,6 +9,8 @@ import { WorkflowRuleForm, describeTrigger } from '@/components/WorkflowRuleForm
 import { ConnectionsSection } from '@/components/ConnectionsSection'
 import { StripeConnectSection } from '@/components/StripeConnectSection'
 import { BillingSection } from '@/components/BillingSection'
+import { BusinessProfileSection } from '@/components/BusinessProfileSection'
+import { QuickBooksExportSection } from '@/components/QuickBooksExportSection'
 import { CustomFieldsSettings } from '@/components/CustomFieldsSettings'
 import { MessageTemplatesSettings } from '@/components/MessageTemplatesSettings'
 import { ImportOrdersModal } from '@/components/ImportOrdersModal'
@@ -30,6 +32,23 @@ function duration(run: PipelineRun) {
   if (!run.started_at || !run.finished_at) return null
   const ms = new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()
   return `${Math.round(ms / 1000)}s`
+}
+
+// Plain-language outcome line for a finished run ("what did this run
+// produce/cost"), from the summary the scheduler stamps into result_json.
+function runSummary(run: PipelineRun): string | null {
+  const s = run.result_json?.summary as
+    | { properties_scored?: number; grade_a?: number; grade_b?: number
+        skip_traces_used?: number; storm_hits?: number }
+    | undefined
+  if (!s || s.properties_scored == null) return null
+  const parts = [
+    `${s.properties_scored.toLocaleString()} scored`,
+    `${s.grade_a ?? 0} A · ${s.grade_b ?? 0} B`,
+  ]
+  if (s.skip_traces_used) parts.push(`${s.skip_traces_used} skip-trace${s.skip_traces_used === 1 ? '' : 's'} used`)
+  if (s.storm_hits) parts.push(`${s.storm_hits} storm hit${s.storm_hits === 1 ? '' : 's'}`)
+  return parts.join(' · ')
 }
 
 function SettingsPage() {
@@ -169,6 +188,9 @@ function SettingsPage() {
 
         {/* The account's own Axon subscription (plan, trial, upgrades). */}
         <BillingSection />
+
+        {/* Business name + review link (powers the review-request automation). */}
+        <BusinessProfileSection />
 
         {hasModule('prospecting') && (
         <>
@@ -469,6 +491,9 @@ function SettingsPage() {
         {/* Online payments (Stripe Connect) — rides the invoicing module */}
         {hasModule('invoicing') && <StripeConnectSection />}
 
+        {/* One-way QuickBooks-format exports (bookkeeper escape hatch). */}
+        {(hasModule('invoicing') || hasModule('bookkeeping')) && <QuickBooksExportSection />}
+
         {/* Connected accounts / integrations */}
         <ConnectionsSection />
 
@@ -489,7 +514,7 @@ function SettingsPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--color-ink-200)' }}>
-                  {['ZIP', 'Vertical', 'Triggered by', 'Status', 'Started', 'Duration', ''].map(h => (
+                  {['ZIP', 'Vertical', 'Triggered by', 'Status', 'Results', 'Started', 'Duration', ''].map(h => (
                     <th key={h} style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--color-ink-400)', fontWeight: 500, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
                   ))}
                 </tr>
@@ -506,6 +531,7 @@ function SettingsPage() {
                         {r.status}
                       </span>
                     </td>
+                    <td style={{ padding: '8px', color: 'var(--color-ink-500)', fontSize: 12 }}>{runSummary(r) ?? '—'}</td>
                     <td style={{ padding: '8px', color: 'var(--color-ink-500)' }}>
                       {r.started_at ? new Date(r.started_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'}
                     </td>

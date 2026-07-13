@@ -56,6 +56,19 @@ DATE_TRIGGER_SOURCES = {
         "lead_col": "property_id",
         "extra_where": "AND property_id IS NOT NULL",
     },
+    # "N days after a job was won" — anchors on the win's stage transition, so
+    # the firings ledger fires the rule once per win (a re-won lead re-arms).
+    # stage_transitions has no account_id column; this static subquery joins it
+    # in from the lead. Powers the review-request default (business_types.py).
+    "won_transitions": {
+        "target_type": "stage_transition",
+        "table": ("(SELECT st.id, st.property_id, st.transitioned_at, p.account_id "
+                  "FROM stage_transitions st JOIN properties p ON p.id = st.property_id "
+                  "WHERE st.to_status = 'won' AND p.archived_at IS NULL) won_transitions"),
+        "fields": ("transitioned_at",),
+        "id_col": "id",
+        "lead_col": "property_id",
+    },
 }
 
 # Object types whose routes fire lifecycle events ({object_type}_event rules).
@@ -726,15 +739,23 @@ def _send_template(conn, cfg: dict, lead_id: int, rule: dict, account_id: int,
                 "reason": f"no_{viable[0]}_address", "skipped": skipped}
 
     with conn.cursor() as cur:
-        cur.execute("SELECT name FROM accounts WHERE id = %s", (account_id,))
+        cur.execute("SELECT name, review_link FROM accounts WHERE id = %s", (account_id,))
         row = cur.fetchone()
     ctx = messaging.build_context(record, row[0] if row else None,
-                                  policy=(extra or {}).get("policy"))
+                                  policy=(extra or {}).get("policy"),
+                                  review_link=row[1] if row else None)
 
     sent = []
     last_error: Exception | None = None
     for channel, recipient in deliverable:
         template = by_channel[channel]
+        # A review request without a review link would trail off mid-sentence —
+        # skip until the account sets one (Settings → Business profile).
+        if not ctx.get("review_link") and (
+                messaging.references_field(template["body"], "review_link")
+                or messaging.references_field(template.get("subject"), "review_link")):
+            skipped[channel] = "no_review_link"
+            continue
         body = messaging.render_template(template["body"], ctx)
         try:
             if channel == "email":

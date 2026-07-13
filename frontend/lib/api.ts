@@ -120,6 +120,46 @@ export function openBillingPortal(): Promise<{ url: string }> {
   return req('/billing/portal', { method: 'POST' })
 }
 
+// ── Account profile (business name + review link) ─────────────────────────────
+
+export function getAccountProfile(): Promise<{ name: string; review_link: string | null }> {
+  return req('/account/profile')
+}
+
+export function updateAccountProfile(profile: { name?: string; review_link?: string }): Promise<{ name: string; review_link: string | null }> {
+  return req('/account/profile', { method: 'PATCH', body: JSON.stringify(profile) })
+}
+
+// ── Public ZIP-sample teaser (landing page; no auth) ──────────────────────────
+
+export interface ZipSampleLead {
+  address: string          // partially masked ("18XX Westheimer Rd")
+  grade: string
+  score: number
+  year_built: number | null
+  value: string            // "~$480K" or ""
+  why: string
+}
+
+export interface ZipSampleResult {
+  configured: boolean
+  available: boolean
+  queued?: boolean
+  supported?: boolean
+  zip?: string
+  vertical?: string | null
+  total_scored?: number
+  grade_a?: number
+  grade_b?: number
+  leads?: ZipSampleLead[]
+}
+
+export function getZipSample(zip: string, vertical?: string): Promise<ZipSampleResult> {
+  const params = new URLSearchParams({ zip })
+  if (vertical) params.set('vertical', vertical)
+  return req(`/public/zip-sample?${params}`)
+}
+
 // Resolved plan + enabled-module map for the current account. Powers entitlement
 // gating in the UI (see frontend/hooks/useEntitlements.ts).
 export function getAccountFeatures(): Promise<AccountFeatures> {
@@ -984,4 +1024,15 @@ export function exportUrl(filters: LeadFilters = {}): string {
   const token = getToken()
   if (token) params.set('token', token)
   return `${BASE}/export?${params}`
+}
+
+// QuickBooks Online import-format downloads (invoices/expenses). Same
+// token-in-query pattern as exportUrl so <a download> links work.
+export function qboExportUrl(kind: 'invoices' | 'expenses', start?: string, end?: string): string {
+  const params = new URLSearchParams()
+  if (start) params.set('start', start)
+  if (end) params.set('end', end)
+  const token = getToken()
+  if (token) params.set('token', token)
+  return `${BASE}/export/qbo/${kind}?${params}`
 }

@@ -47,6 +47,21 @@ class TestRenderer:
         assert messaging.recipient_for_channel(rec, "sms") == "+15551234567"
         assert messaging.recipient_for_channel({}, "email") is None
 
+    def test_review_link_merge_field(self):
+        ctx = messaging.build_context({}, "Acme", review_link="https://g.page/r/acme")
+        out = messaging.render_template("Review us: {{review_link}}", ctx)
+        assert out == "Review us: https://g.page/r/acme"
+        # Absent link renders empty (the send path skips such messages first).
+        ctx = messaging.build_context({}, "Acme")
+        assert messaging.render_template("{{review_link}}", ctx) == ""
+
+    def test_references_field(self):
+        assert messaging.references_field("Review: {{review_link}}", "review_link") is True
+        assert messaging.references_field("Review: {{ review_link }}", "review_link") is True
+        assert messaging.references_field("Hi {{first_name}}", "review_link") is False
+        assert messaging.references_field(None, "review_link") is False
+        assert messaging.references_field("no placeholders", "review_link") is False
+
 
 class TestPolicyContext:
     _POLICY = {"id": 7, "policy_number": "PN-123", "carrier": "Progressive",
@@ -151,7 +166,7 @@ class TestSendLeadMessage:
         conn = _Conn([
             [self._record()],             # record lookup
             [self._template()],           # template lookup
-            [("Acme Insurance",)],        # account name
+            [("Acme Insurance", None)],        # account name
             [(77,)],                      # history insert
         ])
         result = messaging_route.send_lead_message(42, SendMessageRequest(template_id=5), user=USER, db=conn)
@@ -169,7 +184,7 @@ class TestSendLeadMessage:
 
     def test_unconfigured_channel_503(self, monkeypatch):
         monkeypatch.setattr(messaging_route.notifications, "email_configured", lambda: False)
-        conn = _Conn([[self._record()], [self._template()], [("Acme",)]])
+        conn = _Conn([[self._record()], [self._template()], [("Acme", None)]])
         with pytest.raises(HTTPException) as exc:
             messaging_route.send_lead_message(42, SendMessageRequest(template_id=5), user=USER, db=conn)
         assert exc.value.status_code == 503
@@ -185,7 +200,7 @@ class TestSendLeadMessage:
         monkeypatch.setattr(messaging_route.notifications, "email_configured", lambda: True)
         monkeypatch.setattr(messaging_route.notifications, "send_email",
                             lambda *, to_email, subject, html: sent.update(to=to_email))
-        conn = _Conn([[self._record()], [("Acme",)], [(77,)]])
+        conn = _Conn([[self._record()], [("Acme", None)], [(77,)]])
         result = messaging_route.send_lead_message(
             42, SendMessageRequest(channel="email", subject="Hi", body="Hello {{first_name}}"),
             user=USER, db=conn)
@@ -205,7 +220,7 @@ class TestSendLeadMessage:
             [self._record()],       # record
             [template],             # template
             [policy],               # policy (org- and lead-scoped)
-            [("Acme",)],            # account name
+            [("Acme", None)],            # account name
             [(77,)],                # history
         ])
         result = messaging_route.send_lead_message(
@@ -255,7 +270,7 @@ class TestSendTemplateAction:
               "subject": "Welcome {{first_name}}", "body": "Hi {{first_name}}"}],   # template
             [{"id": 42, "contact_name": "Jane Doe", "contact_email": "jane@x.com",
               "contact_phone": None, "address": "1 Main", "owner_name": "Jane Doe"}],  # record
-            [("Acme",)],                 # account name
+            [("Acme", None)],                 # account name
             [(88,)],                     # history
         ])
         result = we._send_template(conn, {"template_id": 5}, 42, self._rule(), 3)
@@ -341,7 +356,7 @@ class TestSendTemplateMultiChannel:
         conn = _Conn([
             [self._sms_template()], [self._email_template()],   # template loads
             [self._record()],                                    # record
-            [("Acme",)],                                         # account name
+            [("Acme", None)],                                         # account name
             [(88,)],                                             # history (sms)
         ])
         result = we._send_template(conn, self._CFG, 42, self._rule(), 3)
@@ -360,7 +375,7 @@ class TestSendTemplateMultiChannel:
         conn = _Conn([
             [self._sms_template()], [self._email_template()],
             [self._record(contact_phone=None)],
-            [("Acme",)],
+            [("Acme", None)],
             [(88,)],
         ])
         result = we._send_template(conn, self._CFG, 42, self._rule(), 3)
@@ -377,7 +392,7 @@ class TestSendTemplateMultiChannel:
         conn = _Conn([
             [self._sms_template()], [self._email_template()],
             [self._record()],
-            [("Acme",)],
+            [("Acme", None)],
             [(88,)],
         ])
         result = we._send_template(conn, self._CFG, 42, self._rule(), 3)
@@ -395,7 +410,7 @@ class TestSendTemplateMultiChannel:
         conn = _Conn([
             [self._sms_template()], [self._email_template()],
             [self._record()],
-            [("Acme",)],
+            [("Acme", None)],
             [(88,)], [(89,)],                                    # two history inserts
         ])
         result = we._send_template(conn, cfg, 42, self._rule(), 3)
@@ -428,7 +443,7 @@ class TestSendTemplateMultiChannel:
         conn = _Conn([
             [self._sms_template()], [self._email_template()],
             [self._record()],
-            [("Acme",)],
+            [("Acme", None)],
             [(88,)],
         ])
         result = we._send_template(conn, self._CFG, 42, self._rule(), 3)
@@ -447,7 +462,7 @@ class TestSendTemplateMultiChannel:
         conn = _Conn([
             [self._sms_template()], [self._email_template()],
             [self._record()],
-            [("Acme",)],
+            [("Acme", None)],
         ])
         with pytest.raises(RuntimeError):
             we._send_template(conn, self._CFG, 42, self._rule(), 3)
@@ -460,7 +475,7 @@ class TestSendTemplateMultiChannel:
         conn = _Conn([
             [self._sms_template()], [self._email_template()],
             [self._record()],
-            [("Acme",)],
+            [("Acme", None)],
             [(88,)],
         ])
         policy = {"id": 7, "carrier": "Progressive", "policy_type": "auto",

@@ -8,7 +8,10 @@ import re
 from datetime import date, datetime
 
 # Merge fields a template may reference, resolved from the record + account.
-MERGE_FIELDS = ("contact_name", "first_name", "address", "owner_name", "business_name")
+# review_link comes from accounts.review_link (migration 0057) — the business's
+# Google/Yelp review URL, used by the review-request automation.
+MERGE_FIELDS = ("contact_name", "first_name", "address", "owner_name", "business_name",
+                "review_link")
 
 # Policy merge fields (renewal reminders): resolved from a policies row when the
 # send carries one — a policy-expiration workflow firing or a per-policy manual
@@ -45,7 +48,8 @@ def _fmt_money(value) -> str:
 
 
 def build_context(record: dict, business_name: str | None,
-                  policy: dict | None = None) -> dict[str, str]:
+                  policy: dict | None = None,
+                  review_link: str | None = None) -> dict[str, str]:
     """Merge-field values for a record. Missing values render as empty strings.
 
     ``policy`` (a policies row) adds the POLICY_MERGE_FIELDS with dates and
@@ -61,6 +65,7 @@ def build_context(record: dict, business_name: str | None,
         "address": record.get("address") or "",
         "owner_name": record.get("owner_name") or "",
         "business_name": business_name or "",
+        "review_link": (review_link or "").strip(),
     }
     policy = policy or {}
     ctx.update({
@@ -87,6 +92,18 @@ def render_template(text: str | None, context: dict[str, str]) -> str:
         return context.get(key, match.group(0)) if key in _ALL_FIELDS else match.group(0)
 
     return _PLACEHOLDER.sub(_sub, text)
+
+
+def references_field(text: str | None, field: str) -> bool:
+    """Whether a template references a given ``{{field}}`` placeholder.
+
+    Lets senders skip a message whose critical merge value is missing (e.g. a
+    review request when the account has no review_link yet) instead of sending
+    a sentence that trails off into nothing.
+    """
+    if not text:
+        return False
+    return any(match.group(1) == field for match in _PLACEHOLDER.finditer(text))
 
 
 def recipient_for_channel(record: dict, channel: str) -> str | None:

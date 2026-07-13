@@ -156,11 +156,12 @@ def send_lead_message(lead_id: int, body: SendMessageRequest, user: dict = Depen
             raise HTTPException(status_code=404, detail="Policy not found on this record")
 
     with db.cursor() as cur:
-        cur.execute("SELECT name FROM accounts WHERE id = %s", (account_id,))
+        cur.execute("SELECT name, review_link FROM accounts WHERE id = %s", (account_id,))
         row = cur.fetchone()
     business_name = row[0] if row else None
 
-    ctx = messaging.build_context(record, business_name, policy=policy)
+    ctx = messaging.build_context(record, business_name, policy=policy,
+                                  review_link=row[1] if row else None)
     rendered_subject = messaging.render_template(subject, ctx)
     rendered_body = messaging.render_template(text_body, ctx)
 

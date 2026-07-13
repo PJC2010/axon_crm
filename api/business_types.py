@@ -186,6 +186,16 @@ _INSURANCE_TEMPLATES = (
                  "renewal options together.\n\n"
                  "— {{business_name}}"),
     },
+    # Speed-to-lead: instant acknowledgment for website form submissions, sent by
+    # the public-intake responder (api/routes/public_intake.py) which looks this
+    # template up by name.
+    {
+        "name": "Website lead auto-reply (SMS)",
+        "channel": "sms",
+        "body": ("Hi {{first_name}}, thanks for reaching out to {{business_name}}! We "
+                 "received your request and will be in touch shortly. Reply here if "
+                 "there's anything you'd like to add."),
+    },
 )
 
 # X-date automation: the whole reason an agency runs a CRM. Rules target the
@@ -242,6 +252,53 @@ _RETAIL_WORKFLOWS = (
     },
 )
 
+# Home-services growth loop (prospective-user audit P1): reviews are the #2 lead
+# source after referrals, and website leads convert far better inside 5 minutes.
+# The review request renders {{review_link}} (accounts.review_link); until the
+# owner sets one in Settings the send is skipped, never sent broken. The
+# auto-reply template is looked up by name by the public-intake speed-to-lead
+# responder (api/routes/public_intake.py).
+_HOME_SERVICES_TEMPLATES = (
+    {
+        "name": "Review request (SMS)",
+        "channel": "sms",
+        "body": ("Hi {{first_name}}, thanks for choosing {{business_name}}! If you were "
+                 "happy with the work, would you leave us a quick review? It's how "
+                 "neighbors find us: {{review_link}}"),
+    },
+    {
+        "name": "Review request (Email)",
+        "channel": "email",
+        "subject": "How did we do, {{first_name}}?",
+        "body": ("Hi {{first_name}},\n\n"
+                 "Thanks again for choosing {{business_name}}. If you were happy with the "
+                 "work, a quick review would mean a lot — it's how neighbors find us:\n\n"
+                 "{{review_link}}\n\n"
+                 "— {{business_name}}"),
+    },
+    {
+        "name": "Website lead auto-reply (SMS)",
+        "channel": "sms",
+        "body": ("Hi {{first_name}}, thanks for reaching out to {{business_name}}! We got "
+                 "your request and will call you shortly. Reply here if there's anything "
+                 "you'd like to add."),
+    },
+)
+
+_HOME_SERVICES_WORKFLOWS = (
+    {
+        "name": "Review request — 2 days after job won",
+        "trigger_type": "date_offset",
+        "trigger_config": {"source": "won_transitions", "date_field": "transitioned_at",
+                           "offset_days": 2},
+        "action_type": "send_template",
+        "action_config": {
+            "template_names": {"sms": "Review request (SMS)", "email": "Review request (Email)"},
+            "delivery": "sms_first",
+        },
+    },
+)
+
 
 BUSINESS_TYPES: dict[str, BusinessType] = {
     "home_services": BusinessType(
@@ -253,6 +310,8 @@ BUSINESS_TYPES: dict[str, BusinessType] = {
         default_modules=_modules(_base=True, policies=False, orders=False, appointments=False),
         categories=_HOME_SERVICES_CATEGORIES,
         terminology_overrides={},  # base vocabulary
+        default_workflows=_HOME_SERVICES_WORKFLOWS,
+        default_templates=_HOME_SERVICES_TEMPLATES,
     ),
     "general_sales": BusinessType(
         key="general_sales",
