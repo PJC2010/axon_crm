@@ -8,6 +8,48 @@ import {
 } from 'lucide-react'
 import { ZipSampleWidget } from '@/components/ZipSampleWidget'
 
+// ── Competitor comparison data (Axon vs. the national lead marketplaces) ──
+// Cell copy states each platform's publicly documented pay-per-lead model;
+// keep claims generic-but-true and let the repetition make the point.
+const VS_RIVALS = [
+  { name: 'Angi', sub: 'National marketplace' },
+  { name: 'HomeAdvisor', sub: 'National marketplace' },
+  { name: 'Thumbtack', sub: 'National marketplace' },
+]
+
+const VS_ROWS: Array<{ label: string; rivals: [string, string, string]; axon: string }> = [
+  {
+    label: 'Who else gets the lead',
+    rivals: ['Shared with up to 4 pros', 'Shared with up to 4 pros', 'Any pro who pays can chase it'],
+    axon: 'Nobody — built from your territory, for you alone',
+  },
+  {
+    label: 'How you pay',
+    rivals: ['Per lead, win or lose', 'Per lead, plus an annual fee', 'Per lead, at their price'],
+    axon: 'One flat monthly price, however many leads you work',
+  },
+  {
+    label: 'Where leads come from',
+    rivals: ['Whoever fills out the national form', 'Same funnel, different logo', 'National app traffic'],
+    axon: 'Your county’s records, permits & storm data',
+  },
+  {
+    label: 'Local knowledge',
+    rivals: ['One playbook for every market', 'One playbook for every market', 'One playbook for every market'],
+    axon: 'Scored street by street in your ZIP codes',
+  },
+  {
+    label: 'Why you got the lead',
+    rivals: ['No explanation', 'No explanation', 'No explanation'],
+    axon: 'Every score shows its signals',
+  },
+  {
+    label: 'Who owns the customer',
+    rivals: ['The platform', 'The platform', 'The platform'],
+    axon: 'You do — export everything, anytime',
+  },
+]
+
 const AxonMark = ({ size = 28, maskId }: { size?: number; maskId: string }) => (
   <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true">
     <mask id={maskId}>
@@ -53,7 +95,7 @@ export default function LandingContent() {
       ['#features .lp-eyebrow', null], ['#features .lp-h2', null], ['#features .lp-section-sub', null],
       ['.lp-features', '.lp-feature'],
       ['#compare .lp-eyebrow', null], ['#compare .lp-h2', null], ['#compare .lp-section-sub', null],
-      ['.lp-compare-grid', '.lp-compare-col'],
+      ['.lp-vs-wrap', '.lp-vs-row'], ['.lp-vs-foot', null],
       ['#pipeline .lp-split > div:first-child', null],
       ['#pipeline .lp-panel', null],
       ['.lp-proof-grid', '.lp-stat'],
@@ -285,38 +327,60 @@ export default function LandingContent() {
         </div>
       </div>
 
-      {/* ── Name the enemy: shared leads vs. Axon ── */}
+      {/* ── Name the enemy: Axon vs. the national lead marketplaces ── */}
       <section className="lp-section" id="compare" style={{ paddingTop: 72, paddingBottom: 72 }}>
         <div className="lp-container">
-          <div className="lp-eyebrow"><Crosshair size={12} /> Why contractors switch</div>
+          <div className="lp-eyebrow"><Crosshair size={12} /> Axon vs. Angi, HomeAdvisor &amp; Thumbtack</div>
           <h2 className="lp-h2">The same lead, sold to five of you, for $80.<br />Sound familiar?</h2>
           <p className="lp-section-sub">
-            Lead marketplaces sell one homeowner to every contractor in the ZIP and bill you per
-            name. Axon works the other way: it scores the properties around you and builds a list
-            that&apos;s yours alone.
+            Angi, HomeAdvisor, Thumbtack — different logos, same national playbook: one
+            homeowner&apos;s form, sold to every contractor in the ZIP at $15–$120 a name, win or
+            lose. Axon works the other way: an exclusive list built from your county&apos;s own
+            data, for one flat monthly price.
           </p>
-          <div className="lp-compare-grid">
-            <div className="lp-compare-col">
-              <h3>Buying shared leads</h3>
-              <ul>
-                <li><X size={15} /> The same lead sold to 4–6 competitors</li>
-                <li><X size={15} /> $15–$120 per shared lead, win or lose</li>
-                <li><X size={15} /> Annual contracts and cancellation fees</li>
-                <li><X size={15} /> No idea why you got the lead</li>
-                <li><X size={15} /> The platform owns the customer relationship</li>
-              </ul>
-            </div>
-            <div className="lp-compare-col lp-compare-axon">
-              <h3>Working an Axon list</h3>
-              <ul>
-                <li><Check size={15} /> Exclusive — generated from your territory, nobody else has it</li>
-                <li><Check size={15} /> Flat monthly price, however many leads you work</li>
-                <li><Check size={15} /> Month to month, cancel anytime</li>
-                <li><Check size={15} /> Every score explained: age, equity, permits, storms</li>
-                <li><Check size={15} /> Your list, your customers, your data — exportable anytime</li>
-              </ul>
+          <div className="lp-vs-wrap">
+            <div className="lp-vs" role="table" aria-label="Axon compared with Angi, HomeAdvisor, and Thumbtack">
+              <div className="lp-vs-row lp-vs-head" role="row">
+                <div className="lp-vs-cell" role="columnheader">
+                  <span className="lp-vs-dim">What you&apos;re buying</span>
+                </div>
+                {VS_RIVALS.map((r) => (
+                  <div className="lp-vs-cell" role="columnheader" key={r.name}>
+                    <b>{r.name}</b>
+                    <span>{r.sub}</span>
+                  </div>
+                ))}
+                <div className="lp-vs-cell" role="columnheader">
+                  <span className="lp-vs-flag">The local one</span>
+                  <b className="lp-vs-brand"><AxonMark size={18} maskId="axon-mark-vs" /> Axon</b>
+                  <span>Your territory&apos;s lead engine</span>
+                </div>
+              </div>
+              {VS_ROWS.map((row) => (
+                <div className="lp-vs-row" role="row" key={row.label}>
+                  <div className="lp-vs-cell lp-vs-rowlabel" role="rowheader">
+                    <strong>{row.label}</strong>
+                  </div>
+                  {row.rivals.map((cell, i) => (
+                    <div className="lp-vs-cell" role="cell" key={VS_RIVALS[i].name}>
+                      <span className="lp-vs-mark lp-vs-no"><X size={12} /></span>
+                      <span>{cell}</span>
+                    </div>
+                  ))}
+                  <div className="lp-vs-cell" role="cell">
+                    <span className="lp-vs-mark lp-vs-yes"><Check size={12} /></span>
+                    <span>{row.axon}</span>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
+          <p className="lp-vs-foot">
+            Marketplace practices summarized from each platform&apos;s publicly documented
+            pay-per-lead model; details vary by market, trade, and plan. Angi, HomeAdvisor, and
+            Thumbtack are trademarks of their respective owners — no affiliation or endorsement
+            implied.
+          </p>
         </div>
       </section>
 
