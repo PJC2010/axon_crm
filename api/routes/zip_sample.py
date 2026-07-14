@@ -108,6 +108,20 @@ def zip_sample(zip: str, vertical: str | None = None, request: Request = None,
         rows = dict_fetchall(cur)
 
     if not rows:
+        # No *live* leads, but the ZIP may already be seeded with archived ones.
+        # Archival is a per-account CRM working state that's meaningless to a
+        # public visitor — the teaser exists to prove coverage — so fall back to
+        # the seeded rows rather than falsely reporting the ZIP as unsupported.
+        with db.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM properties WHERE account_id = %s AND zip = %s "
+                "AND lead_score IS NOT NULL "
+                "ORDER BY lead_score DESC LIMIT %s",
+                (account_id, zip_code, _CANDIDATE_ROWS),
+            )
+            rows = dict_fetchall(cur)
+
+    if not rows:
         # Nothing scored yet — report run-in-progress, queue one, or admit the
         # ZIP isn't covered by the free county data.
         with db.cursor() as cur:
@@ -147,11 +161,14 @@ def zip_sample(zip: str, vertical: str | None = None, request: Request = None,
     ]
 
     with db.cursor() as cur:
+        # Coverage stats mirror the leads we surface above (which fall back to
+        # seeded-but-archived rows), so this count must not filter on archival —
+        # otherwise an all-archived ZIP shows leads under a "0 scored" header.
         cur.execute(
             "SELECT COUNT(*), COUNT(*) FILTER (WHERE score_grade = 'A'), "
             "COUNT(*) FILTER (WHERE score_grade = 'B') "
             "FROM properties WHERE account_id = %s AND zip = %s "
-            "AND lead_score IS NOT NULL AND archived_at IS NULL",
+            "AND lead_score IS NOT NULL",
             (account_id, zip_code),
         )
         total, grade_a, grade_b = cur.fetchone()
