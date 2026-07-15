@@ -3,7 +3,7 @@
 import { useEffect, useRef, type CSSProperties } from 'react'
 import {
   ArrowRight, BookOpen, Columns3, FileText, DollarSign, GitBranch, Layers, Zap,
-  Crosshair, Map, Bell, Play, Star, Check, Users, HardHat, Wrench,
+  Crosshair, Map, Bell, Play, Star, Check, Users,
   Database, HelpCircle, X, Mail, MapPin, CloudLightning,
 } from 'lucide-react'
 import { ZipSampleWidget } from '@/components/ZipSampleWidget'
@@ -185,11 +185,21 @@ export default function LandingContent() {
     })
     cleanups.push(() => onDemoReplay.forEach((fn) => fn()))
 
-    // Scroll-pinned process — activate the step straddling the viewport center.
+    // Traveling process visual — activate the step straddling the viewport
+    // center, and glide the visual frame down so it docks at the bottom of
+    // that step (CSS transitions the move; see .lp-pcol-visual in landing.css).
     const pSteps = [...root.querySelectorAll<HTMLElement>('.lp-pstep')]
     const pVis = [...root.querySelectorAll<HTMLElement>('.lp-pvis')]
-    if (pSteps.length && pVis.length) {
+    const pDock = root.querySelector<HTMLElement>('.lp-pcol-visual')
+    if (pSteps.length && pVis.length && pDock) {
       let current = -1
+      let lastY = -1
+      const dock = () => {
+        // Bottom-align the frame with the active step, relative to the grid.
+        const step = pSteps[Math.max(0, current)]
+        const y = Math.max(0, step.offsetTop + step.offsetHeight - pDock.offsetHeight - 24)
+        if (Math.abs(y - lastY) >= 1) { lastY = y; pDock.style.setProperty('--pvis-y', `${y}px`) }
+      }
       const setActive = (idx: number) => {
         if (idx === current) return
         current = idx
@@ -204,13 +214,18 @@ export default function LandingContent() {
           return d < best.d ? { d, i } : best
         }, { d: Infinity, i: 0 }).i
         setActive(idx)
+        dock() // re-measure every pass so font/image load and resizes self-correct
       }
       let ticking = false
       const onScroll = () => { if (!ticking) { ticking = true; requestAnimationFrame(() => { pick(); ticking = false }) } }
       window.addEventListener('scroll', onScroll, { passive: true })
       window.addEventListener('resize', onScroll, { passive: true })
       pick()
+      // Enable the glide transition only after the first dock, so the frame
+      // doesn't animate from the top of the grid on initial paint.
+      const dockRaf = requestAnimationFrame(() => pDock.classList.add('is-docked'))
       cleanups.push(() => {
+        cancelAnimationFrame(dockRaf)
         window.removeEventListener('scroll', onScroll)
         window.removeEventListener('resize', onScroll)
       })
@@ -588,21 +603,35 @@ export default function LandingContent() {
               and win the work. The intelligence runs quietly in the background; the relationships stay yours.
             </p>
           </div>
-          <div className="lp-collage" data-reveal>
-            <div className="lp-photo">
-              <div className="lp-photo-ph"><HardHat size={26} /><span>Field tech on site</span></div>
-              <img src="/people-1.jpg" alt="Field technician on a service call" />
-              <div className="lp-photo-tint" />
-            </div>
-            <div className="lp-photo">
-              <div className="lp-photo-ph"><Wrench size={22} /><span>Crew at work</span></div>
-              <img src="/people-2.jpg" alt="Service crew at work" />
-              <div className="lp-photo-tint" />
-            </div>
-            <div className="lp-photo">
-              <div className="lp-photo-ph"><Users size={22} /><span>Owner &amp; customer</span></div>
-              <img src="/people-3.jpg" alt="Business owner with a customer" />
-              <div className="lp-photo-tint" />
+          {/* A day the data built — the route card tells the people story in the
+              product's own language: the map points the way, the crew closes. */}
+          <div className="lp-people-visual" data-reveal>
+            <div className="lp-route-card">
+              <div className="lp-route-head">
+                <span className="t-eyebrow">Tuesday&apos;s route · 77007</span>
+                <span className="lp-route-badge">3 stops · all grade A</span>
+              </div>
+              <div className="lp-route-map" aria-hidden="true">
+                <svg className="lp-route-svg" viewBox="0 0 100 70" preserveAspectRatio="none">
+                  <path className="lp-route-trail" d="M 13 50 C 22 42, 33 40, 46 32 C 59 24, 70 20, 83 14" />
+                </svg>
+                <span className="lp-route-dot" style={{ left: '24%', top: '26%' }} />
+                <span className="lp-route-dot" style={{ left: '70%', top: '63%' }} />
+                <span className="lp-route-dot" style={{ left: '34%', top: '86%' }} />
+                <span className="lp-route-dot" style={{ left: '88%', top: '74%' }} />
+                <span className="lp-route-dot" style={{ left: '55%', top: '12%' }} />
+                <span className="lp-route-pin is-stop1" />
+                <span className="lp-route-pin is-stop2" />
+                <span className="lp-route-pin is-stop3 is-end" />
+                <span className="lp-route-chip is-stop1"><b>9:00</b> Inspect roof</span>
+                <span className="lp-route-chip is-stop2"><b>11:30</b> Quote signed</span>
+                <span className="lp-route-chip is-stop3 is-won"><b>2:15</b> Job won <Check size={11} /></span>
+              </div>
+              <div className="lp-route-foot">
+                <div className="lp-route-crew" aria-hidden="true"><span>MR</span><span>DT</span><span>+2</span></div>
+                <span className="lp-route-crew-label">Marcus&apos;s crew — on doors by 9, booked by 3</span>
+                <b className="lp-route-total">$23,200 booked</b>
+              </div>
             </div>
           </div>
         </div>
