@@ -368,12 +368,25 @@
 .lp-anim .lp-feature.is-demo-in .lp-demo-chart polyline { stroke-dashoffset: 0; }
 .lp-anim .lp-feature.is-demo-in .lp-demo-books-foot { opacity: 1; }
 
+/* Powered-by-people route card — once the visual reveals, the trail draws
+   through the day and each stop pops in as the line reaches it (per-element
+   delays via --d, set inline to match the draw's progress). */
+.lp-anim .lp-route-trail { stroke-dasharray: 84; stroke-dashoffset: 84; }
+.lp-anim .lp-people-visual.is-in .lp-route-trail { stroke-dashoffset: 0; transition: stroke-dashoffset 1500ms var(--ease-out) 300ms; }
+.lp-anim .lp-route-pin { opacity: 0; transform: scale(0.3); }
+.lp-anim .lp-people-visual.is-in .lp-route-pin { opacity: 1; transform: none; transition: opacity 320ms var(--ease-out) var(--d, 0ms), transform 320ms var(--ease-out) var(--d, 0ms); }
+.lp-anim .lp-route-chip { opacity: 0; transform: translate(var(--tx, 0px), calc(var(--ty, 0px) + 8px)); }
+.lp-anim .lp-people-visual.is-in .lp-route-chip { opacity: 1; transform: translate(var(--tx, 0px), var(--ty, 0px)); transition: opacity 360ms var(--ease-out) var(--d, 0ms), transform 360ms var(--ease-out) var(--d, 0ms); }
+.lp-anim .lp-route-foot { opacity: 0; transform: translateY(8px); }
+.lp-anim .lp-people-visual.is-in .lp-route-foot { opacity: 1; transform: none; transition: opacity 480ms var(--ease-out) 1900ms, transform 480ms var(--ease-out) 1900ms; }
+
 @media (prefers-reduced-motion: reduce) {
   .lp-anim [data-reveal],
   .lp-anim [data-reveal] [data-stagger],
   .lp-anim .lp-hero [data-hero],
   .lp-anim .lp-video-wrap { opacity: 1 !important; transform: none !important; transition: none !important; }
   .lp-anim .lp-badge svg { animation: none; }
+  .lp-route-pin.is-end::after { animation: none; }
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -387,21 +400,64 @@
 .lp-people-stats { display: flex; gap: 34px; }
 .lp-people-stats .v { font-family: var(--font-display); font-size: 30px; color: #fff; display: block; }
 .lp-people-stats .l { font-size: 13px; color: var(--color-ink-500); }
-/* Photo collage — a tall lead frame + two stacked supporting frames */
-.lp-collage { display: grid; grid-template-columns: 1.3fr 1fr; grid-template-rows: 1fr 1fr; gap: 12px; height: 420px; }
-.lp-photo { position: relative; border-radius: var(--radius-card); overflow: hidden; background: var(--color-paper-deep); box-shadow: var(--shadow-card); }
-.lp-photo:first-child { grid-row: span 2; }
-.lp-photo img { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; object-fit: cover; display: block;
-  /* cool duotone so any photo reads on-brand */ filter: grayscale(0.4) contrast(1.05) brightness(0.92); }
-.lp-photo-tint { position: absolute; inset: 0; z-index: 2; pointer-events: none;
-  background: linear-gradient(150deg, rgba(0,163,150,0.28), transparent 55%), linear-gradient(0deg, rgba(17,20,24,0.5), transparent 60%); mix-blend-mode: multiply; }
-.lp-photo-ph { position: absolute; inset: 0; z-index: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; padding: 16px;
-  background: radial-gradient(120% 120% at 70% 20%, rgba(0,163,150,0.16), transparent 55%), var(--color-paper-deep); }
-.lp-photo-ph svg { color: var(--color-ink-500); }
-.lp-photo-ph span { font-size: 12px; color: var(--color-ink-600); line-height: 1.4; }
+/* Route card — a mapped day the data built: the trail points the way through
+   three A-grade stops, the crew closes them. Replaces the photo placeholders
+   with the product's own visual language (map grid, pins, mono chips). */
+.lp-people-visual { position: relative; }
+.lp-route-card { background: var(--color-surface); border-radius: var(--radius-card); box-shadow: var(--shadow-pop); overflow: hidden; }
+.lp-route-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 15px 20px; border-bottom: 1px solid var(--color-ink-100); }
+.lp-route-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 3px 9px; border-radius: var(--radius-pill); background: var(--color-success-bg); color: var(--color-success); white-space: nowrap; }
+.lp-route-map { position: relative; aspect-ratio: 10 / 7; margin: 12px; border-radius: var(--radius-card); overflow: hidden;
+  background:
+    radial-gradient(90% 90% at 78% 16%, rgba(0,163,150,0.14), transparent 55%),
+    linear-gradient(var(--color-ink-100) 1px, transparent 1px) 0 0 / 28px 28px,
+    linear-gradient(90deg, var(--color-ink-100) 1px, transparent 1px) 0 0 / 28px 28px,
+    var(--color-paper-deep);
+  box-shadow: inset 0 0 0 1px var(--color-ink-100); }
+.lp-route-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* Path length ≈ 81 viewBox units; 84 with round-cap slack (same measured-dash
+   technique as .lp-demo-chart — pathLength/non-scaling-stroke break dashes). */
+.lp-route-trail { fill: none; stroke: var(--color-accent); stroke-width: 0.55; stroke-linecap: round; opacity: 0.9; }
+.lp-route-dot { position: absolute; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--color-ink-300); }
+/* Stop coordinates — shared by each stop's pin and chip; keep in sync with
+   the .lp-route-trail path above (13,50 → 46,32 → 83,14 in a 100×70 box). */
+.lp-route-map .is-stop1 { left: 13%; top: 71.5%; }
+.lp-route-map .is-stop2 { left: 46%; top: 45.7%; }
+.lp-route-map .is-stop3 { left: 83%; top: 20%; }
+.lp-route-pin { position: absolute; z-index: 2; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: var(--color-accent); box-shadow: 0 0 0 4px rgba(0,163,150,0.22); }
+.lp-route-pin.is-stop1 { --d: 350ms; }
+.lp-route-pin.is-stop2 { --d: 950ms; }
+.lp-route-pin.is-stop3 { --d: 1550ms; }
+.lp-route-pin.is-end { background: var(--color-gold); box-shadow: 0 0 0 4px rgba(240,183,38,0.25); }
+.lp-route-pin.is-end::after { content: ''; position: absolute; inset: -5px; border-radius: 50%; border: 2px solid var(--color-gold); animation: lp-route-pulse 2.2s var(--ease-out) infinite; }
+@keyframes lp-route-pulse { 0% { transform: scale(0.55); opacity: 0.9; } 70%, 100% { transform: scale(1.7); opacity: 0; } }
+.lp-route-chip { position: absolute; z-index: 3; display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: var(--radius-pill); background: var(--color-black); box-shadow: inset 0 0 0 1px var(--color-ink-200), var(--shadow-card); font-size: 11px; font-weight: 500; color: var(--color-ink-700); white-space: nowrap; transform: translate(var(--tx, 0px), var(--ty, 0px)); }
+.lp-route-chip.is-stop1 { --tx: 10px; --ty: 14px; --d: 500ms; }
+.lp-route-chip.is-stop2 { --tx: -50%; --ty: -36px; --d: 1100ms; }
+.lp-route-chip.is-stop3 { --tx: -88%; --ty: 16px; --d: 1700ms; }
+.lp-route-chip b { font-family: var(--font-mono); font-size: 10px; font-weight: 600; color: var(--color-accent-300); }
+.lp-route-chip.is-won { color: var(--color-ink-900); }
+.lp-route-chip.is-won svg { color: var(--color-gold); }
+/* Narrow maps: drop the middle chip below its pin so it clears "Job won" */
+@media (max-width: 560px) {
+  .lp-route-chip.is-stop2 { --tx: -50%; --ty: 16px; }
+}
+.lp-route-foot { display: flex; align-items: center; gap: 12px; padding: 12px 20px 16px; }
+.lp-route-crew { display: flex; flex-shrink: 0; }
+.lp-route-crew span { position: relative; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-size: 10px; font-weight: 700; background: var(--color-paper-deep); color: var(--color-ink-600); box-shadow: 0 0 0 2px var(--color-surface); }
+.lp-route-crew span + span { margin-left: -8px; }
+/* Earlier avatars sit on top so the overlap never clips their initials */
+.lp-route-crew span:nth-child(1) { z-index: 3; background: var(--color-accent-100); color: var(--color-accent-300); }
+.lp-route-crew span:nth-child(2) { z-index: 2; background: var(--color-info-bg); color: var(--color-ocean); }
+.lp-route-crew-label { font-size: 12.5px; line-height: 1.4; color: var(--color-ink-600); }
+.lp-route-total { margin-left: auto; font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--color-moss); white-space: nowrap; }
 
 /* ──────────────────────────────────────────────────────────────────────────
-   Scroll-pinned process — sticky visual swaps as steps scroll past
+   Scroll-driven process — the visual frame travels down the section, docking
+   at the bottom of whichever step is active (JS sets --pvis-y), so the swap
+   transitions always happen next to the point being read. The base rules are
+   the no-JS / reduced-motion fallback: a plain sticky column on desktop and a
+   static frame on mobile.
    ────────────────────────────────────────────────────────────────────────── */
 .lp-process { padding: 80px 0 96px; }
 .lp-process-head { text-align: center; max-width: 560px; margin: 0 auto 8px; }
@@ -421,8 +477,21 @@
 .lp-pstep.is-active .lp-pstep-n span { color: var(--color-accent-300); }
 .lp-pstep.is-active h3 { color: var(--color-ink-900); }
 .lp-pstep.is-active p { color: var(--color-ink-700); opacity: 1; }
-/* Right: sticky visual stack */
+/* Right: visual stack (sticky is only the no-JS fallback — see below) */
 .lp-pcol-visual { position: sticky; top: 96px; height: 78vh; display: flex; align-items: center; }
+/* Anim mode: undock the frame from the column and let it travel. JS keeps
+   --pvis-y pointed at the bottom of the active step; the transform transition
+   is the glide users see. Hidden until first dock to avoid a top-left flash. */
+.lp-anim .lp-process-grid { position: relative; }
+.lp-anim .lp-pcol-visual {
+  position: absolute; top: 0; right: 0; width: calc(50% - 32px); height: auto;
+  display: block; opacity: 0; pointer-events: none;
+  transform: translateY(var(--pvis-y, 0px)); will-change: transform;
+}
+.lp-anim .lp-pcol-visual.is-docked {
+  opacity: 1;
+  transition: transform 680ms var(--ease-out), opacity 420ms var(--ease-out);
+}
 .lp-pvis-frame { position: relative; width: 100%; aspect-ratio: 4 / 3; border-radius: 8px; overflow: hidden; background: var(--color-surface); box-shadow: var(--shadow-modal); }
 .lp-pvis { position: absolute; inset: 0; opacity: 0; transform: scale(1.02); transition: opacity 520ms var(--ease-out), transform 520ms var(--ease-out); padding: 26px; display: flex; flex-direction: column; }
 .lp-pvis.is-active { opacity: 1; transform: none; }
@@ -449,5 +518,19 @@
   .lp-people-grid, .lp-process-grid { grid-template-columns: 1fr; gap: 32px; }
   .lp-pcol-visual { position: static; height: auto; margin-bottom: 24px; }
   .lp-pstep { min-height: 0; }
-  .lp-collage { height: 320px; }
+  /* Anim mode: each step reserves a dock slot below its text (frame height at
+     4:3 of the column width, capped at 560px wide, + breathing room) so the
+     traveling frame slides in under the point being read without overlap. */
+  .lp-anim .lp-pstep { padding-bottom: calc(min(100vw - 64px, 560px) * 0.75 + 44px); }
+  .lp-anim .lp-pcol-visual { left: 0; right: 0; width: auto; max-width: 560px; margin: 0 auto; }
+}
+
+/* Small phones: tighten the mini-mock innards so all rows fit the 4:3 frame,
+   and let the route card's foot wrap instead of squeezing the crew label */
+@media (max-width: 480px) {
+  .lp-pvis { padding: 16px; }
+  .lp-pvis-head { margin-bottom: 10px; }
+  .lp-mini-row { padding: 8px 11px; margin-bottom: 6px; }
+  .lp-route-foot { flex-wrap: wrap; }
+  .lp-route-crew-label { flex: 1; min-width: 150px; }
 }
