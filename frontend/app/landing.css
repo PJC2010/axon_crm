@@ -58,22 +58,7 @@
 .lp-hero-trust { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; color: var(--color-ink-500); max-width: 560px; line-height: 1.5; }
 .lp-hero-trust svg { margin-top: 2px; color: var(--color-accent-300); }
 
-/* Video header frame */
-.lp-video-wrap { margin-top: 56px; position: relative; border-radius: 8px; overflow: hidden; box-shadow: var(--shadow-modal); background: var(--color-black); }
-.lp-video-chrome { height: 38px; background: var(--color-paper-deep); border-bottom: 1px solid var(--color-ink-200); display: flex; align-items: center; padding: 0 14px; gap: 7px; position: relative; z-index: 3; }
-.lp-dot { width: 11px; height: 11px; border-radius: 50%; }
-.lp-video-stage { position: relative; aspect-ratio: 16 / 9; background: var(--color-black); }
-.lp-video-stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
-/* Poster shown until/unless a real video file is present */
-.lp-video-poster { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background:
-  radial-gradient(120% 120% at 70% 10%, rgba(0,163,150,0.18), transparent 55%),
-  radial-gradient(100% 100% at 10% 90%, rgba(63,166,218,0.14), transparent 50%),
-  var(--color-black); }
-.lp-video-poster.hidden { display: none; }
-.lp-play { width: 72px; height: 72px; border-radius: 50%; background: var(--color-accent); display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 30px rgba(0,163,150,0.4); cursor: pointer; transition: transform var(--dur-base) var(--ease-out); border: none; }
-.lp-play:hover { transform: scale(1.06); }
-.lp-video-caption { font-size: 13px; color: var(--color-ink-500); }
-.lp-video-caption b { color: var(--color-ink-300); font-weight: 600; }
+/* Hero brand film — frame/scene styles live in brand-film.css (.bfilm) */
 
 /* Industry strip */
 .lp-strip { padding: 30px 0 44px; border-top: 1px solid var(--color-ink-100); }
@@ -315,9 +300,9 @@
   transition: opacity 720ms var(--ease-out), transform 720ms var(--ease-out);
   transition-delay: calc(var(--i, 0) * 110ms);
 }
-/* Video frame eases up a touch later & further */
-.lp-anim .lp-video-wrap { opacity: 0; transform: translateY(34px) scale(0.985); }
-.lp-anim.lp-ready .lp-video-wrap {
+/* Film frame eases up a touch later & further */
+.lp-anim .bfilm { opacity: 0; transform: translateY(34px) scale(0.985); }
+.lp-anim.lp-ready .bfilm {
   opacity: 1; transform: none;
   transition: opacity 900ms var(--ease-out), transform 900ms var(--ease-out);
   transition-delay: 560ms;
@@ -384,7 +369,7 @@
   .lp-anim [data-reveal],
   .lp-anim [data-reveal] [data-stagger],
   .lp-anim .lp-hero [data-hero],
-  .lp-anim .lp-video-wrap { opacity: 1 !important; transform: none !important; transition: none !important; }
+  .lp-anim .bfilm { opacity: 1 !important; transform: none !important; transition: none !important; }
   .lp-anim .lp-badge svg { animation: none; }
   .lp-route-pin.is-end::after { animation: none; }
 }
