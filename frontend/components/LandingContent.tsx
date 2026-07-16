@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, type CSSProperties } from 'react'
 import {
-  ArrowRight, BookOpen, Columns3, FileText, DollarSign, GitBranch, Layers, Zap,
+  ArrowRight, BookOpen, Columns3, FileText, DollarSign, GitBranch, Layers, Rocket,
   Crosshair, Map, Bell, Play, Star, Check, Users,
   Database, HelpCircle, X, Mail, MapPin, CloudLightning,
 } from 'lucide-react'
-import { ZipSampleWidget } from '@/components/ZipSampleWidget'
+import { ZipSampleWidget, WAITLIST_MAILTO } from '@/components/ZipSampleWidget'
 import BrandFilm from '@/components/BrandFilm'
 
 // ── Competitor comparison data (Axon vs. the national lead marketplaces) ──
@@ -89,7 +89,7 @@ export default function LandingContent() {
       ['.lp-pricing-grid', '.lp-price-card'],
       ['#faq .lp-eyebrow', null], ['#faq .lp-h2', null],
       ['.lp-faq-list', 'details'],
-      ['.lp-cta h2', null], ['.lp-cta-actions', null],
+      ['.lp-cta h2', null], ['.lp-cta-actions', null], ['.lp-cta-note', null],
       ['.lp-footer-inner', '> div'],
     ]
     groups.forEach(([sel, childSel]) => {
@@ -250,7 +250,7 @@ export default function LandingContent() {
       <header className="lp-hero">
         <div className="lp-container">
           <span className="lp-badge" data-hero style={{ '--i': 0 } as CSSProperties}>
-            <Zap size={14} /> Exclusive, scored leads for service businesses
+            <Rocket size={14} /> Now live in Harris County, TX — more markets coming soon
           </span>
           <h1 data-hero style={{ '--i': 1 } as CSSProperties}>
             Know which homeowners in your ZIP need you —<br /><em>before they call anyone.</em>
@@ -794,6 +794,10 @@ export default function LandingContent() {
             <a className="lp-btn lp-btn-accent lp-btn-lg" href="/signup">Start free — no credit card</a>
             <a className="lp-btn lp-btn-ghost lp-btn-lg" href="/preview" style={{ color: 'rgba(255,255,255,0.85)' }}>Try the live demo</a>
           </div>
+          <p className="lp-cta-note">
+            Currently serving Harris County, Texas. Expanding soon —{' '}
+            <a href={WAITLIST_MAILTO}>join the waitlist for your area</a>.
+          </p>
         </div>
       </section>
 
