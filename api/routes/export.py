@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from psycopg2.extensions import connection as PGConn
 
 from api.deps import get_db, dict_fetchall, get_current_user
+from api.lead_events_emit import emit_surfaced
 from api.qbo_export import QBO_EXPENSE_COLS, QBO_INVOICE_COLS, expense_rows, invoice_rows
 from api.routes.leads import SORT_MAP, _build_filters
 
@@ -62,6 +63,10 @@ def export_leads(
             params,
         )
         rows = dict_fetchall(cur)
+
+    # Feedback loop (Phase 2): exporting a lead surfaces it to the contractor,
+    # same as listing it. First-only + best-effort.
+    emit_surfaced(db, [r["id"] for r in rows], user["account_id"], actor_user_id=user["id"])
 
     return _csv_response(rows, EXPORT_COLS, f"leads_{zip or 'all'}.csv")
 

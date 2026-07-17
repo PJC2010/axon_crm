@@ -8,6 +8,7 @@ workflow rules, and the neighbor door-knock task on a win.
 import logging
 
 from api.deps import dict_fetchone
+from api.lead_events_emit import emit_stage_event
 
 log = logging.getLogger(__name__)
 
@@ -37,6 +38,13 @@ def apply_status_change(conn, lead_id: int, new_status: str, user_id: int, accou
             (lead_id, old_status, new_status, user_id),
         )
         conn.commit()
+
+    # Feedback loop (Phase 2): mirror the pipeline transition into the outcome
+    # log (contacted / quote_sent / won / lost). Best-effort and only on a real
+    # status change, so it never breaks a stage move and never double-logs a
+    # re-save of the same status.
+    emit_stage_event(conn, lead_id, account_id, new_status, old_status,
+                     actor_user_id=user_id)
 
     from api.workflow_engine import execute_status_change_rules
     workflow_results = execute_status_change_rules(conn, lead_id, old_status, new_status, user_id, account_id)

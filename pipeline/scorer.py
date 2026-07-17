@@ -11,6 +11,7 @@ from config import SCORER_MODE
 from pipeline.db import get_conn, fetch_by_zip, upsert_properties
 from pipeline.equity import estimate_equity
 from pipeline.job_value import estimate_job_value
+from pipeline.score_snapshots import write_score_snapshots
 from pipeline.scoring import (
     score_property, _compute_score, _grade,
     _age_signal, _sale_signal, _equity_signal,
@@ -32,6 +33,7 @@ def score_zip(zip_code: str, account_id: int, vertical: str | None = None) -> in
         return 0
 
     updates = []
+    scored_rows = []   # (row-as-scored, score, grade) for the feedback-loop snapshot
     for row in rows:
         update = {
             "address":          row["address"],
@@ -64,8 +66,18 @@ def score_zip(zip_code: str, account_id: int, vertical: str | None = None) -> in
         update["lead_score"]  = round(score, 2)
         update["score_grade"] = _grade(score)
         updates.append(update)
+        scored_rows.append((row, score, update["score_grade"]))
 
     n = upsert_properties(conn, updates, account_id)
+
+    # Feedback loop: snapshot the exact features + score each lead was graded on,
+    # keyed to the active model version, so later outcomes can be joined back to
+    # what the model actually saw. Non-fatal by the same rule as _apply_ml.
+    try:
+        write_score_snapshots(conn, account_id, scored_rows)
+    except Exception:
+        conn.rollback()
+        log.exception("Score snapshot write failed (non-fatal) for account %s", account_id)
 
     # Predictive layer (best-effort — never let it break the core pipeline):
     # capture point-in-time feature snapshots, and in shadow/learned mode also

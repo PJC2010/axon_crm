@@ -98,7 +98,7 @@ A recurring pattern: pure, dependency-free logic lives in its own module so it c
 - Design-system primitives in `frontend/components/ds/`.
 
 ## Database migrations
-Sequential numbered SQL files in `db/migrations/` (currently 57, `0000`–`0057`), tracked in a `schema_migrations` table. **Always create new migrations with `python db/migrate.py create <name>`** — never hand-edit an already-applied migration; add a new one. Render runs `python db/migrate.py` as its pre-deploy command.
+Sequential numbered SQL files in `db/migrations/` (currently 58, `0000`–`0058`), tracked in a `schema_migrations` table. **Always create new migrations with `python db/migrate.py create <name>`** — never hand-edit an already-applied migration; add a new one. Render runs `python db/migrate.py` as its pre-deploy command.
 
 ## Git workflow for this task
 - Work on branch `claude/claude-md-docs-hg7dzp`. Create it from latest `master` if needed.

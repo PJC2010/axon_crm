@@ -569,6 +569,44 @@ class Note(BaseModel):
         from_attributes = True
 
 
+# ── Lead outcome events (scoring feedback loop) ───────────────────────────────
+
+# Append-only outcome log — mirrors the CHECK constraint in migration 0058.
+# Lead state is derived from these events; the nightly labeling job (Phase 3)
+# turns them into training labels for the scoring model.
+LEAD_EVENT_TYPES = [
+    "surfaced",           # lead shown/delivered to contractor
+    "viewed",
+    "contact_attempted",
+    "contacted",          # reached a human
+    "quote_sent",
+    "won",
+    "lost",
+    "disqualified",       # bad data, wrong property type, etc.
+    "suppressed",         # renter, DNC, already-serviced
+]
+
+
+class LeadEventCreate(BaseModel):
+    event_type: str
+    channel: Optional[str] = None       # 'call','sms','email','door','mail'
+    metadata: Optional[dict] = None     # e.g. {"quote_amount": 8500, "loss_reason": "price"}
+
+
+class LeadEvent(BaseModel):
+    id: int
+    property_id: int
+    account_id: int
+    event_type: str
+    channel: Optional[str] = None
+    actor_user_id: Optional[int] = None
+    occurred_at: datetime
+    metadata: Optional[dict] = None
+
+    class Config:
+        from_attributes = True
+
+
 # ── History ───────────────────────────────────────────────────────────────────
 
 class HistoryCreate(BaseModel):

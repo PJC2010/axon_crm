@@ -17,6 +17,7 @@ import { AppointmentsSection } from './lead/AppointmentsSection'
 import { PropertySignals } from './lead/PropertySignals'
 import { WhyThisScore } from './lead/WhyThisScore'
 import { ActivityPanel } from './lead/ActivityPanel'
+import { DisqualifyButton } from './lead/DisqualifyButton'
 
 export function LeadDetail({ leadId }: { leadId: number }) {
   const router = useRouter()
@@ -114,14 +115,20 @@ export function LeadDetail({ leadId }: { leadId: number }) {
                   <StatusSelect leadId={lead.id} value={lead.status} onChange={s => setLead({ ...lead, status: s })} />
                 </div>
               </div>
-              <button
-                onClick={handleArchive}
-                disabled={archiving}
-                className="dash-icon-btn borderless"
-                title="Archive this lead"
-              >
-                <Archive size={16} strokeWidth={1.5} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <DisqualifyButton
+                  leadId={lead.id}
+                  onDone={() => showToast('Flagged as a bad lead — thanks, this improves scoring.')}
+                />
+                <button
+                  onClick={handleArchive}
+                  disabled={archiving}
+                  className="dash-icon-btn borderless"
+                  title="Archive this lead"
+                >
+                  <Archive size={16} strokeWidth={1.5} />
+                </button>
+              </div>
             </div>
 
             <ContactInfoSection lead={lead} onSaved={setLead} onToast={showToast} />
