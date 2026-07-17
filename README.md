@@ -417,6 +417,8 @@ Each lead receives a composite score (0–100) from up to 13 weighted signals, m
 
 **8 built-in verticals** are configured in `config.py`'s `VERTICAL_WEIGHTS`, each with its own weight profile (weights must sum to 1.0 per vertical): `epoxy_flooring`, `pool_maintenance`, `solar`, `roofing`, `hvac`, `fencing`, `landscaping`, `pressure_washing`. Adding a new vertical requires only adding a key. Every signal contributes a human-readable "reason to contact" surfaced in the lead's score explanation.
 
+**Scoring feedback loop (foundation):** the hand-set heuristic is registered as `v0-heuristic` in a model registry (`scoring_model_versions`, migration 0058), and every scoring pass writes a `lead_score_snapshots` row — the exact PII-free factor values and score each lead was graded on, keyed to the active model version (`pipeline/score_snapshots.py`). Together with the append-only `lead_events` outcome log (`POST /api/leads/{id}/events`), this accumulates labeled training data so future model versions can be trained, shadow-tested, and promoted against the heuristic baseline.
+
 ### Running the Pipeline
 
 ```bash
@@ -531,6 +533,7 @@ The FastAPI server exposes interactive docs at `http://localhost:8000/docs` (Swa
 | POST | `/api/leads/{id}/enrich` | On-demand skip-trace contact enrichment |
 | GET | `/api/leads/{id}/neighbors` | Uncontacted leads in the same geohash cell |
 | GET | `/api/leads/{id}/timeline` | Unified activity feed (history + notes + tasks + signals) |
+| GET/POST | `/api/leads/{id}/events` | Append-only outcome event log (surfaced/viewed/contacted/quote_sent/won/…) feeding the scoring feedback loop |
 | POST | `/api/leads/{id}/archive` / `/unarchive` | Soft delete / restore |
 | POST | `/api/leads/archive-bulk` / `/unarchive-bulk` / `/archive-by-filter` | Bulk archive operations |
 | GET | `/api/zips` / `/api/regions` / `/api/neighborhoods` | ZIP list / named HCAD regions / geohash-6 cell aggregates |

@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.entitlements import require_module
 from api.routes import leads, notes, history, export, record_fields, segments, messaging
+from api.routes import lead_events
 from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, hcad, workflows, imports, quotes
 from api.routes import policies, orders, appointments, objects, order_imports
 from api.routes import connections, insights, ml, oauth, map as map_routes, geo
@@ -94,6 +95,9 @@ app.include_router(segments.router, prefix="/api", tags=["Segments"])
 app.include_router(messaging.router, prefix="/api", tags=["Messaging"])
 app.include_router(notes.router,    prefix="/api", tags=["Notes"])
 app.include_router(history.router,  prefix="/api", tags=["History"])
+# Lead outcome events (scoring feedback loop) — core instrumentation, ungated:
+# every plan's pipeline actions must be able to log outcomes.
+app.include_router(lead_events.router, prefix="/api", tags=["Leads"])
 app.include_router(export.router,   prefix="/api", tags=["Export"])
 # Tasks and the core pipeline (Kanban board view + stages) are part of `core` and
 # are always available. The data-acquisition/refresh endpoints inside pipeline.py
