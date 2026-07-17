@@ -311,6 +311,18 @@ def send_quote(
 
     if first_send:
         _fire_quote_event(db, quote, "sent")
+        # Feedback loop (Phase 2): a quote actually going out is the richest
+        # quote_sent signal — it carries the amount. A workflow rule that also
+        # moves the lead to the quote_sent stage emits its own (amount-less)
+        # event; the labeling job keys off the earliest, so the overlap is
+        # harmless. Best-effort, and only when the quote is tied to a lead.
+        if quote.get("property_id"):
+            from api.lead_events_emit import emit_event
+            emit_event(
+                db, quote["property_id"], quote["account_id"], "quote_sent",
+                actor_user_id=current_user["id"],
+                metadata={"quote_amount": float(quote["total"]), "quote_id": quote_id},
+            )
 
     return Quote(**_load_quote(db, quote_id))
 

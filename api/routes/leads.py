@@ -13,6 +13,7 @@ from psycopg2.extensions import connection as PGConn
 from pydantic import BaseModel, Field
 
 from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user
+from api.lead_events_emit import emit_surfaced, emit_viewed
 from api.models import (
     Lead, LeadPage, StatusUpdate, LeadContactUpdate,
     CustomerSearchResult, ScoreExplanation, ScoreFactor, VerticalFactor, MLFactor,
@@ -81,6 +82,11 @@ def list_leads(
             params + [page_size, offset],
         )
         rows = dict_fetchall(cur)
+
+    # Feedback loop (Phase 2): a listed lead has been surfaced to the contractor.
+    # First-only + best-effort, so a page render never appends per-row noise and
+    # never breaks the read.
+    emit_surfaced(db, [r["id"] for r in rows], user["account_id"], actor_user_id=user["id"])
 
     return LeadPage(total=total, page=page, page_size=page_size,
                     results=[Lead(**r) for r in rows])
@@ -166,6 +172,9 @@ def get_lead(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depends(ge
         row = dict_fetchone(cur)
     if not row:
         raise HTTPException(status_code=404, detail="Lead not found")
+    # Feedback loop (Phase 2): opening a lead's detail is a 'viewed' signal.
+    # First-only + best-effort.
+    emit_viewed(db, lead_id, user["account_id"], actor_user_id=user["id"])
     return Lead(**row)
 
 

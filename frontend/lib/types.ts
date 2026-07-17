@@ -309,6 +309,31 @@ export interface HistoryEntry {
   body?: string | null
 }
 
+// Scoring feedback loop: append-only outcome events. Most fire automatically
+// server-side from actions the user already takes (list render -> surfaced,
+// detail open -> viewed, stage changes -> contacted/quote_sent/won/lost). Only
+// 'disqualified' is raised explicitly, via the "Bad lead" action.
+export type LeadEventType =
+  | 'surfaced' | 'viewed' | 'contact_attempted' | 'contacted'
+  | 'quote_sent' | 'won' | 'lost' | 'disqualified' | 'suppressed'
+
+export interface LeadEventCreate {
+  event_type: LeadEventType
+  channel?: string | null
+  metadata?: Record<string, unknown> | null
+}
+
+export interface LeadEvent {
+  id: number
+  property_id: number
+  account_id: number
+  event_type: LeadEventType
+  channel: string | null
+  actor_user_id: number | null
+  occurred_at: string
+  metadata: Record<string, unknown> | null
+}
+
 export interface TimelineEntry {
   id: number
   property_id: number
