@@ -45,6 +45,12 @@ zip_sample_run_limiter = RateLimiter(
 # weights (verticals order the same rows differently).
 _CANDIDATE_ROWS = 60
 
+# The paid enrichment steps, skipped on public autorun so a stranger's ZIP is
+# seeded + scored entirely from free local HCAD data — never spending RentCast
+# or BatchData dollars. The masked teaser only needs address, grade, value and
+# the scoring "why", all of which HCAD + the free steps already provide.
+_PAID_STEPS = {"property", "contact", "demographics"}
+
 
 def sample_configured() -> bool:
     return bool(PUBLIC_SAMPLE_ACCOUNT_ID)
@@ -78,7 +84,7 @@ def _queue_sample_run(db: PGConn, account_id: int, zip_code: str, vertical: str 
         run_id = cur.fetchone()[0]
         db.commit()
     from api.scheduler import enqueue_run
-    enqueue_run(run_id, zip_code, vertical, account_id, seed_source="hcad")
+    enqueue_run(run_id, zip_code, vertical, account_id, seed_source="hcad", skip=_PAID_STEPS)
     log.info("ZIP-sample run %d queued for %s", run_id, zip_code)
     return True
 
