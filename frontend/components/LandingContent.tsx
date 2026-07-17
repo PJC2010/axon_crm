@@ -823,7 +823,7 @@ export default function LandingContent() {
               <ul className="lp-footer-links">
                 <li><a href="/signup">Start free</a></li>
                 <li><a href="/login">Sign in</a></li>
-                <li><a href="mailto:castillop92@gmail.com"><Mail size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} />Contact us</a></li>
+                <li><a href="mailto:admin@axonhtx.com"><Mail size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} />Contact us</a></li>
               </ul>
             </div>
             <div>

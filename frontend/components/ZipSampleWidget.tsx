@@ -28,7 +28,7 @@ const MAX_POLLS = 18 // ~3 minutes, then we stop hammering
  *  exists: a prefilled email that captures the visitor's market. Also used
  *  by the landing page's closing CTA (LandingContent.tsx). */
 export const WAITLIST_MAILTO =
-  'mailto:castillop92@gmail.com?subject=Axon%20waitlist%3A%20add%20my%20area&body=My%20city%20%2F%20county%3A%20'
+  'mailto:admin@axonhtx.com?subject=Axon%20waitlist%3A%20add%20my%20area&body=My%20city%20%2F%20county%3A%20'
 
 /** The landing page's "see your ZIP's top leads — free" teaser (audit P1's
  *  highest-leverage build). Talks to the public, unauthenticated sample

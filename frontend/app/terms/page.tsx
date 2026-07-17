@@ -79,8 +79,8 @@ export default function TermsPage() {
         These terms are governed by the laws of the State of Texas, with venue in Harris County.
         If we update the terms in a way that matters, we&apos;ll post the new version here with a
         new effective date and email active customers. Questions:{' '}
-        <a href="mailto:castillop92@gmail.com" style={{ color: 'var(--color-accent)' }}>
-          castillop92@gmail.com
+        <a href="mailto:admin@axonhtx.com" style={{ color: 'var(--color-accent)' }}>
+          admin@axonhtx.com
         </a>.
       </LegalP>
     </LegalPage>
