@@ -24,6 +24,12 @@ const GRADE_STYLE: Record<string, { bg: string; fg: string }> = {
 const POLL_MS = 10_000
 const MAX_POLLS = 18 // ~3 minutes, then we stop hammering
 
+/** Where "join the waitlist for your area" points until a real waitlist
+ *  exists: a prefilled email that captures the visitor's market. Also used
+ *  by the landing page's closing CTA (LandingContent.tsx). */
+export const WAITLIST_MAILTO =
+  'mailto:castillop92@gmail.com?subject=Axon%20waitlist%3A%20add%20my%20area&body=My%20city%20%2F%20county%3A%20'
+
 /** The landing page's "see your ZIP's top leads — free" teaser (audit P1's
  *  highest-leverage build). Talks to the public, unauthenticated sample
  *  endpoint; everything it renders is masked server-side. */
@@ -114,9 +120,15 @@ export function ZipSampleWidget() {
 
       {state === 'unsupported' && (
         <p className="lp-zip-note">
-          We can&apos;t sample that ZIP yet (free county data covers Harris County, TX today).{' '}
-          <a href="/preview">Explore the live demo instead</a> — or{' '}
-          <a href="/signup">start free</a> and run any territory.
+          {/* single span: .lp-zip-note is a flex row (for the icon states), and
+              bare inline children would each become their own flex item */}
+          <span>
+            We can&apos;t sample that ZIP yet — free county data covers Harris County, TX today,
+            and more markets are on the way.{' '}
+            <a href={WAITLIST_MAILTO}>Join the waitlist for your area</a>,{' '}
+            <a href="/preview">explore the live demo</a>, or{' '}
+            <a href="/signup">start free</a> and run any territory.
+          </span>
         </p>
       )}
 

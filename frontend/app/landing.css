@@ -249,6 +249,9 @@
 .lp-cta h2 { font-family: var(--font-display); font-size: clamp(28px, 4vw, 46px); font-weight: 600; line-height: 1.1; color: #fff; max-width: 600px; margin: 0 auto 28px; }
 .lp-cta h2 em { font-style: normal; color: var(--color-accent-300); }
 .lp-cta-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+.lp-cta-note { margin: 20px auto 0; font-size: 13px; line-height: 1.55; color: rgba(255, 255, 255, 0.7); max-width: 480px; }
+.lp-cta-note a { color: var(--color-accent-300); }
+.lp-cta-note a:hover { color: #fff; }
 
 /* Footer */
 .lp-footer { background: var(--color-black); border-top: 1px solid var(--color-ink-100); padding: 56px 0 40px; }
@@ -308,9 +311,9 @@
   transition-delay: 560ms;
 }
 
-/* Badge zap pulse */
-.lp-anim .lp-badge svg { animation: lp-zap 2.6s var(--ease-out) infinite; }
-@keyframes lp-zap { 0%, 92%, 100% { opacity: 1; } 96% { opacity: 0.35; } }
+/* Badge rocket nudge — a periodic lift along the icon's 45° flight line */
+.lp-anim .lp-badge svg { animation: lp-launch 3.2s var(--ease-out) infinite; }
+@keyframes lp-launch { 0%, 84%, 100% { transform: none; } 92% { transform: translate(1.5px, -2px); } }
 
 /* Feature icon lift handled by .lp-feature:hover; add a subtle accent glow */
 .lp-feature:hover .lp-feature-ic { transform: scale(1.06); transition: transform var(--dur-base) var(--ease-out); }
