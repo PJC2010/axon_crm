@@ -118,7 +118,7 @@ def _send_storm_mode_alert(conn, account_id: int, zip_code: str, hits: int) -> N
 def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: int,
                   top_n: int | None = None, center_address: str | None = None,
                   radius_mi: float | None = None, region_id: str | None = None,
-                  seed_source: str | None = None):
+                  seed_source: str | None = None, skip: set[str] | None = None):
     """Execute the enrichment pipeline step-by-step, checking for cancellation between steps.
 
     `top_n` (Top-N cap) and `center_address` + `radius_mi` (radius-from-address)
@@ -136,9 +136,14 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
     None defers to the SEED_SOURCE env default. Region runs ignore it — they
     always seed from HCAD. Choosing "hcad" does not skip RentCast entirely: the
     later property step still gap-fills whatever HCAD left NULL.
+
+    `skip` names steps to omit (same vocabulary as run_pipeline.py, e.g.
+    "property", "contact", "demographics"). The public ZIP-sample autorun passes
+    the three paid steps so on-demand demo seeding is provably free.
     """
     conn = psycopg2.connect(DATABASE_URL)
     capped = bool(top_n or (center_address and radius_mi))
+    skip = skip or set()
 
     def _set_status(status: str, result: dict | None = None):
         with conn.cursor() as cur:
@@ -208,12 +213,15 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
             )
             log.info("[4.5/8] run=%d Selection: %s", run_id, sources["selection"])
 
-        # Step 5 — Property detail (RentCast)
-        if _check_cancel(): return None
-        from pipeline.property import enrich_property
-        counters = enrich_property(zip_code, account_id, selected_only=capped)
-        sources.update(counters)
-        log.info("[5/8] run=%d Property: %s", run_id, counters)
+        # Step 5 — Property detail (RentCast, paid)
+        if "property" not in skip:
+            if _check_cancel(): return None
+            from pipeline.property import enrich_property
+            counters = enrich_property(zip_code, account_id, selected_only=capped)
+            sources.update(counters)
+            log.info("[5/8] run=%d Property: %s", run_id, counters)
+        else:
+            log.info("[5/8] run=%d Property: skipped", run_id)
 
         # Step 6 — Permits
         if _check_cancel(): return None
@@ -248,17 +256,23 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
             kept = trim_to_top_n(conn, zip_code, account_id, top_n)
             log.info("[7.5/8] run=%d Trim: kept top %d", run_id, kept)
 
-        # Step 8 — Contact / skip-trace (after scoring for optional grade gate)
-        if _check_cancel(): return None
-        from pipeline.contact import enrich_contact
-        sources["contact"] = enrich_contact(zip_code, account_id, selected_only=capped)
-        log.info("[8/8] run=%d Contact: %s", run_id, sources["contact"])
+        # Step 8 — Contact / skip-trace (paid; after scoring for optional grade gate)
+        if "contact" not in skip:
+            if _check_cancel(): return None
+            from pipeline.contact import enrich_contact
+            sources["contact"] = enrich_contact(zip_code, account_id, selected_only=capped)
+            log.info("[8/8] run=%d Contact: %s", run_id, sources["contact"])
+        else:
+            log.info("[8/8] run=%d Contact: skipped", run_id)
 
         # Step 8.5 — Demographics / life-events (paid, optional, grade-gated)
-        if _check_cancel(): return None
-        from pipeline.demographics import enrich_demographics
-        sources["demographics"] = enrich_demographics(zip_code, account_id, selected_only=capped)
-        log.info("[8.5/8] run=%d Demographics: %s", run_id, sources["demographics"])
+        if "demographics" not in skip:
+            if _check_cancel(): return None
+            from pipeline.demographics import enrich_demographics
+            sources["demographics"] = enrich_demographics(zip_code, account_id, selected_only=capped)
+            log.info("[8.5/8] run=%d Demographics: %s", run_id, sources["demographics"])
+        else:
+            log.info("[8.5/8] run=%d Demographics: skipped", run_id)
 
         # Step 9 — Timing signals (free): diff sale/permit/storm fields against the
         # previous run's baseline, record signal_events, fire signal_event rules.
@@ -390,13 +404,14 @@ def remove_schedule_job(schedule_id: int):
 
 def enqueue_run(run_id: int, zip_code: str, vertical: str | None, account_id: int,
                 top_n: int | None = None, center_address: str | None = None,
-                radius_mi: float | None = None, seed_source: str | None = None):
+                radius_mi: float | None = None, seed_source: str | None = None,
+                skip: set[str] | None = None):
     """Fire a one-off pipeline run immediately in the thread pool."""
     scheduler.add_job(
         _run_pipeline,
         id=f"run_{run_id}",
         args=[run_id, zip_code, vertical, account_id, top_n, center_address, radius_mi],
-        kwargs={"seed_source": seed_source},
+        kwargs={"seed_source": seed_source, "skip": skip},
         replace_existing=True,
     )
 
