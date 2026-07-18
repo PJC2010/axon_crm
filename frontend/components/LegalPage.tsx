@@ -52,8 +52,8 @@ export default function LegalPage({
         </h1>
         <p style={{ fontSize: 13, color: 'var(--color-ink-400)', margin: '0 0 36px' }}>
           Effective {effectiveDate} · Axon, a Castillo &amp; Co LLC company ·{' '}
-          <a href="mailto:castillop92@gmail.com" style={{ color: 'var(--color-accent)' }}>
-            castillop92@gmail.com
+          <a href="mailto:admin@axonhtx.com" style={{ color: 'var(--color-accent)' }}>
+            admin@axonhtx.com
           </a>
         </p>
         {children}

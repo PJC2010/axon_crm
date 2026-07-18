@@ -55,8 +55,8 @@ export default function PrivacyPage() {
         it came from a licensed data provider. If you&apos;d like to know what an Axon-managed
         list holds about your property, correct it, or have your contact details suppressed from
         Axon-managed enrichment, email us at{' '}
-        <a href="mailto:castillop92@gmail.com" style={{ color: 'var(--color-accent)' }}>
-          castillop92@gmail.com
+        <a href="mailto:admin@axonhtx.com" style={{ color: 'var(--color-accent)' }}>
+          admin@axonhtx.com
         </a>{' '}
         and we will respond within 30 days. Residents of Texas and other states with consumer
         privacy laws (including the Texas Data Privacy and Security Act) may exercise their rights
@@ -88,8 +88,8 @@ export default function PrivacyPage() {
       <LegalP>
         If we change this policy in a way that matters, we&apos;ll note it here with a new
         effective date and tell active customers by email. Questions, requests, complaints:{' '}
-        <a href="mailto:castillop92@gmail.com" style={{ color: 'var(--color-accent)' }}>
-          castillop92@gmail.com
+        <a href="mailto:admin@axonhtx.com" style={{ color: 'var(--color-accent)' }}>
+          admin@axonhtx.com
         </a>.
       </LegalP>
     </LegalPage>
