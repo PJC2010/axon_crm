@@ -283,6 +283,11 @@ For the frontend, create `frontend/.env.local`:
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:8000
+
+# Optional: Google Analytics 4. Leave unset to disable analytics entirely.
+# Page views (including client-side navigation) are tracked automatically;
+# conversion events (sign_up, login, begin_checkout) fire via lib/analytics.ts.
+NEXT_PUBLIC_GA_MEASUREMENT_ID=G-XXXXXXXXXX
 ```
 
 ### Database Setup

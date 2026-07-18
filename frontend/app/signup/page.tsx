@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { signup, getSignupStatus, loginWithGoogle, loginWithApple } from '@/lib/api'
 import { setToken } from '@/lib/auth'
+import { trackSignUp, type AuthMethod } from '@/lib/analytics'
 import { Logo, Card, Button, Input } from '@/components/ds'
 
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID
@@ -47,7 +48,8 @@ export default function SignupPage() {
   const [enabled, setEnabled] = useState(true)
   const googleBtn = useRef<HTMLDivElement>(null)
 
-  function onTokenSuccess(access_token: string) {
+  function onTokenSuccess(access_token: string, method: AuthMethod) {
+    trackSignUp(method)
     setToken(access_token)
     router.push('/home')
   }
@@ -65,7 +67,7 @@ export default function SignupPage() {
     setLoading(true)
     try {
       const { access_token } = await signup(company, email, password)
-      onTokenSuccess(access_token)
+      onTokenSuccess(access_token, 'email')
     } catch (err) {
       setError(reason(err, 'Could not create your account — try again.'))
     } finally {
@@ -89,7 +91,7 @@ export default function SignupPage() {
             setError(null)
             try {
               const { access_token } = await loginWithGoogle(resp.credential)
-              onTokenSuccess(access_token)
+              onTokenSuccess(access_token, 'google')
             } catch (err) {
               setError(reason(err, 'Google sign-up failed'))
             }
@@ -135,7 +137,7 @@ export default function SignupPage() {
       const idToken = res?.authorization?.id_token
       if (!idToken) throw new Error('No Apple token returned')
       const { access_token } = await loginWithApple(idToken)
-      onTokenSuccess(access_token)
+      onTokenSuccess(access_token, 'apple')
     } catch (err) {
       setError(reason(err, 'Apple sign-up was cancelled or failed'))
     }

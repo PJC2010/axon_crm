@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { BadgeCheck, Check, ExternalLink } from 'lucide-react'
 import { getBilling, startPlanCheckout, openBillingPortal } from '@/lib/api'
+import { trackBeginCheckout } from '@/lib/analytics'
 import type { BillingInfo } from '@/lib/types'
 
 const PLAN_ORDER = ['starter', 'growth', 'pro']
@@ -42,6 +43,7 @@ export function BillingSection() {
     setError(null)
     try {
       const { url } = await startPlanCheckout(plan)
+      trackBeginCheckout(plan)
       window.location.href = url
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Could not start checkout')

@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { login, loginWithGoogle, loginWithApple } from '@/lib/api'
 import { setToken } from '@/lib/auth'
+import { trackLogin, type AuthMethod } from '@/lib/analytics'
 import { Logo, Card, Button, Input } from '@/components/ds'
 
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID
@@ -47,7 +48,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const googleBtn = useRef<HTMLDivElement>(null)
 
-  function onTokenSuccess(access_token: string) {
+  function onTokenSuccess(access_token: string, method: AuthMethod) {
+    trackLogin(method)
     setToken(access_token)
     router.push('/home')
   }
@@ -58,7 +60,7 @@ export default function LoginPage() {
     setLoading(true)
     try {
       const { access_token } = await login(username, password)
-      onTokenSuccess(access_token)
+      onTokenSuccess(access_token, 'email')
     } catch {
       setError('Invalid username or password')
     } finally {
@@ -82,7 +84,7 @@ export default function LoginPage() {
             setError(null)
             try {
               const { access_token } = await loginWithGoogle(resp.credential)
-              onTokenSuccess(access_token)
+              onTokenSuccess(access_token, 'google')
             } catch (err) {
               setError(reason(err, 'Google sign-in failed'))
             }
@@ -129,7 +131,7 @@ export default function LoginPage() {
       const idToken = res?.authorization?.id_token
       if (!idToken) throw new Error('No Apple token returned')
       const { access_token } = await loginWithApple(idToken)
-      onTokenSuccess(access_token)
+      onTokenSuccess(access_token, 'apple')
     } catch (err) {
       // The user closing the Apple popup throws too — keep that quiet-ish.
       setError(reason(err, 'Apple sign-in was cancelled or failed'))

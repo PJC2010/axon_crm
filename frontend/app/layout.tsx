@@ -1,6 +1,14 @@
 import type { Metadata, Viewport } from "next";
 import { Roboto_Slab, Geist, Geist_Mono } from "next/font/google";
+import { GoogleAnalytics } from "@next/third-parties/google";
 import "./globals.css";
+
+// Google Analytics 4 measurement ID (G-XXXXXXX). Optional — analytics is off
+// entirely when unset, matching the repo-wide "missing key = feature skipped"
+// convention. Page views (including client-side route changes) are tracked
+// automatically by the GoogleAnalytics component; custom events go through
+// lib/analytics.ts.
+const GA_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
 
 // Brand fonts. Distinct variable names (not --font-display/-sans/-mono) so they
 // don't collide with the semantic font tokens defined in globals.css; those
@@ -46,6 +54,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${robotoSlab.variable} ${geist.variable} ${geistMono.variable}`}>
       <body>{children}</body>
+      {GA_ID && <GoogleAnalytics gaId={GA_ID} />}
     </html>
   );
 }
