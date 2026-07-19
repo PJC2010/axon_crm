@@ -1,5 +1,4 @@
 import './landing.css'
-import './brand-film.css'
 import LandingContent from '@/components/LandingContent'
 
 export const metadata = {
