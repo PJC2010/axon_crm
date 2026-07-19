@@ -7,6 +7,7 @@ import {
   Database, HelpCircle, X, Mail, MapPin, CloudLightning,
 } from 'lucide-react'
 import { ZipSampleWidget, WAITLIST_MAILTO } from '@/components/ZipSampleWidget'
+import { ProspectCaptureForm } from '@/components/ProspectCaptureForm'
 
 // ── Competitor comparison data (Axon vs. the national lead marketplaces) ──
 // Cell copy states each platform's publicly documented pay-per-lead model;
@@ -835,6 +836,12 @@ export default function LandingContent() {
             Currently serving Harris County, Texas. Expanding soon —{' '}
             <a href={WAITLIST_MAILTO}>join the waitlist for your area</a>.
           </p>
+          <div style={{ marginTop: 36, paddingTop: 28, borderTop: '1px solid rgba(255,255,255,0.15)' }}>
+            <p style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 600, margin: '0 0 12px' }}>
+              Not ready yet? Leave your email and we&apos;ll give you a personal walkthrough.
+            </p>
+            <ProspectCaptureForm source="landing" dark />
+          </div>
         </div>
       </section>
 

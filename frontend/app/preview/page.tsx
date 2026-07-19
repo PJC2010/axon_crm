@@ -1,16 +1,44 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import {
   TrendingUp, Users, CheckSquare, DollarSign,
   Plus, FileText, Receipt, Kanban,
   AlertTriangle, Clock, AlertCircle,
   LogOut, Settings, BookOpen, ArrowRight,
   Percent, Sparkles, Activity,
-  UserPlus, Target,
+  UserPlus, Target, Map, Zap,
 } from 'lucide-react'
 import Link from 'next/link'
 import { ScoreBadge } from '@/components/ScoreBadge'
+import { ProspectCaptureForm } from '@/components/ProspectCaptureForm'
 import type { Lead, ForecastData } from '@/lib/types'
+
+// Count-up for KPI numbers on mount — restrained (600ms, ease-out), and
+// disabled entirely for prefers-reduced-motion.
+function useCountUp(target: number, durationMs = 600): number {
+  const [value, setValue] = useState(0)
+  const started = useRef(false)
+  useEffect(() => {
+    if (started.current) return
+    started.current = true
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    let raf = 0
+    const t0 = performance.now()
+    const tick = (t: number) => {
+      const p = reduced ? 1 : Math.min((t - t0) / durationMs, 1)
+      setValue(target * (1 - Math.pow(1 - p, 3)))
+      if (p < 1) raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [target, durationMs])
+  return value
+}
+
+function AnimatedNumber({ value, format }: { value: number; format: (n: number) => string }) {
+  const n = useCountUp(value)
+  return <>{format(n)}</>
+}
 
 const MOCK_LEADS: Lead[] = [
   { id: 1, account_number: 'C-01001', address: '1842 Westheimer Rd', city: 'Houston', state: 'TX', zip: '77006', latitude: null, longitude: null, year_built: 1987, square_footage: 3400, garage_spaces: 2, estimated_value: 425000, estimated_equity: 180000, last_sale_date: '2015-06-12', last_sale_price: 310000, owner_name: 'James Mitchell', owner_occupied: true, contact_phone: '(713) 555-0142', contact_email: 'jmitchell@example.com', contact_name: 'James Mitchell', contact_phone_alt: null, contact_email_alt: null, mailing_address: null, preferred_contact_method: null, best_time_to_call: null, zip_median_income: 78500, permit_count_24mo: 0, has_pool: true, has_cracked_slab: false, lead_score: 94, score_grade: 'A', vertical: 'hvac', neighborhood_value_ratio: 1.15, neighborhood_value_pctile: 0.82, neighborhood_value_basis: 'cell', hcad_neighborhood_code: '5412.02', hcad_neighborhood_name: 'WESTHEIMER OAKS', assigned_to: null, lead_source: 'hcad', status: 'qualified', estimated_job_value: 12500, stage_moved_at: '2026-06-05T10:00:00Z', score_updated_at: '2026-06-01T08:00:00Z', created_at: '2026-05-28T10:00:00Z', updated_at: '2026-06-05T10:00:00Z', archived_at: null },
@@ -105,8 +133,15 @@ export default function PreviewPage() {
       <div style={{
         background: 'linear-gradient(90deg, var(--color-accent), var(--color-ocean-d))',
         color: 'white', textAlign: 'center', padding: '8px 16px', fontSize: 13, fontWeight: 500,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, flexWrap: 'wrap',
       }}>
-        Preview Mode — Viewing dashboard with sample data
+        <span>You&apos;re viewing a live demo with sample data — everything here works with your real leads.</span>
+        <Link href="/signup" style={{
+          color: 'var(--color-accent)', background: 'white', textDecoration: 'none',
+          padding: '3px 12px', borderRadius: 999, fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap',
+        }}>
+          Start free trial
+        </Link>
       </div>
 
       {/* ── Top Nav ── */}
@@ -147,6 +182,14 @@ export default function PreviewPage() {
               {wide && <span>{item.label}</span>}
             </span>
           ))}
+          <Link href="/signup" style={{
+            marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 6,
+            background: 'var(--color-accent)', color: 'white', textDecoration: 'none',
+            padding: '8px 14px', borderRadius: 'var(--radius-button)', fontSize: 13, fontWeight: 600,
+            whiteSpace: 'nowrap',
+          }}>
+            Start free{wide && <ArrowRight size={13} strokeWidth={2} />}
+          </Link>
         </div>
       </header>
 
@@ -172,7 +215,7 @@ export default function PreviewPage() {
             <div style={{ textAlign: 'right' }}>
               <p className="t-eyebrow" style={{ color: 'rgba(255,255,255,0.55)', margin: '0 0 4px' }}>Pipeline Value</p>
               <p className="tabular" style={{ margin: 0, fontSize: 30, fontWeight: 700, color: 'white', lineHeight: 1 }}>
-                $142k
+                <AnimatedNumber value={142000} format={fmtCurrency} />
               </p>
             </div>
           </div>
@@ -180,11 +223,11 @@ export default function PreviewPage() {
 
         {/* ── KPI Cards ── */}
         <div style={{ display: 'grid', gridTemplateColumns: wide ? 'repeat(5, 1fr)' : 'repeat(2, 1fr)', gap: 12, marginBottom: 20 }}>
-          <KPICard icon={<TrendingUp size={16} strokeWidth={1.5} color="var(--color-accent)" />} label="Forecast" value="$29k" sub="weighted pipeline" />
-          <KPICard icon={<Users size={16} strokeWidth={1.5} color="var(--color-accent)" />} label="Active Leads" value="90" sub="across all stages" />
-          <KPICard icon={<CheckSquare size={16} strokeWidth={1.5} color="var(--color-accent)" />} label="Due Today" value="8" sub="on track" />
-          <KPICard icon={<DollarSign size={16} strokeWidth={1.5} color="#4F7A4A" />} label="Collected YTD" value="$138k" sub="$9k outstanding" />
-          <KPICard icon={<Percent size={16} strokeWidth={1.5} color="var(--color-moss)" />} label="Win Rate" value="38%" sub="12d avg cycle" />
+          <KPICard icon={<TrendingUp size={16} strokeWidth={1.5} color="var(--color-accent)" />} label="Forecast" value={<AnimatedNumber value={29000} format={fmtCurrency} />} sub="weighted pipeline" />
+          <KPICard icon={<Users size={16} strokeWidth={1.5} color="var(--color-accent)" />} label="Active Leads" value={<AnimatedNumber value={90} format={n => `${Math.round(n)}`} />} sub="across all stages" />
+          <KPICard icon={<CheckSquare size={16} strokeWidth={1.5} color="var(--color-accent)" />} label="Due Today" value={<AnimatedNumber value={8} format={n => `${Math.round(n)}`} />} sub="on track" />
+          <KPICard icon={<DollarSign size={16} strokeWidth={1.5} color="#4F7A4A" />} label="Collected YTD" value={<AnimatedNumber value={138000} format={fmtCurrency} />} sub="$9k outstanding" />
+          <KPICard icon={<Percent size={16} strokeWidth={1.5} color="var(--color-moss)" />} label="Win Rate" value={<AnimatedNumber value={38} format={n => `${Math.round(n)}%`} />} sub="12d avg cycle" />
         </div>
 
         {/* ── Quick Actions ── */}
@@ -525,12 +568,67 @@ export default function PreviewPage() {
             })}
           </div>
         </div>
+
+        {/* ── Module Teasers ── */}
+        <div style={{ marginTop: 32 }}>
+          <p className="t-eyebrow" style={{ margin: '0 0 4px' }}>There&apos;s more than the dashboard</p>
+          <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--color-ink-500)' }}>
+            Every plan includes the full pipeline — these ship with your free trial.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: wide ? 'repeat(3, 1fr)' : '1fr', gap: 12 }}>
+            {[
+              { icon: <Kanban size={18} strokeWidth={1.5} />, title: 'Kanban pipeline', desc: 'Drag deals stage to stage; forecast updates as you go.' },
+              { icon: <Map size={18} strokeWidth={1.5} />, title: 'Territory map', desc: 'Every scored property on a map of your ZIP codes — plan routes street by street.' },
+              { icon: <Zap size={18} strokeWidth={1.5} />, title: 'Invoicing & automation', desc: 'Quote, invoice, and get paid — with follow-ups that send themselves.' },
+            ].map(mod => (
+              <Link key={mod.title} href="/signup" style={{
+                display: 'flex', flexDirection: 'column', gap: 8, padding: '16px 18px',
+                borderRadius: 'var(--radius-card)', background: 'var(--color-surface)',
+                boxShadow: 'var(--shadow-card)', textDecoration: 'none',
+              }}>
+                <span style={{ color: 'var(--color-accent)', display: 'flex' }}>{mod.icon}</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-ink-900)' }}>{mod.title}</span>
+                <span style={{ fontSize: 12.5, color: 'var(--color-ink-600)', lineHeight: 1.45 }}>{mod.desc}</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 600, color: 'var(--color-accent)', marginTop: 'auto' }}>
+                  Try it free <ArrowRight size={12} strokeWidth={1.8} />
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Closing CTA ── */}
+        <div style={{
+          marginTop: 32, borderRadius: 'var(--radius-card)', textAlign: 'center',
+          background: 'linear-gradient(135deg, var(--color-accent) 0%, var(--color-ocean-d) 100%)',
+          padding: '32px 24px',
+        }}>
+          <p style={{ margin: '0 0 6px', fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 600, color: 'white' }}>
+            This could be your Monday morning.
+          </p>
+          <p style={{ margin: '0 0 18px', fontSize: 14, color: 'rgba(255,255,255,0.75)' }}>
+            Start free — your first scored lead list is minutes away. No credit card.
+          </p>
+          <Link href="/signup" style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8, background: 'white',
+            color: 'var(--color-accent)', textDecoration: 'none', padding: '12px 26px',
+            borderRadius: 'var(--radius-button)', fontSize: 15, fontWeight: 700,
+          }}>
+            Start free trial <ArrowRight size={15} strokeWidth={2} />
+          </Link>
+          <div style={{ marginTop: 26, paddingTop: 22, borderTop: '1px solid rgba(255,255,255,0.2)' }}>
+            <p style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>
+              Rather see it with your own data first? Leave your email for a personal walkthrough.
+            </p>
+            <ProspectCaptureForm source="preview" dark />
+          </div>
+        </div>
       </div>
     </div>
   )
 }
 
-function KPICard({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: string; sub: string }) {
+function KPICard({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: React.ReactNode; sub: string }) {
   return (
     <div style={{
       background: 'var(--color-surface)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)',

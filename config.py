@@ -196,6 +196,11 @@ TWILIO_ACCOUNT_SID  = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN   = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_FROM_NUMBER  = os.getenv("TWILIO_FROM_NUMBER", "")
 
+# Platform-owner address for internal alerts (new self-serve signups, prospect
+# email captures, unverified-signup digests). Empty = alerts disabled; sending
+# rides the RESEND_* config above and always fails soft.
+ADMIN_NOTIFICATION_EMAIL = os.getenv("ADMIN_NOTIFICATION_EMAIL", "")
+
 # Frontend origin used to build customer-facing links (public quote pages).
 APP_BASE_URL        = os.getenv("APP_BASE_URL", "http://localhost:3000")
 

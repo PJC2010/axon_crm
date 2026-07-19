@@ -54,3 +54,5 @@ pipeline_run_limiter = RateLimiter(max_calls=10, per_seconds=3600, name="pipelin
 public_quote_limiter = RateLimiter(max_calls=30, per_seconds=60, name="public quote")
 public_pay_limiter = RateLimiter(max_calls=30, per_seconds=60, name="public payment")
 public_intake_limiter = RateLimiter(max_calls=30, per_seconds=60, name="website intake")
+# Landing/preview email capture — browser-facing and unauthenticated, keep tight.
+prospect_limiter = RateLimiter(max_calls=5, per_seconds=3600, name="prospect signup")

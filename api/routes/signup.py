@@ -10,7 +10,8 @@ POST /auth/reset-password          — one-time token + new password
 
 Provisioning goes through api.accounts.provision_owner — the same defaults as
 the CLI bootstrap (scripts/create_user.py), so self-serve and admin-created
-accounts are identical. Email sending fails soft: with Resend unconfigured,
+accounts are identical. Signup also sends a welcome email to the new owner and
+an internal alert to ADMIN_NOTIFICATION_EMAIL. Email sending fails soft: with Resend unconfigured,
 signup still succeeds (the token just goes nowhere) and reset returns the same
 generic 200 — configure RESEND_API_KEY / RESEND_FROM_EMAIL to activate both.
 """
@@ -20,11 +21,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from psycopg2.extensions import connection as PGConn
 from pydantic import BaseModel
 
-from config import APP_BASE_URL, SELF_SERVE_SIGNUP
+from config import APP_BASE_URL, SELF_SERVE_SIGNUP, TRIAL_DAYS
 from api.accounts import provision_owner
 from api.business_types import BUSINESS_TYPES, DEFAULT_BUSINESS_TYPE
 from api.deps import get_db, get_current_user, dict_fetchone
-from api.notifications import email_configured, send_email
+from api.notifications import (
+    admin_alerts_configured, email_configured, send_admin_signup_alert,
+    send_email, send_welcome_email,
+)
 from api.ratelimit import client_ip, signup_limiter, password_reset_limiter
 from api.routes.auth import TokenResponse
 from api.security import create_access_token, hash_password
@@ -197,7 +201,21 @@ def signup(body: SignupRequest, request: Request, db: PGConn = Depends(get_db)):
         log.exception("Signup provisioning failed for %s", email)
         raise HTTPException(status_code=500, detail="Could not create your account — try again.")
 
+    # Post-commit emails, all fail-soft — a mail hiccup must never fail signup.
     _send_verification_email(email, raw_token)
+    if email_configured():
+        try:
+            send_welcome_email(to_email=email, company_name=body.company_name.strip(),
+                               trial_days=TRIAL_DAYS)
+        except Exception:
+            log.warning("Failed sending welcome email to %s", email, exc_info=True)
+    if admin_alerts_configured():
+        try:
+            send_admin_signup_alert(company_name=body.company_name.strip(), email=email,
+                                    business_type=business_type,
+                                    username=created["username"])
+        except Exception:
+            log.warning("Failed sending admin signup alert for %s", email, exc_info=True)
     token = create_access_token(created["user_id"], created["username"], "owner")
     return TokenResponse(access_token=token)
 

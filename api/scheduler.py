@@ -622,6 +622,92 @@ def schedule_trial_expiry():
     log.info("Scheduled daily trial expiry at %02d:50 UTC", WORKFLOW_TICK_HOUR)
 
 
+UNVERIFIED_DIGEST_LOCK_KEY = 742026006
+
+
+def run_unverified_signup_digest():
+    """Daily: email ADMIN_NOTIFICATION_EMAIL a digest of yesterday's signups
+    that never verified their email — warm leads worth a manual follow-up.
+
+    Reports only the previous day's window, so each signup appears in exactly
+    one digest and no sent-state needs tracking. Skips entirely (and cheaply)
+    when admin alerts aren't configured.
+    """
+    from api.notifications import admin_alerts_configured, send_email
+    from config import ADMIN_NOTIFICATION_EMAIL
+    if not admin_alerts_configured():
+        return
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_try_advisory_lock(%s)", (UNVERIFIED_DIGEST_LOCK_KEY,))
+            if not cur.fetchone()[0]:
+                log.info("Unverified-signup digest skipped — another worker holds the lock")
+                return
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT u.email, u.username, u.created_at, a.name AS company
+                    FROM users u
+                    LEFT JOIN accounts a ON a.id = u.account_id
+                    WHERE u.email_verified = FALSE
+                      AND u.is_active = TRUE
+                      AND u.created_at >= NOW() - INTERVAL '2 days'
+                      AND u.created_at <  NOW() - INTERVAL '1 day'
+                    ORDER BY u.created_at
+                    """
+                )
+                rows = cur.fetchall()
+            if not rows:
+                return
+            import html as _html
+            items = "".join(
+                f"<tr><td style='padding:4px 12px 4px 0'>{_html.escape(r['company'] or '—')}</td>"
+                f"<td style='padding:4px 12px 4px 0'>{_html.escape(r['email'])}</td>"
+                f"<td style='padding:4px 0;color:#888'>{r['created_at']:%b %d %H:%M} UTC</td></tr>"
+                for r in rows
+            )
+            send_email(
+                to_email=ADMIN_NOTIFICATION_EMAIL,
+                subject=f"Axon: {len(rows)} unverified signup(s) worth a follow-up",
+                html=f"""
+                <div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;color:#1a1a1a">
+                  <h2 style="margin:0 0 12px">Signups that never verified</h2>
+                  <p style="color:#555">These accounts were created yesterday but the owner
+                  never clicked the verification link — a personal email often revives them.</p>
+                  <table style="border-collapse:collapse;font-size:14px">
+                    <tr style="color:#888;text-align:left"><th style="padding:4px 12px 4px 0">Company</th>
+                    <th style="padding:4px 12px 4px 0">Email</th><th style="padding:4px 0">Signed up</th></tr>
+                    {items}
+                  </table>
+                </div>
+                """,
+            )
+            log.info("Unverified-signup digest sent: %d signup(s)", len(rows))
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_unlock(%s)", (UNVERIFIED_DIGEST_LOCK_KEY,))
+            conn.commit()
+    except Exception:
+        log.exception("Unverified-signup digest failed")
+    finally:
+        conn.close()
+
+
+def schedule_unverified_digest():
+    """Register the daily unverified-signup digest cron (idempotent)."""
+    from config import WORKFLOW_TICK_HOUR
+    scheduler.add_job(
+        run_unverified_signup_digest,
+        trigger=CronTrigger(hour=WORKFLOW_TICK_HOUR, minute=55, timezone="UTC"),
+        id="unverified_digest_daily",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    log.info("Scheduled daily unverified-signup digest at %02d:55 UTC", WORKFLOW_TICK_HOUR)
+
+
 GEO_RESCORE_LOCK_KEY = 742026004
 
 
