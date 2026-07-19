@@ -7,7 +7,6 @@ import {
   Database, HelpCircle, X, Mail, MapPin, CloudLightning,
 } from 'lucide-react'
 import { ZipSampleWidget, WAITLIST_MAILTO } from '@/components/ZipSampleWidget'
-import BrandFilm from '@/components/BrandFilm'
 
 // ── Competitor comparison data (Axon vs. the national lead marketplaces) ──
 // Cell copy states each platform's publicly documented pay-per-lead model;
@@ -65,6 +64,22 @@ const AxonMark = ({ size = 28, maskId }: { size?: number; maskId: string }) => (
 
 export default function LandingContent() {
   const rootRef = useRef<HTMLDivElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const posterRef = useRef<HTMLDivElement>(null)
+
+  // ── Video poster: only hide it once the clip actually starts playing. ──
+  useEffect(() => {
+    const v = videoRef.current
+    const poster = posterRef.current
+    if (!v || !poster) return
+    const reveal = () => { if (v.readyState >= 3 && !v.paused) poster.classList.add('hidden') }
+    v.addEventListener('playing', reveal)
+    v.addEventListener('loadeddata', reveal)
+    return () => {
+      v.removeEventListener('playing', reveal)
+      v.removeEventListener('loadeddata', reveal)
+    }
+  }, [])
 
   // ── Scroll/entrance animations (ported from the marketing kit). ──
   useEffect(() => {
@@ -276,8 +291,30 @@ export default function LandingContent() {
             </span>
           </div>
 
-          {/* ── Brand film header (self-drawn CSS/JS film — see BrandFilm.tsx) ── */}
-          <BrandFilm />
+          {/* ── Video header ── */}
+          <div className="lp-video-wrap">
+            <div className="lp-video-chrome">
+              <span className="lp-dot" style={{ background: '#E26A6A' }} />
+              <span className="lp-dot" style={{ background: '#E2B06A' }} />
+              <span className="lp-dot" style={{ background: '#6AE28B' }} />
+            </div>
+            <div className="lp-video-stage">
+              <video ref={videoRef} autoPlay muted loop playsInline poster="" preload="auto">
+                <source src="/axon-promo.mp4" type="video/mp4" />
+              </video>
+              <div className="lp-video-poster" ref={posterRef}>
+                <button
+                  type="button"
+                  className="lp-play"
+                  aria-label="Play product demo"
+                  onClick={() => videoRef.current?.play().catch(() => {})}
+                >
+                  <Play size={30} color="#fff" style={{ marginLeft: 4 }} />
+                </button>
+                <div className="lp-video-caption">See Axon in action</div>
+              </div>
+            </div>
+          </div>
         </div>
       </header>
 
