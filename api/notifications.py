@@ -1,11 +1,15 @@
-"""Invoice delivery via email (Resend) and SMS (Twilio).
+"""Outbound email (Resend) and SMS (Twilio): invoice/quote delivery, signup
+welcome email, and internal admin alerts (new signups, landing-page prospects).
 
 Both senders fail soft per channel: if a provider isn't configured they raise a
 clear error so the route can report which channel failed without aborting the
 others. Messages are a plain invoice summary (no online pay link — Stripe
 payments are deferred; see api/integrations/stripe/README.md).
 """
+import html as _html
+
 from config import (
+    ADMIN_NOTIFICATION_EMAIL, APP_BASE_URL,
     RESEND_API_KEY, RESEND_FROM_EMAIL,
     TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER,
 )
@@ -41,6 +45,86 @@ def send_sms(*, to_phone: str, body: str) -> None:
     from twilio.rest import Client
     client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
     client.messages.create(body=body, from_=TWILIO_FROM_NUMBER, to=to_phone)
+
+
+def admin_alerts_configured() -> bool:
+    return bool(ADMIN_NOTIFICATION_EMAIL) and email_configured()
+
+
+def send_admin_signup_alert(*, company_name: str, email: str, business_type: str,
+                            username: str) -> None:
+    """Internal alert to the platform owner when a self-serve signup lands."""
+    if not admin_alerts_configured():
+        raise RuntimeError("Admin alerts are not configured (ADMIN_NOTIFICATION_EMAIL + RESEND_*)")
+    company = _html.escape(company_name)
+    send_email(
+        to_email=ADMIN_NOTIFICATION_EMAIL,
+        subject=f"New Axon signup: {company_name}",
+        html=f"""
+        <div style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+          <h2 style="margin:0 0 12px">New self-serve signup</h2>
+          <table style="border-collapse:collapse;font-size:14px">
+            <tr><td style="padding:4px 12px 4px 0;color:#888">Company</td><td>{company}</td></tr>
+            <tr><td style="padding:4px 12px 4px 0;color:#888">Email</td><td>{_html.escape(email)}</td></tr>
+            <tr><td style="padding:4px 12px 4px 0;color:#888">Username</td><td>{_html.escape(username)}</td></tr>
+            <tr><td style="padding:4px 12px 4px 0;color:#888">Business type</td><td>{_html.escape(business_type)}</td></tr>
+          </table>
+          <p style="color:#888;font-size:13px;margin-top:20px">They start on a pro trial —
+          worth a personal welcome within the first day.</p>
+        </div>
+        """,
+    )
+
+
+def send_admin_prospect_alert(*, email: str, name: str | None, source: str | None) -> None:
+    """Internal alert when a visitor leaves their email on the landing/preview pages."""
+    if not admin_alerts_configured():
+        raise RuntimeError("Admin alerts are not configured (ADMIN_NOTIFICATION_EMAIL + RESEND_*)")
+    send_email(
+        to_email=ADMIN_NOTIFICATION_EMAIL,
+        subject=f"New Axon prospect: {email}",
+        html=f"""
+        <div style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+          <h2 style="margin:0 0 12px">Someone left their email</h2>
+          <table style="border-collapse:collapse;font-size:14px">
+            <tr><td style="padding:4px 12px 4px 0;color:#888">Email</td><td>{_html.escape(email)}</td></tr>
+            <tr><td style="padding:4px 12px 4px 0;color:#888">Name</td><td>{_html.escape(name or "—")}</td></tr>
+            <tr><td style="padding:4px 12px 4px 0;color:#888">Source</td><td>{_html.escape(source or "landing")}</td></tr>
+          </table>
+          <p style="color:#888;font-size:13px;margin-top:20px">They asked for a walkthrough —
+          reply while the interest is warm.</p>
+        </div>
+        """,
+    )
+
+
+def send_welcome_email(*, to_email: str, company_name: str, trial_days: int) -> None:
+    """Onboarding welcome sent alongside the verification email at signup."""
+    if not email_configured():
+        raise RuntimeError("Email is not configured (RESEND_API_KEY / RESEND_FROM_EMAIL)")
+    company = _html.escape(company_name)
+    send_email(
+        to_email=to_email,
+        subject=f"Welcome to Axon — your {trial_days}-day Pro trial is live",
+        html=f"""
+        <div style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">
+          <h2 style="margin:0 0 12px">Welcome aboard, {company}</h2>
+          <p>Your workspace is ready and every Pro feature is unlocked for the next
+          <strong>{trial_days} days</strong> — no card required.</p>
+          <p style="margin:16px 0 8px"><strong>Three things worth doing first:</strong></p>
+          <ol style="margin:0 0 16px;padding-left:20px;line-height:1.7">
+            <li><strong>Import your leads</strong> — drop in a CSV and they land on your board.</li>
+            <li><strong>Set up your pipeline</strong> — rename stages to match how you actually sell.</li>
+            <li><strong>Send your first invoice or quote</strong> — email or text, straight from a lead.</li>
+          </ol>
+          <p style="margin:24px 0"><a href="{APP_BASE_URL}/dashboard"
+             style="background:#1a5a75;color:#fff;text-decoration:none;padding:12px 24px;
+                    border-radius:8px;font-weight:600">Open your dashboard</a></p>
+          <p style="color:#888;font-size:13px">Questions? Just reply to this email —
+          a real person reads these.</p>
+        </div>
+        """,
+    )
 
 
 def send_invoice_email(*, to_email: str, business_name: str, invoice_number: str,

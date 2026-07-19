@@ -55,6 +55,14 @@ export function login(username: string, password: string): Promise<{ access_toke
   return req('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) })
 }
 
+// Public prospect capture (landing/preview email forms) — unauthenticated.
+export function submitProspect(email: string, name?: string, source?: 'landing' | 'preview'): Promise<{ ok: boolean; detail: string }> {
+  return req('/public/prospect', {
+    method: 'POST',
+    body: JSON.stringify({ email, name: name || null, source: source || 'landing' }),
+  })
+}
+
 // Social login: exchange a provider OIDC ID token for an Axon JWT. Same response
 // shape as login(), so the caller stores access_token the same way.
 export function loginWithGoogle(idToken: string): Promise<{ access_token: string }> {
