@@ -5,6 +5,7 @@ import {
   ArrowRight, BookOpen, Columns3, FileText, DollarSign, GitBranch, Layers, Rocket,
   Crosshair, Map, Bell, Play, Star, Check, Users,
   Database, HelpCircle, X, Mail, MapPin, CloudLightning,
+  MessageSquare, PenLine, Zap,
 } from 'lucide-react'
 import { ZipSampleWidget, WAITLIST_MAILTO } from '@/components/ZipSampleWidget'
 import { ProspectCaptureForm } from '@/components/ProspectCaptureForm'
@@ -406,8 +407,9 @@ export default function LandingContent() {
           <div className="lp-eyebrow"><Layers size={12} /> What Axon does</div>
           <h2 className="lp-h2">Everything a big enterprise has —<br />built for the way you actually work</h2>
           <p className="lp-section-sub">
-            Axon connects your data sources, learns your business patterns, and delivers intelligence
-            that feels less like a report and more like advice from a trusted partner.
+            One tab runs the whole job: Axon finds the homeowners worth calling, keeps every deal
+            moving through your pipeline, and turns won work into quotes, invoices, payments, and
+            profit you can actually see.
           </p>
           <div className="lp-features">
             <div className="lp-feature">
@@ -492,6 +494,41 @@ export default function LandingContent() {
                 <div className="lp-demo-books-foot"><span>P&amp;L trend</span><span className="lp-demo-books-up">+18%</span></div>
               </div>
             </div>
+            <div className="lp-feature">
+              <div className="lp-feature-ic" style={{ background: 'var(--color-info-bg)', color: 'var(--color-ocean)' }}><PenLine size={18} /></div>
+              <h3>Quotes homeowners can accept online</h3>
+              <p>Build a quote in minutes and send a public link — the homeowner reviews and accepts from their phone, then it converts to an invoice in one click.</p>
+              <div className="lp-feature-demo lp-demo-invoice" aria-hidden="true">
+                <span className="lp-demo-inv-stamp">Accepted</span>
+                <div className="lp-demo-inv-line"><span>Quote #218 — epoxy garage</span><span>$6,200</span></div>
+                <div className="lp-demo-inv-line"><span>Sent as a link · no login needed</span><span /></div>
+                <div className="lp-demo-inv-total"><span>Accepted by customer</span><span>2:15 PM</span></div>
+              </div>
+            </div>
+            <div className="lp-feature">
+              <div className="lp-feature-ic" style={{ background: 'var(--color-accent-100)', color: 'var(--color-accent-300)' }}><MessageSquare size={18} /></div>
+              <h3>Two-way texting</h3>
+              <p>Text customers right from the lead — with reusable templates that fill in the name, address, and quote amount for you. Every reply lands on the lead&apos;s timeline.</p>
+              <div className="lp-feature-demo lp-demo-sms" aria-hidden="true">
+                <div className="lp-demo-bubble lp-demo-bubble-out">Hi Maria — your quote for the roof repair is ready: $6,200.</div>
+                <div className="lp-demo-bubble lp-demo-bubble-in">Looks good, when can you start?</div>
+              </div>
+            </div>
+            <div className="lp-feature">
+              <div className="lp-feature-ic" style={{ background: 'var(--color-gold-soft)', color: 'var(--color-gold)' }}><Zap size={18} /></div>
+              <h3>Automations &amp; appointments</h3>
+              <p>Set rules once — quote sent, no reply in 3 days, stage changed — and Axon creates the follow-up task or text for you. Book appointments on the same record.</p>
+              <div className="lp-feature-demo lp-demo-tasks" aria-hidden="true">
+                <div className="lp-demo-task">
+                  <span className="lp-demo-check"><Check size={12} /></span>
+                  <span className="lp-demo-task-label">Quote sent → follow-up task in 3 days</span>
+                </div>
+                <div className="lp-demo-task">
+                  <span className="lp-demo-check"><Check size={12} /></span>
+                  <span className="lp-demo-task-label">Job won → book install appointment</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -527,6 +564,13 @@ export default function LandingContent() {
                   <div>
                     <strong>Storm Mode</strong>
                     <span>The morning after hail hits, Axon emails you the affected homes in your territory, already ranked — before the out-of-town crews finish loading their trucks.</span>
+                  </div>
+                </div>
+                <div className="lp-point">
+                  <div className="lp-point-ic"><Map size={16} /></div>
+                  <div>
+                    <strong>See your territory on a map</strong>
+                    <span>Every scored property plotted with grade heatmaps — plan a route through a neighborhood of A&apos;s instead of driving to scattered addresses.</span>
                   </div>
                 </div>
                 <div className="lp-point">
@@ -723,7 +767,7 @@ export default function LandingContent() {
                 <li><Check size={15} /> Leads, Kanban pipeline &amp; tasks</li>
                 <li><Check size={15} /> Notes, history &amp; saved segments</li>
                 <li><Check size={15} /> Two-way texting &amp; templates</li>
-                <li><Check size={15} /> CSV import &amp; full export</li>
+                <li><Check size={15} /> Full CSV export — your data is yours</li>
               </ul>
               <a className="lp-btn lp-btn-outline" href="/signup">Start free</a>
             </div>
@@ -751,6 +795,7 @@ export default function LandingContent() {
                 <li><Check size={15} /> &ldquo;Why this score&rdquo; on every lead</li>
                 <li><Check size={15} /> Storm &amp; permit timing signals</li>
                 <li><Check size={15} /> Property map, territories &amp; heatmaps</li>
+                <li><Check size={15} /> CSV lead import</li>
                 <li><Check size={15} /> Call tracking number &amp; call log</li>
                 <li><Check size={15} /> Marketing insights</li>
               </ul>
