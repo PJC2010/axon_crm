@@ -300,7 +300,7 @@ export default function LandingContent() {
               <span className="lp-dot" style={{ background: '#6AE28B' }} />
             </div>
             <div className="lp-video-stage">
-              <video ref={videoRef} autoPlay muted loop playsInline poster="" preload="auto">
+              <video ref={videoRef} controls autoPlay muted loop playsInline poster="" preload="auto">
                 <source src="/axon-promo.mp4" type="video/mp4" />
               </video>
               <div className="lp-video-poster" ref={posterRef}>
