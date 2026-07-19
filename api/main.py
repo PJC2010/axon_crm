@@ -12,7 +12,7 @@ from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, h
 from api.routes import policies, orders, appointments, objects, order_imports
 from api.routes import connections, insights, ml, oauth, map as map_routes, geo
 from api.routes import stripe_payments, twilio_inbound, public_intake, prospects, signup, billing
-from api.routes import zip_sample
+from api.routes import zip_sample, calls, twilio_voice
 
 log = logging.getLogger(__name__)
 
@@ -130,6 +130,11 @@ app.include_router(stripe_payments.router, prefix="/api", tags=["Payments"],
 app.include_router(stripe_payments.public_router, prefix="/api", tags=["Payments"])
 # Inbound Twilio SMS (two-way messaging) — Twilio calls it, signature-verified.
 app.include_router(twilio_inbound.public_router, prefix="/api", tags=["Messaging"])
+# Inbound call tracking webhooks — Twilio calls them, signature-verified.
+app.include_router(twilio_voice.public_router, prefix="/api", tags=["Calls"])
+# Call-tracking management (number provisioning + call log) — gated as a module.
+app.include_router(calls.router, prefix="/api", tags=["Calls"],
+                   dependencies=[Depends(require_module("calls"))])
 # Website lead intake (insure-auto) — server-to-server, shared-secret verified.
 app.include_router(public_intake.public_router, prefix="/api", tags=["PublicIntake"])
 # Landing/preview email capture — public by design (rate-limited, stores only

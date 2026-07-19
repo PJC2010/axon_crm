@@ -38,6 +38,7 @@ MODULE_KEYS: tuple[str, ...] = (
     "policies",      # insurance book of business + renewal automation
     "orders",        # retail purchase history
     "appointments",  # scheduled visits/bookings
+    "calls",         # inbound call tracking (Twilio tracking number + call log)
 )
 
 # Named plans bundle modules. The exact tiers/prices are a product decision; this

@@ -204,6 +204,11 @@ ADMIN_NOTIFICATION_EMAIL = os.getenv("ADMIN_NOTIFICATION_EMAIL", "")
 # Frontend origin used to build customer-facing links (public quote pages).
 APP_BASE_URL        = os.getenv("APP_BASE_URL", "http://localhost:3000")
 
+# The API's own public origin, used to build the Twilio voice webhook URLs
+# configured on purchased tracking numbers (api/routes/calls.py). Distinct from
+# APP_BASE_URL (the frontend). Empty = derive from the incoming request URL.
+PUBLIC_API_BASE_URL = os.getenv("PUBLIC_API_BASE_URL", "")
+
 # ── Website lead intake (insure-auto public site) ────────────────────────────
 # Shared-secret header (X-Axon-Api-Key) that authenticates server-to-server
 # calls from the insure-auto Next.js API routes — never exposed to a browser.

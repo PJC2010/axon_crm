@@ -1,5 +1,5 @@
 import {
-  Home, Users, Kanban, Map as MapIcon, CheckSquare, Receipt, BookOpen,
+  Home, Users, Kanban, Map as MapIcon, CheckSquare, Receipt, BookOpen, Phone,
   type LucideIcon,
 } from 'lucide-react'
 import type { ModuleKey } from './types'
@@ -32,6 +32,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/pipeline',    label: 'Pipeline',    icon: Kanban },
   { href: '/map',         label: 'Map',         icon: MapIcon,  modules: ['map'] },
   { href: '/tasks',       label: 'Tasks',       icon: CheckSquare },
+  { href: '/calls',       label: 'Calls',       icon: Phone,    modules: ['calls'] },
   { href: '/expenses',    label: 'Expenses',    icon: Receipt,  modules: ['bookkeeping'] },
   // The Bookkeeping hub surfaces P&L, invoices/AR, and quotes — show it if any
   // of those modules is enabled.

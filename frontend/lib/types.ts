@@ -492,8 +492,53 @@ export type ModuleKey =
   | 'policies'
   | 'orders'
   | 'appointments'
+  | 'calls'
 
 export type ModuleMap = Record<ModuleKey, boolean>
+
+// ── Call tracking (the `calls` module) ────────────────────────────────────────
+
+// The account's Twilio tracking number, as returned by GET /calls/settings.
+export interface TrackingNumber {
+  id: number
+  phone_number: string
+  friendly_name: string | null
+  forward_to: string | null
+  created_at: string
+}
+
+export interface CallSettings {
+  configured: boolean
+  number: TrackingNumber | null
+}
+
+export interface AvailableNumber {
+  phone_number: string
+  friendly_name: string
+  locality: string | null
+  region: string | null
+}
+
+export type CallOutcome = 'answered' | 'missed' | 'busy'
+
+export interface CallLogEntry {
+  id: number
+  property_id: number | null
+  from_number: string | null
+  from_digits: string | null
+  caller_name: string | null
+  status: 'in-progress' | 'completed'
+  outcome: CallOutcome | null
+  duration_seconds: number | null
+  lead_created: boolean
+  started_at: string
+  contact_name: string | null
+}
+
+export interface CallLogPage {
+  items: CallLogEntry[]
+  total: number
+}
 
 // A category option ("vertical" in home-services terms). Driven by business type.
 export interface Category {

@@ -751,6 +751,7 @@ export default function LandingContent() {
                 <li><Check size={15} /> &ldquo;Why this score&rdquo; on every lead</li>
                 <li><Check size={15} /> Storm &amp; permit timing signals</li>
                 <li><Check size={15} /> Property map, territories &amp; heatmaps</li>
+                <li><Check size={15} /> Call tracking number &amp; call log</li>
                 <li><Check size={15} /> Marketing insights</li>
               </ul>
               <a className="lp-btn lp-btn-accent" href="/signup">Start free</a>
