@@ -1,4 +1,4 @@
-import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, StripeStatus, PublicPayInfo, BillingInfo, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, MessageTemplate, MessageTemplateCreate, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType, HeatmapMetric, HeatmapResponse, ClusterCollection, ProspectSeed, ProspectResult, BlastRadiusResult, ServiceArea, EventCollection, EventCreate, LeadEvent, LeadEventCreate } from './types'
+import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, StripeStatus, PublicPayInfo, BillingInfo, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, MessageTemplate, MessageTemplateCreate, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType, HeatmapMetric, HeatmapResponse, ClusterCollection, ProspectSeed, ProspectResult, BlastRadiusResult, ServiceArea, EventCollection, EventCreate, LeadEvent, LeadEventCreate, CallSettings, TrackingNumber, AvailableNumber, CallOutcome, CallLogPage } from './types'
 import { getToken, clearToken } from './auth'
 
 // Use 127.0.0.1 (not localhost): on macOS `localhost` resolves to IPv6 ::1
@@ -1034,6 +1034,42 @@ export function getMarketingInsights(days = 90, provider?: string): Promise<Mark
   const p = new URLSearchParams({ days: String(days) })
   if (provider) p.set('provider', provider)
   return req<MarketingInsightsResponse>(`/insights/marketing?${p}`)
+}
+
+// ── Call tracking ────────────────────────────────────────────────────────────
+
+export function getCallSettings(): Promise<CallSettings> {
+  return req<CallSettings>('/calls/settings')
+}
+
+export function updateCallSettings(forwardTo: string): Promise<{ ok: boolean; number: TrackingNumber | null }> {
+  return req('/calls/settings', { method: 'PATCH', body: JSON.stringify({ forward_to: forwardTo }) })
+}
+
+export function searchCallNumbers(params: { area_code?: string; contains?: string } = {}): Promise<{ numbers: AvailableNumber[] }> {
+  const p = new URLSearchParams()
+  if (params.area_code) p.set('area_code', params.area_code)
+  if (params.contains) p.set('contains', params.contains)
+  return req(`/calls/numbers/available?${p}`)
+}
+
+export function purchaseCallNumber(phoneNumber: string, forwardTo?: string): Promise<{ ok: boolean; number: TrackingNumber | null }> {
+  return req('/calls/numbers', {
+    method: 'POST',
+    body: JSON.stringify({ phone_number: phoneNumber, forward_to: forwardTo || null }),
+  })
+}
+
+export function releaseCallNumber(numberId: number): Promise<{ ok: boolean }> {
+  return req(`/calls/numbers/${numberId}`, { method: 'DELETE' })
+}
+
+export function getCalls(params: { limit?: number; offset?: number; outcome?: CallOutcome } = {}): Promise<CallLogPage> {
+  const p = new URLSearchParams()
+  if (params.limit) p.set('limit', String(params.limit))
+  if (params.offset) p.set('offset', String(params.offset))
+  if (params.outcome) p.set('outcome', params.outcome)
+  return req<CallLogPage>(`/calls?${p}`)
 }
 
 // ── Export ────────────────────────────────────────────────────────────────────

@@ -8,6 +8,7 @@ import { AutomationTemplates } from '@/components/AutomationTemplates'
 import { WorkflowRuleForm, describeTrigger } from '@/components/WorkflowRuleForm'
 import { ConnectionsSection } from '@/components/ConnectionsSection'
 import { StripeConnectSection } from '@/components/StripeConnectSection'
+import { CallTrackingSection } from '@/components/CallTrackingSection'
 import { BillingSection } from '@/components/BillingSection'
 import { BusinessProfileSection } from '@/components/BusinessProfileSection'
 import { QuickBooksExportSection } from '@/components/QuickBooksExportSection'
@@ -490,6 +491,9 @@ function SettingsPage() {
 
         {/* Online payments (Stripe Connect) — rides the invoicing module */}
         {hasModule('invoicing') && <StripeConnectSection />}
+
+        {/* Call tracking (Twilio tracking number + forwarding) */}
+        {hasModule('calls') && <CallTrackingSection />}
 
         {/* One-way QuickBooks-format exports (bookkeeper escape hatch). */}
         {(hasModule('invoicing') || hasModule('bookkeeping')) && <QuickBooksExportSection />}
