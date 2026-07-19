@@ -78,9 +78,6 @@ function SettingsPage() {
   const [runTopN, setRunTopN] = useState('')
   const [runNearAddress, setRunNearAddress] = useState('')
   const [runRadiusMi, setRunRadiusMi] = useState('')
-  // Seed step 1 from the free local county data instead of the paid RentCast
-  // address scan. RentCast still runs later to gap-fill whatever HCAD left NULL.
-  const [runSeedHcad, setRunSeedHcad] = useState(false)
   const [triggering, setTriggering] = useState(false)
   const [rescoring, setRescoring] = useState(false)
   const [rescoringAll, setRescoringAll] = useState(false)
@@ -151,8 +148,7 @@ function SettingsPage() {
     setTriggering(true)
     try {
       await triggerRun({ zip: runZip.trim() }, runVertical || undefined,
-        buildControls(runTopN, runNearAddress, runRadiusMi),
-        runSeedHcad ? 'hcad' : undefined)
+        buildControls(runTopN, runNearAddress, runRadiusMi))
       setRunZip(''); setRunTopN(''); setRunNearAddress(''); setRunRadiusMi('')
       await getPipelineRuns().then(setRuns)
     } finally {
@@ -207,13 +203,6 @@ function SettingsPage() {
             <input type="number" min={1} value={runTopN} onChange={e => setRunTopN(e.target.value)} placeholder="Leads/run" title="Cap leads enriched per run (saves API cost). Blank = whole ZIP." className="drawer-input" style={{ width: 110 }} />
             <input type="text" value={runNearAddress} onChange={e => setRunNearAddress(e.target.value)} placeholder="Near address (optional)" title="Only enrich homes within the radius of this address" className="drawer-input" style={{ width: 200 }} />
             <input type="number" min={0} step={0.5} value={runRadiusMi} onChange={e => setRunRadiusMi(e.target.value)} placeholder="mi" title="Radius in miles from the address above" className="drawer-input" style={{ width: 70 }} disabled={!runNearAddress.trim()} />
-            <label
-              title="Seed addresses from the free local county (HCAD) data instead of the paid RentCast scan. RentCast still runs afterwards to fill in any values HCAD left blank. Harris County ZIPs only."
-              style={{ display: 'flex', alignItems: 'center', gap: 6, height: 36, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}
-            >
-              <input type="checkbox" checked={runSeedHcad} onChange={e => setRunSeedHcad(e.target.checked)} style={{ cursor: 'pointer' }} />
-              Seed from free county data first
-            </label>
             <button type="submit" disabled={triggering || !runZip.trim()} style={{
               padding: '0 16px', height: 36, background: 'var(--color-ink-900)', color: 'var(--color-paper)',
               border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, cursor: triggering ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6,
