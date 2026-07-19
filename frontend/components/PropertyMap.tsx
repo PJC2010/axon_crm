@@ -15,9 +15,9 @@
  * MapLibre is imported lazily inside an effect (never at module scope) so it
  * never touches `window` during SSR.
  */
-import { useEffect, useRef, useState, useCallback, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, useCallback, useSyncExternalStore, type CSSProperties } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Home, RefreshCw, Signal, Award, Grid3x3, Sparkles, Zap, X } from 'lucide-react'
+import { ArrowLeft, Home, RefreshCw, Signal, Award, Grid3x3, Sparkles, Zap, X, SlidersHorizontal, ChevronDown, ChevronUp } from 'lucide-react'
 import ngeohash from 'ngeohash'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Map as MLMap, GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
@@ -182,6 +182,17 @@ function eventsToGeoJSON(fc: { features: Array<{ geometry: unknown }> } | null) 
   return { type: 'FeatureCollection' as const, features: features as GeoJSON.Feature[] }
 }
 
+// Tracks a media query on the client; `false` during SSR so the desktop layout
+// is the hydration baseline.
+function useMediaQuery(query: string) {
+  const subscribe = useCallback((onChange: () => void) => {
+    const mq = window.matchMedia(query)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [query])
+  return useSyncExternalStore(subscribe, () => window.matchMedia(query).matches, () => false)
+}
+
 // ── component ─────────────────────────────────────────────────────────────────────
 
 function PropertyMapInner() {
@@ -212,6 +223,9 @@ function PropertyMapInner() {
   const [prospecting, setProspecting] = useState(false)
   const [showEvents, setShowEvents] = useState(false)
   const { toasts, show: showToast, dismiss: dismissToast } = useToast()
+  // Mobile layout: controls collapse behind a Filters button, legend collapses.
+  const isMobile = useMediaQuery('(max-width: 767px)')
+  const [showControls, setShowControls] = useState(false)
 
   const filters = { vertical: vertical || undefined, status: status || undefined, signal_days: signalDays }
 
@@ -395,10 +409,12 @@ function PropertyMapInner() {
           layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-size': 12 },
           paint: { 'text-color': '#ffffff' },
         })
+        // Bigger pins on touch devices so they're tappable with a finger.
+        const coarsePointer = window.matchMedia('(pointer: coarse)').matches
         map.addLayer({
           id: 'pin', type: 'circle', source: 'points', filter: ['!', ['has', 'point_count']],
           paint: {
-            'circle-color': ['get', 'color'], 'circle-radius': 6,
+            'circle-color': ['get', 'color'], 'circle-radius': coarsePointer ? 9 : 6,
             'circle-stroke-width': 1.5, 'circle-stroke-color': '#ffffff',
           },
         })
@@ -564,107 +580,154 @@ function PropertyMapInner() {
     if (showEvents) loadEvents()
   }
 
+  // Any overlay on shows a badge on the mobile Filters button.
+  const activeOverlays = [heatmap, showClusters, showEvents].filter(Boolean).length
+
+  // Filter + overlay controls, rendered inline in the header on desktop and in
+  // a collapsible panel below it on mobile.
+  const filterControls = (
+    <>
+      <input
+        value={vertical}
+        onChange={e => setVertical(e.target.value)}
+        placeholder="Vertical"
+        style={{ width: 120, padding: '6px 10px', fontSize: 12, borderRadius: 'var(--radius-pill)', border: '1px solid var(--color-ink-200)', background: 'var(--color-paper)' }}
+      />
+      <select value={status} onChange={e => setStatus(e.target.value)}
+        style={{ padding: '6px 10px', fontSize: 12, borderRadius: 'var(--radius-pill)', border: '1px solid var(--color-ink-200)', background: 'var(--color-paper)' }}>
+        <option value="">All statuses</option>
+        {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+      </select>
+      {mode === 'signals' && (
+        <select value={signalDays} onChange={e => setSignalDays(Number(e.target.value))}
+          style={{ padding: '6px 10px', fontSize: 12, borderRadius: 'var(--radius-pill)', border: '1px solid var(--color-ink-200)', background: 'var(--color-paper)' }}>
+          <option value={30}>30 days</option>
+          <option value={60}>60 days</option>
+          <option value={90}>90 days</option>
+          <option value={180}>180 days</option>
+        </select>
+      )}
+
+      {/* Geo overlays (Phase 3) */}
+      <button
+        onClick={() => setHeatmap(v => !v)}
+        title="Toggle the H3 heatmap overlay"
+        style={overlayBtn(heatmap)}
+      >
+        <Grid3x3 size={13} strokeWidth={1.5} /> Heatmap
+      </button>
+      {heatmap && (
+        <select value={heatMetric} onChange={e => setHeatMetric(e.target.value as HeatmapMetric)}
+          style={{ padding: '6px 10px', fontSize: 12, borderRadius: 'var(--radius-pill)', border: '1px solid var(--color-ink-200)', background: 'var(--color-paper)' }}>
+          <option value="density">Customer density</option>
+          <option value="avg_score">Avg score</option>
+        </select>
+      )}
+      <button
+        onClick={() => { if (showClusters) setSelectedCluster(null); setShowClusters(v => !v) }}
+        title="Toggle customer clusters"
+        style={overlayBtn(showClusters)}
+      >
+        <Sparkles size={13} strokeWidth={1.5} /> Clusters
+      </button>
+      <button
+        onClick={() => setShowEvents(v => !v)}
+        title="Toggle event polygons (hail swaths, new construction, …)"
+        style={overlayBtn(showEvents)}
+      >
+        <Zap size={13} strokeWidth={1.5} /> Events
+      </button>
+    </>
+  )
+
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column' }}>
       <header style={{
-        height: 64, padding: '0 16px', display: 'flex', alignItems: 'center', gap: 10,
+        minHeight: isMobile ? 52 : 64, padding: isMobile ? '8px 12px' : '0 16px',
+        display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 10,
         borderBottom: '1px solid var(--color-ink-200)', background: 'var(--color-paper)', flexShrink: 0,
         flexWrap: 'wrap',
       }}>
         <Link href="/dashboard" className="dash-icon-btn" style={{ textDecoration: 'none', color: 'inherit' }}>
           <ArrowLeft size={15} strokeWidth={1.5} />
         </Link>
-        <Link href="/home" title="Home" className="dash-icon-btn" style={{ textDecoration: 'none', color: 'inherit' }}>
-          <Home size={15} strokeWidth={1.5} />
-        </Link>
+        {!isMobile && (
+          <Link href="/home" title="Home" className="dash-icon-btn" style={{ textDecoration: 'none', color: 'inherit' }}>
+            <Home size={15} strokeWidth={1.5} />
+          </Link>
+        )}
         <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600, color: 'var(--color-ink-900)', margin: 0 }}>
           Map
         </h1>
 
-        {/* Color-basis toggle */}
+        {/* Color-basis toggle (icon-only on mobile to fit one row) */}
         <div style={{ display: 'flex', gap: 2, background: 'var(--color-ink-100)', borderRadius: 'var(--radius-pill)', padding: 2, marginLeft: 8 }}>
           {([['signals', Signal, 'Intent signals'], ['score', Award, 'Score grade']] as const).map(([key, Icon, label]) => (
             <button
               key={key}
               onClick={() => setMode(key)}
               title={label}
+              aria-label={label}
               style={{
-                display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px',
+                display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '7px 12px' : '5px 12px',
                 fontSize: 12, fontWeight: 500, borderRadius: 'var(--radius-pill)', border: 'none', cursor: 'pointer',
                 background: mode === key ? 'var(--color-paper)' : 'transparent',
                 color: mode === key ? 'var(--color-ink-900)' : 'var(--color-ink-400)',
                 boxShadow: mode === key ? 'var(--shadow-card)' : 'none',
               }}
             >
-              <Icon size={13} strokeWidth={1.5} /> {label}
+              <Icon size={13} strokeWidth={1.5} /> {!isMobile && label}
             </button>
           ))}
         </div>
 
-        {/* Filters */}
-        <input
-          value={vertical}
-          onChange={e => setVertical(e.target.value)}
-          placeholder="Vertical"
-          style={{ width: 120, padding: '6px 10px', fontSize: 12, borderRadius: 'var(--radius-pill)', border: '1px solid var(--color-ink-200)', background: 'var(--color-paper)' }}
-        />
-        <select value={status} onChange={e => setStatus(e.target.value)}
-          style={{ padding: '6px 10px', fontSize: 12, borderRadius: 'var(--radius-pill)', border: '1px solid var(--color-ink-200)', background: 'var(--color-paper)' }}>
-          <option value="">All statuses</option>
-          {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        {mode === 'signals' && (
-          <select value={signalDays} onChange={e => setSignalDays(Number(e.target.value))}
-            style={{ padding: '6px 10px', fontSize: 12, borderRadius: 'var(--radius-pill)', border: '1px solid var(--color-ink-200)', background: 'var(--color-paper)' }}>
-            <option value={30}>30 days</option>
-            <option value={60}>60 days</option>
-            <option value={90}>90 days</option>
-            <option value={180}>180 days</option>
-          </select>
-        )}
-
-        {/* Geo overlays (Phase 3) */}
-        <button
-          onClick={() => setHeatmap(v => !v)}
-          title="Toggle the H3 heatmap overlay"
-          style={overlayBtn(heatmap)}
-        >
-          <Grid3x3 size={13} strokeWidth={1.5} /> Heatmap
-        </button>
-        {heatmap && (
-          <select value={heatMetric} onChange={e => setHeatMetric(e.target.value as HeatmapMetric)}
-            style={{ padding: '6px 10px', fontSize: 12, borderRadius: 'var(--radius-pill)', border: '1px solid var(--color-ink-200)', background: 'var(--color-paper)' }}>
-            <option value="density">Customer density</option>
-            <option value="avg_score">Avg score</option>
-          </select>
-        )}
-        <button
-          onClick={() => { if (showClusters) setSelectedCluster(null); setShowClusters(v => !v) }}
-          title="Toggle customer clusters"
-          style={overlayBtn(showClusters)}
-        >
-          <Sparkles size={13} strokeWidth={1.5} /> Clusters
-        </button>
-        <button
-          onClick={() => setShowEvents(v => !v)}
-          title="Toggle event polygons (hail swaths, new construction, …)"
-          style={overlayBtn(showEvents)}
-        >
-          <Zap size={13} strokeWidth={1.5} /> Events
-        </button>
+        {!isMobile && filterControls}
 
         <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 11, color: 'var(--color-ink-400)' }}>
-          {zoomedIn ? 'Properties' : 'Regions'} · zoom {zoomedIn ? 'out for blocks' : 'in for pins'}
-        </span>
+        {!isMobile && (
+          <span style={{ fontSize: 11, color: 'var(--color-ink-400)' }}>
+            {zoomedIn ? 'Properties' : 'Regions'} · zoom {zoomedIn ? 'out for blocks' : 'in for pins'}
+          </span>
+        )}
+        {isMobile && (
+          <button
+            onClick={() => setShowControls(v => !v)}
+            title="Filters & overlays"
+            aria-expanded={showControls}
+            style={{ ...overlayBtn(showControls || activeOverlays > 0), position: 'relative' }}
+          >
+            <SlidersHorizontal size={13} strokeWidth={1.5} /> Filters
+            {activeOverlays > 0 && !showControls && ` · ${activeOverlays}`}
+          </button>
+        )}
         <button onClick={refresh} className="dash-icon-btn" title="Refresh">
           <RefreshCw size={13} strokeWidth={1.5} className={loading ? 'animate-spin' : ''} />
         </button>
       </header>
 
-      <div style={{ flex: 1, position: 'relative', minHeight: 400 }}>
+      {/* Mobile: collapsible filter panel below the header */}
+      {isMobile && showControls && (
+        <div style={{
+          padding: '10px 12px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8,
+          borderBottom: '1px solid var(--color-ink-200)', background: 'var(--color-paper)', flexShrink: 0,
+        }}>
+          {filterControls}
+        </div>
+      )}
+
+      <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
         <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
-        <Legend mode={mode} />
+        <Legend key={isMobile ? 'mobile' : 'desktop'} mode={mode} collapsible={isMobile} />
+        {isMobile && (
+          <span style={{
+            position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
+            fontSize: 11, color: 'var(--color-ink-700)', background: 'var(--color-paper)',
+            border: '1px solid var(--color-ink-200)', borderRadius: 'var(--radius-pill)',
+            padding: '3px 10px', boxShadow: 'var(--shadow-card)', pointerEvents: 'none', whiteSpace: 'nowrap',
+          }}>
+            {zoomedIn ? 'Properties · zoom out for blocks' : 'Regions · zoom in for pins'}
+          </span>
+        )}
         {showClusters && selectedCluster && (
           <ClusterActionPanel
             cluster={selectedCluster}
@@ -714,6 +777,7 @@ function ClusterActionPanel({
       background: 'var(--color-paper)', border: '1px solid var(--color-ink-200)',
       borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)',
       padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12, maxWidth: '92%',
+      flexWrap: 'wrap', justifyContent: 'center',
     }}>
       <div>
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-ink-900)' }}>
@@ -742,7 +806,10 @@ function ClusterActionPanel({
   )
 }
 
-function Legend({ mode }: { mode: ColorMode }) {
+function Legend({ mode, collapsible }: { mode: ColorMode; collapsible?: boolean }) {
+  // Collapsed by default on mobile so it doesn't cover the map (the parent
+  // remounts this via `key` when crossing the breakpoint).
+  const [open, setOpen] = useState(!collapsible)
   const items = mode === 'signals'
     ? [
         { c: 'var(--color-danger)', t: 'Hot — recent signals' },
@@ -761,10 +828,25 @@ function Legend({ mode }: { mode: ColorMode }) {
       border: '1px solid var(--color-ink-200)', borderRadius: 'var(--radius-card)',
       boxShadow: 'var(--shadow-card)', padding: '10px 12px', fontSize: 11, color: 'var(--color-ink-700)',
     }}>
-      <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--color-ink-900)' }}>
-        {mode === 'signals' ? 'Intent signals' : 'Lead score'}
-      </div>
-      {items.map(i => (
+      {collapsible ? (
+        <button
+          onClick={() => setOpen(v => !v)}
+          aria-expanded={open}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: 0, margin: open ? '0 0 6px' : 0,
+            border: 'none', background: 'transparent', cursor: 'pointer',
+            fontSize: 11, fontWeight: 600, color: 'var(--color-ink-900)',
+          }}
+        >
+          {mode === 'signals' ? 'Intent signals' : 'Lead score'}
+          {open ? <ChevronDown size={12} strokeWidth={1.5} /> : <ChevronUp size={12} strokeWidth={1.5} />}
+        </button>
+      ) : (
+        <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--color-ink-900)' }}>
+          {mode === 'signals' ? 'Intent signals' : 'Lead score'}
+        </div>
+      )}
+      {open && items.map(i => (
         <div key={i.t} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
           <span style={{ width: 12, height: 12, borderRadius: 3, background: i.c, flexShrink: 0 }} />
           {i.t}
