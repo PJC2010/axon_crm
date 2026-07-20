@@ -33,9 +33,9 @@ const geistMono = Geist_Mono({
 });
 
 // Canonical origin for absolute URLs (canonicals, OG images, sitemap).
-// Set NEXT_PUBLIC_SITE_URL in Vercel to the production domain; the fallback
-// keeps preview deploys from generating broken absolute URLs.
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://axon-crmsigma.vercel.app";
+// NEXT_PUBLIC_SITE_URL (set in Vercel) overrides; the fallback is the
+// production domain so absolute URLs are right even without the env var.
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://axonhtx.com";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

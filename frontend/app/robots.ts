@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next'
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://axon-crmsigma.vercel.app'
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://axonhtx.com'
 
 // Only the marketing/legal/auth-entry pages should be crawled. Everything else
 // is either behind auth (useless, thin pages to a crawler) or carries a private

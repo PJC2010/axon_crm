@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next'
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://axon-crmsigma.vercel.app'
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://axonhtx.com'
 
 // Only pages a search engine should rank. App routes are deliberately absent —
 // they're disallowed in robots.ts and noindexed via middleware.
