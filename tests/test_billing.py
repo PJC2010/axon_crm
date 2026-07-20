@@ -23,9 +23,23 @@ def test_pricing_catalog_matches_entitlements():
         assert meta["label"] and meta["blurb"]
 
 
-def test_pro_grants_everything_starter_nothing():
-    assert PLAN_CATALOG["pro"] == set(MODULE_KEYS)
-    assert PLAN_CATALOG["starter"] == set()
+def test_pro_grants_everything_but_marketing_starter_gets_scoring():
+    # Positioning plan: marketing (Meta CSV insights) is granted by no named
+    # plan (re-grantable per-account via overrides), and prospecting — the moat
+    # — is in front of every tier, metered on lower tiers.
+    assert PLAN_CATALOG["pro"] == set(MODULE_KEYS) - {"marketing"}
+    assert PLAN_CATALOG["starter"] == {"prospecting"}
+    for plan, granted in PLAN_CATALOG.items():
+        assert "marketing" not in granted, plan
+        assert "prospecting" in granted, plan
+
+
+def test_scoring_limits_cover_every_plan():
+    from api.entitlements import PLAN_SCORING_LIMITS
+    assert set(PLAN_SCORING_LIMITS) == set(PLAN_CATALOG)
+    assert PLAN_SCORING_LIMITS["pro"] is None            # unlimited
+    assert PLAN_SCORING_LIMITS["starter"] == 25
+    assert PLAN_SCORING_LIMITS["growth"] == 100
 
 
 # ── price-id mapping ──────────────────────────────────────────────────────────

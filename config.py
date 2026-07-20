@@ -176,6 +176,11 @@ ML_MIN_TRAINING_LABELS = int(os.getenv("ML_MIN_TRAINING_LABELS", "40"))
 # An open lead older than this with no real engagement is treated as a soft loss
 # (negative label) so the model learns from leads that quietly went nowhere.
 ML_STALE_OPEN_DAYS = int(os.getenv("ML_STALE_OPEN_DAYS", "120"))
+# Minimum labeled outcomes (won/lost) an account needs before the learned score
+# is *shown* to its users (score-explanation overlay, predictive insights).
+# Below this the model keeps training silently but the deterministic heuristic
+# stays the only score the account sees — small accounts never see model noise.
+ML_MIN_OUTCOMES_TO_SURFACE = int(os.getenv("ML_MIN_OUTCOMES_TO_SURFACE", "150"))
 # Logistic-regression training hyperparameters (pure-Python trainer in
 # pipeline/ml/model.py — no heavyweight ML dependency required).
 ML_L2 = float(os.getenv("ML_L2", "1.0"))

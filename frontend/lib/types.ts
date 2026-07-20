@@ -58,6 +58,9 @@ export interface Lead {
   customers_within_1600m?: number | null
   // Account-defined custom field values, keyed by RecordFieldDef.key.
   custom_fields?: Record<string, unknown>
+  // True when this row is hidden behind the monthly scored-lead allowance
+  // (api/scoring_quota.py): address partially masked, identity/contact nulled.
+  quota_masked?: boolean
 }
 
 // The geo score's explainable breakdown (stored as JSONB, surfaced on the lead).
@@ -87,11 +90,20 @@ export interface RecordFieldDef {
   sort_order: number
 }
 
+// Monthly scored-lead reveal allowance state for metered plans.
+export interface ScoringQuota {
+  limit: number
+  used: number
+  remaining: number
+}
+
 export interface LeadPage {
   total: number
   page: number
   page_size: number
   results: Lead[]
+  // Present only for metered plans; null/absent means unlimited.
+  scoring_quota?: ScoringQuota | null
 }
 
 export interface CustomerSearchResult {
@@ -549,6 +561,8 @@ export interface Category {
 export interface AccountFeatures {
   plan_name: string
   modules: ModuleMap
+  // Monthly scored-lead allowance for metered plans; null/absent = unlimited.
+  scoring_quota?: ScoringQuota | null
   // Business-type profile (see api/business_types.py). Optional so older payloads
   // / pre-load states degrade gracefully to home-services defaults.
   business_type?: string

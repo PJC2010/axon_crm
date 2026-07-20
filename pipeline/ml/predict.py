@@ -66,6 +66,22 @@ def load_model(conn, account_id: int) -> tuple[int, LogisticModel] | None:
             or registry.load_active(conn, registry.global_scope()))
 
 
+def surface_ready(conn, account_id: int) -> bool:
+    """Whether an account has enough labeled outcomes for the learned score to be
+    shown to its users (config.ML_MIN_OUTCOMES_TO_SURFACE). Below the threshold
+    the model keeps training/scoring silently, but user-facing surfaces keep the
+    deterministic heuristic only, so small accounts never see model noise."""
+    from config import ML_MIN_OUTCOMES_TO_SURFACE
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM lead_feature_snapshots "
+            "WHERE account_id = %s AND outcome IS NOT NULL",
+            (account_id,),
+        )
+        (labeled,) = cur.fetchone()
+    return (labeled or 0) >= ML_MIN_OUTCOMES_TO_SURFACE
+
+
 def predict_row(model: LogisticModel, row: dict) -> float:
     return model.predict_proba(features.feature_vector(row))
 

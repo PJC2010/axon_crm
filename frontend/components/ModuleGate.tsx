@@ -1,8 +1,8 @@
 'use client'
 import Link from 'next/link'
-import { Lock } from 'lucide-react'
+import { Lock, Zap } from 'lucide-react'
 import { useEntitlements } from '@/hooks/useEntitlements'
-import type { ModuleKey } from '@/lib/types'
+import type { ModuleKey, ScoringQuota } from '@/lib/types'
 
 /**
  * Page/section guard for a feature module. Renders children when the account has
@@ -26,6 +26,42 @@ export function ModuleGate({
   if (hasModule(module)) return <>{children}</>
 
   return <UpgradePanel feature={feature ?? module} />
+}
+
+/**
+ * Inline meter for the monthly scored-lead allowance on metered plans
+ * ("18 of 25 scored leads used — upgrade for unlimited"). Renders nothing on
+ * unlimited plans or before the quota state loads. Pass `quota` when the page
+ * already has fresher state (e.g. the lead list response); otherwise the
+ * account-features payload from useEntitlements is used.
+ */
+export function ScoringQuotaBanner({ quota }: { quota?: ScoringQuota | null }) {
+  const { scoringQuota } = useEntitlements()
+  const q = quota ?? scoringQuota
+  if (!q) return null
+
+  const exhausted = q.remaining <= 0
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+      padding: '8px 16px', fontSize: 12.5,
+      background: exhausted ? 'var(--color-warning-bg)' : 'var(--color-surface)',
+      borderBottom: '1px solid var(--color-ink-200)',
+      color: 'var(--color-ink-700)',
+    }}>
+      <Zap size={13} strokeWidth={1.5} style={{ color: exhausted ? 'var(--color-gold)' : 'var(--color-accent)', flexShrink: 0 }} />
+      <span>
+        <b>{q.used} of {q.limit}</b> scored leads used this month
+        {exhausted && ' — new scored leads show masked until next month'}
+      </span>
+      <Link
+        href="/settings"
+        style={{ fontWeight: 600, color: 'var(--color-accent)', textDecoration: 'none' }}
+      >
+        Upgrade for unlimited →
+      </Link>
+    </div>
+  )
 }
 
 function UpgradePanel({ feature }: { feature: string }) {

@@ -12,7 +12,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from psycopg2.extensions import connection as PGConn
 from pydantic import BaseModel, Field
 
+from api import scoring_quota
 from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user
+from api.entitlements import get_scoring_limit
 from api.lead_events_emit import emit_surfaced, emit_viewed
 from api.models import (
     Lead, LeadPage, StatusUpdate, LeadContactUpdate,
@@ -83,13 +85,22 @@ def list_leads(
         )
         rows = dict_fetchall(cur)
 
+    # Monthly scored-lead allowance (positioning plan Phase 3): on metered plans,
+    # scored-but-unworked rows past this month's reveal allowance render masked
+    # with an upgrade prompt instead of disappearing behind a module gate.
+    quota = None
+    limit = get_scoring_limit(user["account_id"], db)
+    if limit is not None:
+        rows, quota = scoring_quota.apply_quota(db, user["account_id"], rows, limit)
+
     # Feedback loop (Phase 2): a listed lead has been surfaced to the contractor.
     # First-only + best-effort, so a page render never appends per-row noise and
-    # never breaks the read.
-    emit_surfaced(db, [r["id"] for r in rows], user["account_id"], actor_user_id=user["id"])
+    # never breaks the read. Masked rows don't count — the contractor never saw them.
+    emit_surfaced(db, [r["id"] for r in rows if not r.get("quota_masked")],
+                  user["account_id"], actor_user_id=user["id"])
 
     return LeadPage(total=total, page=page, page_size=page_size,
-                    results=[Lead(**r) for r in rows])
+                    results=[Lead(**r) for r in rows], scoring_quota=quota)
 
 
 # NOTE: literal-path routes (/leads/search, /leads/by-number/...) must be declared
@@ -172,9 +183,15 @@ def get_lead(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depends(ge
         row = dict_fetchone(cur)
     if not row:
         raise HTTPException(status_code=404, detail="Lead not found")
+    # Opening a detail view consumes a reveal on metered plans, same as the list;
+    # past the allowance the detail returns masked, so deep links can't bypass it.
+    limit = get_scoring_limit(user["account_id"], db)
+    if limit is not None and scoring_quota.is_quota_candidate(row):
+        (row,), _ = scoring_quota.apply_quota(db, user["account_id"], [row], limit)
     # Feedback loop (Phase 2): opening a lead's detail is a 'viewed' signal.
-    # First-only + best-effort.
-    emit_viewed(db, lead_id, user["account_id"], actor_user_id=user["id"])
+    # First-only + best-effort. A masked open carries no training signal.
+    if not row.get("quota_masked"):
+        emit_viewed(db, lead_id, user["account_id"], actor_user_id=user["id"])
     return Lead(**row)
 
 
@@ -199,16 +216,19 @@ def get_score_explanation(lead_id: int, db: PGConn = Depends(get_db), user: dict
     stored = row.get("lead_score")
     drift = stored is not None and abs(stored - breakdown["score"]) > 0.5
 
-    # Overlay the learned model's explanation when one is active. Kept best-effort:
-    # a missing/unbuilt model just leaves the deterministic breakdown untouched.
+    # Overlay the learned model's explanation when one is active AND the account
+    # has enough labeled outcomes for the model to be trustworthy
+    # (config.ML_MIN_OUTCOMES_TO_SURFACE). Kept best-effort: a missing/unbuilt
+    # model just leaves the deterministic breakdown untouched.
     ml: dict = {}
     if SCORER_MODE in ("shadow", "learned"):
         try:
             from pipeline.ml import predict
-            loaded = predict.load_model(db, user["account_id"])
-            if loaded:
-                version_id, model = loaded
-                ml = predict.explain(model, version_id, row)
+            if predict.surface_ready(db, user["account_id"]):
+                loaded = predict.load_model(db, user["account_id"])
+                if loaded:
+                    version_id, model = loaded
+                    ml = predict.explain(model, version_id, row)
         except Exception:
             log.exception("Learned score explanation failed for lead %s", lead_id)
 

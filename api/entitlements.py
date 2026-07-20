@@ -42,12 +42,25 @@ MODULE_KEYS: tuple[str, ...] = (
 )
 
 # Named plans bundle modules. The exact tiers/prices are a product decision; this
-# is the resolved module set each tier grants. `pro` is the full set (also the
-# backfill default for existing accounts).
+# is the resolved module set each tier grants. Every tier gets `prospecting` —
+# scoring is the moat and nobody should experience Axon without it; lower tiers
+# meter it via PLAN_SCORING_LIMITS instead of withholding the module. `marketing`
+# (Meta CSV insights) is granted by no named plan — the module key and routes
+# stay, so it remains re-grantable per-account via overrides
+# (scripts/set_account_plan.py) if a fit ever appears.
 PLAN_CATALOG: dict[str, set[str]] = {
-    "starter": set(),  # core only
-    "growth": {"invoicing", "bookkeeping", "quotes", "automation", "appointments"},
-    "pro": set(MODULE_KEYS),
+    "starter": {"prospecting"},
+    "growth": {"prospecting", "invoicing", "bookkeeping", "quotes", "automation", "appointments"},
+    "pro": set(MODULE_KEYS) - {"marketing"},
+}
+
+# Monthly scored-lead reveal allowance per plan (None = unlimited). Enforced at
+# render time by api/scoring_quota.py: scored-but-unworked leads past the
+# month's allowance show masked, mirroring the public ZIP-sample teaser.
+PLAN_SCORING_LIMITS: dict[str, int | None] = {
+    "starter": 25,
+    "growth": 100,
+    "pro": None,
 }
 
 
@@ -86,6 +99,27 @@ def get_account_modules(account_id: int, db: PGConn) -> dict[str, bool]:
 
 def account_has_module(account_id: int, module_key: str, db: PGConn) -> bool:
     return get_account_modules(account_id, db).get(module_key, True)
+
+
+def get_scoring_limit(account_id: int, db: PGConn) -> int | None:
+    """Monthly scored-lead reveal limit for an account (None = unlimited).
+
+    The per-account ``account_plans.scoring_monthly_limit`` column (migration
+    0061) overrides the plan default from ``PLAN_SCORING_LIMITS``. Accounts with
+    no plan row are unlimited — permissive, like module resolution.
+    """
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT plan_name, scoring_monthly_limit FROM account_plans WHERE account_id = %s",
+            (account_id,),
+        )
+        row = cur.fetchone()
+    if row is None:
+        return None
+    plan_name, override = row
+    if override is not None:
+        return override
+    return PLAN_SCORING_LIMITS.get(plan_name)
 
 
 def require_module(module_key: str):

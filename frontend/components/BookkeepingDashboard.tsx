@@ -20,7 +20,9 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'quotes',      label: 'Quotes' },
   { id: 'invoices',    label: 'Invoices' },
   { id: 'ar',          label: 'A/R' },
-  { id: 'pnl',         label: 'P&L' },
+  // "Cash summary", not "P&L": Axon-derived estimates, deliberately not pitched
+  // as accounting — the accountant's books stay the source of truth.
+  { id: 'pnl',         label: 'Cash summary' },
   { id: 'jobs',        label: 'Job Costing' },
   { id: 'performance', label: 'Performance' },
 ]

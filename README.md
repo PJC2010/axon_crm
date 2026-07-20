@@ -38,7 +38,7 @@ A full-stack, multi-tenant business intelligence and CRM platform, originally bu
 
 ## Overview
 
-Axon is designed for contractors, service companies, and small businesses that do outbound prospecting. Instead of cold-calling random lists, the pipeline identifies homeowners who are statistically most likely to need your service — based on home age, equity, recent sale activity, garage size, zip income, neighborhood-relative value, permit history, storm exposure, and demographic/intent signals — then scores and ranks them so your team works the hottest leads first. A separate geo-scoring layer adds proximity, density, and territory awareness (customer clustering, heatmaps, neighbor-of-won-job targeting), and an optional predictive-scoring model learns conversion probability from your own won/lost history.
+Axon is designed for contractors, service companies, and small businesses that do outbound prospecting. Instead of cold-calling random lists, the pipeline identifies homeowners who are statistically most likely to need your service — based on home age, equity, recent sale activity, garage size, zip income, neighborhood-relative value, permit history, storm exposure, and demographic/intent signals — then scores and ranks them so your team works the hottest leads first. A separate geo-scoring layer adds proximity, density, and territory awareness (customer clustering, heatmaps, neighbor-of-won-job targeting).
 
 The platform is self-hosted, multi-tenant, and data-sovereign: every table is isolated by `account_id`, and all leads, notes, tasks, quotes, invoices, and expenses live in your own PostgreSQL database. A per-account **plan** (`starter` / `growth` / `pro`) and **business type** (terminology + KPI presets) let the same codebase serve different verticals without forking.
 
@@ -106,8 +106,8 @@ The platform is self-hosted, multi-tenant, and data-sovereign: every table is is
 - Connect Meta (Facebook/Instagram) via manual export upload (Business Suite CSV, Ads Manager CSV, "Download Your Information" JSON)
 - Rule-based recommendations (engagement, posting cadence, ROAS, CPA, CTR benchmarks — all tunable) surfaced as a Marketing Insights panel
 
-### Predictive Lead Scoring & Geo Prospecting
-See [Predictive Lead Scoring (ML)](#predictive-lead-scoring-ml) and [Geo Scoring & Prospecting](#geo-scoring--prospecting) below.
+### Geo Prospecting
+See [Geo Scoring & Prospecting](#geo-scoring--prospecting) below. (A predictive-scoring subsystem also runs quietly behind the deterministic scorer — an internal accuracy layer, not a marketed feature; see [Predictive Lead Scoring (ML)](#predictive-lead-scoring-ml).)
 
 ### Pipeline Scheduler
 - Schedule pipeline runs by zip code, vertical, day of week, and hour; active/inactive toggle per schedule
@@ -358,7 +358,7 @@ The suite (`tests/`, configured via `pytest.ini` and `conftest.py`) covers pipel
 
 Every table is isolated by `account_id` (`db/migrations/017_org_isolation.sql`), so one deployment can safely host multiple organizations.
 
-- **Plans** (`api/entitlements.py`): `starter` (core features only), `growth` (adds invoicing, bookkeeping, quotes, automation, appointments), `pro` (every module). Core features — leads, the Kanban board, tasks, notes, history, export, custom fields, segments, and messaging — are always on and aren't gated behind any plan.
+- **Plans** (`api/entitlements.py`): `starter` (core features + metered prospecting), `growth` (adds invoicing, bookkeeping, quotes, automation, appointments), `pro` (every module except marketing, which no named plan grants). Core features — leads, the Kanban board, tasks, notes, history, export, custom fields, segments, and messaging — are always on and aren't gated behind any plan. Every tier includes the scoring engine: starter/growth meter it via a monthly scored-lead reveal allowance (`PLAN_SCORING_LIMITS`, enforced by `api/scoring_quota.py` — rows past the allowance render masked with an upgrade prompt), while `pro` is unlimited.
 - **Modules** are enforced server-side via a `require_module(key)` FastAPI dependency (403s with an `upgrade: true` hint when missing) and mirrored client-side by `useEntitlements`/`hasModule()` for UI visibility only.
 - **Business types** (`api/business_types.py`, `docs/GENERALIZATION_ROADMAP.md`) let one codebase serve different verticals: each business type provides default terminology (e.g. "lead" vs. "policy" vs. "customer"), a default category picklist, which KPI tiles to show, and which lead-table columns to show. The frontend's `useTerminology` hook resolves this per account.
 
@@ -492,6 +492,8 @@ An optional per-account model (`pipeline/ml/`) learns conversion probability fro
 - `SCORER_MODE=learned` — surfaces the learned conversion probability to users.
 
 A scope (account, or the pooled/global model) needs at least `ML_MIN_TRAINING_LABELS` labeled leads before it trains; an untouched open lead older than `ML_STALE_OPEN_DAYS` is treated as a soft loss so the model learns from leads that quietly went nowhere. Retraining runs nightly (`ML_RETRAIN_HOUR`, via the scheduler) or on demand via `POST /api/ml/retrain`. See `/api/ml/insights/leads` for a predictive "hot untouched leads" + revenue-forecast view.
+
+Independently of `SCORER_MODE`, an account must accumulate `ML_MIN_OUTCOMES_TO_SURFACE` labeled won/lost outcomes (default 150) before any learned score is *shown* to its users — the score-explanation overlay and predictive insights stay heuristic-only below the threshold, so small accounts never see model noise while the model trains silently in the background.
 
 ---
 

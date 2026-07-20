@@ -72,6 +72,9 @@ class Lead(BaseModel):
     # Account-defined custom field values (see api/routes/record_fields.py). Keyed
     # by record_field_defs.key; empty for accounts that define no custom fields.
     custom_fields: dict = {}
+    # True when this row is hidden behind the monthly scored-lead allowance
+    # (api/scoring_quota.py): address partially masked, identity/contact nulled.
+    quota_masked: Optional[bool] = None
 
     class Config:
         from_attributes = True
@@ -400,11 +403,20 @@ class PublicDeclineRequest(BaseModel):
     reason: Optional[str] = None  # customer's optional note
 
 
+class ScoringQuota(BaseModel):
+    """Monthly scored-lead reveal allowance state (api/scoring_quota.py)."""
+    limit: int
+    used: int
+    remaining: int
+
+
 class LeadPage(BaseModel):
     total: int
     page: int
     page_size: int
     results: list[Lead]
+    # Present only for metered plans; None means unlimited (or ledger unavailable).
+    scoring_quota: Optional[ScoringQuota] = None
 
 
 class CustomerSearchResult(BaseModel):

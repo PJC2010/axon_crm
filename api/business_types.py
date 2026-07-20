@@ -306,8 +306,11 @@ BUSINESS_TYPES: dict[str, BusinessType] = {
         label="Home services",
         property_based=True,
         # Everything on except the Phase-5 child objects (matches pre-Phase-5 UX;
-        # owners can enable them from the plan settings).
-        default_modules=_modules(_base=True, policies=False, orders=False, appointments=False),
+        # owners can enable them from the plan settings) and marketing — Meta CSV
+        # insights never earned their keep with contractors (positioning plan
+        # Phase 4); re-enable per-account if a fit appears.
+        default_modules=_modules(_base=True, marketing=False, policies=False, orders=False,
+                                 appointments=False),
         categories=_HOME_SERVICES_CATEGORIES,
         terminology_overrides={},  # base vocabulary
         default_workflows=_HOME_SERVICES_WORKFLOWS,

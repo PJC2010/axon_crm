@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, type CSSProperties } from 'react'
 import {
-  ArrowRight, BookOpen, Columns3, FileText, DollarSign, GitBranch, Layers, Rocket,
+  ArrowRight, Columns3, FileText, DollarSign, GitBranch, Layers, Rocket,
   Crosshair, Map, Bell, Play, Star, Check, Users,
   Database, HelpCircle, X, Mail, MapPin, CloudLightning,
   MessageSquare, PenLine, Zap,
@@ -327,7 +327,8 @@ export default function LandingContent() {
           <h2 className="lp-h2">Enter your ZIP. See the list.</h2>
           <p className="lp-section-sub">
             Real properties, real scores, straight from county records — addresses partially
-            hidden until you create a free account. No email required to look.
+            hidden until you create a free account. No email required to look. Instant samples
+            cover Harris County, TX today; more markets are on the way.
           </p>
           <ZipSampleWidget />
         </div>
@@ -405,11 +406,11 @@ export default function LandingContent() {
       <section className="lp-section" id="features" style={{ paddingTop: 80 }}>
         <div className="lp-container">
           <div className="lp-eyebrow"><Layers size={12} /> What Axon does</div>
-          <h2 className="lp-h2">Everything a big enterprise has —<br />built for the way you actually work</h2>
+          <h2 className="lp-h2">The lead engine no one else has —<br />and everything to run the job after</h2>
           <p className="lp-section-sub">
-            One tab runs the whole job: Axon finds the homeowners worth calling, keeps every deal
-            moving through your pipeline, and turns won work into quotes, invoices, payments, and
-            profit you can actually see.
+            The scored lead list is the part nobody else sells. Everything else — pipeline,
+            texting, quotes, invoicing — is included so that when the list points you at a job,
+            nothing drops between the first call and getting paid.
           </p>
           <div className="lp-features">
             <div className="lp-feature">
@@ -431,7 +432,7 @@ export default function LandingContent() {
             <div className="lp-feature">
               <div className="lp-feature-ic" style={{ background: 'var(--color-info-bg)', color: 'var(--color-ocean)' }}><Columns3 size={18} /></div>
               <h3>Visual pipeline</h3>
-              <p>Drag leads through your stages — New, Contacted, Quoted, Won — on a live Kanban board. See pipeline value update in real time.</p>
+              <p>Drag leads through your stages — New, Contacted, Quoted, Won — on a live Kanban board, with linked follow-up tasks and overdue alerts so nothing slips.</p>
               <div className="lp-feature-demo lp-demo-pipeline" aria-hidden="true">
                 <span className="lp-demo-pipe-chip">Lead</span>
                 <div className="lp-demo-pipe-track">
@@ -443,55 +444,12 @@ export default function LandingContent() {
               </div>
             </div>
             <div className="lp-feature">
-              <div className="lp-feature-ic" style={{ background: 'var(--color-success-bg)', color: 'var(--color-moss)' }}><Check size={18} /></div>
-              <h3>Task management</h3>
-              <p>Create tasks linked to properties and leads, set priorities, and get overdue alerts. Your follow-up list and CRM, finally in sync.</p>
-              <div className="lp-feature-demo lp-demo-tasks" aria-hidden="true">
-                <div className="lp-demo-task">
-                  <span className="lp-demo-check"><Check size={12} /></span>
-                  <span className="lp-demo-task-label">Follow up — 1842 Westheimer</span>
-                </div>
-                <div className="lp-demo-task">
-                  <span className="lp-demo-check"><Check size={12} /></span>
-                  <span className="lp-demo-task-label">Send quote — River Oaks Blvd</span>
-                </div>
-              </div>
-            </div>
-            <div className="lp-feature">
-              <div className="lp-feature-ic" style={{ background: 'var(--color-gold-soft)', color: 'var(--color-gold)' }}><DollarSign size={18} /></div>
-              <h3>Expense tracker</h3>
-              <p>Log every business expense by category — fuel, materials, subs. Flag tax-deductible items and export a clean CSV for your accountant.</p>
-              <div className="lp-feature-demo lp-demo-expense" aria-hidden="true">
-                <div className="lp-demo-bars">
-                  <span className="lp-demo-bar" />
-                  <span className="lp-demo-bar" />
-                  <span className="lp-demo-bar" />
-                </div>
-                <div className="lp-demo-expense-labels">
-                  <span>Fuel</span><span>Materials</span><span>Subs</span>
-                </div>
-              </div>
-            </div>
-            <div className="lp-feature">
-              <div className="lp-feature-ic" style={{ background: 'var(--color-plum-soft)', color: 'var(--color-plum)' }}><FileText size={18} /></div>
-              <h3>Invoicing &amp; AR</h3>
-              <p>Build invoices with line items, record partial payments, and pull an AR aging report with one click. Know exactly who owes you.</p>
-              <div className="lp-feature-demo lp-demo-invoice" aria-hidden="true">
-                <span className="lp-demo-inv-stamp">Paid</span>
-                <div className="lp-demo-inv-line"><span>HVAC replacement</span><span>$18,400</span></div>
-                <div className="lp-demo-inv-line"><span>Labor — 2 crew</span><span>$3,600</span></div>
-                <div className="lp-demo-inv-total"><span>Total due</span><span>$22,000</span></div>
-              </div>
-            </div>
-            <div className="lp-feature">
-              <div className="lp-feature-ic" style={{ background: 'var(--color-rose-soft)', color: 'var(--color-rose)' }}><BookOpen size={18} /></div>
-              <h3>Bookkeeping &amp; P&amp;L</h3>
-              <p>See your monthly profit and loss and per-property job costing — revenue versus expenses and margin per job. No separate app needed.</p>
-              <div className="lp-feature-demo lp-demo-books" aria-hidden="true">
-                <svg className="lp-demo-chart" viewBox="0 0 120 40">
-                  <polyline points="2,34 22,28 42,30 62,18 82,20 100,8 118,6" />
-                </svg>
-                <div className="lp-demo-books-foot"><span>P&amp;L trend</span><span className="lp-demo-books-up">+18%</span></div>
+              <div className="lp-feature-ic" style={{ background: 'var(--color-accent-100)', color: 'var(--color-accent-300)' }}><MessageSquare size={18} /></div>
+              <h3>Two-way texting</h3>
+              <p>Text customers right from the lead — with reusable templates that fill in the name, address, and quote amount for you. Every reply lands on the lead&apos;s timeline.</p>
+              <div className="lp-feature-demo lp-demo-sms" aria-hidden="true">
+                <div className="lp-demo-bubble lp-demo-bubble-out">Hi Maria — your quote for the roof repair is ready: $6,200.</div>
+                <div className="lp-demo-bubble lp-demo-bubble-in">Looks good, when can you start?</div>
               </div>
             </div>
             <div className="lp-feature">
@@ -506,12 +464,14 @@ export default function LandingContent() {
               </div>
             </div>
             <div className="lp-feature">
-              <div className="lp-feature-ic" style={{ background: 'var(--color-accent-100)', color: 'var(--color-accent-300)' }}><MessageSquare size={18} /></div>
-              <h3>Two-way texting</h3>
-              <p>Text customers right from the lead — with reusable templates that fill in the name, address, and quote amount for you. Every reply lands on the lead&apos;s timeline.</p>
-              <div className="lp-feature-demo lp-demo-sms" aria-hidden="true">
-                <div className="lp-demo-bubble lp-demo-bubble-out">Hi Maria — your quote for the roof repair is ready: $6,200.</div>
-                <div className="lp-demo-bubble lp-demo-bubble-in">Looks good, when can you start?</div>
+              <div className="lp-feature-ic" style={{ background: 'var(--color-plum-soft)', color: 'var(--color-plum)' }}><FileText size={18} /></div>
+              <h3>Invoicing &amp; payments</h3>
+              <p>Build invoices with line items, take payments, and pull an AR aging report with one click — with job costing and expenses tracked against every job.</p>
+              <div className="lp-feature-demo lp-demo-invoice" aria-hidden="true">
+                <span className="lp-demo-inv-stamp">Paid</span>
+                <div className="lp-demo-inv-line"><span>HVAC replacement</span><span>$18,400</span></div>
+                <div className="lp-demo-inv-line"><span>Labor — 2 crew</span><span>$3,600</span></div>
+                <div className="lp-demo-inv-total"><span>Total due</span><span>$22,000</span></div>
               </div>
             </div>
             <div className="lp-feature">
@@ -762,8 +722,9 @@ export default function LandingContent() {
             <div className="lp-price-card">
               <h3>Starter</h3>
               <div className="lp-price"><span className="lp-price-n">$49</span><span className="lp-price-per">/mo</span></div>
-              <p className="lp-price-blurb">Get organized: every lead, task, and conversation in one place.</p>
+              <p className="lp-price-blurb">Get organized — and see your first scored leads every month.</p>
               <ul>
+                <li><Check size={15} /> 25 scored, graded leads from your ZIPs every month</li>
                 <li><Check size={15} /> Leads, Kanban pipeline &amp; tasks</li>
                 <li><Check size={15} /> Notes, history &amp; saved segments</li>
                 <li><Check size={15} /> Two-way texting &amp; templates</li>
@@ -776,10 +737,11 @@ export default function LandingContent() {
               <div className="lp-price"><span className="lp-price-n">$129</span><span className="lp-price-per">/mo</span></div>
               <p className="lp-price-blurb">Run the back office: from quote to paid, in the same tab.</p>
               <ul>
+                <li><Check size={15} /> 100 scored, graded leads every month</li>
                 <li><Check size={15} /> Everything in Starter</li>
                 <li><Check size={15} /> Quotes with public accept links</li>
                 <li><Check size={15} /> Invoicing, online payments &amp; AR aging</li>
-                <li><Check size={15} /> Bookkeeping, receipts &amp; P&amp;L</li>
+                <li><Check size={15} /> Job costing, receipts &amp; expenses</li>
                 <li><Check size={15} /> Workflow automations &amp; appointments</li>
               </ul>
               <a className="lp-btn lp-btn-outline" href="/signup">Start free</a>
@@ -790,21 +752,21 @@ export default function LandingContent() {
               <div className="lp-price"><span className="lp-price-n">$249</span><span className="lp-price-per">/mo</span></div>
               <p className="lp-price-blurb">The lead machine: exclusive scored lists for your territory.</p>
               <ul>
+                <li><Check size={15} /> Unlimited scored leads — your whole territory</li>
                 <li><Check size={15} /> Everything in Growth</li>
-                <li><Check size={15} /> Scored, graded property lists by ZIP</li>
                 <li><Check size={15} /> &ldquo;Why this score&rdquo; on every lead</li>
                 <li><Check size={15} /> Storm &amp; permit timing signals</li>
                 <li><Check size={15} /> Property map, territories &amp; heatmaps</li>
                 <li><Check size={15} /> CSV lead import</li>
                 <li><Check size={15} /> Call tracking number &amp; call log</li>
-                <li><Check size={15} /> Marketing insights</li>
               </ul>
               <a className="lp-btn lp-btn-accent" href="/signup">Start free</a>
             </div>
           </div>
           <p className="lp-pricing-foot">
-            One extra job pays for a year of Axon — a single $4,800 pool deck or $12,500 HVAC
-            change-out covers the Pro plan several times over.
+            Do the math against your lead budget: $249/mo vs. a typical $80 shared lead — three
+            leads in and you&apos;ve broken even. And one extra job pays for a year of Axon: a
+            single $4,800 pool deck or $12,500 HVAC change-out covers the Pro plan several times over.
           </p>
         </div>
       </section>
@@ -822,6 +784,14 @@ export default function LandingContent() {
                 US Census neighborhood data, NOAA/NWS storm reports, and building permits. Axon
                 combines them into a 0–100 score with a letter grade — and every lead shows the
                 exact signals behind its score, so you never have to take a number on faith.
+              </p>
+            </details>
+            <details>
+              <summary>How fast do I see my first list?</summary>
+              <p>
+                The ZIP sample above is instant — type a ZIP and a scored list renders in
+                seconds. After you sign up, a full territory run (every scored property across
+                your ZIP codes and vertical) completes the same day, usually within a few hours.
               </p>
             </details>
             <details>

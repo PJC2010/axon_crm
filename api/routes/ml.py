@@ -16,7 +16,9 @@ from fastapi import APIRouter, Depends
 from psycopg2.extensions import connection as PGConn
 
 from api.deps import get_db, dict_fetchall, get_current_user, require_owner
-from config import SCORER_MODE, ML_MIN_TRAINING_LABELS, ML_STALE_OPEN_DAYS
+from config import (
+    SCORER_MODE, ML_MIN_TRAINING_LABELS, ML_MIN_OUTCOMES_TO_SURFACE, ML_STALE_OPEN_DAYS,
+)
 from pipeline.ml import registry
 
 router = APIRouter()
@@ -43,10 +45,12 @@ def ml_status(db: PGConn = Depends(get_db), user: dict = Depends(get_current_use
     return {
         "scorer_mode": SCORER_MODE,
         "min_labels_to_train": ML_MIN_TRAINING_LABELS,
+        "min_outcomes_to_surface": ML_MIN_OUTCOMES_TO_SURFACE,
         "snapshots_total": total,
         "snapshots_labeled": labeled,
         "snapshots_won": won,
         "ready_to_train": (labeled or 0) >= ML_MIN_TRAINING_LABELS,
+        "surface_ready": (labeled or 0) >= ML_MIN_OUTCOMES_TO_SURFACE,
         "active_model_scope": active_scope,
         "account_model_metrics": account_model,
         "global_model_metrics": global_model,
@@ -74,6 +78,14 @@ def ml_lead_insights(db: PGConn = Depends(get_db), user: dict = Depends(get_curr
     cross-referenced with pipeline activity. Returns Insight-shaped cards plus a
     revenue forecast (Σ probability × estimated job value over open leads)."""
     account_id = user["account_id"]
+
+    # Below the surfacing threshold the model trains silently but shows nothing —
+    # predictive findings from a barely-labeled model are noise, not insight.
+    from pipeline.ml import predict
+    if not predict.surface_ready(db, account_id):
+        return {"scorer_mode": SCORER_MODE, "surface_ready": False,
+                "forecast_value": 0.0, "open_scored_leads": 0, "insights": []}
+
     insights: list[dict] = []
 
     with db.cursor() as cur:
@@ -126,6 +138,7 @@ def ml_lead_insights(db: PGConn = Depends(get_db), user: dict = Depends(get_curr
 
     return {
         "scorer_mode": SCORER_MODE,
+        "surface_ready": True,
         "forecast_value": round(float(forecast_value or 0), 2),
         "open_scored_leads": open_scored,
         "insights": insights,

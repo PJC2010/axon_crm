@@ -3,6 +3,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Home, Settings } from 'lucide-react'
 import { AuthGuard } from '@/components/AuthGuard'
+import { ModuleGate } from '@/components/ModuleGate'
 import { MarketingInsightsPanel } from '@/components/MarketingInsightsPanel'
 
 const RANGES = [
@@ -61,5 +62,11 @@ function MarketingPage() {
 }
 
 export default function MarketingPageGuarded() {
-  return <AuthGuard><MarketingPage /></AuthGuard>
+  return (
+    <AuthGuard>
+      <ModuleGate module="marketing" feature="Marketing insights">
+        <MarketingPage />
+      </ModuleGate>
+    </AuthGuard>
+  )
 }
