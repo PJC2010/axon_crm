@@ -60,8 +60,10 @@ def format_phone_display(digits: str) -> str:
     return digits
 
 
-def new_lead_row(from_number: str, digits: str, caller_name: str | None = None) -> dict:
-    """Column -> value dict for a lead auto-created from an unknown caller.
+def new_lead_row(from_number: str, digits: str, caller_name: str | None = None,
+                 *, channel: str = "call") -> dict:
+    """Column -> value dict for a lead auto-created from an unknown caller
+    (channel='call') or an unknown texter (channel='sms').
 
     status 'new' is the properties-table default vocabulary (migration 0000) —
     not public_intake's 'prospect', which is insurance-preset-specific. The
@@ -73,8 +75,8 @@ def new_lead_row(from_number: str, digits: str, caller_name: str | None = None) 
         "contact_name": name,
         "contact_phone": from_number,
         "status": "new",
-        "lead_source": "inbound_call",
-        "enrichment_flags": {"source": "call_tracking"},
+        "lead_source": "inbound_call" if channel == "call" else "inbound_sms",
+        "enrichment_flags": {"source": "call_tracking" if channel == "call" else "sms_tracking"},
     }
 
 

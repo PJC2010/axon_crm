@@ -30,7 +30,7 @@ from config import PUBLIC_API_BASE_URL, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN
 from api import call_logic
 from api.deps import get_db
 from api.lead_events_emit import emit_event
-from api.routes.twilio_inbound import _signature_valid, normalize_phone
+from api.routes.twilio_inbound import _match_account_property_id, _signature_valid, normalize_phone
 
 log = logging.getLogger(__name__)
 
@@ -68,23 +68,6 @@ def _active_tracking_number(db: PGConn, to_digits: str) -> dict | None:
         )
         row = cur.fetchone()
     return {"id": row[0], "account_id": row[1], "forward_to": row[2]} if row else None
-
-
-def _match_account_property_id(db: PGConn, account_id: int, digits: str) -> int | None:
-    """The account's record with this caller's number on either contact phone —
-    the scoped variant of twilio_inbound._match_property_id."""
-    with db.cursor() as cur:
-        cur.execute(
-            "SELECT p.id FROM properties p "
-            "WHERE p.account_id = %(account_id)s "
-            "  AND (RIGHT(regexp_replace(COALESCE(p.contact_phone,''),     '[^0-9]', '', 'g'), 10) = %(digits)s "
-            "    OR RIGHT(regexp_replace(COALESCE(p.contact_phone_alt,''), '[^0-9]', '', 'g'), 10) = %(digits)s) "
-            "ORDER BY p.updated_at DESC NULLS LAST, p.id DESC "
-            "LIMIT 1",
-            {"account_id": account_id, "digits": digits},
-        )
-        row = cur.fetchone()
-    return row[0] if row else None
 
 
 @public_router.post("/public/twilio/voice")
