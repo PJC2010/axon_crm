@@ -40,12 +40,35 @@ services:
       # Public links (set to your deployed frontend origin).
       - key: APP_BASE_URL
         value: https://axon-crm-api.onrender.com
+      # This API's own public origin — used to build the Twilio voice webhook
+      # URLs configured on purchased call-tracking numbers (calls module).
+      - key: PUBLIC_API_BASE_URL
+        value: https://axon-crm-api.onrender.com
       # Paid APIs — left blank on purpose. Set RENTCAST_API_KEY later to test
       # RentCast as a gap-filler; the property step no-ops while it is empty.
       - key: RENTCAST_API_KEY
         value: ""
       - key: GOOGLE_GEOCODE_KEY
         value: ""
+      # Transactional email (Resend) — powers signup verification, password
+      # reset, and invoice/quote delivery. Set both in the dashboard:
+      #   RESEND_API_KEY   — Resend API key
+      #   RESEND_FROM_EMAIL — must be admin@axonhtx.com (domain verified in Resend)
+      # If either is unset, email fails soft (signup still succeeds, no email sent).
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        sync: false
+      # Landing-page "see your ZIP's top leads, free" widget (api/routes/zip_sample.py).
+      # Must be the account_id that owns the seeded sample leads in THIS (prod) DB —
+      # verify with `SELECT id, name FROM accounts;`, do not assume it is 1.
+      # Unset => endpoint returns {configured:false} and the widget shows nothing.
+      - key: PUBLIC_SAMPLE_ACCOUNT_ID
+        sync: false
+      # Auto-seed a free HCAD run for an un-scored (Harris County) ZIP on demand,
+      # rate-capped by PUBLIC_SAMPLE_RUNS_PER_HOUR.
+      - key: PUBLIC_SAMPLE_AUTORUN
+        value: "true"
       # Website lead intake (insure-auto). Generate a long random value, set it
       # here, and copy the same value into insure-auto's Vercel AXON_API_KEY env
       # var (Preview + Production). Find PUBLIC_INTAKE_ACCOUNT_ID via
