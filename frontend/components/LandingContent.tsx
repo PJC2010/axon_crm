@@ -301,7 +301,11 @@ export default function LandingContent() {
               <span className="lp-dot" style={{ background: '#6AE28B' }} />
             </div>
             <div className="lp-video-stage">
-              <video ref={videoRef} controls autoPlay muted loop playsInline poster="" preload="auto">
+              {/* preload="metadata" + no autoplay: the 5.6 MB promo clip no
+                  longer competes with hero text/CSS for bandwidth on first
+                  paint (mobile LCP). The poster overlay's play button starts
+                  it on demand. */}
+              <video ref={videoRef} controls muted loop playsInline poster="" preload="metadata">
                 <source src="/axon-promo.mp4" type="video/mp4" />
               </video>
               <div className="lp-video-poster" ref={posterRef}>

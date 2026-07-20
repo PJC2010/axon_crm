@@ -32,9 +32,46 @@ const geistMono = Geist_Mono({
   display: "swap",
 });
 
+// Canonical origin for absolute URLs (canonicals, OG images, sitemap).
+// Set NEXT_PUBLIC_SITE_URL in Vercel to the production domain; the fallback
+// keeps preview deploys from generating broken absolute URLs.
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://axon-crmsigma.vercel.app";
+
 export const metadata: Metadata = {
-  title: "Axon",
-  description: "Built on data, focused on people.",
+  metadataBase: new URL(SITE_URL),
+  applicationName: "Axon",
+  title: {
+    default: "Axon — Lead intelligence CRM for Houston contractors",
+    template: "%s — Axon",
+  },
+  description:
+    "Axon scores every property in your Greater Houston service area and hands you an exclusive ranked call list — plus quotes, invoicing, and pipeline in one CRM built for local contractors.",
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    siteName: "Axon",
+    locale: "en_US",
+    url: "/",
+    title: "Axon — Lead intelligence CRM for Houston contractors",
+    description:
+      "Exclusive, data-scored leads for Greater Houston contractors — built from Harris County records, permits, equity, and storm data. No shared leads. No contracts.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Axon — Lead intelligence CRM for Houston contractors",
+    description:
+      "Exclusive, data-scored leads for Houston contractors plus the CRM to run every job.",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
 };
 
 // Mobile-first viewport: lock the layout viewport to the device width at 1×

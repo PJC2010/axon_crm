@@ -1,14 +1,22 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-const PUBLIC_PATHS = ['/', '/login']
+// Routes that may appear in search engines. Everything else gets an
+// X-Robots-Tag: noindex header — robots.txt only stops crawling, it doesn't
+// stop a URL that's linked elsewhere (e.g. a shared /q/ quote link) from being
+// indexed; the header does.
+const INDEXABLE_PATHS = ['/', '/login', '/signup', '/privacy', '/terms']
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
-  const isPublic = PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + '/'))
-  if (isPublic) return NextResponse.next()
+  const isIndexable = INDEXABLE_PATHS.some(
+    p => pathname === p || (p !== '/' && pathname.startsWith(p + '/')),
+  )
+  if (isIndexable) return NextResponse.next()
 
-  return NextResponse.next()
+  const response = NextResponse.next()
+  response.headers.set('X-Robots-Tag', 'noindex, nofollow')
+  return response
 }
 
 export const config = {
