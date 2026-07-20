@@ -34,8 +34,12 @@ class FakeCursor:
     def execute(self, sql, params=None):
         sql = " ".join(sql.split())
         self.conn.executed.append((sql, params))
-        if sql.startswith("SELECT p.id FROM properties"):
+        if sql.startswith("SELECT id, account_id FROM tracking_numbers"):
+            self._rows = [(7, 3)] if self.conn.tracking else []
+        elif sql.startswith("SELECT p.id FROM properties"):
             self._rows = [(42,)] if self.conn.match else []
+        elif sql.startswith("INSERT INTO properties"):
+            self._rows = [(99,)]
         else:
             self._rows = []
 
@@ -50,8 +54,9 @@ class FakeCursor:
 
 
 class FakeConn:
-    def __init__(self, match=True):
+    def __init__(self, match=True, tracking=False):
         self.match = match
+        self.tracking = tracking
         self.executed = []
         self.commits = 0
 
@@ -85,6 +90,8 @@ FORM = {"From": "+17135550142", "To": "+18325550100",
 
 def _setup(monkeypatch, *, configured=True, valid_sig=True):
     monkeypatch.setattr(ti, "sms_configured", lambda: configured)
+    if not configured:
+        monkeypatch.setattr(ti, "TWILIO_ACCOUNT_SID", "")
     FakeValidator.result = valid_sig
     monkeypatch.setattr("twilio.request_validator.RequestValidator", FakeValidator)
 
@@ -127,3 +134,36 @@ def test_unmatched_sender_still_returns_empty_twiml(monkeypatch):
     assert resp.status_code == 200
     assert resp.text == EMPTY_TWIML
     assert not any(s.startswith("INSERT") for s, _ in conn.executed)
+
+
+# ── Tracking-number tenancy (SMS to a per-account number) ─────────────────────
+
+def test_tracking_number_scopes_match_to_account(monkeypatch):
+    _setup(monkeypatch)
+    conn = FakeConn(match=True, tracking=True)
+    resp = make_client(conn).post("/api/public/twilio/sms", data=FORM)
+
+    assert resp.status_code == 200
+    matches = [(s, p) for s, p in conn.executed if s.startswith("SELECT p.id FROM properties")]
+    (sql, params), = matches
+    assert "p.account_id" in sql and params["account_id"] == 3
+    # Known sender: no lead insert, just the history row against record 42.
+    assert not any(s.startswith("INSERT INTO properties") for s, _ in conn.executed)
+    (hist,) = [p for s, p in conn.executed if s.startswith("INSERT INTO contact_history")]
+    assert hist[0] == 42
+
+
+def test_unknown_sender_on_tracking_number_becomes_lead(monkeypatch):
+    _setup(monkeypatch)
+    conn = FakeConn(match=False, tracking=True)
+    resp = make_client(conn).post("/api/public/twilio/sms", data=FORM)
+
+    assert resp.status_code == 200
+    assert resp.text == EMPTY_TWIML
+    (lead_sql, lead_params), = [(s, p) for s, p in conn.executed
+                                if s.startswith("INSERT INTO properties")]
+    assert lead_params[0] == 3                      # the tracking number's account
+    assert lead_params[2] == "+17135550142"         # contact_phone
+    assert lead_params[4] == "inbound_sms"          # lead_source
+    (hist,) = [p for s, p in conn.executed if s.startswith("INSERT INTO contact_history")]
+    assert hist == (99, "Yes, next Tuesday works", "SM123")

@@ -140,12 +140,16 @@ def purchase_number(
         raise HTTPException(status_code=409, detail="This account already has a tracking number")
     forward_to = _validated_forward_to(payload.forward_to) if payload.forward_to else None
 
-    voice_url = f"{_api_base_url(request)}/api/public/twilio/voice"
+    base_url = _api_base_url(request)
     try:
         purchased = client.incoming_phone_numbers.create(
             phone_number=payload.phone_number,
-            voice_url=voice_url,
+            voice_url=f"{base_url}/api/public/twilio/voice",
             voice_method="POST",
+            # Texts to the tracking number thread into the same tenant-scoped
+            # inbound-SMS webhook (unknown senders become leads there too).
+            sms_url=f"{base_url}/api/public/twilio/sms",
+            sms_method="POST",
         )
     except Exception as exc:
         log.warning("Twilio number purchase failed for account %s: %s", account_id, exc)
