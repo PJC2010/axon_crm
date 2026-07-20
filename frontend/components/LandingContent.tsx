@@ -880,6 +880,7 @@ export default function LandingContent() {
                 <li><a href="#how">How it works</a></li>
                 <li><a href="#pricing">Pricing</a></li>
                 <li><a href="/preview">Live demo</a></li>
+                <li><a href="/hcad-data">HCAD data, explained</a></li>
               </ul>
             </div>
             <div>
