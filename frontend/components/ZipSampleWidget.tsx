@@ -164,7 +164,10 @@ export function ZipSampleWidget() {
             ))}
           </ol>
           <div className="lp-zip-gate">
-            <p>Full addresses, owner names, and phone numbers unlock with a free account.</p>
+            <p>
+              Unmask these {result.leads.length} addresses — free account. Owner names and
+              phone numbers included where available.
+            </p>
             <a className="lp-btn lp-btn-accent" href="/signup">
               Start free — see the full list <ArrowRight size={15} />
             </a>

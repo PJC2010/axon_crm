@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { getAccountFeatures } from '@/lib/api'
-import type { AccountFeatures, ModuleKey } from '@/lib/types'
+import type { AccountFeatures, ModuleKey, ScoringQuota } from '@/lib/types'
 
 /**
  * Account feature-module entitlements for gating nav and UI.
@@ -50,6 +50,8 @@ export interface Entitlements {
   loading: boolean
   /** True if the module is enabled, or while still loading (permissive default). */
   hasModule: (m: ModuleKey) => boolean
+  /** Monthly scored-lead allowance for metered plans; null = unlimited/unknown. */
+  scoringQuota: ScoringQuota | null
 }
 
 export function useEntitlements(): Entitlements {
@@ -75,5 +77,5 @@ export function useEntitlements(): Entitlements {
     return features.modules[m] !== false
   }
 
-  return { features, loading, hasModule }
+  return { features, loading, hasModule, scoringQuota: features?.scoring_quota ?? null }
 }

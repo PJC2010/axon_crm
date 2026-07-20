@@ -13,7 +13,9 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from psycopg2.extensions import connection as PGConn
 
+from api import scoring_quota
 from api.deps import get_db, dict_fetchall, get_current_user
+from api.entitlements import get_scoring_limit
 from api.lead_events_emit import emit_surfaced
 from api.qbo_export import QBO_EXPENSE_COLS, QBO_INVOICE_COLS, expense_rows, invoice_rows
 from api.routes.leads import SORT_MAP, _build_filters
@@ -64,9 +66,17 @@ def export_leads(
         )
         rows = dict_fetchall(cur)
 
+    # Monthly scored-lead allowance: exporting consumes reveals like listing
+    # does, and rows past the allowance export masked — the CSV can't hand out
+    # what the list would hide (api/scoring_quota.py).
+    limit = get_scoring_limit(user["account_id"], db)
+    if limit is not None:
+        rows, _ = scoring_quota.apply_quota(db, user["account_id"], rows, limit)
+
     # Feedback loop (Phase 2): exporting a lead surfaces it to the contractor,
-    # same as listing it. First-only + best-effort.
-    emit_surfaced(db, [r["id"] for r in rows], user["account_id"], actor_user_id=user["id"])
+    # same as listing it. First-only + best-effort. Masked rows don't count.
+    emit_surfaced(db, [r["id"] for r in rows if not r.get("quota_masked")],
+                  user["account_id"], actor_user_id=user["id"])
 
     return _csv_response(rows, EXPORT_COLS, f"leads_{zip or 'all'}.csv")
 

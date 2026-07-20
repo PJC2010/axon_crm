@@ -487,8 +487,9 @@ function SettingsPage() {
         {/* One-way QuickBooks-format exports (bookkeeper escape hatch). */}
         {(hasModule('invoicing') || hasModule('bookkeeping')) && <QuickBooksExportSection />}
 
-        {/* Connected accounts / integrations */}
-        <ConnectionsSection />
+        {/* Connected accounts / integrations (Meta CSV insights) — granted by no
+            named plan; only per-account overrides re-enable it. */}
+        {hasModule('marketing') && <ConnectionsSection />}
 
         {/* Run log */}
         {hasModule('prospecting') && (

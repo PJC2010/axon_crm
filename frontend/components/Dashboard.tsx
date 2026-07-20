@@ -5,8 +5,9 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getLeads, getLead, getLeadByNumber } from '@/lib/api'
 import { clearToken } from '@/lib/auth'
-import type { Lead, LeadFilters, LeadStatus } from '@/lib/types'
+import type { Lead, LeadFilters, LeadStatus, ScoringQuota } from '@/lib/types'
 import { LeadTable } from './LeadTable'
+import { ScoringQuotaBanner } from './ModuleGate'
 import { CustomerSearch } from './CustomerSearch'
 import { TerritoryFilter } from './TerritoryFilter'
 import { ContactDrawer } from './ContactDrawer'
@@ -26,6 +27,7 @@ export function Dashboard() {
   const [filters, setFilters]   = useState<LeadFilters>(DEFAULT_FILTERS)
   const [leads, setLeads]       = useState<Lead[]>([])
   const [total, setTotal]       = useState(0)
+  const [quota, setQuota]       = useState<ScoringQuota | null>(null)
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState<string | null>(null)
   const [selected, setSelected] = useState<Lead | null>(null)
@@ -57,6 +59,7 @@ export function Dashboard() {
       const page = await getLeads(f)
       setLeads(page.results)
       setTotal(page.total)
+      setQuota(page.scoring_quota ?? null)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load leads')
     } finally {
@@ -267,6 +270,10 @@ export function Dashboard() {
           <code className="tabular text-xs ml-1">uvicorn api.main:app --reload</code>
         </div>
       )}
+
+      {/* Monthly scored-lead allowance meter (metered plans only). Fed from the
+          lead-list response so it reflects reveals consumed by this render. */}
+      <ScoringQuotaBanner quota={quota} />
 
       <main className="flex-1 overflow-hidden">
         <LeadTable

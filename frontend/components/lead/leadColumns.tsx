@@ -1,4 +1,4 @@
-import { Home, User } from 'lucide-react'
+import { Home, Lock, User } from 'lucide-react'
 import type { Category, Lead, LeadStatus } from '@/lib/types'
 import { ScoreBadge } from '../ScoreBadge'
 import { StatusSelect } from '../StatusSelect'
@@ -85,15 +85,19 @@ function buildRegistry(ctx: LeadColumnContext): Record<string, LeadColumn> {
       header: propertyBased ? 'Address' : t('record'),
       cellStyle: { maxWidth: 240 },
       render: (lead) => {
-        const Icon = propertyBased ? Home : User
+        // Quota-masked rows (api/scoring_quota.py) arrive with the address
+        // partially hidden server-side; the lock marks why.
+        const Icon = lead.quota_masked ? Lock : propertyBased ? Home : User
         const primary = propertyBased
           ? (lead.address || lead.contact_name || '—')
           : (lead.contact_name || lead.owner_name || lead.address || '—')
-        const secondary = propertyBased
-          ? [lead.city, lead.state, lead.zip].filter(Boolean).join(', ')
-          : ([lead.city, lead.state].filter(Boolean).join(', ') || lead.account_number || '')
+        const secondary = lead.quota_masked
+          ? 'Past this month’s scored-lead allowance'
+          : propertyBased
+            ? [lead.city, lead.state, lead.zip].filter(Boolean).join(', ')
+            : ([lead.city, lead.state].filter(Boolean).join(', ') || lead.account_number || '')
         return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: lead.quota_masked ? 0.65 : 1 }}>
             <Icon size={13} strokeWidth={1.5} style={{ color: 'var(--color-ink-300)', flexShrink: 0 }} />
             <div style={{ minWidth: 0 }}>
               <p style={{ fontWeight: 500, color: 'var(--color-ink-900)', fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

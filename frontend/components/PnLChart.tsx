@@ -41,6 +41,10 @@ export function PnLChart({ year }: Props) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <p style={{ margin: 0, fontSize: 12, color: 'var(--color-ink-400)' }}>
+        Estimates from Axon records — your accountant&apos;s books are the source of truth.
+      </p>
+
       {/* Annual totals — redesigned as gradient cards */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <div style={{

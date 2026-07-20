@@ -16,7 +16,7 @@ from api.ratelimit import client_ip, login_limiter
 from api.security import hash_password, verify_password, create_access_token
 from api.deps import get_current_user, require_owner
 from api.entitlements import (
-    MODULE_KEYS, PLAN_CATALOG, get_account_modules, _plan_defaults,
+    MODULE_KEYS, PLAN_CATALOG, get_account_modules, get_scoring_limit, _plan_defaults,
 )
 from api.business_types import BUSINESS_TYPES, business_type_profile
 
@@ -158,9 +158,20 @@ def account_features(current_user: dict = Depends(get_current_user), db: PGConn 
         cur.execute("SELECT plan_name FROM account_plans WHERE account_id = %s", (acct,))
         row = cur.fetchone()
     plan_name = row[0] if row else "pro"
+
+    # Monthly scored-lead allowance state for metered plans (None = unlimited),
+    # so the UI can show "18 of 25 scored leads used" (api/scoring_quota.py).
+    quota = None
+    limit = get_scoring_limit(acct, db)
+    if limit is not None:
+        from api import scoring_quota
+        used = scoring_quota.used_this_month(db, acct)
+        quota = {"limit": limit, "used": used, "remaining": max(0, limit - used)}
+
     return {
         "plan_name": plan_name,
         "modules": get_account_modules(acct, db),
+        "scoring_quota": quota,
         **business_type_profile(_account_business_type(acct, db)),
     }
 

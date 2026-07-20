@@ -33,17 +33,17 @@ PLAN_PRICING: dict[str, dict] = {
     "starter": {
         "label": "Starter",
         "monthly_usd": 49,
-        "blurb": "Get organized: every lead, task, and conversation in one place.",
+        "blurb": "Get organized — plus 25 scored, graded leads from your ZIPs every month.",
     },
     "growth": {
         "label": "Growth",
         "monthly_usd": 129,
-        "blurb": "Run the back office: quotes, invoicing, bookkeeping, automations.",
+        "blurb": "Run the back office: quotes, invoicing, automations — plus 100 scored leads a month.",
     },
     "pro": {
         "label": "Pro",
         "monthly_usd": 249,
-        "blurb": "The lead machine: scored property lists, storm signals, maps — plus everything in Growth.",
+        "blurb": "The lead machine: unlimited scored lists, storm signals, maps — plus everything in Growth.",
     },
 }
 
