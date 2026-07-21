@@ -13,3 +13,5 @@ node_modules/
 
 venv/
 tools/sample_hcad_zip.py
+sample_zips.txt
+seed_all_zips.log
