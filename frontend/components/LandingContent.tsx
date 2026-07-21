@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { ZipSampleWidget, WAITLIST_MAILTO } from '@/components/ZipSampleWidget'
 import { ProspectCaptureForm } from '@/components/ProspectCaptureForm'
-import { TESTIMONIALS } from '@/lib/testimonials'
+import { TESTIMONIALS, SHOW_TESTIMONIALS } from '@/lib/testimonials'
 import { getPublicStats } from '@/lib/api'
 
 // ── Competitor comparison data (Axon vs. the national lead marketplaces) ──
@@ -307,9 +307,10 @@ export default function LandingContent() {
             </span>
           </div>
 
-          {/* ── Social proof band — renders only once real testimonials exist
-                 in lib/testimonials.ts (never fabricate). ── */}
-          {TESTIMONIALS.length > 0 && (
+          {/* ── Social proof band — hidden for now via SHOW_TESTIMONIALS; the
+                 markup stays in place. Turn the flag on (and add real quotes to
+                 lib/testimonials.ts — never fabricate) to bring it back. ── */}
+          {SHOW_TESTIMONIALS && TESTIMONIALS.length > 0 && (
             <div className="lp-proof-band" data-hero style={{ '--i': 5 } as CSSProperties}>
               {TESTIMONIALS.slice(0, 3).map(t => (
                 <figure key={t.name} className="lp-quote">

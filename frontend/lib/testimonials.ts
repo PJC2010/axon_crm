@@ -6,6 +6,14 @@
  * should carry a concrete number ("booked 4 jobs off my first ZIP pull"), the
  * person's first name + last initial, trade, and city, all with their consent.
  */
+/**
+ * Master switch for the landing proof band. Off for now — the section is fully
+ * built (component markup + landing.css `.lp-proof-band`) and stays in the tree;
+ * flip this to `true` once real quotes are added below to bring it back with no
+ * other code change. Even when true, the band hides while TESTIMONIALS is empty.
+ */
+export const SHOW_TESTIMONIALS = false
+
 export interface Testimonial {
   /** e.g. "Mike R." */
   name: string
