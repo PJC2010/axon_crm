@@ -74,9 +74,12 @@ function ToastItem({ toast, onDismiss }: { toast: ToastData; onDismiss: (id: num
         onClick={() => onDismiss(toast.id)}
         aria-label="Dismiss"
         style={{
-          background: 'none', border: 'none', padding: 2,
+          background: 'none', border: 'none',
           cursor: 'pointer', color: 'var(--color-ink-400)',
-          display: 'flex', flexShrink: 0,
+          // 44px effective touch target without inflating the toast's chrome.
+          width: 44, height: 44, margin: '-12px -14px -12px -8px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0,
         }}
       >
         <X size={13} />

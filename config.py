@@ -194,6 +194,10 @@ ML_RETRAIN_HOUR = int(os.getenv("ML_RETRAIN_HOUR", "3"))
 # rules (see api/workflow_engine.py run_daily_rules). Runs at :15 past the hour.
 WORKFLOW_TICK_HOUR = int(os.getenv("WORKFLOW_TICK_HOUR", "7"))
 
+# Hour (UTC) of the opt-in daily "who to call today" email digest
+# (api/digest.py). 13:00 UTC ≈ 7–8am US Central, the contractor's coffee hour.
+USER_DIGEST_HOUR = int(os.getenv("USER_DIGEST_HOUR", "13"))
+
 # ── Invoice delivery (notifications) ─────────────────────────────────────────
 RESEND_API_KEY      = os.getenv("RESEND_API_KEY", "")
 RESEND_FROM_EMAIL   = os.getenv("RESEND_FROM_EMAIL", "")

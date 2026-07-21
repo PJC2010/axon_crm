@@ -8,6 +8,16 @@ const GRADE_COLORS: Record<string, { bg: string; fg: string }> = {
   F: { bg: 'var(--color-danger-bg)',  fg: 'var(--color-danger)' },
 }
 
+// Grades framed as actions, not letters (matches WhyThisScore's plain-language
+// verdicts): the tooltip/screen-reader text tells the user what to *do*.
+const GRADE_ACTION: Record<string, string> = {
+  A: 'A — call first',
+  B: 'B — worth a timely follow-up',
+  C: 'C — when you have capacity',
+  D: 'D — low priority',
+  F: 'F — low priority',
+}
+
 export interface ScoreBadgeProps {
   grade?: string | null
   score?: number | null
@@ -21,8 +31,11 @@ export interface ScoreBadgeProps {
 export function ScoreBadge({ grade, score, style }: ScoreBadgeProps) {
   if (!grade) return <span style={{ color: 'var(--color-ink-400)', fontSize: 13 }}>—</span>
   const c = GRADE_COLORS[grade] || GRADE_COLORS.F
+  const action = GRADE_ACTION[grade]
   return (
     <span
+      title={action}
+      aria-label={action ? `Lead grade ${action}` : `Lead grade ${grade}`}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 5,
         padding: '3px 9px', borderRadius: 'var(--radius-pill)',

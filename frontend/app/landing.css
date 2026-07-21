@@ -209,6 +209,18 @@
 .lp-vs-foot { margin: 14px 0 0; font-size: 11.5px; line-height: 1.55; color: var(--color-ink-400); max-width: 760px; }
 
 /* Pricing */
+/* Cost-of-alternative anchor shown before the tier cards */
+.lp-price-anchor { display: flex; align-items: center; justify-content: flex-start; gap: 12px; flex-wrap: wrap; margin-top: 28px; padding: 12px 18px; border-radius: var(--radius-card); background: var(--color-surface); box-shadow: var(--shadow-card); font-size: 13.5px; color: var(--color-ink-600); }
+.lp-price-anchor svg { color: var(--color-ink-400); flex-shrink: 0; }
+.lp-price-anchor-old b { color: var(--color-danger); }
+.lp-price-anchor-new b { color: var(--color-moss); }
+
+/* Hero social-proof band — hidden until lib/testimonials.ts has real quotes */
+.lp-proof-band { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 32px; max-width: 920px; }
+.lp-quote { margin: 0; padding: 16px 18px; border-radius: var(--radius-card); background: var(--color-surface); box-shadow: var(--shadow-card); }
+.lp-quote blockquote { margin: 0 0 10px; font-size: 14px; line-height: 1.5; color: var(--color-ink-800); }
+.lp-quote figcaption { font-size: 12px; font-weight: 600; color: var(--color-ink-500); }
+
 .lp-pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 44px; align-items: stretch; }
 .lp-price-card { position: relative; display: flex; flex-direction: column; background: var(--color-surface); border-radius: var(--radius-card); box-shadow: var(--shadow-card); padding: 28px; }
 .lp-price-card h3 { font-family: var(--font-display); font-size: 18px; margin: 0 0 10px; color: var(--color-ink-900); }
@@ -240,6 +252,10 @@
 .lp-zip-error { color: var(--color-danger); }
 .lp-spin { animation: lp-spin 0.9s linear infinite; flex-shrink: 0; margin-top: 2px; }
 @keyframes lp-spin { to { transform: rotate(360deg); } }
+/* Live-ish proof chip above the ZIP widget (real platform count, cached daily) */
+.lp-zip-proof-chip { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 18px; padding: 6px 14px; border-radius: var(--radius-pill); background: var(--color-accent-100); color: var(--color-accent-300); font-size: 12.5px; font-weight: 500; }
+.lp-zip-proof-chip b { font-weight: 700; }
+.lp-zip-proof-chip svg { flex-shrink: 0; }
 .lp-zip-results { margin-top: 24px; background: var(--color-surface); border-radius: var(--radius-card); box-shadow: var(--shadow-pop); overflow: hidden; }
 .lp-zip-stats { display: flex; gap: 22px; flex-wrap: wrap; padding: 14px 20px; border-bottom: 1px solid var(--color-ink-100); font-size: 13px; color: var(--color-ink-600); }
 .lp-zip-stats b { color: var(--color-ink-900); }
@@ -288,7 +304,7 @@
 
 @media (max-width: 860px) {
   .lp-features, .lp-split, .lp-proof-grid, .lp-footer-inner,
-  .lp-pricing-grid { grid-template-columns: 1fr; }
+  .lp-pricing-grid, .lp-proof-band { grid-template-columns: 1fr; }
   .lp-vs-cell { padding: 12px 12px; }
   .lp-nav-links { display: none; }
   .lp-price-featured { order: -1; }

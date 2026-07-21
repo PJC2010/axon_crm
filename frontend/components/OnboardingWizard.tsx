@@ -1,9 +1,10 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { ArrowRight, ArrowLeft, Zap, MapPin, Kanban, CheckCircle2, Briefcase } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ArrowRight, ArrowLeft, Zap, MapPin, Kanban, CheckCircle2, Briefcase, Loader2 } from 'lucide-react'
 import {
   completeOnboarding, triggerRun, seedWorkflowDefaults, getRegions,
-  getBusinessTypes, updateBusinessType, type Region,
+  getBusinessTypes, updateBusinessType, getLeads, type Region,
 } from '@/lib/api'
 import { useTerminology } from '@/hooks/useTerminology'
 import { refreshEntitlements } from '@/hooks/useEntitlements'
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export function OnboardingWizard({ onComplete }: Props) {
+  const router = useRouter()
   // Category picklist + terminology come from the account's business type; a
   // switch on the Business step refreshes them in place (refreshEntitlements).
   const { categories, t, businessType, propertyBased } = useTerminology()
@@ -57,6 +59,28 @@ export function OnboardingWizard({ onComplete }: Props) {
   const [seeding, setSeeding] = useState(false)
   const [seeded, setSeeded] = useState(false)
   const [finishing, setFinishing] = useState(false)
+
+  // Live import feedback: once a run kicks off, poll the lead count so value
+  // visibly arrives during setup instead of behind a spinner, and the Ready
+  // step can end on the concrete payoff ("We found N — your top lead is an A").
+  const [importCount, setImportCount] = useState<number | null>(null)
+  const [topGrade, setTopGrade] = useState<string | null>(null)
+  useEffect(() => {
+    if (!imported) return
+    let cancelled = false
+    const tick = async () => {
+      try {
+        const page = await getLeads({ sort: 'score', page: 1, page_size: 1 })
+        if (cancelled) return
+        setImportCount(page.total)
+        const grade = page.results[0]?.score_grade
+        if (grade) setTopGrade(grade)
+      } catch { /* keep polling */ }
+    }
+    tick()
+    const id = setInterval(tick, 4000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [imported])
 
   // Region typeahead (primary territory picker). ZIP entry is the fallback below.
   const [regionQuery, setRegionQuery] = useState('')
@@ -106,6 +130,13 @@ export function OnboardingWizard({ onComplete }: Props) {
     } catch {
       onComplete()
     }
+  }
+
+  // Payoff exit: land the user straight on their new lead list.
+  async function handleFinishToLeads() {
+    setFinishing(true)
+    try { await completeOnboarding() } catch { /* still navigate */ }
+    router.push('/dashboard')
   }
 
   return (
@@ -215,6 +246,10 @@ export function OnboardingWizard({ onComplete }: Props) {
               properties there and score them for{' '}
               {categoryLabel(vertical)?.toLowerCase() ?? 'your service'}.
             </p>
+            {/* Anchor expectations before the number arrives. */}
+            <p style={{ fontSize: 12.5, color: 'var(--color-ink-400)', margin: '-14px 0 24px' }}>
+              Most ZIPs return 300–800 scored properties.
+            </p>
 
             {/* Region typeahead (primary) */}
             <div style={{ position: 'relative', maxWidth: 360, margin: '0 auto' }}>
@@ -302,8 +337,22 @@ export function OnboardingWizard({ onComplete }: Props) {
               </button>
             </div>
             {imported && (
-              <p style={{ marginTop: 16, fontSize: 13, color: 'var(--color-moss)' }}>
-                Pipeline started! Your leads will appear on the dashboard shortly.
+              <p style={{
+                marginTop: 16, fontSize: 13, color: 'var(--color-moss)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              }}>
+                {importCount != null && importCount > 0 ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" style={{ flexShrink: 0 }} />
+                    Importing… <b className="tabular">{importCount.toLocaleString()}</b> properties found so far.
+                    Keep going — it works in the background.
+                  </>
+                ) : (
+                  <>
+                    <Loader2 size={13} className="animate-spin" style={{ flexShrink: 0 }} />
+                    Import started — properties will appear here as they land.
+                  </>
+                )}
               </p>
             )}
           </div>
@@ -367,33 +416,63 @@ export function OnboardingWizard({ onComplete }: Props) {
           </div>
         )}
 
-        {/* Step: Ready */}
+        {/* Step: Ready — end on the concrete payoff when the import produced
+            leads (peak-end); otherwise the generic what's-next cards. */}
         {stepName === 'Ready' && (
           <div style={{ textAlign: 'center' }}>
             <CheckCircle2 size={48} strokeWidth={1.5} style={{ color: 'var(--color-moss)', marginBottom: 16 }} />
-            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 600, color: 'var(--color-ink-900)', margin: '0 0 8px' }}>
-              You&apos;re all set!
-            </h2>
-            <p style={{ fontSize: 15, color: 'var(--color-ink-500)', margin: '0 0 28px', lineHeight: 1.5 }}>
-              Your pipeline is configured and ready to go. Here&apos;s what to do next:
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 }}>
-              {[
-                { icon: <Kanban size={18} strokeWidth={1.5} />, label: 'Review your pipeline', desc: 'See scored leads and start reaching out' },
-                { icon: <Zap size={18} strokeWidth={1.5} />, label: 'Watch automations work', desc: 'Move a lead to see tasks auto-created' },
-              ].map(item => (
-                <div key={item.label} style={{
-                  display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px',
-                  borderRadius: 'var(--radius-card)', background: 'var(--color-surface)', border: '1px solid var(--color-ink-200)', textAlign: 'left',
-                }}>
-                  <div style={{ color: 'var(--color-accent)', flexShrink: 0 }}>{item.icon}</div>
-                  <div>
-                    <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: 'var(--color-ink-900)' }}>{item.label}</p>
-                    <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--color-ink-400)' }}>{item.desc}</p>
-                  </div>
+            {importCount != null && importCount > 0 ? (
+              <>
+                <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 600, color: 'var(--color-ink-900)', margin: '0 0 8px' }}>
+                  We found <span className="tabular">{importCount.toLocaleString()}</span> properties
+                  {region ? ` in ${region.name}` : zip ? ` in ${zip}` : ''}
+                </h2>
+                <p style={{ fontSize: 15, color: 'var(--color-ink-500)', margin: '0 0 28px', lineHeight: 1.5 }}>
+                  {topGrade
+                    ? <>Your top lead scored <b style={{ color: 'var(--color-ink-900)' }}>{topGrade}</b> — go call them.</>
+                    : 'Scoring is finishing up — your ranked list is ready to work.'}
+                </p>
+                <button
+                  onClick={handleFinishToLeads}
+                  disabled={finishing}
+                  style={{
+                    padding: '14px 28px', borderRadius: 'var(--radius-pill)',
+                    background: 'var(--color-accent)', color: 'white',
+                    border: 'none', fontSize: 15, fontWeight: 600,
+                    cursor: finishing ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 28,
+                  }}
+                >
+                  {finishing ? 'Loading…' : 'See my leads'} <ArrowRight size={15} />
+                </button>
+              </>
+            ) : (
+              <>
+                <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 600, color: 'var(--color-ink-900)', margin: '0 0 8px' }}>
+                  You&apos;re all set!
+                </h2>
+                <p style={{ fontSize: 15, color: 'var(--color-ink-500)', margin: '0 0 28px', lineHeight: 1.5 }}>
+                  Your pipeline is configured and ready to go. Here&apos;s what to do next:
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 }}>
+                  {[
+                    { icon: <Kanban size={18} strokeWidth={1.5} />, label: 'Review your pipeline', desc: 'See scored leads and start reaching out' },
+                    { icon: <Zap size={18} strokeWidth={1.5} />, label: 'Watch automations work', desc: 'Move a lead to see tasks auto-created' },
+                  ].map(item => (
+                    <div key={item.label} style={{
+                      display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px',
+                      borderRadius: 'var(--radius-card)', background: 'var(--color-surface)', border: '1px solid var(--color-ink-200)', textAlign: 'left',
+                    }}>
+                      <div style={{ color: 'var(--color-accent)', flexShrink: 0 }}>{item.icon}</div>
+                      <div>
+                        <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: 'var(--color-ink-900)' }}>{item.label}</p>
+                        <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--color-ink-400)' }}>{item.desc}</p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            )}
           </div>
         )}
 

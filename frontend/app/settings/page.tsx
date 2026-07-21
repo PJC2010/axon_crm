@@ -16,9 +16,21 @@ import { CustomFieldsSettings } from '@/components/CustomFieldsSettings'
 import { MessageTemplatesSettings } from '@/components/MessageTemplatesSettings'
 import { ImportOrdersModal } from '@/components/ImportOrdersModal'
 import { RescoreSection } from '@/components/RescoreSection'
+import { DailyDigestSection } from '@/components/DailyDigestSection'
 import { useEntitlements } from '@/hooks/useEntitlements'
 import { useTerminology } from '@/hooks/useTerminology'
 import type { PipelineSchedule, PipelineRun, WorkflowRule } from '@/lib/types'
+
+// Hick's law: the settings scroll had accreted a dozen sections — group them
+// into four stable tabs. Deep-linkable via /settings?tab=<key> (the getting-
+// started checklist and empty states point at ?tab=pipeline).
+type SettingsTab = 'business' | 'pipeline' | 'money' | 'integrations'
+const TABS: { key: SettingsTab; label: string }[] = [
+  { key: 'business', label: 'Business' },
+  { key: 'pipeline', label: 'Leads & Automations' },
+  { key: 'money', label: 'Money' },
+  { key: 'integrations', label: 'Integrations' },
+]
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 const STATUS_COLOR: Record<string, string> = {
@@ -55,6 +67,7 @@ function runSummary(run: PipelineRun): string | null {
 function SettingsPage() {
   const { hasModule } = useEntitlements()
   const { categories } = useTerminology()
+  const [tab, setTab] = useState<SettingsTab>('business')
   const [schedules, setSchedules] = useState<PipelineSchedule[]>([])
   const [runs, setRuns] = useState<PipelineRun[]>([])
   const [workflows, setWorkflows] = useState<WorkflowRule[]>([])
@@ -96,6 +109,13 @@ function SettingsPage() {
   }, [])
 
   useEffect(() => { loadData() }, [loadData])
+
+  // Deep link: /settings?tab=pipeline (read from location to keep this page
+  // statically prerenderable — no useSearchParams Suspense dance).
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get('tab')
+    if (wanted && TABS.some(t => t.key === wanted)) setTab(wanted as SettingsTab)
+  }, [])
 
   // Auto-refresh runs when any are running
   useEffect(() => {
@@ -158,6 +178,13 @@ function SettingsPage() {
 
   const hasActive = runs.some(r => r.status === 'running' || r.status === 'queued')
 
+  // Tabs with nothing to show for this account's modules disappear entirely.
+  const visibleTabs = TABS.filter(t =>
+    t.key === 'money' ? (hasModule('invoicing') || hasModule('bookkeeping'))
+    : t.key === 'integrations' ? (hasModule('orders') || hasModule('calls') || hasModule('marketing'))
+    : true)
+  const activeTab = visibleTabs.some(t => t.key === tab) ? tab : 'business'
+
   return (
     <div style={{ minHeight: '100vh', background: 'transparent' }}>
       <header style={{
@@ -181,19 +208,50 @@ function SettingsPage() {
         )}
       </header>
 
-      <div style={{ maxWidth: 760, margin: '0 auto', padding: '28px 20px', display: 'flex', flexDirection: 'column', gap: 32 }}>
+      {/* Tab bar — horizontally scrollable on phones so it never overflows. */}
+      <div style={{ maxWidth: 760, margin: '0 auto', width: '100%', boxSizing: 'border-box', padding: '16px 20px 0' }}>
+        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
+          {visibleTabs.map(tb => (
+            <button
+              key={tb.key}
+              onClick={() => setTab(tb.key)}
+              style={{
+                padding: '0 16px', minHeight: 44, whiteSpace: 'nowrap', flexShrink: 0,
+                borderRadius: 'var(--radius-pill)', border: 'none', cursor: 'pointer',
+                fontSize: 13, fontWeight: 600,
+                background: activeTab === tb.key ? 'var(--color-ink-900)' : 'var(--color-surface)',
+                color: activeTab === tb.key ? 'var(--color-paper)' : 'var(--color-ink-600)',
+                boxShadow: activeTab === tb.key ? 'none' : 'inset 0 0 0 1px var(--color-ink-200)',
+              }}
+            >
+              {tb.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
+      <div style={{ maxWidth: 760, margin: '0 auto', padding: '24px 20px 28px', display: 'flex', flexDirection: 'column', gap: 32 }}>
+
+        {activeTab === 'business' && (
+        <>
         {/* The account's own Axon subscription (plan, trial, upgrades). */}
         <BillingSection />
 
         {/* Business name + review link (powers the review-request automation). */}
         <BusinessProfileSection />
 
+        {/* Opt-in morning "who to call" email — the out-of-app habit trigger. */}
+        <DailyDigestSection />
+        </>
+        )}
+
+        {activeTab === 'pipeline' && (
+        <>
         {hasModule('prospecting') && (
         <>
         {/* Manual run */}
         <section>
-          <h2 className="t-eyebrow" style={{ marginBottom: 12 }}>Run pipeline now</h2>
+          <h2 className="t-eyebrow" style={{ marginBottom: 12 }}>Import &amp; score leads now</h2>
           <form onSubmit={handleTrigger} style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <input type="text" value={runZip} onChange={e => setRunZip(e.target.value)} placeholder="ZIP code" className="drawer-input" style={{ width: 120 }} required />
             <select value={runVertical} onChange={e => setRunVertical(e.target.value)} className="drawer-input">
@@ -230,13 +288,13 @@ function SettingsPage() {
                 border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, cursor: rescoring ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6,
               }}
             >
-              {rescoring ? 'Scoring…' : 'Rescore Only'}
+              {rescoring ? 'Scoring…' : 'Update Scores Only'}
             </button>
             <button
               type="button"
               disabled={rescoringAll}
               onClick={async () => {
-                if (!confirm('Rescore all leads across all ZIPs? This may take a minute.')) return
+                if (!confirm('Update scores for all leads across all ZIPs? This may take a minute.')) return
                 setRescoringAll(true)
                 try {
                   const result = await rescoreAll()
@@ -252,7 +310,7 @@ function SettingsPage() {
                 border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, cursor: rescoringAll ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6,
               }}
             >
-              {rescoringAll ? 'Scoring all…' : 'Rescore All ZIPs'}
+              {rescoringAll ? 'Scoring all…' : 'Update All Scores'}
             </button>
           </form>
         </section>
@@ -465,7 +523,11 @@ function SettingsPage() {
 
         <MessageTemplatesSettings />
 
-        {hasModule('orders') && (
+        <RescoreSection />
+        </>
+        )}
+
+        {activeTab === 'integrations' && hasModule('orders') && (
           <section>
             <h2 className="t-eyebrow" style={{ marginBottom: 6 }}>Orders</h2>
             <p style={{ fontSize: 13, color: 'var(--color-ink-400)', margin: '0 0 12px' }}>
@@ -476,23 +538,21 @@ function SettingsPage() {
           </section>
         )}
 
-        <RescoreSection />
-
         {/* Online payments (Stripe Connect) — rides the invoicing module */}
-        {hasModule('invoicing') && <StripeConnectSection />}
+        {activeTab === 'money' && hasModule('invoicing') && <StripeConnectSection />}
 
         {/* Call tracking (Twilio tracking number + forwarding) */}
-        {hasModule('calls') && <CallTrackingSection />}
+        {activeTab === 'integrations' && hasModule('calls') && <CallTrackingSection />}
 
         {/* One-way QuickBooks-format exports (bookkeeper escape hatch). */}
-        {(hasModule('invoicing') || hasModule('bookkeeping')) && <QuickBooksExportSection />}
+        {activeTab === 'money' && (hasModule('invoicing') || hasModule('bookkeeping')) && <QuickBooksExportSection />}
 
         {/* Connected accounts / integrations (Meta CSV insights) — granted by no
             named plan; only per-account overrides re-enable it. */}
-        {hasModule('marketing') && <ConnectionsSection />}
+        {activeTab === 'integrations' && hasModule('marketing') && <ConnectionsSection />}
 
         {/* Run log */}
-        {hasModule('prospecting') && (
+        {activeTab === 'pipeline' && hasModule('prospecting') && (
         <section>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
             <h2 className="t-eyebrow" style={{ margin: 0 }}>Recent runs</h2>

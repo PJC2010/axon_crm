@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import {
   ArrowRight, Columns3, FileText, DollarSign, GitBranch, Layers, Rocket,
   Crosshair, Map, Bell, Play, Star, Check, Users,
@@ -9,6 +9,8 @@ import {
 } from 'lucide-react'
 import { ZipSampleWidget, WAITLIST_MAILTO } from '@/components/ZipSampleWidget'
 import { ProspectCaptureForm } from '@/components/ProspectCaptureForm'
+import { TESTIMONIALS, SHOW_TESTIMONIALS } from '@/lib/testimonials'
+import { getPublicStats } from '@/lib/api'
 
 // ── Competitor comparison data (Axon vs. the national lead marketplaces) ──
 // Cell copy states each platform's publicly documented pay-per-lead model;
@@ -64,10 +66,22 @@ const AxonMark = ({ size = 28, maskId }: { size?: number; maskId: string }) => (
   </svg>
 )
 
+// Below this, a platform-wide count reads as thin rather than as proof — the
+// chip stays hidden until the number has real weight.
+const MIN_PROOF_COUNT = 500
+
 export default function LandingContent() {
   const rootRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const posterRef = useRef<HTMLDivElement>(null)
+  const [scoredCount, setScoredCount] = useState<number | null>(null)
+
+  // Live-ish proof chip for the ZIP demo — real count, cached daily server-side.
+  useEffect(() => {
+    getPublicStats()
+      .then(s => setScoredCount(s.properties_scored))
+      .catch(() => {})
+  }, [])
 
   // ── Video poster: only hide it once the clip actually starts playing. ──
   useEffect(() => {
@@ -293,6 +307,20 @@ export default function LandingContent() {
             </span>
           </div>
 
+          {/* ── Social proof band — hidden for now via SHOW_TESTIMONIALS; the
+                 markup stays in place. Turn the flag on (and add real quotes to
+                 lib/testimonials.ts — never fabricate) to bring it back. ── */}
+          {SHOW_TESTIMONIALS && TESTIMONIALS.length > 0 && (
+            <div className="lp-proof-band" data-hero style={{ '--i': 5 } as CSSProperties}>
+              {TESTIMONIALS.slice(0, 3).map(t => (
+                <figure key={t.name} className="lp-quote">
+                  <blockquote>&ldquo;{t.quote}&rdquo;</blockquote>
+                  <figcaption>{t.name} · {t.trade}, {t.city}</figcaption>
+                </figure>
+              ))}
+            </div>
+          )}
+
           {/* ── Video header ── */}
           <div className="lp-video-wrap">
             <div className="lp-video-chrome">
@@ -334,6 +362,12 @@ export default function LandingContent() {
             hidden until you create a free account. No email required to look. Instant samples
             cover Harris County, TX today; more markets are on the way.
           </p>
+          {scoredCount != null && scoredCount >= MIN_PROOF_COUNT && (
+            <p className="lp-zip-proof-chip">
+              <Database size={13} />
+              <span><b>{scoredCount.toLocaleString()}</b> properties scored across Harris County so far</span>
+            </p>
+          )}
           <ZipSampleWidget />
         </div>
       </section>
@@ -722,6 +756,12 @@ export default function LandingContent() {
             anytime and your data leaves with you. Every plan starts with 14 days free, no credit
             card required.
           </p>
+          {/* Anchor against the price the ICP already pays before they read a tier. */}
+          <div className="lp-price-anchor">
+            <span className="lp-price-anchor-old">One shared lead: <b>~$80</b>, win or lose</span>
+            <ArrowRight size={14} aria-hidden="true" />
+            <span className="lp-price-anchor-new">Your whole territory: <b>flat monthly price</b>, every lead yours alone</span>
+          </div>
           <div className="lp-pricing-grid">
             <div className="lp-price-card">
               <h3>Starter</h3>
@@ -751,7 +791,7 @@ export default function LandingContent() {
               <a className="lp-btn lp-btn-outline" href="/signup">Start free</a>
             </div>
             <div className="lp-price-card lp-price-featured">
-              <span className="lp-price-flag">Replaces your lead budget</span>
+              <span className="lp-price-flag">Most contractors pick this</span>
               <h3>Pro</h3>
               <div className="lp-price"><span className="lp-price-n">$249</span><span className="lp-price-per">/mo</span></div>
               <p className="lp-price-blurb">The lead machine: exclusive scored lists for your territory.</p>

@@ -69,7 +69,7 @@ export const PREVIEW_LEADS: Lead[] = [
 export const PREVIEW_PIPELINE_CARD: PipelineCardLead = {
   id: 1, address: '1842 Westheimer Rd', owner_name: 'James Mitchell', contact_name: 'James Mitchell',
   contact_phone: '(713) 555-0142', lead_score: 94, score_grade: 'A', estimated_job_value: 12500,
-  status: 'qualified', vertical: 'hvac', zip: '77006',
+  status: 'qualified', vertical: 'hvac', zip: '77006', stage_moved_at: null,
 }
 
 export const PREVIEW_EXPLANATION: ScoreExplanation = {

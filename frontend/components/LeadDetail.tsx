@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Archive } from 'lucide-react'
+import { ArrowLeft, Archive, Phone, MessageSquare, PenLine } from 'lucide-react'
 import type { Lead } from '@/lib/types'
 import { getLead, archiveLead } from '@/lib/api'
 import { useTerminology } from '@/hooks/useTerminology'
@@ -26,7 +26,15 @@ export function LeadDetail({ leadId }: { leadId: number }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [archiving, setArchiving] = useState(false)
+  const [wide, setWide] = useState(true)
   const { toasts, show: showToast, dismiss: dismissToast } = useToast()
+
+  useEffect(() => {
+    const check = () => setWide(window.innerWidth >= 640)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
 
   useEffect(() => {
     setLoading(true)
@@ -73,7 +81,7 @@ export function LeadDetail({ leadId }: { leadId: number }) {
         </Link>
       </header>
 
-      <main style={{ maxWidth: 720, margin: '0 auto', padding: '24px 16px 64px' }}>
+      <main style={{ maxWidth: 720, margin: '0 auto', padding: wide ? '24px 16px 64px' : '24px 16px 110px' }}>
         {loading && <p style={{ color: 'var(--color-ink-400)', fontSize: 14 }}>Loading…</p>}
         {error && <p style={{ color: 'var(--color-danger)', fontSize: 14 }}>{error}</p>}
 
@@ -112,7 +120,13 @@ export function LeadDetail({ leadId }: { leadId: number }) {
                 </h1>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
                   <ScoreBadge grade={lead.score_grade} score={lead.lead_score} />
-                  <StatusSelect leadId={lead.id} value={lead.status} onChange={s => setLead({ ...lead, status: s })} />
+                  <StatusSelect
+                    leadId={lead.id}
+                    value={lead.status}
+                    jobValue={lead.estimated_job_value}
+                    celebrateLabel={title}
+                    onChange={s => setLead({ ...lead, status: s })}
+                  />
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -138,10 +152,69 @@ export function LeadDetail({ leadId }: { leadId: number }) {
             <AppointmentsSection leadId={lead.id} />
             {propertyBased && <PropertySignals lead={lead} />}
             {propertyBased && <WhyThisScore leadId={lead.id} />}
-            <ActivityPanel leadId={lead.id} />
+            <div id="lead-activity">
+              <ActivityPanel leadId={lead.id} />
+            </div>
           </div>
         )}
       </main>
+
+      {/* Sticky one-thumb action bar — contractors work this page from a truck.
+          Primary actions stay under the thumb; content gets bottom padding above. */}
+      {!wide && lead && (
+        <nav
+          aria-label="Quick actions"
+          style={{
+            position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
+            display: 'flex', gap: 8,
+            padding: '10px 12px calc(10px + env(safe-area-inset-bottom))',
+            background: 'var(--color-paper)',
+            borderTop: '1px solid var(--color-ink-200)',
+            boxShadow: '0 -4px 16px rgba(0,0,0,0.06)',
+          }}
+        >
+          {lead.contact_phone && (
+            <a
+              href={`tel:${lead.contact_phone}`}
+              style={{
+                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                minHeight: 48, borderRadius: 'var(--radius-pill)',
+                background: 'var(--color-accent)', color: 'white',
+                fontSize: 14, fontWeight: 600, textDecoration: 'none',
+              }}
+            >
+              <Phone size={15} strokeWidth={2} /> Call
+            </a>
+          )}
+          {lead.contact_phone && (
+            <a
+              href={`sms:${lead.contact_phone}`}
+              style={{
+                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                minHeight: 48, borderRadius: 'var(--radius-pill)',
+                background: 'var(--color-surface)', color: 'var(--color-ink-800)',
+                border: '1px solid var(--color-ink-300)',
+                fontSize: 14, fontWeight: 600, textDecoration: 'none',
+              }}
+            >
+              <MessageSquare size={15} strokeWidth={2} /> Text
+            </a>
+          )}
+          <button
+            onClick={() => document.getElementById('lead-activity')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            style={{
+              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+              minHeight: 48, borderRadius: 'var(--radius-pill)',
+              background: lead.contact_phone ? 'var(--color-surface)' : 'var(--color-accent)',
+              color: lead.contact_phone ? 'var(--color-ink-800)' : 'white',
+              border: lead.contact_phone ? '1px solid var(--color-ink-300)' : 'none',
+              fontSize: 14, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            <PenLine size={15} strokeWidth={2} /> Log it
+          </button>
+        </nav>
+      )}
 
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </div>

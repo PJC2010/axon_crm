@@ -2,6 +2,7 @@ import { Home, Lock, User } from 'lucide-react'
 import type { Category, Lead, LeadStatus } from '@/lib/types'
 import { ScoreBadge } from '../ScoreBadge'
 import { StatusSelect } from '../StatusSelect'
+import { CoolingChip } from '../CoolingChip'
 import { VERTICAL_LABELS } from './format'
 
 /**
@@ -115,14 +116,30 @@ function buildRegistry(ctx: LeadColumnContext): Record<string, LeadColumn> {
       key: 'score',
       header: 'Score',
       cellStyle: NUMERIC_CELL,
-      render: (lead) => <ScoreBadge grade={lead.score_grade} score={lead.lead_score} />,
+      render: (lead) => (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <ScoreBadge grade={lead.score_grade} score={lead.lead_score} />
+          <CoolingChip
+            grade={lead.score_grade}
+            status={lead.status}
+            stageMovedAt={lead.stage_moved_at}
+            createdAt={lead.created_at}
+          />
+        </span>
+      ),
     },
     status: {
       key: 'status',
       header: 'Status',
       stopPropagation: true,
       render: (lead, { onStatusChange }) => (
-        <StatusSelect leadId={lead.id} value={lead.status} onChange={(s) => onStatusChange(lead.id, s)} />
+        <StatusSelect
+          leadId={lead.id}
+          value={lead.status}
+          jobValue={lead.estimated_job_value}
+          celebrateLabel={lead.address || lead.contact_name || lead.owner_name}
+          onChange={(s) => onStatusChange(lead.id, s)}
+        />
       ),
     },
     category: {

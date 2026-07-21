@@ -340,6 +340,39 @@ def complete_onboarding(current_user: dict = Depends(get_current_user), db: PGCo
     return {"ok": True}
 
 
+# Small per-user UI preferences (checklist visibility, view defaults…), stored
+# in the users.preferences JSONB column (migration 012). PATCH merges keys so
+# independent features never clobber each other's settings.
+_ALLOWED_PREF_KEYS = {"checklist_hidden", "daily_digest"}
+
+
+@router.get("/auth/preferences")
+def get_preferences(current_user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+    with db.cursor() as cur:
+        cur.execute("SELECT preferences FROM users WHERE id = %s", (current_user["id"],))
+        row = cur.fetchone()
+    return row[0] if row and row[0] else {}
+
+
+@router.patch("/auth/preferences")
+def update_preferences(
+    body: dict,
+    current_user: dict = Depends(get_current_user),
+    db: PGConn = Depends(get_db),
+):
+    updates = {k: v for k, v in (body or {}).items() if k in _ALLOWED_PREF_KEYS}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No recognized preference keys")
+    with db.cursor() as cur:
+        cur.execute(
+            "UPDATE users SET preferences = preferences || %s WHERE id = %s RETURNING preferences",
+            (Json(updates), current_user["id"]),
+        )
+        row = cur.fetchone()
+        db.commit()
+    return row[0] if row and row[0] else {}
+
+
 @router.get("/auth/checklist-status")
 def checklist_status(current_user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
     acct = current_user["account_id"]

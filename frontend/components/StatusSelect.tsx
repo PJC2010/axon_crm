@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import type { LeadStatus } from '@/lib/types'
 import { updateStatus } from '@/lib/api'
+import { WonCelebration } from './WonCelebration'
 
 const STATUS_LABELS: Record<LeadStatus, string> = {
   new:            'New',
@@ -32,16 +33,21 @@ interface Props {
   leadId: number
   value: LeadStatus
   onChange?: (s: LeadStatus) => void
+  /** Job value + label for the won-deal celebration; pass when available. */
+  jobValue?: number | null
+  celebrateLabel?: string | null
 }
 
-export function StatusSelect({ leadId, value, onChange }: Props) {
+export function StatusSelect({ leadId, value, onChange, jobValue, celebrateLabel }: Props) {
   const [saving, setSaving] = useState(false)
+  const [celebrating, setCelebrating] = useState(false)
 
   async function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const next = e.target.value as LeadStatus
     setSaving(true)
     try {
       await updateStatus(leadId, next)
+      if (next === 'won') setCelebrating(true)
       onChange?.(next)
     } finally {
       setSaving(false)
@@ -49,6 +55,13 @@ export function StatusSelect({ leadId, value, onChange }: Props) {
   }
 
   return (
+    <>
+    {celebrating && (
+      <WonCelebration
+        deal={{ value: jobValue ?? null, label: celebrateLabel ?? null }}
+        onDone={() => setCelebrating(false)}
+      />
+    )}
     <select
       value={value}
       onChange={handleChange}
@@ -73,5 +86,6 @@ export function StatusSelect({ leadId, value, onChange }: Props) {
         <option key={k} value={k}>{label}</option>
       ))}
     </select>
+    </>
   )
 }
