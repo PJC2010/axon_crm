@@ -21,7 +21,7 @@ import { useEntitlements, clearEntitlementsCache } from '@/hooks/useEntitlements
 import { useTerminology } from '@/hooks/useTerminology'
 import type { ModuleKey } from '@/lib/types'
 import { OnboardingWizard } from './OnboardingWizard'
-import { GettingStartedChecklist } from './GettingStartedChecklist'
+import { GettingStartedChecklist, SetupPill, useGettingStarted } from './GettingStartedChecklist'
 import { ToastStack, useToast } from './Toast'
 import { AIInsightsPanel } from './AIInsightsPanel'
 import { PipelineRingChart } from './PipelineRingChart'
@@ -80,6 +80,7 @@ export function HomeDashboard() {
   const [drawer, setDrawer]   = useState<DrawerId | null>(null)
   const [objectKpis, setObjectKpis] = useState<ObjectKpis | null>(null)
   const { toasts, show: showToast, dismiss: dismissToast } = useToast()
+  const gettingStarted = useGettingStarted()
 
   useEffect(() => {
     const check = () => {
@@ -139,7 +140,7 @@ export function HomeDashboard() {
         const moduleDisabled = failed.some(f => /API 403/.test(String(f.res.reason?.message ?? '')))
         setError(
           moduleDisabled
-            ? `${names}: not available on your current plan. Check Settings → Plan to enable these modules.`
+            ? `${names}: not included in your plan. See Settings → Business to change plans.`
             : `Couldn't load: ${names}. Refresh to retry.`
         )
       }
@@ -213,6 +214,28 @@ export function HomeDashboard() {
   const cashOut  = monthsSorted.reduce((s, m) => s + m.expenses, 0)
 
   const netAnim = useCountUp(netYTD ?? 0)
+
+  // ── Progressive dashboard: a tile has to earn its pixels ──
+  // A first-week account is all zeros; money tiles/charts stay hidden until
+  // real money data exists, and a single "do this next" card (driven by the
+  // getting-started checklist) takes the hero's place.
+  const hasMoneyData =
+    (data.pnl?.total_revenue ?? 0) > 0 ||
+    (data.pnl?.total_expenses ?? 0) > 0 ||
+    (data.arSummary?.invoice_count ?? 0) > 0 ||
+    (data.expenses?.total ?? 0) > 0
+  const hasPipelineData =
+    (activeLeads ?? 0) > 0 ||
+    (data.analytics?.leads_won ?? 0) > 0 ||
+    (data.forecast?.weighted_total ?? 0) > 0
+  const showMoney = loading || hasMoneyData
+  const showPipelineKpis = loading || hasPipelineData
+  const kpiVisible = (id: string) => {
+    if (id === 'revenue_mtd' || id === 'outstanding_ar') return showMoney
+    if (id === 'win_rate' || id === 'forecast') return showPipelineKpis
+    return true
+  }
+  const visibleKpis = kpis.filter(kpiVisible)
 
   if (showOnboarding) {
     return <OnboardingWizard onComplete={() => { setShowOnboarding(false); load() }} />
@@ -304,6 +327,7 @@ export function HomeDashboard() {
           {wide ? (
             <>
               <NavLinks variant="desktop" current="/home" />
+              <SetupPill state={gettingStarted} />
               <TaskBell />
               <Link href="/settings" title="Settings" className="dash-icon-btn">
                 <Settings size={13} strokeWidth={1.5} />
@@ -314,6 +338,7 @@ export function HomeDashboard() {
             </>
           ) : (
             <>
+              <SetupPill state={gettingStarted} />
               <TaskBell />
               <button
                 onClick={() => setMenuOpen(o => !o)}
@@ -387,7 +412,45 @@ export function HomeDashboard() {
       {/* ── Page Body ── */}
       <div style={{ flex: 1, maxWidth: 1000, width: '100%', margin: '0 auto', padding: '20px 16px 56px' }}>
 
-        {/* ── HERO: net profit (the 5-second "are we okay?") ── */}
+        {/* ── HERO: net profit (the 5-second "are we okay?") — or, for a
+               zero-data account, the one thing to do next ── */}
+        {!showMoney ? (
+          <section
+            className="axon-rise"
+            style={{
+              ['--d' as string]: '0ms',
+              borderRadius: 'var(--radius-card)', overflow: 'hidden',
+              boxShadow: 'var(--shadow-pop)', marginBottom: 20,
+              background: 'linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-700) 55%, #0a4d48 100%)',
+              padding: '26px', position: 'relative',
+            }}
+          >
+            <div style={{ position: 'absolute', top: -40, right: -30, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.05)' }} />
+            <p style={{ margin: '0 0 10px', fontSize: 13, color: 'rgba(255,255,255,0.65)' }}>
+              {greeting}{data.user ? `, ${data.user.username}` : ''} · {dateStr}
+            </p>
+            <p style={{ margin: '0 0 6px', fontFamily: 'var(--font-display)', fontSize: wide ? 26 : 21, fontWeight: 600, color: '#fff', lineHeight: 1.25 }}>
+              {gettingStarted.nextItem ? 'One step at a time — here’s the next one' : 'Your numbers will show up here'}
+            </p>
+            <p style={{ margin: '0 0 18px', fontSize: 14, color: 'rgba(255,255,255,0.75)', maxWidth: 480 }}>
+              {gettingStarted.nextItem
+                ? gettingStarted.nextItem.desc
+                : 'Once money starts moving, this turns into your live profit view.'}
+            </p>
+            <Link
+              href={gettingStarted.nextItem?.href ?? '/dashboard'}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                padding: '0 22px', minHeight: 44,
+                borderRadius: 'var(--radius-pill)',
+                background: '#fff', color: 'var(--color-accent-700)',
+                fontSize: 14, fontWeight: 600, textDecoration: 'none',
+              }}
+            >
+              {gettingStarted.nextItem?.label ?? `View ${t('leads')}`} <ArrowRight size={14} strokeWidth={2} />
+            </Link>
+          </section>
+        ) : (
         <section
           className="axon-rise"
           style={{
@@ -445,18 +508,23 @@ export function HomeDashboard() {
             </div>
           </div>
         </section>
+        )}
 
-        {/* ── KPI tiles (money-first, each opens a drill-down) ── */}
+        {/* ── KPI tiles (money-first, each opens a drill-down; zero-data tiles
+               are hidden — see kpiVisible above) ── */}
+        {visibleKpis.length > 0 && (
         <div
           className="axon-rise"
           style={{
             ['--d' as string]: '70ms',
             display: 'grid',
-            gridTemplateColumns: wide ? 'repeat(4, 1fr)' : 'repeat(2, 1fr)',
+            gridTemplateColumns: wide
+              ? `repeat(${Math.min(4, visibleKpis.length)}, 1fr)`
+              : `repeat(${Math.min(2, visibleKpis.length)}, 1fr)`,
             gap: 12, marginBottom: 22,
           }}
         >
-          {kpis.map(id => {
+          {visibleKpis.map(id => {
             switch (id) {
               case 'revenue_mtd': return (
                 <KpiTile key={id}
@@ -558,9 +626,10 @@ export function HomeDashboard() {
             }
           })}
         </div>
+        )}
 
         {/* ── Getting Started Checklist ── */}
-        <GettingStartedChecklist />
+        <GettingStartedChecklist state={gettingStarted} />
 
         {/* ── Needs you today ── */}
         <TodayFocusSection
@@ -619,14 +688,17 @@ export function HomeDashboard() {
           </div>
         </div>
 
-        {/* ── Charts Row: Cash in vs out + Pipeline distribution ── */}
+        {/* ── Charts Row: Cash in vs out + Pipeline distribution — each chart
+               renders only once it has data to show ── */}
+        {(showMoney || showPipelineKpis) && (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: wide ? '1.4fr 1fr' : '1fr',
+          gridTemplateColumns: wide && showMoney && showPipelineKpis ? '1.4fr 1fr' : '1fr',
           gap: 14,
           marginBottom: 24,
         }}>
           {/* Cash in vs out */}
+          {showMoney && (
           <div style={{ background: 'var(--color-surface)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', padding: '16px 18px 14px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
               <span className="t-eyebrow">Cash in vs out · {year}</span>
@@ -654,9 +726,11 @@ export function HomeDashboard() {
               </>
             )}
           </div>
+          )}
 
-          <PipelineRingChart />
+          {showPipelineKpis && <PipelineRingChart />}
         </div>
+        )}
 
         {/* ── AI Insights Panel (analytical trends, capped) ── */}
         <AIInsightsPanel />
@@ -678,7 +752,11 @@ export function HomeDashboard() {
             </div>
           ) : data.recentLeads.length === 0 ? (
             <p style={{ fontSize: 14, color: 'var(--color-ink-400)', margin: 0, padding: '20px 0' }}>
-              No leads yet — run the pipeline to import leads.
+              No {t('leads').toLowerCase()} yet —{' '}
+              <Link href="/settings?tab=pipeline" style={{ color: 'var(--color-accent-300)', fontWeight: 600 }}>
+                run your first import
+              </Link>{' '}
+              to pull in scored {t('records').toLowerCase()} from your {t('territory').toLowerCase()}.
             </p>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: wide ? 'repeat(auto-fill, minmax(320px, 1fr))' : '1fr', gap: 8 }}>

@@ -35,6 +35,7 @@ export function TodayFocusSection({ taskCounts, arSummary, loading, onToast }: P
   const [staleLeads, setStaleLeads] = useState<Lead[]>([])
   const [hotLeads, setHotLeads] = useState<{ qualified: number; quote_sent: number }>({ qualified: 0, quote_sent: 0 })
   const [stuckCount, setStuckCount] = useState(0)
+  const [stuckValue, setStuckValue] = useState(0)
   const [creatingFollowUps, setCreatingFollowUps] = useState(false)
   const [staleLoading, setStaleLoading] = useState(true)
 
@@ -58,6 +59,9 @@ export function TodayFocusSection({ taskCounts, arSummary, loading, onToast }: P
         quote_sent: quoteRes.status === 'fulfilled' ? quoteRes.value.total : 0,
       })
       setStuckCount(alertsRes.status === 'fulfilled' ? alertsRes.value.stuck_deals.count : 0)
+      setStuckValue(alertsRes.status === 'fulfilled'
+        ? alertsRes.value.stuck_deals.items.reduce((s, d) => s + (d.estimated_job_value ?? 0), 0)
+        : 0)
     } finally {
       setStaleLoading(false)
     }
@@ -152,7 +156,10 @@ export function TodayFocusSection({ taskCounts, arSummary, loading, onToast }: P
       color: 'var(--color-gold)',
       bg: 'var(--color-warning-bg)',
       border: 'var(--color-warning)',
-      text: `${stuckCount} deal${stuckCount !== 1 ? 's' : ''} stuck in stage`,
+      // Loss framing: money at risk beats a bare count for this ICP.
+      text: stuckValue > 0
+        ? `≈ ${fmtMoney(stuckValue)} stuck in stage — ${stuckCount} deal${stuckCount !== 1 ? 's' : ''} not moving`
+        : `${stuckCount} deal${stuckCount !== 1 ? 's' : ''} stuck in stage`,
       subtext: 'These have sat too long — nudge them forward before they go cold.',
       actionLabel: 'View Pipeline',
       href: '/pipeline',
@@ -168,8 +175,11 @@ export function TodayFocusSection({ taskCounts, arSummary, loading, onToast }: P
       color: 'var(--color-accent)',
       bg: 'var(--color-accent-50)',
       border: 'var(--color-accent-200)',
-      text: `${staleLeads.length} lead${staleLeads.length !== 1 ? 's' : ''} haven't heard from you in 2+ weeks`,
-      subtext: totalValue > 0 ? `Worth ~${fmtMoney(totalValue)} in potential work.` : 'Schedule follow-ups to keep them warm.',
+      // Loss framing: lead with the dollars going cold, not the lead count.
+      text: totalValue > 0
+        ? `≈ ${fmtMoney(totalValue)} in work going cold — ${staleLeads.length} lead${staleLeads.length !== 1 ? 's' : ''} untouched for 2+ weeks`
+        : `${staleLeads.length} lead${staleLeads.length !== 1 ? 's' : ''} haven't heard from you in 2+ weeks`,
+      subtext: 'One tap schedules the follow-ups before they go cold for good.',
       actionLabel: creatingFollowUps ? 'Scheduling…' : 'Schedule Follow-Ups',
       onAction: handleBatchFollowUp,
     })
@@ -225,18 +235,32 @@ export function TodayFocusSection({ taskCounts, arSummary, loading, onToast }: P
         <span className="t-eyebrow">Needs Attention</span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {visibleItems.map(item => (
+        {visibleItems.map((item, idx) => (
           <div
             key={item.id}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '12px 16px',
+              // The list is priority-ordered; the top item is the one recommended
+              // action, so it alone gets weight (border + shadow + a little air).
+              padding: idx === 0 ? '16px 18px' : '12px 16px',
               borderRadius: 'var(--radius-card)',
               background: item.bg,
-              border: `1px solid ${item.border}`,
+              border: idx === 0 ? `2px solid ${item.border}` : `1px solid ${item.border}`,
+              boxShadow: idx === 0 ? 'var(--shadow-card)' : 'none',
               gap: 12,
+              position: 'relative',
             }}
           >
+            {idx === 0 && visibleItems.length > 1 && (
+              <span style={{
+                position: 'absolute', top: -9, left: 14,
+                padding: '1px 9px', borderRadius: 'var(--radius-pill)',
+                background: item.color, color: 'white',
+                fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
+              }}>
+                Do this first
+              </span>
+            )}
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flex: 1, minWidth: 0 }}>
               <div style={{
                 width: 28, height: 28, borderRadius: 'var(--radius-button)',

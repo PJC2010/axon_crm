@@ -9,6 +9,8 @@ interface Template {
   icon: React.ReactNode
   title: string
   description: string
+  /** Editorial pick surfaced with a tag — a recommendation, not a usage stat. */
+  recommended?: boolean
   trigger_config: { from_status?: string; to_status: string }
   action_config: { title: string; due_days_offset: number; priority: string }
 }
@@ -27,6 +29,7 @@ const TEMPLATES: Template[] = [
     icon: <FileText size={16} strokeWidth={1.8} />,
     title: 'Quote follow-up nudge',
     description: 'When a quote is sent → follow up in 3 days if you haven\'t heard back.',
+    recommended: true,
     trigger_config: { to_status: 'quote_sent' },
     action_config: { title: 'Follow up on pending quote', due_days_offset: 3, priority: 'normal' },
   },
@@ -133,6 +136,16 @@ export function AutomationTemplates({ workflows, onWorkflowsChange, onToast }: P
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ margin: '0 0 3px', fontSize: 13, fontWeight: 600, color: 'var(--color-ink-900)' }}>
                   {tpl.title}
+                  {tpl.recommended && (
+                    <span style={{
+                      marginLeft: 8, padding: '1px 8px', borderRadius: 'var(--radius-pill)',
+                      background: 'var(--color-gold-soft)', color: 'var(--color-gold)',
+                      fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em',
+                      verticalAlign: 'middle',
+                    }}>
+                      Recommended
+                    </span>
+                  )}
                 </p>
                 <p style={{ margin: 0, fontSize: 12, color: 'var(--color-ink-500)', lineHeight: 1.45 }}>
                   {tpl.description}

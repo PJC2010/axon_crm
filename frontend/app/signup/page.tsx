@@ -180,6 +180,7 @@ export default function SignupPage() {
                 Create your workspace
               </h1>
               <p style={{ fontSize: 13, color: 'var(--color-ink-500)', margin: '0 0 22px' }}>
+                See your first scored lead list in under 3 minutes.
                 Free for 14 days. No credit card, no contract — cancel anytime.
               </p>
 

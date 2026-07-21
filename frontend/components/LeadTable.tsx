@@ -178,14 +178,14 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
               <Search size={44} strokeWidth={1} style={{ color: 'var(--color-ink-300)', marginBottom: 12 }} />
               <p style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 600, color: 'var(--color-ink-700)' }}>No {t('leads').toLowerCase()} yet</p>
               <p style={{ margin: '0 auto 16px', maxWidth: 320, fontSize: 13, color: 'var(--color-ink-400)' }}>
-                Run the pipeline to import {t('leads').toLowerCase()} from your target area and start scoring them.
+                Run your first import to pull in scored {t('records').toLowerCase()} from your {t('territory').toLowerCase()} — it takes a couple of minutes.
               </p>
-              <Link href="/settings" style={{
+              <Link href="/settings?tab=pipeline" style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 20px', minHeight: 44,
                 borderRadius: 'var(--radius-pill)', background: 'var(--color-accent)', color: 'white',
                 fontSize: 14, fontWeight: 500, textDecoration: 'none',
               }}>
-                <Settings size={15} strokeWidth={1.5} /> Go to Settings
+                <Settings size={15} strokeWidth={1.5} /> Run your first import
               </Link>
             </div>
           )}
@@ -242,16 +242,16 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
               <tr>
                 <td colSpan={columns.length + 2} style={{ textAlign: 'center', padding: '64px 20px' }}>
                   <Search size={48} strokeWidth={1} style={{ color: 'var(--color-ink-300)', marginBottom: 12 }} />
-                  <p style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 600, color: 'var(--color-ink-700)' }}>No leads yet</p>
+                  <p style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 600, color: 'var(--color-ink-700)' }}>No {t('leads').toLowerCase()} yet</p>
                   <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--color-ink-400)', maxWidth: 320, marginLeft: 'auto', marginRight: 'auto' }}>
-                    Run the pipeline to import leads from your target area and start scoring them.
+                    Run your first import to pull in scored {t('records').toLowerCase()} from your {t('territory').toLowerCase()} — it takes a couple of minutes.
                   </p>
-                  <Link href="/settings" style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 20px',
+                  <Link href="/settings?tab=pipeline" style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 20px', minHeight: 44,
                     borderRadius: 'var(--radius-pill)', background: 'var(--color-accent)', color: 'white',
                     fontSize: 13, fontWeight: 500, textDecoration: 'none',
                   }}>
-                    <Settings size={14} strokeWidth={1.5} /> Go to Settings
+                    <Settings size={14} strokeWidth={1.5} /> Run your first import
                   </Link>
                 </td>
               </tr>
@@ -325,7 +325,7 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
             disabled={page <= 1}
             aria-label="Previous page"
             style={{
-              width: 40, height: 40,
+              width: 44, height: 44,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               borderRadius: 'var(--radius-button)',
               border: '1px solid var(--color-ink-200)',
@@ -346,7 +346,7 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
             disabled={page >= totalPages}
             aria-label="Next page"
             style={{
-              width: 40, height: 40,
+              width: 44, height: 44,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               borderRadius: 'var(--radius-button)',
               border: '1px solid var(--color-ink-200)',

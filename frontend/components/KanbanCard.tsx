@@ -2,6 +2,7 @@
 import { Plus } from 'lucide-react'
 import type { PipelineCardLead } from '@/lib/types'
 import { ScoreBadge } from './ScoreBadge'
+import { CoolingChip } from './CoolingChip'
 
 interface Props {
   lead: PipelineCardLead
@@ -37,6 +38,12 @@ export function KanbanCard({ lead, onQuickTask, ghost = false }: Props) {
       {(lead.owner_name || lead.contact_name) && (
         <span style={{ fontSize: 12.5, color: 'var(--color-ink-500)' }}>{lead.owner_name || lead.contact_name}</span>
       )}
+      <CoolingChip
+        grade={lead.score_grade}
+        status={lead.status}
+        stageMovedAt={lead.stage_moved_at}
+        style={{ alignSelf: 'flex-start' }}
+      />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         {lead.estimated_job_value != null ? (
           <span className="tabular" style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-accent-300)' }}>
@@ -51,7 +58,10 @@ export function KanbanCard({ lead, onQuickTask, ghost = false }: Props) {
             title="Add a task for this lead"
             aria-label="Add a task for this lead"
             style={{
-              width: 28, height: 28, borderRadius: '50%',
+              // 40px circle + negative margin ≈ a full-size touch target while
+              // the card keeps its compact footprint.
+              width: 40, height: 40, borderRadius: '50%',
+              margin: '-6px -6px -6px 0',
               background: 'var(--color-ink-100)',
               border: '1px solid var(--color-ink-200)',
               color: 'var(--color-ink-500)',

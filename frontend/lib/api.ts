@@ -168,6 +168,27 @@ export function getZipSample(zip: string, vertical?: string): Promise<ZipSampleR
   return req(`/public/zip-sample?${params}`)
 }
 
+// Platform-wide anonymous counts for the landing page's proof chip.
+// Cached server-side for a day.
+export function getPublicStats(): Promise<{ properties_scored: number; zips_covered: number }> {
+  return req('/public/stats')
+}
+
+// ── Per-user UI preferences (users.preferences JSONB) ─────────────────────────
+
+export interface UserPreferences {
+  checklist_hidden?: boolean
+  daily_digest?: boolean
+}
+
+export function getPreferences(): Promise<UserPreferences> {
+  return req('/auth/preferences')
+}
+
+export function updatePreferences(prefs: UserPreferences): Promise<UserPreferences> {
+  return req('/auth/preferences', { method: 'PATCH', body: JSON.stringify(prefs) })
+}
+
 // Resolved plan + enabled-module map for the current account. Powers entitlement
 // gating in the UI (see frontend/hooks/useEntitlements.ts).
 export function getAccountFeatures(): Promise<AccountFeatures> {

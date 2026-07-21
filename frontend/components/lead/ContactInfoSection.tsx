@@ -109,9 +109,9 @@ export function ContactInfoSection({ lead, onSaved, onToast }: Props) {
     try {
       const updated = await enrichLead(lead.id)
       onSaved(updated)
-      onToast?.('Contact details enriched', 'success')
+      onToast?.('Contact details updated', 'success')
     } catch (e) {
-      onToast?.(e instanceof Error ? e.message : 'Enrichment failed', 'error')
+      onToast?.(e instanceof Error ? e.message : 'Contact lookup failed', 'error')
     } finally { setEnriching(false) }
   }
 
@@ -124,11 +124,11 @@ export function ContactInfoSection({ lead, onSaved, onToast }: Props) {
             onClick={enrich}
             disabled={enriching}
             className="dash-icon-btn borderless"
-            title="Skip-trace this lead for more contact details"
+            title="Look up more contact details for this lead"
             style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--color-ink-400)' }}
           >
             <Sparkles size={12} strokeWidth={1.5} className={enriching ? 'animate-spin' : ''} />
-            {enriching ? 'Enriching…' : 'Enrich'}
+            {enriching ? 'Looking up…' : 'Find contact info'}
           </button>
           {editing ? (
             <button

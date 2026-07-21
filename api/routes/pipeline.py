@@ -28,7 +28,7 @@ _prospecting = Depends(require_module("prospecting"))
 
 PIPELINE_STAGES = ["new", "contacted", "qualified", "quote_sent", "won", "lost", "not_interested"]
 
-CARD_COLS = "id, address, owner_name, contact_name, contact_phone, lead_score, score_grade, estimated_job_value, status, vertical, zip"
+CARD_COLS = "id, address, owner_name, contact_name, contact_phone, lead_score, score_grade, estimated_job_value, status, vertical, zip, stage_moved_at"
 
 # The board is a triage view, not a full export. Ingested prospecting datasets can
 # hold tens of thousands of properties (all defaulting to status 'new'), and

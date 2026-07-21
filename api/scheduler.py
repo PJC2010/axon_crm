@@ -708,6 +708,47 @@ def schedule_unverified_digest():
     log.info("Scheduled daily unverified-signup digest at %02d:55 UTC", WORKFLOW_TICK_HOUR)
 
 
+USER_DIGEST_LOCK_KEY = 742026007
+
+
+def run_user_digest_tick():
+    """Daily: send the opt-in "who to call today" email to subscribed users
+    (see api/digest.py). The morning-list ritual is the product's habit loop."""
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_try_advisory_lock(%s)", (USER_DIGEST_LOCK_KEY,))
+            if not cur.fetchone()[0]:
+                log.info("User digest tick skipped — another worker holds the lock")
+                return
+        try:
+            from api.digest import send_daily_digests
+            sent = send_daily_digests(conn)
+            if sent:
+                log.info("User digest tick: sent %d email(s)", sent)
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_unlock(%s)", (USER_DIGEST_LOCK_KEY,))
+            conn.commit()
+    except Exception:
+        log.exception("User digest tick failed")
+    finally:
+        conn.close()
+
+
+def schedule_user_digest():
+    """Register the daily who-to-call digest cron (idempotent)."""
+    from config import USER_DIGEST_HOUR
+    scheduler.add_job(
+        run_user_digest_tick,
+        trigger=CronTrigger(hour=USER_DIGEST_HOUR, minute=0, timezone="UTC"),
+        id="user_digest_daily",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    log.info("Scheduled daily who-to-call digest at %02d:00 UTC", USER_DIGEST_HOUR)
+
+
 GEO_RESCORE_LOCK_KEY = 742026004
 
 

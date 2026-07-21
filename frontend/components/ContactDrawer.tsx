@@ -101,7 +101,13 @@ export function ContactDrawer({ lead, onClose, onStatusChange, onLeadChange, onT
             </h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
               <ScoreBadge grade={lead.score_grade} score={lead.lead_score} />
-              <StatusSelect leadId={lead.id} value={lead.status} onChange={s => onStatusChange(lead.id, s)} />
+              <StatusSelect
+                leadId={lead.id}
+                value={lead.status}
+                jobValue={lead.estimated_job_value}
+                celebrateLabel={lead.address || lead.contact_name || lead.owner_name}
+                onChange={s => onStatusChange(lead.id, s)}
+              />
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {lead.nearest_customer_m != null && (

@@ -11,6 +11,7 @@ import { ContactDrawer } from '@/components/ContactDrawer'
 import { PipelineAnalytics } from '@/components/PipelineAnalytics'
 import { QuickTaskModal } from '@/components/QuickTaskModal'
 import { ToastStack, useToast } from '@/components/Toast'
+import { WonCelebration, type WonDeal } from '@/components/WonCelebration'
 
 const FALLBACK_STAGES: { key: string; label: string; color: string }[] = [
   { key: 'new',            label: 'New',           color: 'var(--color-ink-300)' },
@@ -31,6 +32,7 @@ function PipelinePage() {
   const [view, setView] = useState<'board' | 'analytics'>('board')
   const [wide, setWide] = useState(false)
   const [quickTaskLead, setQuickTaskLead] = useState<PipelineCardLead | null>(null)
+  const [wonDeal, setWonDeal] = useState<WonDeal | null>(null)
   const { toasts, show: showToast, dismiss: dismissToast } = useToast()
   const boardRef = useRef<HTMLDivElement | null>(null)
 
@@ -70,7 +72,9 @@ function PipelinePage() {
       Object.keys(next).forEach(k => {
         next[k] = next[k].filter(l => l.id !== lead.id)
       })
-      next[stage] = [{ ...lead, status: stage as LeadStatus }, ...(next[stage] ?? [])]
+      // stage_moved_at advances optimistically too, so the cooling chip clears
+      // the moment the card lands in its new column.
+      next[stage] = [{ ...lead, status: stage as LeadStatus, stage_moved_at: new Date().toISOString() }, ...(next[stage] ?? [])]
       return next
     })
     // Keep the true column counts (rendered from stats, since a column may hold
@@ -85,12 +89,23 @@ function PipelinePage() {
         [stage]: { count: dst.count + 1, total_value: dst.total_value + value },
       }
     })
+    // Feedback: celebrate the win (the product's emotional peak), toast the rest.
+    if (stage === 'won') {
+      setWonDeal({
+        value: lead.estimated_job_value,
+        label: lead.address || lead.contact_name || lead.owner_name || null,
+      })
+    } else {
+      const label = stages.find(s => s.key === stage)?.label ?? stage
+      showToast(`Moved to ${label}`)
+    }
     try {
       await updateStatus(lead.id, stage as LeadStatus)
     } catch {
+      showToast('Move failed — putting it back', 'error')
       load() // revert on error
     }
-  }, [load])
+  }, [load, stages, showToast])
 
   async function handleCardClick(card: PipelineCardLead) {
     try {
@@ -294,6 +309,7 @@ function PipelinePage() {
       )}
 
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
+      {wonDeal && <WonCelebration deal={wonDeal} onDone={() => setWonDeal(null)} />}
     </div>
   )
 }

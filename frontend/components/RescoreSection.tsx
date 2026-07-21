@@ -29,9 +29,9 @@ export function RescoreSection() {
     setResult(null)
     try {
       const { updated } = await rescoreObjects()
-      setResult(`Rescored ${updated} ${t('records').toLowerCase()}.`)
+      setResult(`Updated scores on ${updated} ${t('records').toLowerCase()}.`)
     } catch (err: unknown) {
-      setResult(err instanceof Error ? err.message : 'Rescore failed')
+      setResult(err instanceof Error ? err.message : 'Score update failed')
     } finally {
       setBusy(false)
     }
@@ -44,7 +44,7 @@ export function RescoreSection() {
         <h2 className="t-eyebrow" style={{ margin: 0 }}>Lead scoring</h2>
       </div>
       <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--color-ink-500)' }}>
-        {blurb} Scores refresh automatically each night — rescore now after a bulk import.
+        {blurb} Scores refresh automatically each night — update them now after a bulk import.
       </p>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <button
@@ -54,7 +54,7 @@ export function RescoreSection() {
           style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 36, padding: '0 14px', fontSize: 13 }}
         >
           <RefreshCw size={13} strokeWidth={1.5} className={busy ? 'animate-spin' : ''} />
-          {busy ? 'Rescoring…' : 'Rescore now'}
+          {busy ? 'Updating…' : 'Update scores now'}
         </button>
         {result && <span style={{ fontSize: 13, color: 'var(--color-ink-500)' }}>{result}</span>}
       </div>

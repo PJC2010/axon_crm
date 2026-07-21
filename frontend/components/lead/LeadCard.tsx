@@ -3,6 +3,7 @@ import { Home, User } from 'lucide-react'
 import type { Category, Lead, LeadStatus } from '@/lib/types'
 import { ScoreBadge } from '../ScoreBadge'
 import { StatusSelect } from '../StatusSelect'
+import { CoolingChip } from '../CoolingChip'
 import { VERTICAL_LABELS } from './format'
 
 interface Props {
@@ -88,7 +89,13 @@ export function LeadCard({ lead, propertyBased, categories, selected, onToggleSe
         {/* Meta row: status + category + value */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
           <span onClick={e => e.stopPropagation()}>
-            <StatusSelect leadId={lead.id} value={lead.status} onChange={s => onStatusChange(lead.id, s)} />
+            <StatusSelect
+              leadId={lead.id}
+              value={lead.status}
+              jobValue={lead.estimated_job_value}
+              celebrateLabel={primary}
+              onChange={s => onStatusChange(lead.id, s)}
+            />
           </span>
           {catMatch && (
             <span style={{
@@ -99,6 +106,12 @@ export function LeadCard({ lead, propertyBased, categories, selected, onToggleSe
               {catMatch}
             </span>
           )}
+          <CoolingChip
+            grade={lead.score_grade}
+            status={lead.status}
+            stageMovedAt={lead.stage_moved_at}
+            createdAt={lead.created_at}
+          />
           {jobValue && (
             <span className="tabular" style={{ marginLeft: 'auto', fontSize: 14, fontWeight: 700, color: 'var(--color-accent-300)' }}>
               {jobValue}

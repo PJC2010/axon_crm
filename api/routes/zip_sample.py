@@ -16,6 +16,7 @@ rather than spending paid API calls on strangers.
 """
 import logging
 import re
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from psycopg2.extensions import connection as PGConn
@@ -189,3 +190,31 @@ def zip_sample(zip: str, vertical: str | None = None, request: Request = None,
         "grade_b": grade_b,
         "leads": leads,
     }
+
+
+# Platform-wide scored-property counts for the landing page's proof chip
+# ("N properties scored across Harris County"). Anonymous aggregates only;
+# cached in-process for a day so the public page never hammers the table.
+_STATS_TTL_S = 86_400
+_stats_cache: dict = {"at": 0.0, "data": None}
+
+
+@public_router.get("/public/stats")
+def public_stats(db: PGConn = Depends(get_db)):
+    now = time.time()
+    if _stats_cache["data"] is not None and now - _stats_cache["at"] < _STATS_TTL_S:
+        return _stats_cache["data"]
+    try:
+        with db.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*), COUNT(DISTINCT zip) "
+                "FROM properties WHERE lead_score IS NOT NULL"
+            )
+            scored, zips = cur.fetchone()
+        data = {"properties_scored": int(scored or 0), "zips_covered": int(zips or 0)}
+    except Exception:
+        db.rollback()
+        data = {"properties_scored": 0, "zips_covered": 0}
+    _stats_cache["at"] = now
+    _stats_cache["data"] = data
+    return data

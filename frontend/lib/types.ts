@@ -483,6 +483,8 @@ export interface PipelineCardLead {
   status: LeadStatus
   vertical: string | null
   zip: string | null
+  /** When the lead last changed stage — drives the cooling indicator. */
+  stage_moved_at: string | null
 }
 
 export type PipelineGroup = Record<string, PipelineCardLead[]>
