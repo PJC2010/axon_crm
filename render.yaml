@@ -16,7 +16,11 @@ databases:
 
 services:
   - type: web
-    name: axon-crm-api
+    # This name is the service's hostname: <name>.onrender.com. It must match the
+    # value the frontend uses for NEXT_PUBLIC_API_URL (in Vercel) — a mismatch
+    # (e.g. "axon-crm-api" here vs. the live "axon-crm") makes the browser call a
+    # dead host and surfaces as a misleading CORS error, not a 404.
+    name: axon-crm
     runtime: python
     plan: starter
     buildCommand: pip install -r requirements.txt
@@ -24,6 +28,8 @@ services:
     preDeployCommand: python db/migrate.py
     startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
+    # Frontend (Vercel) must set NEXT_PUBLIC_API_URL = https://axon-crm.onrender.com
+    # for Production, then redeploy — it is inlined at build time.
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -37,9 +43,11 @@ services:
         value: hcad
       - key: PERMIT_DB_PATH
         value: ""
-      # Public links (set to your deployed frontend origin).
+      # Public links in emails (password reset, email verification) are built
+      # from this, so it MUST be your deployed FRONTEND origin — not this API's
+      # URL, or those links land on the backend and 404.
       - key: APP_BASE_URL
-        value: https://axon-crm-api.onrender.com
+        value: https://axonhtx.com
       # Paid APIs — left blank on purpose. Set RENTCAST_API_KEY later to test
       # RentCast as a gap-filler; the property step no-ops while it is empty.
       - key: RENTCAST_API_KEY
