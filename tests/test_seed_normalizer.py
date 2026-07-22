@@ -96,6 +96,15 @@ def test_normalize_hcad_zip_seed_omits_region_flag():
     assert "hcad_region" not in row["enrichment_flags"]
 
 
+def test_normalize_hcad_canonicalizes_zip_plus_four():
+    # HCAD site ZIPs may carry a ZIP+4 suffix; the seeded row must be filed under
+    # the canonical 5-digit ZIP or the public sample / coverage queries miss it.
+    row = _normalize_hcad(_hcad_parcel(site_zip="77008-2317"))
+    assert row["zip"] == "77008"
+    row = _normalize_hcad(_hcad_parcel(site_zip="770082317"))
+    assert row["zip"] == "77008"
+
+
 def test_normalize_hcad_city_falls_back_to_mail_city():
     # HCAD has no site-city; city mirrors the owner's mailing city (harmless —
     # rows key on address+zip and geocode doesn't need city).

@@ -62,7 +62,12 @@ def _zip_supported(db: PGConn, zip_code: str) -> bool:
     the mirror table isn't loaded — the queued run then settles the question."""
     try:
         with db.cursor() as cur:
-            cur.execute("SELECT 1 FROM hcad_properties WHERE site_zip = %s LIMIT 1", (zip_code,))
+            # Match on the canonical 5 digits: HCAD site ZIPs may carry a ZIP+4
+            # suffix, so an exact compare would report a covered ZIP as unsupported.
+            cur.execute(
+                "SELECT 1 FROM hcad_properties WHERE LEFT(site_zip, 5) = %s LIMIT 1",
+                (zip_code,),
+            )
             return cur.fetchone() is not None
     except Exception:
         db.rollback()
@@ -130,7 +135,10 @@ def zip_sample(zip: str, vertical: str | None = None, request: Request = None,
 
     if not rows:
         # Nothing scored yet — report run-in-progress, queue one, or admit the
-        # ZIP isn't covered by the free county data.
+        # ZIP isn't covered by the free county data. Coverage is decided by the
+        # county mirror (_zip_supported), NOT by whether a prior run happened to
+        # yield rows: a run that finished thin must never permanently brand a
+        # covered Harris County ZIP as "unsupported".
         with db.cursor() as cur:
             cur.execute(
                 "SELECT status FROM pipeline_runs WHERE account_id = %s AND zip = %s "
@@ -140,12 +148,14 @@ def zip_sample(zip: str, vertical: str | None = None, request: Request = None,
             last = cur.fetchone()
         if last and last[0] in ("queued", "running"):
             return {"configured": True, "available": False, "queued": True}
-        if last and last[0] == "done":
-            return {"configured": True, "available": False, "queued": False, "supported": False}
         if not _zip_supported(db, zip_code):
+            # Genuinely outside the free county data — the one honest "unsupported".
             return {"configured": True, "available": False, "queued": False, "supported": False}
         if PUBLIC_SAMPLE_AUTORUN and _queue_sample_run(db, account_id, zip_code, vertical):
             return {"configured": True, "available": False, "queued": True}
+        # Covered by county data but not scored yet and we couldn't kick a run
+        # this minute (autorun off or the hourly budget is spent). Report it as
+        # supported-but-pending so the widget invites a retry, never "not covered".
         return {"configured": True, "available": False, "queued": False, "supported": True}
 
     weights = VERTICAL_WEIGHTS.get(vertical, DEFAULT_WEIGHTS) if vertical else DEFAULT_WEIGHTS

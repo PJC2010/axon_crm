@@ -63,7 +63,7 @@ def query_permits(zip_code: str, db_path: str | None = None) -> dict[str, int]:
                     COUNT(p.id) AS permit_count
                 FROM property_summary ps
                 JOIN permits p ON ps.acct = p.acct
-                WHERE ps.site_zip = ?
+                WHERE LEFT(ps.site_zip, 5) = ?
                   AND p.issue_date BETWEEN (CURRENT_DATE - INTERVAL 24 MONTH) AND CURRENT_DATE
                   AND p.status NOT IN ('V', 'v')
                 GROUP BY address_norm
@@ -106,7 +106,7 @@ def query_properties(zip_code: str, db_path: str | None = None) -> dict[str, dic
                     nc.dscr                              AS neighborhood_name
                 FROM property_summary ps
                 LEFT JOIN neighborhood_codes nc ON nc.cd = ps.neighborhood_code
-                WHERE ps.site_zip = ?
+                WHERE LEFT(ps.site_zip, 5) = ?
                   AND ps.site_address IS NOT NULL
             """, [zip_code]).fetchall()
 
@@ -151,7 +151,7 @@ def _duckdb_query_properties_no_nbhd(con, zip_code: str) -> dict[str, dict]:
             neighborhood_code,
             NULL::VARCHAR                     AS neighborhood_name
         FROM property_summary
-        WHERE site_zip = ?
+        WHERE LEFT(site_zip, 5) = ?
           AND site_address IS NOT NULL
     """, [zip_code]).fetchall()
 
@@ -194,7 +194,7 @@ def query_extra_features(zip_code: str, db_path: str | None = None) -> dict[str,
                     ), 0)                                                                     AS garage_units
                 FROM property_summary ps
                 JOIN extra_features ef ON ps.acct = ef.acct
-                WHERE ps.site_zip = ?
+                WHERE LEFT(ps.site_zip, 5) = ?
                 GROUP BY address_norm
             """, [zip_code]).fetchall()
             return {
@@ -272,12 +272,12 @@ def region_zips(region_id: str, db_path: str | None = None) -> list[str]:
         con = duckdb.connect(str(db_file), read_only=True)
         try:
             rows = con.execute("""
-                SELECT site_zip, COUNT(*) AS n
+                SELECT LEFT(site_zip, 5) AS zip5, COUNT(*) AS n
                 FROM property_summary
                 WHERE neighborhood_code = ?
                   AND site_zip IS NOT NULL AND TRIM(site_zip) <> ''
                   AND site_address IS NOT NULL
-                GROUP BY site_zip
+                GROUP BY zip5
                 ORDER BY n DESC
             """, [region_id]).fetchall()
             return [r[0] for r in rows]
@@ -332,7 +332,7 @@ def _duckdb_query_region(con, region_id: str, zip_code: str, joined: bool) -> di
         FROM property_summary ps
         {join_clause}
         WHERE ps.neighborhood_code = ?
-          AND ps.site_zip = ?
+          AND LEFT(ps.site_zip, 5) = ?
           AND ps.site_address IS NOT NULL
     """, [region_id, zip_code]).fetchall()
 
@@ -395,7 +395,7 @@ def _duckdb_query_zip(con, zip_code: str, joined: bool) -> dict[str, dict]:
             {name_expr}                          AS neighborhood_name
         FROM property_summary ps
         {join_clause}
-        WHERE ps.site_zip = ?
+        WHERE LEFT(ps.site_zip, 5) = ?
           AND ps.site_address IS NOT NULL
     """, [zip_code]).fetchall()
 
@@ -427,7 +427,7 @@ def _pg_query_permits(zip_code: str) -> dict[str, int]:
                     COUNT(hm.permit_id) AS permit_count
                 FROM hcad_properties hp
                 JOIN hcad_permits hm ON hm.acct = hp.acct
-                WHERE hp.site_zip = %s
+                WHERE LEFT(hp.site_zip, 5) = %s
                   AND hm.issue_date BETWEEN (CURRENT_DATE - INTERVAL '24 months') AND CURRENT_DATE
                   AND hm.status NOT IN ('V', 'v')
                 GROUP BY address_norm
@@ -460,7 +460,7 @@ def _pg_query_extra_features(zip_code: str) -> dict[str, dict]:
                     ), 0)                                                                    AS garage_units
                 FROM hcad_properties hp
                 JOIN hcad_extra_features ef ON ef.acct = hp.acct
-                WHERE hp.site_zip = %s
+                WHERE LEFT(hp.site_zip, 5) = %s
                 GROUP BY address_norm
             """, (zip_code,))
             result = {}
@@ -506,7 +506,7 @@ def _pg_query_properties(zip_code: str) -> dict[str, dict]:
                     neighborhood_code,
                     neighborhood_name
                 FROM hcad_properties
-                WHERE site_zip = %s AND site_address IS NOT NULL
+                WHERE LEFT(site_zip, 5) = %s AND site_address IS NOT NULL
             """, (zip_code,))
             cols = ["address_norm", "year_built", "square_footage", "lot_size",
                     "estimated_value", "last_sale_date", "owner_name", "owner_occupied",
@@ -562,12 +562,12 @@ def _pg_region_zips(region_id: str) -> list[str]:
         conn = get_conn()
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT site_zip, COUNT(*) AS n
+                SELECT LEFT(site_zip, 5) AS zip5, COUNT(*) AS n
                 FROM hcad_properties
                 WHERE neighborhood_code = %s
                   AND site_zip IS NOT NULL AND TRIM(site_zip) <> ''
                   AND site_address IS NOT NULL
-                GROUP BY site_zip
+                GROUP BY zip5
                 ORDER BY n DESC
             """, (region_id,))
             out = [r[0] for r in cur.fetchall()]
@@ -605,7 +605,7 @@ def _pg_query_properties_for_region(region_id: str, zip_code: str) -> dict[str, 
                     neighborhood_code,
                     neighborhood_name
                 FROM hcad_properties
-                WHERE neighborhood_code = %s AND site_zip = %s AND site_address IS NOT NULL
+                WHERE neighborhood_code = %s AND LEFT(site_zip, 5) = %s AND site_address IS NOT NULL
             """, (region_id, zip_code))
             cols = ["address_norm", "site_address", "site_zip", "mail_city", "year_built",
                     "square_footage", "lot_size", "estimated_value", "last_sale_date",
@@ -652,7 +652,7 @@ def _pg_query_parcels_for_zip(zip_code: str) -> dict[str, dict]:
                     neighborhood_code,
                     neighborhood_name
                 FROM hcad_properties
-                WHERE site_zip = %s AND site_address IS NOT NULL
+                WHERE LEFT(site_zip, 5) = %s AND site_address IS NOT NULL
             """, (zip_code,))
             cols = ["address_norm", "site_address", "site_zip", "mail_city", "year_built",
                     "square_footage", "lot_size", "estimated_value", "last_sale_date",

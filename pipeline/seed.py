@@ -16,6 +16,7 @@ from config import (
     SEED_EXPAND_ENABLED, SEED_EXPAND_THRESHOLD, SEED_EXPAND_TARGET,
     SEED_EXPAND_RADIUS_MI, SEED_EXPAND_MAX_ZIPS,
 )
+from pipeline.addr import normalize_zip
 from pipeline.db import get_conn, upsert_properties
 from pipeline.http import get_json
 
@@ -247,7 +248,7 @@ def _normalize_rentcast(p: dict, origin_zip: str | None = None) -> dict:
         "address":         p.get("addressLine1", ""),
         "city":            p.get("city", ""),
         "state":           p.get("state", ""),
-        "zip":             p.get("zipCode", ""),
+        "zip":             normalize_zip(p.get("zipCode")) or p.get("zipCode", ""),
         "latitude":        lat,
         "longitude":       lng,
         "geocode_source":  geocode_source,
@@ -279,7 +280,9 @@ def _normalize_hcad(p: dict, region_id: str | None = None) -> dict:
         "address":                p.get("site_address", ""),
         "city":                   p.get("mail_city"),
         "state":                  "TX",
-        "zip":                    p.get("site_zip", ""),
+        # Canonicalize to 5 digits: HCAD site ZIPs may carry a ZIP+4 suffix, and
+        # filing the row under a non-canonical ZIP hides it from every ZIP query.
+        "zip":                    normalize_zip(p.get("site_zip")),
         "latitude":               None,
         "longitude":              None,
         "year_built":             p.get("year_built"),

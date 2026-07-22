@@ -36,7 +36,7 @@ export const WAITLIST_MAILTO =
 export function ZipSampleWidget() {
   const [zip, setZip] = useState('')
   const [trade, setTrade] = useState('roofing')
-  const [state, setState] = useState<'idle' | 'loading' | 'queued' | 'done' | 'unsupported' | 'error'>('idle')
+  const [state, setState] = useState<'idle' | 'loading' | 'queued' | 'done' | 'pending' | 'unsupported' | 'error'>('idle')
   const [result, setResult] = useState<ZipSampleResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const polls = useRef(0)
@@ -68,7 +68,10 @@ export function ZipSampleWidget() {
         timer.current = setTimeout(() => fetchSample(zipCode, tradeKey, true), POLL_MS)
         return
       }
-      setState('unsupported')
+      // Not available and not (still) queuing. Only a ZIP the county mirror
+      // doesn't cover is truly "unsupported"; a covered ZIP that just isn't
+      // scored yet (supported !== false) is pending, not unavailable.
+      setState(res.supported === false ? 'unsupported' : 'pending')
     } catch (err) {
       const msg = err instanceof Error ? err.message : ''
       setError(msg.includes('429') ? 'Easy there — try again in a few minutes.' : 'Something went wrong — try again.')
@@ -115,6 +118,20 @@ export function ZipSampleWidget() {
           <Loader2 size={13} className="lp-spin" /> First time anyone&apos;s asked about this ZIP —
           we&apos;re scoring it from county records right now. This takes a couple of minutes;
           the list will appear here.
+        </p>
+      )}
+
+      {state === 'pending' && (
+        <p className="lp-zip-note">
+          {/* Covered by the free Harris County data, just not scored this second
+              (we're at our hourly free-scoring cap). Never tell a Harris County
+              visitor their ZIP isn't covered — invite them to retry or start. */}
+          <span>
+            That ZIP is in our Harris County coverage — we&apos;re just at this hour&apos;s
+            free-scoring cap. Try again in a few minutes,{' '}
+            <a href="/preview">explore the live demo</a>, or{' '}
+            <a href="/signup">start free</a> and run it now.
+          </span>
         </p>
       )}
 
