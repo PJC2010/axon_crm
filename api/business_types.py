@@ -1,7 +1,7 @@
 """Business-type presets.
 
 Axon began as a home-services tool, but the CRM is general. A *business type* on
-each account (see db/migrations/040_account_business_type.sql) selects a preset
+each account (see db/migrations/0040_account_business_type.sql) selects a preset
 that bundles, for that industry:
 
   * ``terminology`` — user-facing word overrides (lead↔deal, property↔record, …),

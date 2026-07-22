@@ -24,7 +24,7 @@ deferred for a while; it is now live. The design:
     `POST /api/invoices/{id}/checkout`.
   - Public (ungated, token-addressed): `GET/POST /api/public/pay/{pay_token}[/checkout]`
     for the hosted pay page, and `POST /api/public/stripe/webhook`.
-- **Schema** — `db/migrations/047_stripe_payments.sql`: `stripe_accounts`,
+- **Schema** — `db/migrations/0047_stripe_payments.sql`: `stripe_accounts`,
   `stripe_webhook_events` (idempotency log), `pay_token` +
   checkout/PaymentIntent columns on `invoices`, Stripe linkage on
   `invoice_payments` with a partial unique index on the PaymentIntent id
