@@ -134,7 +134,7 @@ list — it is intentionally *not* env-configurable.
 
 ## 2. The Central Data Model
 
-The schema is defined by **53 numbered migrations** in `db/migrations/`, run in
+The schema is defined by **61 numbered migrations** in `db/migrations/`, run in
 filename order by `db/migrate.py`, which tracks applied files in a
 `schema_migrations` table. **`db/schema.sql` is NOT authoritative** — it predates
 the migration system and only mirrors migration `0000`.
@@ -227,7 +227,7 @@ selection step flagged `enrichment_selected = TRUE`.
 | `geo_events` | Event polygons (hail swaths, HOA sweeps) | 052 |
 | `hcad_properties`, `hcad_permits`, `hcad_extra_features` | Postgres mirror of HCAD data | 007, 014 |
 
-Migration `017_org_isolation.sql` is the pivotal one: it introduced `accounts`
+Migration `0017_org_isolation.sql` is the pivotal one: it introduced `accounts`
 and backfilled `account_id` onto every pre-existing table. From that point,
 **every query filters by `account_id`** — this is the tenancy boundary, enforced
 in application SQL rather than Postgres RLS.

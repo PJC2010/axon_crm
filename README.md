@@ -201,7 +201,7 @@ axon-crm/
 │
 ├── db/
 │   ├── migrate.py               # Migration runner CLI
-│   └── migrations/              # 53 numbered .sql files — see Database Migrations
+│   └── migrations/              # 61 numbered .sql files — see Database Migrations
 │
 ├── frontend/                    # Next.js application
 │   ├── app/
@@ -356,7 +356,7 @@ The suite (`tests/`, configured via `pytest.ini` and `conftest.py`) covers pipel
 
 ## Multi-Tenancy, Plans & Business Types
 
-Every table is isolated by `account_id` (`db/migrations/017_org_isolation.sql`), so one deployment can safely host multiple organizations.
+Every table is isolated by `account_id` (`db/migrations/0017_org_isolation.sql`), so one deployment can safely host multiple organizations.
 
 - **Plans** (`api/entitlements.py`): `starter` (core features + metered prospecting), `growth` (adds invoicing, bookkeeping, quotes, automation, appointments), `pro` (every module except marketing, which no named plan grants). Core features — leads, the Kanban board, tasks, notes, history, export, custom fields, segments, and messaging — are always on and aren't gated behind any plan. Every tier includes the scoring engine: starter/growth meter it via a monthly scored-lead reveal allowance (`PLAN_SCORING_LIMITS`, enforced by `api/scoring_quota.py` — rows past the allowance render masked with an upgrade prompt), while `pro` is unlimited.
 - **Modules** are enforced server-side via a `require_module(key)` FastAPI dependency (403s with an `upgrade: true` hint when missing) and mirrored client-side by `useEntitlements`/`hasModule()` for UI visibility only.
@@ -763,7 +763,7 @@ Authentication is handled client-side: the JWT token is stored in `localStorage`
 
 ## Database Migrations
 
-Migrations live in `db/migrations/` as 53 numbered `.sql` files, run in filename order; the runner tracks applied migrations in a `schema_migrations` table. They span the core CRM foundation, multi-tenancy (`017_org_isolation.sql`), quotes, custom fields/plans/business types (the "generalization" phases), Stripe payments, two-way SMS, and the phased geo-scoring layer (`049`–`052`). Note that `db/schema.sql` is **not** a consolidated current schema — it predates the migration system and only mirrors the very first migration; the real current schema is the cumulative result of applying every file in `db/migrations/`.
+Migrations live in `db/migrations/` as 61 numbered `.sql` files, run in filename order; the runner tracks applied migrations in a `schema_migrations` table. Filenames use a 4-digit zero-padded prefix (`0000`–`0061`) so filename order matches numeric order. They span the core CRM foundation, multi-tenancy (`0017_org_isolation.sql`), quotes, custom fields/plans/business types (the "generalization" phases), Stripe payments, two-way SMS, and the phased geo-scoring layer (`0049`–`0052`). Note that `db/schema.sql` is **not** a consolidated current schema — it predates the migration system and only mirrors the very first migration; the real current schema is the cumulative result of applying every file in `db/migrations/`.
 
 ```bash
 # Run all pending migrations

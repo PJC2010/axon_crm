@@ -17,9 +17,9 @@ this roadmap builds on them rather than inventing new mechanisms.
 
 | Phase | What it added | Key files |
 |---|---|---|
-| 1 — Feature modules & plans | Per-account module gating (prospecting, map, invoicing, bookkeeping, quotes, marketing, automation) behind starter/growth/pro plans; `require_module()` dependency; module overrides per account | `api/entitlements.py`, `db/migrations/039_account_plans.sql`, `frontend/hooks/useEntitlements.ts`, `frontend/components/ModuleGate.tsx`, `frontend/lib/nav.ts` |
-| 2 — Business types & terminology | Account-level `business_type` presets (`home_services`, `general_sales`, `professional_services`) bundling terminology overrides (lead↔deal↔client, property↔account), category picklists, `property_based` flag, default modules | `api/business_types.py`, `db/migrations/040_account_business_type.sql`, `frontend/lib/terminology.ts`, `frontend/hooks/useTerminology.ts` |
-| 3 — Custom fields | Account-defined field schema (text/number/date/boolean/select) + JSONB value bag on the core record | `api/routes/record_fields.py`, `db/migrations/041_custom_fields.sql`, `properties.custom_fields` |
+| 1 — Feature modules & plans | Per-account module gating (prospecting, map, invoicing, bookkeeping, quotes, marketing, automation) behind starter/growth/pro plans; `require_module()` dependency; module overrides per account | `api/entitlements.py`, `db/migrations/0039_account_plans.sql`, `frontend/hooks/useEntitlements.ts`, `frontend/components/ModuleGate.tsx`, `frontend/lib/nav.ts` |
+| 2 — Business types & terminology | Account-level `business_type` presets (`home_services`, `general_sales`, `professional_services`) bundling terminology overrides (lead↔deal↔client, property↔account), category picklists, `property_based` flag, default modules | `api/business_types.py`, `db/migrations/0040_account_business_type.sql`, `frontend/lib/terminology.ts`, `frontend/hooks/useTerminology.ts` |
+| 3 — Custom fields | Account-defined field schema (text/number/date/boolean/select) + JSONB value bag on the core record | `api/routes/record_fields.py`, `db/migrations/0041_custom_fields.sql`, `properties.custom_fields` |
 
 Also already vertical-agnostic: multi-tenancy (`account_id` on every table, every query
 scoped), tasks, invoicing/AR/payments, quotes, expenses, bookkeeping/P&L, workflow rules,

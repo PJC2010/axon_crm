@@ -79,7 +79,7 @@ Signals are derived at query time in `pipeline/hcad_store.query_extra_features`:
    python tools/export_hcad_zip.py 77002 77396      # writes per-ZIP CSVs
    # then POST each pair to /api/hcad/upload
    ```
-   Requires migration `020_hcad_mailing_address.sql` for the mailing columns.
+   Requires migration `0020_hcad_mailing_address.sql` for the mailing columns.
 
 ## What this does and doesn't add
 

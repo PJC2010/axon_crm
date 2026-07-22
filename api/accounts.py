@@ -6,7 +6,7 @@ any future self-signup path should create accounts through here so the defaults
 stay in one place.
 """
 
-# Mirrors the seed in db/migrations/011_custom_stages.sql, but per-account.
+# Mirrors the seed in db/migrations/0011_custom_stages.sql, but per-account.
 DEFAULT_STAGES = [
     ("new",            "New",            "var(--color-ink-300)", 0, False, True),
     ("contacted",      "Contacted",      "var(--color-ocean)",   1, False, False),

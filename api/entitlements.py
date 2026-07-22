@@ -1,7 +1,7 @@
 """Feature-module entitlements.
 
 Axon's optional features are grouped into *modules* that pricing plans bundle and
-turn on/off per account (see db/migrations/039_account_plans.sql). This module is
+turn on/off per account (see db/migrations/0039_account_plans.sql). This module is
 the single source of truth for:
 
   * which modules exist (``MODULE_KEYS``),

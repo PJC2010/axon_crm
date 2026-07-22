@@ -23,7 +23,7 @@ Companion: `juncto-geospatial-layer-plan.md` (the full four-phase plan).
 
 | Area | File(s) |
 |---|---|
-| Migration (columns, config, scores, service areas, geocode queue) | `db/migrations/049_geo_scoring.sql` |
+| Migration (columns, config, scores, service areas, geocode queue) | `db/migrations/0049_geo_scoring.sql` |
 | Pure scoring math (decay, density cap, territory gate, blend, geometry) | `pipeline/geo_scoring.py` |
 | DB orchestration (customers, service area, rescore) | `pipeline/geo_score_store.py` |
 | Geocoding provider interface + async queue | `pipeline/geocode_provider.py` |
@@ -39,7 +39,7 @@ Companion: `juncto-geospatial-layer-plan.md` (the full four-phase plan).
 
 | Area | File(s) |
 |---|---|
-| Migration (`customer_clusters`, h3/cluster indexes) | `db/migrations/050_geo_clusters.sql` |
+| Migration (`customer_clusters`, h3/cluster indexes) | `db/migrations/0050_geo_clusters.sql` |
 | Pure DBSCAN + cluster hulls + membership | `pipeline/geo_clustering.py` |
 | Optional H3 wrapper (graceful fallback) | `pipeline/geo_h3.py` |
 | DB orchestration (recompute clusters, H3 backfill) | `pipeline/geo_cluster_store.py` |
@@ -69,7 +69,7 @@ geohash-6 choropleth at `/api/map/cells`.
 
 | Area | File(s) |
 |---|---|
-| Migration (`prospect_pulls`, `properties.subdivision`) | `db/migrations/051_prospecting.sql` |
+| Migration (`prospect_pulls`, `properties.subdivision`) | `db/migrations/0051_prospecting.sql` |
 | Swappable provider (`PropertyDataProvider`, RentCast radius search) | `pipeline/property_provider.py` |
 | Flow: seed → pull → refine → dedupe → ingest → score | `pipeline/prospecting.py` |
 | `POST /geo/prospect` | `api/routes/geo.py` |
@@ -142,7 +142,7 @@ the derived area is already returned by `GET /geo/service-area`.
 
 | Area | File(s) |
 |---|---|
-| Migration (`geo_events`) | `db/migrations/052_geo_events.sql` |
+| Migration (`geo_events`) | `db/migrations/0052_geo_events.sql` |
 | Event bonus in scoring + `best_event_for_point` | `pipeline/geo_scoring.py` |
 | Active-event loading + per-lead containment/bonus | `pipeline/geo_score_store.py` |
 | `GET`/`POST`/`DELETE /geo/events` (+ rescore on change) | `api/routes/geo.py` |

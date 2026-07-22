@@ -177,7 +177,7 @@ def _speed_to_lead_response(db: PGConn, account_id: int, lead_id: int, row: dict
 
 def _upsert_lead(cur, account_id: int, row: dict) -> tuple[bool, int]:
     """Insert or update by (account_id, lower(contact_email)) — the partial
-    unique index from db/migrations/018_contact_import.sql. Website leads are
+    unique index from db/migrations/0018_contact_import.sql. Website leads are
     always address-less people contacts, so email is the only dedup key needed
     (unlike imports.py's address-first variant).
 

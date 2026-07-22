@@ -54,7 +54,7 @@ There is no root-level Python linter/formatter configured; match surrounding sty
 ## Architecture & the conventions that matter
 
 ### Multi-tenancy: everything is scoped by `account_id`
-An **account** is an organization/tenant (`db/migrations/017_org_isolation.sql`). Every CRM-owned table carries `account_id`, and the property uniqueness key is `(account_id, address, zip)` — each org gets its own copy of a property. Raw county reference tables (`hcad_*`) are **shared** (not scoped).
+An **account** is an organization/tenant (`db/migrations/0017_org_isolation.sql`). Every CRM-owned table carries `account_id`, and the property uniqueness key is `(account_id, address, zip)` — each org gets its own copy of a property. Raw county reference tables (`hcad_*`) are **shared** (not scoped).
 
 **When writing any query that touches tenant data, scope it by `account_id`.** The current user (with `account_id`) comes from `Depends(get_current_user)` in `api/deps.py`. Forgetting the scope leaks data across tenants — this is the single most important correctness rule in the codebase.
 
@@ -98,7 +98,7 @@ A recurring pattern: pure, dependency-free logic lives in its own module so it c
 - Design-system primitives in `frontend/components/ds/`.
 
 ## Database migrations
-Sequential numbered SQL files in `db/migrations/` (currently 58, `0000`–`0058`), tracked in a `schema_migrations` table. **Always create new migrations with `python db/migrate.py create <name>`** — never hand-edit an already-applied migration; add a new one. Render runs `python db/migrate.py` as its pre-deploy command.
+Sequential numbered SQL files in `db/migrations/` (currently 61, `0000`–`0061`, 4-digit zero-padded so filename order matches numeric order), tracked in a `schema_migrations` table. **Always create new migrations with `python db/migrate.py create <name>`** — never hand-edit an already-applied migration; add a new one. Render runs `python db/migrate.py` as its pre-deploy command.
 
 ## Git workflow for this task
 - Work on branch `claude/claude-md-docs-hg7dzp`. Create it from latest `master` if needed.
