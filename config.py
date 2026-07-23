@@ -37,10 +37,20 @@ DEMO_MIN_GRADE        = os.getenv("DEMO_MIN_GRADE", "")
 # ── Storm / hail event enrichment (NOAA/IEM, free) ───────────────────────────
 # IEM Local Storm Report API — no key required.
 IEM_LSR_URL           = os.getenv("IEM_LSR_URL", "https://mesonet.agron.iastate.edu/geojson/lsr.php")
-# NWS Weather Forecast Office code covering Harris County (Houston/Galveston).
+# NWS point metadata API — maps a lat/lng to its Weather Forecast Office. No key
+# required, but NWS asks for an identifying User-Agent.
+NWS_POINTS_URL        = os.getenv("NWS_POINTS_URL", "https://api.weather.gov/points")
+NWS_USER_AGENT        = os.getenv("NWS_USER_AGENT", "axon-crm (storm enrichment)")
+# Fallback NWS Weather Forecast Office, used only when the per-ZIP lookup fails.
+# Defaults to Houston/Galveston. Each ZIP resolves its own WFO at runtime, so
+# this is a safety net, not the primary configuration.
 STORM_WFO             = os.getenv("STORM_WFO", "HGX")
 # How far back to fetch storm reports (months). Matches the permit/sale window.
 STORM_LOOKBACK_MONTHS = int(os.getenv("STORM_LOOKBACK_MONTHS", "24"))
+# IEM caps a response at 10k features with no truncation flag, so the lookback
+# is fetched in slices this many months wide. At 6, the busiest forecast office
+# peaks near 4k features per slice — roughly 2x headroom.
+STORM_FETCH_CHUNK_MONTHS = int(os.getenv("STORM_FETCH_CHUNK_MONTHS", "6"))
 # A property is considered "hit" by a storm event if it falls within this radius.
 STORM_MATCH_RADIUS_MI = float(os.getenv("STORM_MATCH_RADIUS_MI", "1.0"))
 # Hail size (inches) at which the storm signal is fully saturated (score = 1.0).
