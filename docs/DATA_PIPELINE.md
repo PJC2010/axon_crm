@@ -100,9 +100,19 @@ Processes one ZIP (or an HCAD region's ZIPs) per run, for one account.
 
 ### Step 6.5 — Storm / hail (`pipeline/storm.py`)
 - **Source:** NOAA/NWS Local Storm Reports via the Iowa Environmental Mesonet
-  (`IEM_LSR_URL` GeoJSON API, WFO `HGX` = Houston/Galveston). **Free, no key.**
-- **Mechanism:** one pull per ZIP over `STORM_LOOKBACK_MONTHS` (24); each
-  property matched by Haversine distance within `STORM_MATCH_RADIUS_MI` (1.0 mi).
+  (`IEM_LSR_URL` GeoJSON API). The NWS Weather Forecast Office is resolved per
+  ZIP from its centroid via `NWS_POINTS_URL`, so any market works without
+  configuration (`STORM_WFO` is only a fallback). **Free, no key.**
+- **Mechanism:** the `STORM_LOOKBACK_MONTHS` (24) window is fetched in
+  `STORM_FETCH_CHUNK_MONTHS` (6) slices, because IEM silently truncates a
+  response at 10,000 features — an active office exceeds that in a single
+  24-month pull on snow reports alone. Reports are memoized per (office, day),
+  so ZIPs sharing an office fetch once. Each property is then matched by
+  Haversine distance within `STORM_MATCH_RADIUS_MI` (1.0 mi).
+- **Event types:** hail, thunderstorm/non-thunderstorm wind, tornado (incl.
+  landspout). Marine and waterspout reports are excluded — they describe no
+  property damage. The feed uses NWS product abbreviations (`TSTM WND DMG`,
+  not `THUNDERSTORM WIND`); `pipeline/storm.py::_TYPE_MAP` must match exactly.
 - **Data pulled:** last_storm_date, last_storm_type, hail_size_in, storm_count_24mo.
 
 ### Step 7 — Scoring (`pipeline/scorer.py` + `pipeline/scoring.py`)
@@ -280,6 +290,7 @@ pipeline leans on:
 | US Census ACS 5-yr (2022) | ZIP median income | `CENSUS_API_KEY` (optional) | Free |
 | HCAD (local DuckDB / Postgres mirror) | Seed (free mode), backfill, permits | `PERMIT_DB_PATH` | Free |
 | NOAA/IEM Local Storm Reports | Storm/hail enrichment | `IEM_LSR_URL`, `STORM_WFO` | Free, no key |
+| NWS point API (`api.weather.gov`) | ZIP centroid → forecast office | `NWS_POINTS_URL`, `NWS_USER_AGENT` | Free, no key |
 | Versium | Contact append, demographic append | `CONTACT_*` / `DEMO_*` (provider `versium`) | Paid (highest/record) |
 | BatchData | Contact append, demographic append | `CONTACT_*` / `DEMO_*` (provider `batchdata`) | Paid |
 | Anthropic | Receipt OCR (expenses) | `ANTHROPIC_API_KEY`, `RECEIPT_SCAN_MODEL` | Paid |

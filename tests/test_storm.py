@@ -3,7 +3,8 @@ from datetime import date, timedelta
 
 import pytest
 
-from pipeline.storm import _haversine_mi, _match_property
+import pipeline.storm as storm_mod
+from pipeline.storm import _TYPE_MAP, _fetch_storm_reports, _haversine_mi, _match_property
 
 
 # ── Haversine ─────────────────────────────────────────────────────────────────
@@ -104,3 +105,198 @@ class TestMatchProperty:
         wide = _match_property(self.PROP_LAT, self.PROP_LON, reports, 3.0, self.CUTOFF)
         assert narrow == {}
         assert wide["storm_count_24mo"] == 1
+
+
+# ── _fetch_storm_reports ──────────────────────────────────────────────────────
+#
+# These guard the IEM request/response contract, which is what previously broke
+# silently: the API 422s on a malformed timestamp and ignores an unknown filter
+# key, and get_json swallows both as "no data".
+
+def _feature(typetext: str, *, magf=None, magnitude="", valid="2026-06-03T19:46:00Z",
+             lon=-95.3698, lat=29.7604) -> dict:
+    """One IEM LSR GeoJSON feature, shaped like the real feed."""
+    return {
+        "type": "Feature",
+        "properties": {"typetext": typetext, "magf": magf, "magnitude": magnitude,
+                       "valid": valid, "unit": "Inch"},
+        "geometry": {"type": "Point", "coordinates": [lon, lat]},
+    }
+
+
+@pytest.fixture(autouse=True)
+def _clear_caches():
+    """Both module caches persist across calls by design; isolate each test."""
+    storm_mod._wfo_cache.clear()
+    storm_mod._report_cache.clear()
+    yield
+    storm_mod._wfo_cache.clear()
+    storm_mod._report_cache.clear()
+
+
+@pytest.fixture
+def captured_get(monkeypatch):
+    """Stub pipeline.storm.get_json, recording every call.
+
+    A lookback spans several chunked requests, so the payload is served once and
+    later chunks come back empty; parsing assertions then stay independent of
+    how many chunks the window happens to split into.
+    """
+    calls = []
+
+    def _install(payload):
+        def fake_get_json(url, *, headers=None, params=None, timeout=None, **kw):
+            calls.append({"url": url, "params": params, "headers": headers})
+            if len(calls) > 1 and isinstance(payload, dict):
+                return {"type": "FeatureCollection", "features": []}
+            return payload
+        monkeypatch.setattr(storm_mod, "get_json", fake_get_json)
+        return calls
+
+    return _install
+
+
+class TestTypeMap:
+    def test_maps_real_feed_vocabulary(self):
+        # Exact `typetext` strings observed in the live IEM feed. The feed uses
+        # NWS product abbreviations, not spelled-out names.
+        assert _TYPE_MAP["HAIL"] == "hail"
+        assert _TYPE_MAP["TSTM WND DMG"] == "wind"
+        assert _TYPE_MAP["TSTM WND GST"] == "wind"
+        assert _TYPE_MAP["NON-TSTM WND GST"] == "wind"
+        assert _TYPE_MAP["HIGH SUST WINDS"] == "wind"
+        assert _TYPE_MAP["TORNADO"] == "tornado"
+        assert _TYPE_MAP["LANDSPOUT"] == "tornado"
+
+    def test_spelled_out_names_are_not_used(self):
+        # Guards the original bug: these read plausibly but never appear.
+        assert "THUNDERSTORM WIND" not in _TYPE_MAP
+        assert "HIGH WIND" not in _TYPE_MAP
+
+    def test_over_water_types_excluded(self):
+        # No property damage, so they must not set last_storm_date.
+        assert "MARINE TSTM WIND" not in _TYPE_MAP
+        assert "WATERSPOUT" not in _TYPE_MAP
+
+
+class TestFetchStormReports:
+    def test_request_uses_accepted_param_names_and_formats(self, captured_get):
+        calls = captured_get({"type": "FeatureCollection", "features": []})
+        _fetch_storm_reports(24, "HGX")
+
+        for call in calls:
+            params = call["params"]
+            # `wfo` (singular) is ignored by the API and returns nationwide data.
+            assert "wfo" not in params
+            assert params["wfos"] == "HGX"
+            # %Y%m%d%H%M — anything else (notably a 'T') returns HTTP 422.
+            assert params["sts"].isdigit() and len(params["sts"]) == 12
+            assert params["ets"].isdigit() and len(params["ets"]) == 12
+
+    def test_window_is_chunked_and_covers_full_lookback(self, captured_get):
+        calls = captured_get({"type": "FeatureCollection", "features": []})
+        _fetch_storm_reports(24, "HGX")
+
+        def _day(stamp):
+            return date(int(stamp[:4]), int(stamp[4:6]), int(stamp[6:8]))
+
+        # More than one request, or a busy office would silently hit the 10k cap.
+        assert len(calls) > 1
+        starts = [_day(c["params"]["sts"]) for c in calls]
+        ends = [_day(c["params"]["ets"]) for c in calls]
+
+        # Contiguous, no gaps that would drop reports between chunks.
+        assert starts[1:] == ends[:-1]
+        # Together they span the requested 24 months, ending today.
+        assert 720 <= (date.today() - starts[0]).days <= 740
+        assert ends[-1] == date.today()
+
+    def test_parses_hail_size_from_magf(self, captured_get):
+        captured_get({"type": "FeatureCollection",
+                      "features": [_feature("HAIL", magf=1.75, magnitude="1.75")]})
+        reports = _fetch_storm_reports(24, "HGX")
+        assert len(reports) == 1
+        assert reports[0]["storm_type"] == "hail"
+        assert reports[0]["hail_size_in"] == pytest.approx(1.75)
+        assert reports[0]["date"] == date(2026, 6, 3)
+        assert reports[0]["lat"] == pytest.approx(29.7604)
+        assert reports[0]["lon"] == pytest.approx(-95.3698)
+
+    def test_wind_events_are_kept(self, captured_get):
+        captured_get({"type": "FeatureCollection", "features": [
+            _feature("TSTM WND DMG"), _feature("TSTM WND GST"),
+        ]})
+        reports = _fetch_storm_reports(24, "HGX")
+        assert [r["storm_type"] for r in reports] == ["wind", "wind"]
+        assert all(r["hail_size_in"] is None for r in reports)
+
+    def test_irrelevant_and_marine_types_dropped(self, captured_get):
+        captured_get({"type": "FeatureCollection", "features": [
+            _feature("SNOW"), _feature("FLASH FLOOD"), _feature("RAIN"),
+            _feature("MARINE TSTM WIND"), _feature("WATERSPOUT"),
+        ]})
+        assert _fetch_storm_reports(24, "HGX") == []
+
+    def test_hail_with_no_measurement_still_recorded(self, captured_get):
+        captured_get({"type": "FeatureCollection",
+                      "features": [_feature("HAIL", magf=None, magnitude="")]})
+        reports = _fetch_storm_reports(24, "HGX")
+        assert len(reports) == 1
+        assert reports[0]["hail_size_in"] is None
+
+    def test_error_body_returns_empty_not_crash(self, captured_get):
+        # A 422 body is a JSON *list*; .get() on it would raise AttributeError.
+        captured_get([{"type": "value_error", "loc": ["query", "sts"]}])
+        assert _fetch_storm_reports(24, "HGX") == []
+
+    def test_failed_request_returns_empty(self, captured_get):
+        captured_get(None)
+        assert _fetch_storm_reports(24, "HGX") == []
+
+    def test_repeat_wfo_is_served_from_cache(self, captured_get):
+        calls = captured_get({"type": "FeatureCollection",
+                              "features": [_feature("HAIL", magf=1.0)]})
+        first = _fetch_storm_reports(24, "HGX")
+        after_first = len(calls)
+        second = _fetch_storm_reports(24, "HGX")
+
+        assert second == first
+        assert len(calls) == after_first, "second ZIP in the same WFO refetched"
+
+    def test_different_wfo_is_fetched_separately(self, captured_get):
+        calls = captured_get({"type": "FeatureCollection", "features": []})
+        _fetch_storm_reports(24, "HGX")
+        after_first = len(calls)
+        _fetch_storm_reports(24, "FWD")
+        assert len(calls) > after_first
+
+    def test_malformed_features_skipped(self, captured_get):
+        captured_get({"type": "FeatureCollection", "features": [
+            {"properties": {"typetext": "HAIL"}, "geometry": None},          # no coords
+            _feature("HAIL", magf=1.0, valid="not-a-date"),                  # bad date
+            _feature("HAIL", magf=1.0),                                      # good
+        ]})
+        assert len(_fetch_storm_reports(24, "HGX")) == 1
+
+
+class TestResolveWfo:
+    def test_reads_cwa_and_caches(self, monkeypatch, captured_get):
+        calls = captured_get({"properties": {"cwa": "FWD"}})
+
+        assert storm_mod._resolve_wfo(32.7767, -96.7970) == "FWD"
+        assert "32.78,-96.8" in calls[0]["url"]
+        # NWS rejects requests without an identifying User-Agent.
+        assert calls[0]["headers"]["User-Agent"]
+
+        # Second call for the same point must not re-request.
+        monkeypatch.setattr(storm_mod, "get_json", lambda *a, **k: pytest.fail("not cached"))
+        assert storm_mod._resolve_wfo(32.7767, -96.7970) == "FWD"
+
+    def test_returns_none_on_failure(self, captured_get):
+        captured_get(None)
+        # None, not a default — a wrong WFO would match another region's storms.
+        assert storm_mod._resolve_wfo(29.7604, -95.3698) is None
+
+    def test_missing_cwa_returns_none(self, captured_get):
+        captured_get({"properties": {}})
+        assert storm_mod._resolve_wfo(29.7604, -95.3698) is None
