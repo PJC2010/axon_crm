@@ -25,16 +25,24 @@ class ScoringProfile:
     weights: dict[str, float]              # must sum to 1.0
     factor_meta: dict[str, dict]           # signal key -> {label, field, description}
     signal_fns: dict[str, Callable]        # signal key -> fn(value) -> 0.0..1.0
+    gates: tuple = ()                      # qualifier signals; confirmed absence
+                                           # multiplies the score by GATE_MISS_FACTOR
 
 
 def _property_profile(key: str, weights: dict[str, float]) -> ScoringProfile:
-    """A profile over the classic property signal set (config.FACTOR_META)."""
+    """A profile over the classic property signal set (config.FACTOR_META).
+
+    Validated at load time (validate_weights) so a typo'd weight key fails at
+    import, not mid-score. Qualifier gates come from config.VERTICAL_GATES.
+    """
+    scoring.validate_weights(weights)
     return ScoringProfile(
         key=key,
         label=key.replace("_", " ").title(),
         weights=weights,
         factor_meta=config.FACTOR_META,
         signal_fns=scoring._SIGNAL_FNS,
+        gates=tuple(config.VERTICAL_GATES.get(key, ())),
     )
 
 

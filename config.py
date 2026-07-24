@@ -556,6 +556,35 @@ LIFE_STAGE_SCORES     = {"new_mover": 1.0, "retiree": 0.6, "established": 0.4, "
 POOL_SIGNAL_VALUE    = 1.0
 SLAB_SIGNAL_VALUE    = 1.0
 
+# ── Scoring hardening (see pipeline/scoring.py) ──────────────────────────────
+# How a signal whose input field is missing (None) contributes to the score:
+#   "zero"        — current behavior: missing scores 0, so grades blend lead
+#                   quality with data richness (a thin file can't grade well).
+#   "renormalize" — score over available signals only (Σwᵢsᵢ / Σwᵢ_available);
+#                   the missing-weight share is reported separately as
+#                   data_completeness so "weak lead" and "thin file" are
+#                   distinguishable. Present-but-zero values (e.g. 0 permits)
+#                   still score 0 in both modes — only true gaps renormalize.
+SCORE_MISSING_MODE = os.getenv("SCORE_MISSING_MODE", "zero").strip().lower()
+
+# Qualifier gates: signals whose CONFIRMED ABSENCE disqualifies the lead for the
+# vertical rather than merely discounting it. A pool-maintenance lead with no
+# pool is not an 80-point lead — it's not a lead. When a gate factor's field is
+# present and its signal is 0, the final score is multiplied by
+# GATE_MISS_FACTOR (0.25 keeps the lead ranked but below the A/B bands).
+# Missing (None) gate fields do NOT gate — unknown is not confirmed absence.
+VERTICAL_GATES = {
+    "pool_maintenance": ("pool",),
+}
+GATE_MISS_FACTOR = float(os.getenv("GATE_MISS_FACTOR", "0.25"))
+
+# Equity estimated from the flat fallback (value × EQUITY_FALLBACK_PCT) is a
+# home-value proxy, not measured equity — and value is already proxied by the
+# neighborhood and income signals. The equity signal's contribution is scaled
+# by this factor when the scorer backfilled equity via the fallback path, so
+# sparse data doesn't triple-count "expensive house". 1.0 disables the scale.
+EQUITY_FALLBACK_SIGNAL_SCALE = float(os.getenv("EQUITY_FALLBACK_SIGNAL_SCALE", "0.5"))
+
 # ── Grade bands ──────────────────────────────────────────────────────────────
 GRADE_BANDS = [
     (75, "A"),

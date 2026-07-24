@@ -45,22 +45,32 @@ def _remaining_principal(orig_loan: float, years_elapsed: float) -> float:
 
 
 def estimate_equity(value, last_sale_price=None, last_sale_date=None,
-                    mortgage_balance=None) -> int | None:
-    """Best-available equity estimate in whole dollars, or None if value is unknown."""
+                    mortgage_balance=None, return_source: bool = False):
+    """Best-available equity estimate in whole dollars, or None if value is unknown.
+
+    With return_source=True returns (equity, source) where source is "balance",
+    "amortized", or "fallback" — the scorer uses it to down-weight the flat
+    fallback, which proxies home value rather than measuring equity.
+    """
+    result = _estimate(value, last_sale_price, last_sale_date, mortgage_balance)
+    return result if return_source else result[0]
+
+
+def _estimate(value, last_sale_price, last_sale_date, mortgage_balance):
     if not value:
-        return None
+        return None, None
     value = float(value)
 
     # 1. Known mortgage balance — most accurate.
     if mortgage_balance is not None:
-        return max(int(value - float(mortgage_balance)), 0)
+        return max(int(value - float(mortgage_balance)), 0), "balance"
 
     # 2. Amortize from the original loan implied by the last sale.
     years = _years_since(last_sale_date)
     if last_sale_price and years is not None:
         orig_loan = float(last_sale_price) * _ASSUMED_LTV
         remaining = _remaining_principal(orig_loan, years)
-        return max(int(value - remaining), 0)
+        return max(int(value - remaining), 0), "amortized"
 
     # 3. Flat fallback.
-    return max(int(value * EQUITY_FALLBACK_PCT), 0)
+    return max(int(value * EQUITY_FALLBACK_PCT), 0), "fallback"

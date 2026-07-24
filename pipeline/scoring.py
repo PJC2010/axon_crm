@@ -7,8 +7,11 @@ Weights and thresholds come from config.py and can be overridden per-vertical.
 """
 from datetime import date
 
+import config
+
 from config import (
-    GRADE_BANDS,
+    GRADE_BANDS, GATE_MISS_FACTOR,
+    EQUITY_FALLBACK_SIGNAL_SCALE,
     AGE_SWEET_SPOT_MIN, AGE_SWEET_SPOT_MAX,
     SALE_RECENCY_MAX_MO, EQUITY_TARGET,
     GARAGE_TARGET, INCOME_TARGET, PERMIT_TARGET,
@@ -36,25 +39,113 @@ def compute_score(row: dict, profile) -> float:
     the weighted sum scales to 0–100. Zero-weight factors are skipped, which is
     numerically identical to including them.
     """
-    return sum(
-        weight * profile.signal_fns[key](row.get(profile.factor_meta[key]["field"]))
-        for key, weight in profile.weights.items()
-        if weight
-    ) * 100
+    return _weighted_sum(row, profile.weights, profile.factor_meta,
+                         profile.signal_fns, getattr(profile, "gates", ()))
 
 
-def _compute_score(row: dict, weights: dict) -> float:
+def _compute_score(row: dict, weights: dict, gates: tuple = ()) -> float:
     """Back-compat wrapper: score with the classic property signal set.
 
     Kept as the entry point for callers that pass a raw weights dict
     (scorer.score_zip, explain_score, tests). Parity with the profile-driven
-    loop is pinned by tests/test_scoring.py.
+    loop is pinned by tests/test_scoring.py. `gates` mirrors ScoringProfile.gates
+    for callers that hold a raw weights dict (scorer.score_zip passes them).
     """
-    return sum(
-        weight * _SIGNAL_FNS[key](row.get(FACTOR_META[key]["field"]))
-        for key, weight in weights.items()
-        if weight
-    ) * 100
+    return _weighted_sum(row, weights, FACTOR_META, _SIGNAL_FNS, gates)
+
+
+def _weighted_sum(row: dict, weights: dict, factor_meta: dict,
+                  signal_fns: dict, gates: tuple = ()) -> float:
+    """The one weighted-sum engine both scoring paths share.
+
+    - SCORE_MISSING_MODE "zero" (default): a missing (None) field scores 0.
+      "renormalize": missing fields are dropped and the total rescaled by the
+      available weight share — the score reflects lead quality only, while
+      `data_completeness` reports how much of the profile was measurable.
+      Present-but-zero values score 0 in both modes.
+    - Gates: for each gate factor, if the field is present and its signal is 0
+      (confirmed absence of a qualifier, e.g. no pool for pool_maintenance),
+      the final score is multiplied by GATE_MISS_FACTOR. Missing gate fields
+      never gate.
+    - When the scorer flagged estimated_equity as a flat-fallback estimate
+      (row["estimated_equity_is_fallback"]), the equity contribution is scaled
+      by EQUITY_FALLBACK_SIGNAL_SCALE — fallback equity proxies home value,
+      which the neighborhood/income signals already measure.
+    """
+    mode = (config.SCORE_MISSING_MODE or "zero").lower()
+    equity_scale = (EQUITY_FALLBACK_SIGNAL_SCALE
+                    if row.get("estimated_equity_is_fallback") else 1.0)
+
+    weighted = 0.0
+    available = 0.0
+    gate_miss = False
+    for key, weight in weights.items():
+        if not weight:
+            continue
+        value = row.get(factor_meta[key]["field"])
+        if mode == "renormalize" and value is None:
+            continue
+        signal = signal_fns[key](value)
+        if key in gates:
+            # Gate factors never contribute weight directly; they only decide
+            # whether the multiplier below fires.
+            if value is not None and signal == 0.0:
+                gate_miss = True
+            continue
+        if key == "equity":
+            signal *= equity_scale
+        weighted += weight * signal
+        available += weight
+
+    # Profiles with gates always renormalize over their non-gate weights: the
+    # gate factor is a pure qualifier (contributes no points itself), so the
+    # score ranks qualified leads on their remaining signals alone. A missing
+    # gate field likewise neither gates nor penalizes.
+    if (mode == "renormalize" or gates) and available:
+        score = weighted / available
+    else:
+        score = weighted
+    if gate_miss:
+        score *= GATE_MISS_FACTOR
+    return score * 100
+
+
+def data_completeness(row: dict, weights: dict, factor_meta: dict = None) -> float:
+    """Share of the weighted profile backed by real data (0.0–1.0).
+
+    1.0 means every weighted factor has a non-None input; 0.0 means none do.
+    Pair it with the score to separate "weak lead" from "thin file".
+    """
+    meta = factor_meta or FACTOR_META
+    total = sum(w for w in weights.values() if w)
+    if not total:
+        return 0.0
+    present = sum(
+        w for key, w in weights.items()
+        if w and row.get(meta[key]["field"]) is not None
+    )
+    return round(present / total, 4)
+
+
+def validate_weights(weights: dict, factor_meta: dict = None,
+                     signal_fns: dict = None) -> None:
+    """Fail fast on a malformed weight profile instead of KeyErroring mid-score.
+
+    Raises ValueError for unknown signal keys (not in factor_meta/signal_fns),
+    negative weights, or weights that don't sum to 1.0 (within float slop).
+    Zero-weight keys are allowed but must still be known signals.
+    """
+    meta = factor_meta or FACTOR_META
+    fns = signal_fns or _SIGNAL_FNS
+    unknown = set(weights) - (set(meta) & set(fns))
+    if unknown:
+        raise ValueError(f"Unknown signal key(s) in weights: {sorted(unknown)}")
+    for key, w in weights.items():
+        if w < 0:
+            raise ValueError(f"Negative weight for '{key}': {w}")
+    total = sum(weights.values())
+    if abs(total - 1.0) > 1e-6:
+        raise ValueError(f"Weights must sum to 1.0, got {total!r}")
 
 
 def _grade(score: float) -> str:
@@ -341,14 +432,36 @@ def explain_score(row: dict, weights: dict, profile=None) -> dict:
 
     factors.sort(key=lambda f: f["contribution"], reverse=True)
     top_drivers = [f["key"] for f in factors[:3] if f["contribution"] > 0]
-    score = compute_score(row, profile) if profile is not None else _compute_score(row, weights)
+    gates = getattr(profile, "gates", ()) if profile is not None else ()
+    score = (compute_score(row, profile) if profile is not None
+             else _compute_score(row, weights, gates))
+
+    # Keep the breakdown reconciled with the displayed score even when the
+    # engine adjusted it (gate multiplier / renormalized missing data / equity
+    # fallback scale): rescale all contributions by the same factor so they
+    # still sum to `score`, and flag the adjustment explicitly.
+    raw_total = sum(f["contribution"] for f in factors)
+    gated = False
+    if raw_total > 0 and abs(score - raw_total) > 0.01:
+        adj = score / raw_total
+        for f in factors:
+            f["contribution"] = round(f["contribution"] * adj, 2)
+        gate_keys = set(gates)
+        gated = any(
+            gate_keys & {f["key"]} and f["signal"] == 0.0
+            and row.get((meta_map)[f["key"]]["field"]) is not None
+            for f in factors
+        )
+
     grade = _grade(score)
     return {
-        "score":       round(score, 2),
-        "grade":       grade,
-        "factors":     factors,
-        "top_drivers": top_drivers,
-        "summary":     _summarize(grade, factors, top_drivers),
+        "score":             round(score, 2),
+        "grade":             grade,
+        "factors":           factors,
+        "top_drivers":       top_drivers,
+        "summary":           _summarize(grade, factors, top_drivers),
+        "data_completeness": data_completeness(row, weights, meta_map),
+        "gated":             gated,
     }
 
 
