@@ -83,8 +83,9 @@ class TestRegistry:
 
 
 class TestParityWithClassicFormula:
-    """compute_score(row, profile) == _compute_score(row, profile.weights) —
-    the refactor must not change any existing score."""
+    """compute_score(row, profile) == _compute_score(row, profile.weights, profile.gates)
+    — the refactor must not change any existing score. Gates travel with the
+    profile, so the parity check passes them through explicitly."""
 
     @pytest.mark.parametrize("profile_key", PROPERTY_PROFILE_KEYS)
     @pytest.mark.parametrize("row", [PERFECT_ROW, MIXED_ROW, EMPTY_ROW],
@@ -92,7 +93,7 @@ class TestParityWithClassicFormula:
     def test_parity(self, profile_key, row):
         profile = PROFILES[profile_key]
         assert compute_score(row, profile) == pytest.approx(
-            _compute_score(row, profile.weights), abs=1e-9
+            _compute_score(row, profile.weights, profile.gates), abs=1e-9
         )
 
 
