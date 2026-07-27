@@ -1,3 +1,4 @@
+
 import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, StripeStatus, PublicPayInfo, BillingInfo, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, MessageTemplate, MessageTemplateCreate, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType, HeatmapMetric, HeatmapResponse, ClusterCollection, ProspectSeed, ProspectResult, BlastRadiusResult, ServiceArea, EventCollection, EventCreate, LeadEvent, LeadEventCreate, CallSettings, TrackingNumber, AvailableNumber, CallOutcome, CallLogPage } from './types'
 import { getToken, clearToken } from './auth'
 
@@ -79,10 +80,12 @@ export function getMe(): Promise<User> {
 
 // Self-serve signup: creates a fresh org + owner user and returns a JWT with the
 // same shape as login(), so the caller stores access_token the same way.
-export function signup(companyName: string, email: string, password: string): Promise<{ access_token: string }> {
+// smsConsent is the optional A2P opt-in from the form's checkbox — the server
+// stamps it on the user row with timestamp + source 'signup' (migration 064).
+export function signup(companyName: string, email: string, password: string, smsConsent = false): Promise<{ access_token: string }> {
   return req('/auth/signup', {
     method: 'POST',
-    body: JSON.stringify({ company_name: companyName, email, password }),
+    body: JSON.stringify({ company_name: companyName, email, password, sms_consent: smsConsent }),
   })
 }
 
@@ -187,6 +190,14 @@ export function getPreferences(): Promise<UserPreferences> {
 
 export function updatePreferences(prefs: UserPreferences): Promise<UserPreferences> {
   return req('/auth/preferences', { method: 'PATCH', body: JSON.stringify(prefs) })
+}
+
+// Record or withdraw the user's consent to receive SMS from Axon (account +
+// territory alerts). The server stamps consent/opt-out timestamps for the A2P
+// audit trail (migration 064), so this is the Settings opt-out the privacy
+// policy promises.
+export function updateSmsConsent(smsConsent: boolean): Promise<{ sms_consent: boolean }> {
+  return req('/auth/sms-consent', { method: 'PATCH', body: JSON.stringify({ sms_consent: smsConsent }) })
 }
 
 // Resolved plan + enabled-module map for the current account. Powers entitlement
@@ -640,9 +651,7 @@ export function getNeighborhoods(zip?: string): Promise<import('./types').Neighb
 
 export function getExpenses(filters: ExpenseFilters = {}): Promise<{ items: Expense[]; total: number; page: number; page_size: number }> {
   const p = new URLSearchParams()
-  Object.entries(filters).forEach(([k, v]) => {
-    if (v !== undefined && v !== '') p.set(k, String(v))
-  })
+  Object.entries(filters).forEach(([k, v]) => { if (v !== undefined && v !== '') p.set(k, String(v)) })
   return req(`/expenses?${p}`)
 }
 
@@ -650,7 +659,7 @@ export function getExpenseSummary(year?: number, month?: number): Promise<Expens
   const p = new URLSearchParams()
   if (year) p.set('year', String(year))
   if (month) p.set('month', String(month))
-  return req(`/expenses/summary?${p}`)
+  return req<ExpenseSummary>(`/expenses/summary?${p}`)
 }
 
 export function createExpense(body: ExpenseCreate): Promise<Expense> {
@@ -674,9 +683,7 @@ export function scanReceipt(file: File): Promise<ReceiptScanResult> {
 
 export function expenseExportUrl(filters: ExpenseFilters = {}): string {
   const p = new URLSearchParams()
-  Object.entries(filters).forEach(([k, v]) => {
-    if (v !== undefined && v !== '') p.set(k, String(v))
-  })
+  Object.entries(filters).forEach(([k, v]) => { if (v !== undefined && v !== '') p.set(k, String(v)) })
   const token = getToken()
   if (token) p.set('token', token)
   return `${BASE}/expenses/export?${p}`
@@ -775,7 +782,7 @@ export function declinePublicQuote(token: string, reason?: string): Promise<Publ
 export function getARSummary(year?: number): Promise<ARSummary> {
   const p = new URLSearchParams()
   if (year) p.set('year', String(year))
-  return req(`/invoices/summary?${p}`)
+  return req<ARSummary>(`/invoices/summary?${p}`)
 }
 
 export function getAgingReport(): Promise<AgingBucket[]> {
@@ -835,7 +842,7 @@ export function getPnL(year: number): Promise<PnLReport> {
 export function getJobCosting(year?: number): Promise<JobCostRow[]> {
   const p = new URLSearchParams()
   if (year) p.set('year', String(year))
-  return req(`/bookkeeping/job-costing?${p}`)
+  return req<JobCostRow[]>(`/bookkeeping/job-costing?${p}`)
 }
 
 // ── Workflows ────────────────────────────────────────────────────────────────
