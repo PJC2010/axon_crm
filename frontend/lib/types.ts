@@ -606,6 +606,9 @@ export interface User {
   // Whether the login email has been confirmed (self-serve signups verify via
   // an emailed link; admin-created and OAuth users arrive verified).
   email_verified?: boolean
+  // Whether the user opted in to SMS from Axon (account + territory alerts).
+  // Recorded with timestamp + source for A2P 10DLC; toggled in Settings.
+  sms_consent?: boolean
   // Populated by GET /auth/me; enabled feature modules for this user's account.
   modules?: Partial<ModuleMap>
   business_type?: string
@@ -675,7 +678,7 @@ export interface ExpenseCreate {
   description?: string
   expense_date: string
   payment_method: PaymentMethod
-  is_tax_deductible: boolean
+  is_tax_deductible?: boolean
   property_id?: number
 }
 
@@ -689,18 +692,17 @@ export interface ExpenseSummary {
 // Fields extracted from a receipt photo to pre-fill the expense form. All
 // optional — a partial read still pre-fills whatever was recognized.
 export interface ReceiptScanResult {
-  amount?: number | null
+  amount?: number
   vendor?: string | null
   expense_date?: string | null
   category?: ExpenseCategory | null
-  is_tax_deductible?: boolean | null
   description?: string | null
 }
 
 export interface ExpenseFilters {
   year?: number
   month?: number
-  category?: ExpenseCategory
+  category?: ExpenseCategory | null
   deductible?: boolean
   page?: number
   page_size?: number
@@ -727,7 +729,7 @@ export interface InvoicePayment {
   payment_date: string
   payment_method: string
   notes?: string | null
-  created_by?: number | null
+  created_by: string | null
   created_at: string
   // Set on payments the Stripe webhook recorded; these can't be deleted
   // manually (refund via Stripe instead).
@@ -835,7 +837,6 @@ export interface InvoiceFilters {
   status?: InvoiceStatus
   year?: number
   month?: number
-  property_id?: number
   page?: number
   page_size?: number
 }
@@ -867,6 +868,8 @@ export interface Quote {
   tax_rate: number
   tax_amount: number
   total: number
+  amount_paid: number
+  balance_due: number
   issue_date: string
   valid_until?: string | null
   notes?: string | null
@@ -892,7 +895,7 @@ export interface PublicQuote {
   tax_amount: number
   total: number
   issue_date: string
-  valid_until?: string | null
+  due_date?: string | null
   notes?: string | null
   accepted_at?: string | null
   declined_at?: string | null
@@ -914,7 +917,6 @@ export interface QuoteCreate {
 
 export interface QuoteFilters {
   status?: QuoteStatus
-  property_id?: number
   page?: number
   page_size?: number
 }
@@ -1002,7 +1004,7 @@ export interface OverdueFollowup {
   id: number
   title: string
   due_date: string | null
-  priority: string
+  priority: TaskPriority
   property_id: number | null
   assigned_to: number | null
   address: string | null
@@ -1183,7 +1185,7 @@ export interface Order {
   total: number
   item_count: number | null
   items: OrderItem[]
-  channel: string | null
+  channel: string
   status: OrderStatus
   notes: string | null
   created_by: number | null
@@ -1196,7 +1198,7 @@ export interface OrderCreate {
   order_number?: string
   order_date?: string
   total?: number
-  item_count?: number
+  item_count?: number | null
   items?: OrderItem[]
   channel?: string
   status?: OrderStatus
@@ -1235,8 +1237,8 @@ export interface AppointmentCreate {
   assigned_to?: number
   title: string
   location?: string
-  starts_at: string
-  ends_at: string
+  starts_at?: string
+  ends_at?: string
   status?: AppointmentStatus
   notes?: string
 }
