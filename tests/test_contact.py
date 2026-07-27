@@ -8,6 +8,7 @@ import pytest
 from pipeline.contact import (
     PROVIDERS, _is_business, _owner_name_candidates, _clean_person_tokens,
     _full_name, _first_value, _versium_lookup, _batchdata_lookup,
+    versium_phone_append,
 )
 
 
@@ -193,3 +194,87 @@ class TestVersiumLookup:
         monkeypatch.setattr("pipeline.contact.get_json",
                             lambda *a, **k: {"versium": {"results": []}})
         assert _versium_lookup({"owner_name": "Timothy Boone"}) is None
+
+
+# ── versium_phone_append (reverse lookup: caller phone → address) ─────────────
+
+class TestVersiumPhoneAppend:
+    def _configured(self, monkeypatch):
+        monkeypatch.setattr("pipeline.contact.PHONE_APPEND_PROVIDER", "versium")
+        monkeypatch.setattr("pipeline.contact.PHONE_APPEND_API_KEY", "test-key")
+
+    def test_requests_address_and_email_outputs(self, monkeypatch):
+        self._configured(monkeypatch)
+        captured = {}
+        def fake(url, *, headers=None, params=None, timeout=None, retries=None):
+            captured.update(headers=headers, params=params,
+                            timeout=timeout, retries=retries)
+            return {"versium": {"results": []}}
+        monkeypatch.setattr("pipeline.contact.get_json", fake)
+        versium_phone_append("7135550142")
+        assert captured["params"]["output[]"] == ["address", "email"]
+        assert captured["params"]["phone"] == "7135550142"
+        assert captured["headers"]["x-versium-api-key"] == "test-key"
+        assert captured["retries"] == 0  # runs inside Twilio's webhook window
+
+    def test_maps_full_address(self, monkeypatch):
+        self._configured(monkeypatch)
+        monkeypatch.setattr(
+            "pipeline.contact.get_json",
+            lambda *a, **k: _versium_payload(
+                "Greta", "Fisher",
+                **{"Address": "123 Main St", "City": "Humble", "State": "TX",
+                   "Zip": "77396", "Email Address": "g@example.com"}),
+        )
+        assert versium_phone_append("7135550142") == {
+            "contact_name": "Greta Fisher",
+            "contact_email": "g@example.com",
+            "address": "123 Main St",
+            "city": "Humble",
+            "state": "TX",
+            "zip": "77396",
+        }
+
+    def test_merges_partial_records(self, monkeypatch):
+        self._configured(monkeypatch)
+        monkeypatch.setattr(
+            "pipeline.contact.get_json",
+            lambda *a, **k: {"versium": {"results": [
+                {"Address": "123 Main St"},
+                {"City": "Humble", "State": "TX", "Zip": "77396"},
+            ]}},
+        )
+        assert versium_phone_append("7135550142") == {
+            "address": "123 Main St", "city": "Humble",
+            "state": "TX", "zip": "77396",
+        }
+
+    def test_no_match_returns_none(self, monkeypatch):
+        self._configured(monkeypatch)
+        monkeypatch.setattr("pipeline.contact.get_json",
+                            lambda *a, **k: {"versium": {"results": []}})
+        assert versium_phone_append("7135550142") is None
+
+    def test_unconfigured_or_bad_number_skips_call(self, monkeypatch):
+        called = {"n": 0}
+        def boom(*a, **k):
+            called["n"] += 1
+            return None
+        monkeypatch.setattr("pipeline.contact.get_json", boom)
+        monkeypatch.setattr("pipeline.contact.PHONE_APPEND_PROVIDER", "")
+        assert versium_phone_append("7135550142") is None
+        self._configured(monkeypatch)
+        assert versium_phone_append("5550142") is None  # not a 10-digit number
+        assert called["n"] == 0  # no API call wasted
+
+    def test_independent_of_skiptrace_provider(self, monkeypatch):
+        # The batch skip-trace can stay on BatchData while the inbound-call
+        # append runs on Versium — the two directions configure separately.
+        monkeypatch.setattr("pipeline.contact.CONTACT_PROVIDER", "batchdata")
+        self._configured(monkeypatch)
+        monkeypatch.setattr("pipeline.contact.get_json",
+                            lambda *a, **k: _versium_payload(
+                                "Greta", "Fisher", **{"Address": "123 Main St"}))
+        assert versium_phone_append("7135550142") == {
+            "contact_name": "Greta Fisher", "address": "123 Main St",
+        }

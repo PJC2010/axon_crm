@@ -61,7 +61,7 @@ The platform is self-hosted, multi-tenant, and data-sovereign: every table is is
 - Scored lead table with sort, filter by zip/grade/vertical/status, saved segments, and account-defined custom fields
 - Lead detail drawer/page: property info, owner details, unified activity timeline (notes + history + tasks + signal events), score explanation, neighbor leads
 - Inline status updates (drives Kanban stage + fires workflow automations)
-- On-demand contact enrichment (skip-trace) per lead
+- On-demand contact enrichment (skip-trace) per lead, plus automatic Versium address append for leads created from inbound calls
 - CSV import (with column-mapping preview) and export with current filters applied
 
 ### Kanban Pipeline

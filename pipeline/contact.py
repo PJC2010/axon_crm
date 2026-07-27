@@ -13,6 +13,10 @@ optionally gated to leads at/above CONTACT_MIN_GRADE.
 
 Adding a provider = add a normalizer to PROVIDERS that maps the provider's
 response to {"contact_name", "contact_phone", "contact_email"}.
+
+The reverse lookup (caller phone → name/address/email) used by the inbound-call
+webhook in api/routes/twilio_voice.py also lives here — versium_phone_append,
+configured separately via PHONE_APPEND_PROVIDER/PHONE_APPEND_API_KEY.
 """
 import logging
 import re
@@ -21,6 +25,7 @@ import time
 from config import (
     CONTACT_PROVIDER, CONTACT_API_KEY, CONTACT_BASE_URL,
     CONTACT_MAX_ROWS_PER_ZIP, CONTACT_MIN_GRADE,
+    PHONE_APPEND_PROVIDER, PHONE_APPEND_API_KEY, PHONE_APPEND_BASE_URL,
 )
 from pipeline.db import get_conn, fetch_missing_field, upsert_properties
 from pipeline.http import get_json, post_json
@@ -188,6 +193,70 @@ def _versium_query(first: str, last: str, row: dict) -> dict | None:
         "contact_phone": phone,
         "contact_email": email,
     }
+
+
+def versium_phone_append(phone_digits: str) -> dict | None:
+    """Reverse append: a caller's phone number → name/address/email.
+
+    The inverse of _versium_lookup — used by the inbound-call webhook to turn an
+    unknown caller into a lead with an address. Configured independently of the
+    forward skip-trace via PHONE_APPEND_PROVIDER/PHONE_APPEND_API_KEY, so the two
+    directions can run on different providers. One GET with a tight timeout and
+    no retries: it runs inside Twilio's 15s webhook window, so latency matters
+    more than resilience. Returns only the non-empty fields among
+    {"contact_name", "contact_email", "address", "city", "state", "zip"},
+    or None when unconfigured or nothing usable came back.
+    """
+    digits = (phone_digits or "").strip()
+    if PHONE_APPEND_PROVIDER != "versium" or not PHONE_APPEND_API_KEY \
+            or len(digits) != 10:
+        return None
+
+    url = PHONE_APPEND_BASE_URL or _VERSIUM_CONTACT_URL
+    resp = get_json(
+        url,
+        headers={
+            "x-versium-api-key": PHONE_APPEND_API_KEY,
+            "Accept": "application/json",
+        },
+        params={
+            # Address is the point of the call; email rides along in the same
+            # query (Versium's own docs pair them). Only one phone-type output
+            # is allowed per query, and here the phone is the input.
+            "output[]": ["address", "email"],
+            "phone": digits,
+        },
+        timeout=8,
+        retries=0,
+    )
+    if not resp:
+        return None
+
+    results = resp.get("versium", {}).get("results") or resp.get("results") or []
+    if isinstance(results, dict):
+        results = [results]
+
+    # Scan every matched record and keep the first non-empty value per field,
+    # same defensive normalisation as _versium_query ("First Name" → first_name).
+    out: dict = {}
+    for raw in results:
+        p = {re.sub(r"[\s/]+", "_", k).lower(): v for k, v in raw.items()}
+        out.setdefault("contact_name", _full_name(
+            _str(p.get("first_name")), _str(p.get("last_name"))))
+        out.setdefault("contact_email", _first_value(p, (
+            "email", "email_1", "email_address", "email_address_1", "emails",
+        )))
+        out.setdefault("address", _first_value(p, (
+            "address", "address_1", "street", "street_address",
+        )))
+        out.setdefault("city", _str(p.get("city")))
+        out.setdefault("state", _str(p.get("state")))
+        out.setdefault("zip", _first_value(p, ("zip", "zip_code", "postal_code")))
+        # Drop the Nones setdefault leaves behind on later records.
+        out = {k: v for k, v in out.items() if v}
+        if {"address", "city", "state", "zip"} <= out.keys():
+            break
+    return out or None
 
 
 def _full_name(first: str | None, last: str | None) -> str | None:
