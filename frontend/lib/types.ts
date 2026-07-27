@@ -678,7 +678,7 @@ export interface ExpenseCreate {
   description?: string
   expense_date: string
   payment_method: PaymentMethod
-  is_tax_deductible?: boolean
+  is_tax_deductible: boolean
   property_id?: number
 }
 
@@ -692,17 +692,18 @@ export interface ExpenseSummary {
 // Fields extracted from a receipt photo to pre-fill the expense form. All
 // optional — a partial read still pre-fills whatever was recognized.
 export interface ReceiptScanResult {
-  amount?: number
+  amount?: number | null
   vendor?: string | null
   expense_date?: string | null
   category?: ExpenseCategory | null
+  is_tax_deductible?: boolean | null
   description?: string | null
 }
 
 export interface ExpenseFilters {
   year?: number
   month?: number
-  category?: ExpenseCategory | null
+  category?: ExpenseCategory
   deductible?: boolean
   page?: number
   page_size?: number
@@ -729,7 +730,7 @@ export interface InvoicePayment {
   payment_date: string
   payment_method: string
   notes?: string | null
-  created_by: string | null
+  created_by?: number | null
   created_at: string
   // Set on payments the Stripe webhook recorded; these can't be deleted
   // manually (refund via Stripe instead).
@@ -868,8 +869,6 @@ export interface Quote {
   tax_rate: number
   tax_amount: number
   total: number
-  amount_paid: number
-  balance_due: number
   issue_date: string
   valid_until?: string | null
   notes?: string | null
@@ -895,7 +894,7 @@ export interface PublicQuote {
   tax_amount: number
   total: number
   issue_date: string
-  due_date?: string | null
+  valid_until?: string | null
   notes?: string | null
   accepted_at?: string | null
   declined_at?: string | null
@@ -1198,7 +1197,7 @@ export interface OrderCreate {
   order_number?: string
   order_date?: string
   total?: number
-  item_count?: number | null
+  item_count?: number
   items?: OrderItem[]
   channel?: string
   status?: OrderStatus
