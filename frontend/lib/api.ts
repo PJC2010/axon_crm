@@ -1,4 +1,4 @@
-import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, StripeStatus, PublicPayInfo, BillingInfo, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, MessageTemplate, MessageTemplateCreate, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType, HeatmapMetric, HeatmapResponse, ClusterCollection, ProspectSeed, ProspectResult, BlastRadiusResult, ServiceArea, EventCollection, EventCreate, LeadEvent, LeadEventCreate, CallSettings, TrackingNumber, AvailableNumber, CallOutcome, CallLogPage } from './types'
+import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, StripeStatus, PublicPayInfo, BillingInfo, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, MessageTemplate, MessageTemplateCreate, ConversationMessage, UnreadMessagesResponse, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType, HeatmapMetric, HeatmapResponse, ClusterCollection, ProspectSeed, ProspectResult, BlastRadiusResult, ServiceArea, EventCollection, EventCreate, LeadEvent, LeadEventCreate, CallSettings, TrackingNumber, AvailableNumber, CallOutcome, CallLogPage } from './types'
 import { getToken, clearToken } from './auth'
 
 // Use 127.0.0.1 (not localhost): on macOS `localhost` resolves to IPv6 ::1
@@ -938,6 +938,20 @@ export function sendLeadMessage(leadId: number, body: {
   template_id?: number; channel?: string; subject?: string; body?: string; policy_id?: number
 }): Promise<{ sent: boolean; channel: string; to: string }> {
   return req(`/leads/${leadId}/message`, { method: 'POST', body: JSON.stringify(body) })
+}
+
+// ── Two-way SMS conversation + unread tracking ───────────────────────────────
+
+export function getConversation(leadId: number): Promise<ConversationMessage[]> {
+  return req<ConversationMessage[]>(`/leads/${leadId}/conversation`)
+}
+
+export function markConversationSeen(leadId: number): Promise<{ marked: number }> {
+  return req<{ marked: number }>(`/leads/${leadId}/conversation/seen`, { method: 'POST' })
+}
+
+export function getUnreadMessages(): Promise<UnreadMessagesResponse> {
+  return req<UnreadMessagesResponse>('/unread-messages')
 }
 
 // ── Saved segments ───────────────────────────────────────────────────────────

@@ -4,11 +4,18 @@ POST   /api/message-templates        — create (owner)
 PATCH  /api/message-templates/{id}   — update (owner)
 DELETE /api/message-templates/{id}   — delete (owner)
 POST   /api/leads/{id}/message       — render + send a message to the record's contact
+GET    /api/leads/{id}/conversation  — the record's SMS thread, oldest first
+POST   /api/leads/{id}/conversation/seen — mark the thread's inbound texts read
+GET    /api/unread-messages          — account-wide unseen inbound SMS, per lead
 
 Contact-level messaging (Phase 7). Templates carry {{merge_fields}} resolved
 per record (see api/messaging.py); sends go out via the same Resend/Twilio
 primitives as invoices and are logged to contact_history so they appear in the
 record's activity timeline.
+
+Two-way: inbound texts arrive via api/routes/twilio_inbound.py and join the
+same contact_history thread. Inbound rows carry seen_at NULL until a user opens
+the conversation; the unread summary powers the header message bell.
 """
 import logging
 
@@ -19,8 +26,8 @@ from psycopg2.extensions import connection as PGConn
 from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user, require_owner
 from api import messaging, notifications
 from api.models import (
-    MessageTemplate, MessageTemplateCreate, MessageTemplateUpdate,
-    SendMessageRequest, MESSAGE_CHANNELS,
+    ConversationMessage, MessageTemplate, MessageTemplateCreate, MessageTemplateUpdate,
+    SendMessageRequest, UnreadMessagesResponse, MESSAGE_CHANNELS,
 )
 
 log = logging.getLogger(__name__)
@@ -197,3 +204,67 @@ def send_lead_message(lead_id: int, body: SendMessageRequest, user: dict = Depen
         db.commit()
 
     return {"sent": True, "channel": channel, "to": recipient}
+
+
+# ── Two-way conversation + unread tracking ──────────────────────────────────────
+
+def _assert_lead(db: PGConn, lead_id: int, account_id: int) -> None:
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT id FROM properties WHERE id = %s AND account_id = %s",
+            (lead_id, account_id),
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Lead not found")
+
+
+@router.get("/leads/{lead_id}/conversation", response_model=list[ConversationMessage])
+def get_conversation(lead_id: int, user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+    """The record's SMS thread, oldest first — the chat view's data source."""
+    _assert_lead(db, lead_id, user["account_id"])
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT id, direction, body, created_at, seen_at FROM contact_history "
+            "WHERE property_id = %s AND channel = 'sms' AND body IS NOT NULL "
+            "ORDER BY created_at ASC, id ASC",
+            (lead_id,),
+        )
+        return dict_fetchall(cur)
+
+
+@router.post("/leads/{lead_id}/conversation/seen")
+def mark_conversation_seen(lead_id: int, user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+    """Mark every inbound text on the thread read. Called when the conversation
+    is on screen, so 'unread' always means 'arrived while nobody was looking'."""
+    _assert_lead(db, lead_id, user["account_id"])
+    with db.cursor() as cur:
+        cur.execute(
+            "UPDATE contact_history SET seen_at = NOW() "
+            "WHERE property_id = %s AND direction = 'inbound' AND seen_at IS NULL",
+            (lead_id,),
+        )
+        marked = cur.rowcount
+        db.commit()
+    return {"marked": marked}
+
+
+@router.get("/unread-messages", response_model=UnreadMessagesResponse)
+def unread_messages(user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+    """Unseen inbound texts for the account, grouped per lead (archived records
+    excluded) — the header message bell polls this."""
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT p.id AS lead_id, p.contact_name, p.address, "
+            "       COUNT(*) AS unseen, "
+            "       (array_agg(ch.body ORDER BY ch.created_at DESC))[1] AS last_body, "
+            "       MAX(ch.created_at) AS last_at "
+            "FROM contact_history ch "
+            "JOIN properties p ON p.id = ch.property_id "
+            "WHERE p.account_id = %s AND p.archived_at IS NULL "
+            "  AND ch.channel = 'sms' AND ch.direction = 'inbound' AND ch.seen_at IS NULL "
+            "GROUP BY p.id, p.contact_name, p.address "
+            "ORDER BY last_at DESC",
+            (user["account_id"],),
+        )
+        rows = dict_fetchall(cur)
+    return {"count": sum(r["unseen"] for r in rows), "leads": rows}

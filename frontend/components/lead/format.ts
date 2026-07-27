@@ -13,6 +13,13 @@ export function fmt(d: string | null) {
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+/** Date + time for chat timestamps ("Jul 20, 10:05 AM") — conversation threads
+ *  and message previews, where the bare date in fmt() is too coarse. */
+export function fmtDateTime(d: string | null) {
+  if (!d) return '—'
+  return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
 export function fmtCurrency(n: number | null) {
   if (!n) return '—'
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)

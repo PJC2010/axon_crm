@@ -887,6 +887,35 @@ class SendMessageRequest(BaseModel):
     policy_id: Optional[int] = None
 
 
+# ── Two-way SMS conversation + unread tracking ──────────────────────────────────
+
+class ConversationMessage(BaseModel):
+    # One bubble in a lead's SMS thread (contact_history rows with channel='sms').
+    id: int
+    direction: str                       # 'inbound' | 'outbound'
+    body: str
+    created_at: Optional[datetime] = None
+    seen_at: Optional[datetime] = None   # NULL on inbound rows = unread
+
+    class Config:
+        from_attributes = True
+
+
+class UnreadLeadMessages(BaseModel):
+    # A lead with at least one unseen inbound text, for the header message bell.
+    lead_id: int
+    contact_name: Optional[str] = None
+    address: Optional[str] = None
+    unseen: int
+    last_body: Optional[str] = None
+    last_at: Optional[datetime] = None
+
+
+class UnreadMessagesResponse(BaseModel):
+    count: int                           # total unseen inbound texts, account-wide
+    leads: list[UnreadLeadMessages] = []
+
+
 # ── Saved segments ──────────────────────────────────────────────────────────────
 
 class SegmentCreate(BaseModel):

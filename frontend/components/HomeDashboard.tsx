@@ -16,6 +16,7 @@ import type { Lead, PipelineCounts, ARSummary, ForecastData, User, PipelineAnaly
 import { ScoreBadge } from './ScoreBadge'
 import { StatusPill } from './ds'
 import { TaskBell } from './TaskBell'
+import { MessageBell } from './MessageBell'
 import { NavLinks } from './NavLinks'
 import { useEntitlements, clearEntitlementsCache } from '@/hooks/useEntitlements'
 import { useTerminology } from '@/hooks/useTerminology'
@@ -329,6 +330,7 @@ export function HomeDashboard() {
               <NavLinks variant="desktop" current="/home" />
               <SetupPill state={gettingStarted} />
               <TaskBell />
+              <MessageBell />
               <Link href="/settings" title="Settings" className="dash-icon-btn">
                 <Settings size={13} strokeWidth={1.5} />
               </Link>
@@ -340,6 +342,7 @@ export function HomeDashboard() {
             <>
               <SetupPill state={gettingStarted} />
               <TaskBell />
+              <MessageBell />
               <button
                 onClick={() => setMenuOpen(o => !o)}
                 className="dash-icon-btn"

@@ -146,7 +146,8 @@ export function LeadDetail({ leadId }: { leadId: number }) {
             </div>
 
             <ContactInfoSection lead={lead} onSaved={setLead} onToast={showToast} />
-            <MessageSection leadId={lead.id} />
+            {/* key remounts per lead so composer/thread state starts fresh */}
+            <MessageSection key={lead.id} lead={lead} />
             <PoliciesSection leadId={lead.id} />
             <OrdersSection leadId={lead.id} />
             <AppointmentsSection leadId={lead.id} />

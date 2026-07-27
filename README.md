@@ -563,6 +563,9 @@ The FastAPI server exposes interactive docs at `http://localhost:8000/docs` (Swa
 | GET/POST/PATCH/DELETE | `/api/segments[/{id}]` | Saved segments (filter sets) |
 | GET/POST/PATCH/DELETE | `/api/message-templates[/{id}]` | Reusable email/SMS templates (write = owner) |
 | POST | `/api/leads/{id}/message` | Render + send a template (or ad-hoc message) to a record's contact |
+| GET | `/api/leads/{id}/conversation` | The record's SMS thread, oldest first |
+| POST | `/api/leads/{id}/conversation/seen` | Mark the thread's inbound texts read |
+| GET | `/api/unread-messages` | Unseen inbound SMS for the account, grouped per lead (header bell) |
 
 ### Tasks
 | Method | Path | Description |

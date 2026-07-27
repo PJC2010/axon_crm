@@ -1272,6 +1272,30 @@ export interface MessageTemplateCreate {
   body: string
 }
 
+// ── Two-way SMS conversation + unread tracking ──────────────────────────────
+
+export interface ConversationMessage {
+  id: number
+  direction: 'inbound' | 'outbound'
+  body: string
+  created_at: string | null
+  seen_at: string | null        // null on inbound rows = unread
+}
+
+export interface UnreadLeadMessages {
+  lead_id: number
+  contact_name: string | null
+  address: string | null
+  unseen: number
+  last_body: string | null
+  last_at: string | null
+}
+
+export interface UnreadMessagesResponse {
+  count: number                 // total unseen inbound texts, account-wide
+  leads: UnreadLeadMessages[]
+}
+
 // ── Saved segments ───────────────────────────────────────────────────────────
 
 export interface Segment {

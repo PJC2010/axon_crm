@@ -14,6 +14,7 @@ import { ContactDrawer } from './ContactDrawer'
 import { ExportButton } from './ExportButton'
 import { ImportContactsModal } from './ImportContactsModal'
 import { TaskBell } from './TaskBell'
+import { MessageBell } from './MessageBell'
 import { ToastStack, useToast } from './Toast'
 import { QuickAddFAB } from './QuickAddFAB'
 import { NavLinks } from './NavLinks'
@@ -156,6 +157,7 @@ export function Dashboard() {
             <NavLinks variant="desktop" current="/dashboard" />
             <CustomerSearch />
             <TaskBell />
+            <MessageBell />
             <ImportContactsModal onImported={() => fetchLeads(filters)} />
             <ExportButton filters={filters} />
             <button
@@ -175,6 +177,7 @@ export function Dashboard() {
         ) : (
           <div className="flex items-center gap-1">
             <TaskBell />
+            <MessageBell />
             <button
               onClick={() => fetchLeads(filters)}
               title="Refresh"
