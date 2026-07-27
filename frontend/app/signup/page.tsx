@@ -43,6 +43,10 @@ export default function SignupPage() {
   const [company, setCompany] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  // Optional SMS opt-in (A2P 10DLC): affirmative consent — never pre-checked,
+  // never required. Sent with the signup payload and stamped on the user row
+  // with timestamp + source 'signup' (migration 064); revocable in Settings.
+  const [smsConsent, setSmsConsent] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [enabled, setEnabled] = useState(true)
@@ -66,7 +70,7 @@ export default function SignupPage() {
     setError(null)
     setLoading(true)
     try {
-      const { access_token } = await signup(company, email, password)
+      const { access_token } = await signup(company, email, password, smsConsent)
       onTokenSuccess(access_token, 'email')
     } catch (err) {
       setError(reason(err, 'Could not create your account — try again.'))
@@ -207,7 +211,7 @@ export default function SignupPage() {
                     fill
                   />
                 </div>
-                <div style={{ marginBottom: error ? 14 : 22 }}>
+                <div style={{ marginBottom: 14 }}>
                   <Input
                     label="Password (8+ characters)"
                     type="password"
@@ -217,6 +221,35 @@ export default function SignupPage() {
                     fill
                   />
                 </div>
+
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 8,
+                    marginBottom: error ? 14 : 22,
+                    fontSize: 12,
+                    color: 'var(--color-ink-400)',
+                    lineHeight: 1.5,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={smsConsent}
+                    onChange={(e) => setSmsConsent(e.target.checked)}
+                    style={{ marginTop: 2 }}
+                  />
+                  <span>
+                    I agree to receive SMS from Axon about my account, scoring results, and
+                    territory alerts (optional). Msg frequency varies. Msg &amp; data rates may
+                    apply. Reply STOP to unsubscribe or HELP for help. Consent is not a condition
+                    of purchase. See our{' '}
+                    <a href="/privacy" style={{ color: 'var(--color-ink-400)' }}>
+                      Privacy Policy
+                    </a>.
+                  </span>
+                </label>
 
                 {error && (
                   <p

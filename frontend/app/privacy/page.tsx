@@ -2,12 +2,12 @@ import LegalPage, { LegalH2, LegalP, LegalUl } from '@/components/LegalPage'
 
 export const metadata = {
   title: 'Privacy Policy — Axon',
-  description: 'How Axon collects, uses, and protects data — including the public-records property data that powers lead scoring.',
+  description: 'How Axon collects, uses, and protects data — including SMS consent and the public-records property data that powers lead scoring.',
 }
 
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Privacy Policy" effectiveDate="July 12, 2026">
+    <LegalPage title="Privacy Policy" effectiveDate="July 28, 2026">
       <LegalP>
         Axon is a CRM and lead-intelligence platform for local service businesses, operated by
         Castillo &amp; Co LLC (&ldquo;Axon,&rdquo; &ldquo;we,&rdquo; &ldquo;us&rdquo;). This policy
@@ -47,6 +47,40 @@ export default function PrivacyPage() {
         customers upload), and — when a customer configures them — property-data and
         contact-append providers. Each receives only the data needed to perform its function.
       </LegalP>
+
+      <LegalH2>Text messages (SMS)</LegalH2>
+      <LegalP>
+        Axon&apos;s two-way texting and notification features send SMS through Twilio. Here&apos;s
+        how that works and what we do with phone numbers.
+      </LegalP>
+      <LegalUl>
+        <li>
+          <strong>Consent.</strong> We only send text messages to phone numbers that have given
+          consent. Customers using Axon to text their own contacts are required by our{' '}
+          <a href="/terms" style={{ color: 'var(--color-accent)' }}>Terms of Service</a> to have
+          collected that recipient&apos;s consent first. Axon&apos;s own texts to customers (such as
+          account and Storm Mode alerts) are sent only after the customer opts in during signup
+          or in workspace settings.
+        </li>
+        <li>
+          <strong>No sharing of SMS data.</strong> Mobile phone numbers and SMS opt-in consent are
+          never sold, rented, or shared with third parties or affiliates for their marketing or
+          promotional purposes. Phone numbers are shared only with Twilio, our messaging provider,
+          to deliver the messages themselves.
+        </li>
+        <li>
+          <strong>Opting out.</strong> Reply STOP to any Axon-sent message to unsubscribe from
+          texts at any time. Reply HELP for help, or email{' '}
+          <a href="mailto:admin@axonhtx.com" style={{ color: 'var(--color-accent)' }}>
+            admin@axonhtx.com
+          </a>.
+        </li>
+        <li>
+          <strong>Frequency and cost.</strong> Message frequency varies by account activity.
+          Message and data rates may apply. Carriers are not liable for delayed or undelivered
+          messages.
+        </li>
+      </LegalUl>
 
       <LegalH2>If you&apos;re a homeowner in an Axon customer&apos;s records</LegalH2>
       <LegalP>

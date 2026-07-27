@@ -17,6 +17,7 @@ import { MessageTemplatesSettings } from '@/components/MessageTemplatesSettings'
 import { ImportOrdersModal } from '@/components/ImportOrdersModal'
 import { RescoreSection } from '@/components/RescoreSection'
 import { DailyDigestSection } from '@/components/DailyDigestSection'
+import { SmsAlertsSection } from '@/components/SmsAlertsSection'
 import { useEntitlements } from '@/hooks/useEntitlements'
 import { useTerminology } from '@/hooks/useTerminology'
 import type { PipelineSchedule, PipelineRun, WorkflowRule } from '@/lib/types'
@@ -242,6 +243,9 @@ function SettingsPage() {
 
         {/* Opt-in morning "who to call" email — the out-of-app habit trigger. */}
         <DailyDigestSection />
+
+        {/* SMS opt-in/opt-out for account + territory alerts (A2P consent trail). */}
+        <SmsAlertsSection />
         </>
         )}
 

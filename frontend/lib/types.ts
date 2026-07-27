@@ -606,6 +606,9 @@ export interface User {
   // Whether the login email has been confirmed (self-serve signups verify via
   // an emailed link; admin-created and OAuth users arrive verified).
   email_verified?: boolean
+  // Whether the user opted in to SMS from Axon (account + territory alerts).
+  // Recorded with timestamp + source for A2P 10DLC; toggled in Settings.
+  sms_consent?: boolean
   // Populated by GET /auth/me; enabled feature modules for this user's account.
   modules?: Partial<ModuleMap>
   business_type?: string
@@ -835,7 +838,6 @@ export interface InvoiceFilters {
   status?: InvoiceStatus
   year?: number
   month?: number
-  property_id?: number
   page?: number
   page_size?: number
 }
@@ -914,7 +916,6 @@ export interface QuoteCreate {
 
 export interface QuoteFilters {
   status?: QuoteStatus
-  property_id?: number
   page?: number
   page_size?: number
 }
@@ -1002,7 +1003,7 @@ export interface OverdueFollowup {
   id: number
   title: string
   due_date: string | null
-  priority: string
+  priority: TaskPriority
   property_id: number | null
   assigned_to: number | null
   address: string | null
@@ -1183,7 +1184,7 @@ export interface Order {
   total: number
   item_count: number | null
   items: OrderItem[]
-  channel: string | null
+  channel: string
   status: OrderStatus
   notes: string | null
   created_by: number | null
@@ -1235,8 +1236,8 @@ export interface AppointmentCreate {
   assigned_to?: number
   title: string
   location?: string
-  starts_at: string
-  ends_at: string
+  starts_at?: string
+  ends_at?: string
   status?: AppointmentStatus
   notes?: string
 }

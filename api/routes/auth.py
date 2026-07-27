@@ -4,6 +4,7 @@ GET  /api/auth/me         — current user info
 POST /api/users           — create team member (owner only)
 GET  /api/users           — list users (owner only)
 PATCH /api/users/{id}     — update role / deactivate (owner only)
+PATCH /api/auth/sms-consent — record / withdraw SMS opt-in (A2P 10DLC)
 """
 from fastapi import APIRouter, Depends, HTTPException, Request
 from psycopg2.extensions import connection as PGConn
@@ -55,6 +56,10 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
+class SmsConsentUpdate(BaseModel):
+    sms_consent: bool
+
+
 class UserOut(BaseModel):
     id: int
     username: str
@@ -66,6 +71,9 @@ class UserOut(BaseModel):
     # Whether the login email has been confirmed (self-serve signups verify via
     # emailed link; admin-created and OAuth users arrive verified).
     email_verified: bool = True
+    # Whether the user consented to receive SMS from Axon (account + Storm Mode
+    # alerts). Recorded with timestamp + source for A2P 10DLC (migration 064).
+    sms_consent: bool = False
     # Enabled feature modules for this user's account. Populated by /auth/me so the
     # frontend can gate nav/UI on first load; empty on the team-management endpoints
     # that don't need it.
@@ -131,7 +139,7 @@ def me(current_user: dict = Depends(get_current_user), db: PGConn = Depends(get_
     with db.cursor() as cur:
         cur.execute(
             "SELECT id, username, email, role, is_active, account_id, onboarding_complete, "
-            "email_verified FROM users WHERE id = %s",
+            "email_verified, sms_consent FROM users WHERE id = %s",
             (current_user["id"],),
         )
         row = dict_fetchone(cur)
@@ -371,6 +379,35 @@ def update_preferences(
         row = cur.fetchone()
         db.commit()
     return row[0] if row and row[0] else {}
+
+
+@router.patch("/auth/sms-consent")
+def update_sms_consent(body: SmsConsentUpdate,
+                       current_user: dict = Depends(get_current_user),
+                       db: PGConn = Depends(get_db)):
+    """Record or withdraw the user's consent to receive SMS from Axon.
+
+    This is the in-app opt-out path the privacy policy promises, and the audit
+    trail A2P 10DLC registration asks about: opting in stamps sms_consent_at +
+    source 'settings' and clears any prior opt-out; opting out stamps
+    sms_opted_out_at. Both timestamps are kept (never deleted) so consent can
+    be demonstrated in a carrier audit. Deliberately a dedicated column pair
+    rather than a JSONB preference — compliance data shouldn't be merge-clobbered.
+    """
+    with db.cursor() as cur:
+        if body.sms_consent:
+            cur.execute(
+                "UPDATE users SET sms_consent = TRUE, sms_consent_at = NOW(), "
+                "sms_consent_source = 'settings', sms_opted_out_at = NULL WHERE id = %s",
+                (current_user["id"],),
+            )
+        else:
+            cur.execute(
+                "UPDATE users SET sms_consent = FALSE, sms_opted_out_at = NOW() WHERE id = %s",
+                (current_user["id"],),
+            )
+        db.commit()
+    return {"sms_consent": body.sms_consent}
 
 
 @router.get("/auth/checklist-status")
