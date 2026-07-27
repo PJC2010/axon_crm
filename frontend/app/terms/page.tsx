@@ -7,7 +7,7 @@ export const metadata = {
 
 export default function TermsPage() {
   return (
-    <LegalPage title="Terms of Service" effectiveDate="July 12, 2026">
+    <LegalPage title="Terms of Service" effectiveDate="July 28, 2026">
       <LegalP>
         These terms are the agreement between Castillo &amp; Co LLC (&ldquo;Axon,&rdquo;
         &ldquo;we&rdquo;) and the business that opens an Axon account (&ldquo;you&rdquo;). By
@@ -40,6 +40,22 @@ export default function TermsPage() {
         telemarketing rules, and consent requirements for SMS. You also agree not to abuse the
         service: no unlawful content, no attempts to access other tenants&apos; data, no resale of
         the data outside your business, and no use of the platform to harass anyone.
+      </LegalP>
+
+      <LegalH2>Text messages from Axon</LegalH2>
+      <LegalP>
+        If you opt in to receive SMS from Axon (for example, account notifications and Storm Mode
+        alerts), you agree that we may text the mobile number you provide. Message frequency
+        varies with account activity, and message and data rates may apply. You can stop texts at
+        any time by replying STOP, and get help by replying HELP or emailing{' '}
+        <a href="mailto:admin@axonhtx.com" style={{ color: 'var(--color-accent)' }}>
+          admin@axonhtx.com
+        </a>.
+        Consent to receive texts is never a condition of using Axon, and carriers are not liable
+        for delayed or undelivered messages. SMS opt-in consent and phone numbers are handled as
+        described in our{' '}
+        <a href="/privacy" style={{ color: 'var(--color-accent)' }}>Privacy Policy</a> and are
+        never shared with third parties or affiliates for their marketing purposes.
       </LegalP>
 
       <LegalH2>Your data</LegalH2>
