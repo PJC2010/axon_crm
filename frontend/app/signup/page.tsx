@@ -44,8 +44,8 @@ export default function SignupPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   // Optional SMS opt-in (A2P 10DLC): affirmative consent — never pre-checked,
-  // never required. Not yet sent to the backend; persisting it (plus phone
-  // capture) is a follow-up on the /auth/signup endpoint.
+  // never required. Sent with the signup payload and stamped on the user row
+  // with timestamp + source 'signup' (migration 064); revocable in Settings.
   const [smsConsent, setSmsConsent] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -70,7 +70,7 @@ export default function SignupPage() {
     setError(null)
     setLoading(true)
     try {
-      const { access_token } = await signup(company, email, password)
+      const { access_token } = await signup(company, email, password, smsConsent)
       onTokenSuccess(access_token, 'email')
     } catch (err) {
       setError(reason(err, 'Could not create your account — try again.'))
