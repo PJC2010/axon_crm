@@ -59,7 +59,7 @@ def create_account(conn, name: str, plan_name: str = "pro",
 
 def provision_owner(conn, *, company: str, email: str, username_base: str,
                     hashed_pw: str, business_type: str = "home_services",
-                    email_verified: bool = False) -> dict:
+                    email_verified: bool = False, sms_consent: bool = False) -> dict:
     """Self-serve provisioning: fresh org + its owner user in one transaction.
 
     Shared by POST /auth/signup and the OAuth first-login path so both funnels
@@ -67,6 +67,11 @@ def provision_owner(conn, *, company: str, email: str, username_base: str,
     fields, plan, then the preset's workflows once the owner exists). New
     self-serve accounts start on the full `pro` module set with a local trial
     row in account_billing (see api/billing.py for what happens at expiry).
+
+    ``sms_consent`` is the A2P 10DLC opt-in from the signup form's checkbox:
+    when true it's stamped on the user row with the consent timestamp and
+    source 'signup' (migration 064). OAuth provisioning never passes it —
+    social signups opt in later via Settings.
 
     ``username_base`` collides with existing users occasionally (emails share
     local parts), so numbered variants are tried before giving up. Caller owns
@@ -85,9 +90,11 @@ def provision_owner(conn, *, company: str, email: str, username_base: str,
             if cur.fetchone():
                 continue
             cur.execute(
-                "INSERT INTO users (username, email, hashed_pw, role, account_id, email_verified) "
-                "VALUES (%s, %s, %s, 'owner', %s, %s) RETURNING id",
-                (candidate, email, hashed_pw, account_id, email_verified),
+                "INSERT INTO users (username, email, hashed_pw, role, account_id, email_verified, "
+                "sms_consent, sms_consent_at, sms_consent_source) "
+                "VALUES (%s, %s, %s, 'owner', %s, %s, %s, CASE WHEN %s THEN NOW() END, %s) RETURNING id",
+                (candidate, email, hashed_pw, account_id, email_verified,
+                 sms_consent, sms_consent, "signup" if sms_consent else None),
             )
             user_id, username = cur.fetchone()[0], candidate
             break

@@ -49,6 +49,9 @@ class SignupRequest(BaseModel):
     password: str
     username: str | None = None            # optional; derived from email if omitted
     business_type: str | None = None
+    # Optional A2P 10DLC opt-in from the signup form's consent checkbox.
+    # Stamped on the user row with timestamp + source 'signup' (migration 064).
+    sms_consent: bool = False
 
 
 class VerifyEmailRequest(BaseModel):
@@ -191,6 +194,7 @@ def signup(body: SignupRequest, request: Request, db: PGConn = Depends(get_db)):
             username_base=body.username or derive_username(email),
             hashed_pw=hash_password(body.password),
             business_type=business_type,
+            sms_consent=body.sms_consent,
         )
         raw_token = _issue_token(db, created["user_id"], "verify_email")
         db.commit()
