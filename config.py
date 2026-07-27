@@ -24,6 +24,15 @@ CONTACT_MAX_ROWS_PER_ZIP = int(os.getenv("CONTACT_MAX_ROWS_PER_ZIP", "200"))
 # Only skip-trace leads at or above this grade ("" = no grade filter). A is best.
 CONTACT_MIN_GRADE        = os.getenv("CONTACT_MIN_GRADE", "")
 
+# ── Reverse phone append (inbound caller phone → address/name/email) ─────────
+# Separate capability from CONTACT_* above so the batch skip-trace and the
+# inbound-call append can use different providers (e.g. BatchData for skip-trace,
+# Versium for caller address append). Default "" = the webhook append is a no-op.
+# Supported providers: "versium" (pipeline/contact.py versium_phone_append).
+PHONE_APPEND_PROVIDER = os.getenv("PHONE_APPEND_PROVIDER", "")
+PHONE_APPEND_API_KEY  = os.getenv("PHONE_APPEND_API_KEY", "")
+PHONE_APPEND_BASE_URL = os.getenv("PHONE_APPEND_BASE_URL", "")
+
 # ── Household demographics / life-events enrichment ───────────────────────────
 # Provider-pluggable (e.g. "versium"); default "" = step is a no-op.
 # Supported providers: see pipeline/demographics.py PROVIDERS.

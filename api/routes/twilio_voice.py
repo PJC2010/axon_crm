@@ -6,7 +6,10 @@ purchased tracking number (api/routes/calls.py sets the URL at purchase time).
 The tenant is resolved from the To number via tracking_numbers, the caller is
 matched to a record by phone digits *scoped to that account* (unlike the SMS
 route's cross-account match), an unknown caller becomes a new lead, the call
-is logged, and the caller is forwarded to the business's real phone.
+is logged, and the caller is forwarded to the business's real phone. When
+PHONE_APPEND_PROVIDER=versium, the caller's number is also reverse-appended
+(address/name/email) onto the lead — once per caller, flagged in
+enrichment_flags.phone_append.
 
 POST /api/public/twilio/voice/dial-status — the <Dial> action callback: one
 request after the forwarded leg ends carrying DialCallStatus/DialCallDuration.
@@ -26,7 +29,10 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import Response
 from psycopg2.extensions import connection as PGConn
 
-from config import PUBLIC_API_BASE_URL, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN
+from config import (
+    PHONE_APPEND_API_KEY, PHONE_APPEND_PROVIDER,
+    PUBLIC_API_BASE_URL, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN,
+)
 from api import call_logic
 from api.deps import get_db
 from api.lead_events_emit import emit_event
@@ -68,6 +74,68 @@ def _active_tracking_number(db: PGConn, to_digits: str) -> dict | None:
         )
         row = cur.fetchone()
     return {"id": row[0], "account_id": row[1], "forward_to": row[2]} if row else None
+
+
+# Columns a reverse phone append may fill — never user-editable-only fields.
+_APPEND_FIELDS = ("address", "city", "state", "zip", "contact_email")
+
+
+def _append_caller_address(db: PGConn, account_id: int, property_id: int | None,
+                           from_digits: str, lead_created: bool) -> None:
+    """Reverse-append a caller's address via Versium onto their lead.
+
+    Runs once per caller: a newly created lead always gets one attempt, a
+    matched lead only when it still lacks an address and no earlier attempt was
+    flagged (enrichment_flags.phone_append). The flag is written after any
+    completed attempt — match or no-match, the provider charged for the query —
+    so repeat calls from the same number never re-spend. Only empty fields are
+    filled; a real contact_name beats call_logic's "Caller ..." placeholder.
+    """
+    if PHONE_APPEND_PROVIDER != "versium" or not PHONE_APPEND_API_KEY \
+            or not from_digits or property_id is None:
+        return
+    from pipeline.contact import versium_phone_append  # late import: api <-> pipeline
+    try:
+        with db.cursor() as cur:
+            cur.execute(
+                "SELECT address, city, state, zip, contact_name, contact_email, "
+                "       enrichment_flags "
+                "FROM properties WHERE id = %s AND account_id = %s",
+                (property_id, account_id),
+            )
+            row = cur.fetchone()
+        if not row:
+            return
+        (cur_addr, cur_city, cur_state, cur_zip, cur_name, cur_email,
+         cur_flags) = row
+        flags = dict(cur_flags or {})
+        if not lead_created and (cur_addr or flags.get("phone_append")):
+            return  # already has an address, or an attempt was already paid for
+
+        data = versium_phone_append(from_digits) or {}
+        current = {"address": cur_addr, "city": cur_city, "state": cur_state,
+                   "zip": cur_zip, "contact_email": cur_email}
+        updates = {f: data[f] for f in _APPEND_FIELDS
+                   if data.get(f) and not current[f]}
+        if data.get("contact_name") and \
+                (not cur_name or cur_name.startswith("Caller ")):
+            updates["contact_name"] = data["contact_name"]
+
+        flags["phone_append"] = PHONE_APPEND_PROVIDER
+        sets = [f"{k} = %s" for k in updates]
+        params = list(updates.values())
+        with db.cursor() as cur:
+            cur.execute(
+                f"UPDATE properties SET {', '.join(sets + ['enrichment_flags = %s'])} "
+                "WHERE id = %s AND account_id = %s",
+                (*params, psycopg2.extras.Json(flags), property_id, account_id),
+            )
+            db.commit()
+        log.info("Phone append: account=%s lead=%s filled=%s",
+                 account_id, property_id, sorted(updates))
+    except Exception:
+        db.rollback()
+        log.exception("Phone append failed for lead %s", property_id)
 
 
 @public_router.post("/public/twilio/voice")
@@ -143,6 +211,12 @@ async def inbound_call(
             (property_id, CallSid),
         )
         db.commit()
+
+    # Post-commit, best-effort: reverse-append the caller's address via Versium
+    # so an unknown caller's lead arrives with more than a phone number. Never
+    # blocks the forward — any failure is logged and the call still connects.
+    _append_caller_address(db, tracking["account_id"], property_id,
+                           from_digits, lead_created)
 
     log.info("Inbound call: account=%s lead=%s created=%s sid=%s",
              tracking["account_id"], property_id, lead_created, CallSid)
