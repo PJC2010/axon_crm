@@ -88,10 +88,11 @@ def enrich_hcad(zip_code: str, account_id: int) -> int:
             if ef.get("has_cracked_slab"):
                 update["has_cracked_slab"] = True
                 changed = True
-            # Only fill garage_spaces from HCAD if it isn't already set.
-            garage_units = ef.get("garage_units") or 0
-            if row.get("garage_spaces") is None and garage_units > 0:
-                update["garage_spaces"] = garage_units
+            # Only fill garage_spaces from HCAD if it isn't already set. HCAD
+            # stores garage size in sqft; hcad_store converts it to a space count.
+            garage_spaces = ef.get("garage_spaces") or 0
+            if row.get("garage_spaces") is None and garage_spaces > 0:
+                update["garage_spaces"] = garage_spaces
                 changed = True
 
         if changed:
