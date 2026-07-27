@@ -1,7 +1,7 @@
 """Shared database connection and upsert helper."""
 import psycopg2
 import psycopg2.extras
-from config import DATABASE_URL
+from config import DATABASE_URL, MAX_GARAGE_SPACES
 
 
 def get_conn():
@@ -71,6 +71,18 @@ def _upsert_sql(data_cols: tuple) -> str:
     )
 
 
+def clamp_garage_spaces(value):
+    """Defense-in-depth cap on garage_spaces at write time. Sources occasionally
+    confuse garage square footage for a space count (HCAD's `uts` units were the
+    canonical case); no residence legitimately exceeds MAX_GARAGE_SPACES."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if value > MAX_GARAGE_SPACES:
+            return MAX_GARAGE_SPACES
+        if value < 0:
+            return 0
+    return value
+
+
 def upsert_properties(conn, rows: list[dict], account_id: int) -> int:
     """
     Upsert a list of property dicts into the properties table for one org.
@@ -96,6 +108,7 @@ def upsert_properties(conn, rows: list[dict], account_id: int) -> int:
         values = [account_id] + [
             psycopg2.extras.Json(row[c])
             if c == "enrichment_flags" and isinstance(row[c], dict)
+            else clamp_garage_spaces(row[c]) if c == "garage_spaces"
             else row[c]
             for c in data_cols
         ]

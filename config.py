@@ -527,6 +527,12 @@ GARAGE_TARGET        = 2     # spaces
 INCOME_TARGET        = 75_000    # zip median USD
 PERMIT_TARGET        = 2     # permits in 24 months
 
+# HCAD extra-features store garage size in square feet (the `uts` valuation
+# units), not a space count — convert at ~240 sqft per car. MAX_GARAGE_SPACES
+# caps any source so a bad value can never reach scoring or the UI.
+GARAGE_SQFT_PER_SPACE = 240
+MAX_GARAGE_SPACES     = 10
+
 # Neighborhood-relative value (see pipeline/neighborhood.py). A home whose
 # value-per-sqft is NEIGHBORHOOD_RATIO_TARGET× its neighborhood median (or higher)
 # scores full marks on the neighborhood signal; at/below the median scores 0.

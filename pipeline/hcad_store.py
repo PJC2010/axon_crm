@@ -13,10 +13,23 @@ from pathlib import Path
 
 import duckdb
 
-from config import PERMIT_DB_PATH
+from config import PERMIT_DB_PATH, GARAGE_SQFT_PER_SPACE, MAX_GARAGE_SPACES
 from pipeline.addr import normalize   # shared single source of truth
 
 log = logging.getLogger(__name__)
+
+
+def garage_spaces_from_sqft(sqft) -> int:
+    """Convert HCAD extra-feature garage units (square feet) to a space count.
+
+    HCAD's `uts` column is the valuation unit for the feature — for garages
+    that is area in sqft, not a car count (a typical 2-car garage is ~480
+    sqft). Returns 0 when no garage area was recorded.
+    """
+    sqft = int(sqft or 0)
+    if sqft <= 0:
+        return 0
+    return max(1, min(MAX_GARAGE_SPACES, round(sqft / GARAGE_SQFT_PER_SPACE)))
 
 
 def db_exists(db_path: str | None = None) -> bool:
@@ -169,12 +182,13 @@ def _duckdb_query_properties_no_nbhd(con, zip_code: str) -> dict[str, dict]:
 
 def query_extra_features(zip_code: str, db_path: str | None = None) -> dict[str, dict]:
     """
-    Return {address_norm: {has_pool, has_cracked_slab, garage_units}} for a ZIP.
+    Return {address_norm: {has_pool, has_cracked_slab, garage_spaces}} for a ZIP.
 
     Sources: extra_features table in DuckDB (joined to property_summary), or
     hcad_extra_features in Postgres. Gracefully returns {} if neither is available.
 
-    Garage detection: l_dscr LIKE '%GARAGE%'
+    Garage detection: l_dscr LIKE '%GARAGE%' — HCAD's `uts` units are garage
+    square feet, converted to a space count via garage_spaces_from_sqft().
     Pool detection:   l_dscr LIKE '%POOL%'
     Cracked slab:     l_dscr LIKE '%CRACKED SLAB%' or s_dscr LIKE '%CRACK%'
     """
@@ -191,14 +205,15 @@ def query_extra_features(zip_code: str, db_path: str | None = None) -> dict[str,
                     COALESCE(SUM(
                         CASE WHEN UPPER(ef.l_dscr) LIKE '%GARAGE%'
                              THEN TRY_CAST(ef.uts AS INTEGER) ELSE 0 END
-                    ), 0)                                                                     AS garage_units
+                    ), 0)                                                                     AS garage_sqft
                 FROM property_summary ps
                 JOIN extra_features ef ON ps.acct = ef.acct
                 WHERE ps.site_zip = ?
                 GROUP BY address_norm
             """, [zip_code]).fetchall()
             return {
-                r[0]: {"has_pool": bool(r[1]), "has_cracked_slab": bool(r[2]), "garage_units": int(r[3] or 0)}
+                r[0]: {"has_pool": bool(r[1]), "has_cracked_slab": bool(r[2]),
+                       "garage_spaces": garage_spaces_from_sqft(r[3])}
                 for r in rows if r[0]
             }
         except Exception as e:
@@ -457,7 +472,7 @@ def _pg_query_extra_features(zip_code: str) -> dict[str, dict]:
                     COALESCE(SUM(
                         CASE WHEN UPPER(ef.l_dscr) LIKE '%%GARAGE%%'
                              THEN CAST(NULLIF(ef.units, '') AS INTEGER) ELSE 0 END
-                    ), 0)                                                                    AS garage_units
+                    ), 0)                                                                    AS garage_sqft
                 FROM hcad_properties hp
                 JOIN hcad_extra_features ef ON ef.acct = hp.acct
                 WHERE hp.site_zip = %s
@@ -470,7 +485,7 @@ def _pg_query_extra_features(zip_code: str) -> dict[str, dict]:
                     result[addr] = {
                         "has_pool":        bool(row[1]),
                         "has_cracked_slab": bool(row[2]),
-                        "garage_units":    int(row[3] or 0),
+                        "garage_spaces":   garage_spaces_from_sqft(row[3]),
                     }
         conn.close()
         if result:

@@ -61,8 +61,10 @@ The files are tab-delimited with a header row, encoded latin-1 (Windows-1252).
 | `uts` | `extra_features.uts` (units) |
 
 Signals are derived at query time in `pipeline/hcad_store.query_extra_features`:
-`has_pool` (`l_dscr LIKE %POOL%`), `has_cracked_slab`, `garage_units`
-(`SUM(uts)` where `l_dscr LIKE %GARAGE%`).
+`has_pool` (`l_dscr LIKE %POOL%`), `has_cracked_slab`, `garage_spaces`
+(`SUM(uts)` where `l_dscr LIKE %GARAGE%`, converted from square feet to a
+space count at ~240 sqft/car by `garage_spaces_from_sqft()` — HCAD's `uts`
+is garage area, not a car count).
 
 ## How it flows into the CRM
 
