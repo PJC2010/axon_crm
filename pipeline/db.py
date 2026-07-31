@@ -1,4 +1,7 @@
 """Shared database connection and upsert helper."""
+import threading
+import time
+
 import psycopg2
 import psycopg2.extras
 from config import DATABASE_URL, MAX_GARAGE_SPACES
@@ -6,6 +9,62 @@ from config import DATABASE_URL, MAX_GARAGE_SPACES
 
 def get_conn():
     return psycopg2.connect(DATABASE_URL)
+
+
+# ── Upsert instrumentation (opt-in) ───────────────────────────────────────────
+# upsert_properties is called from nearly every pipeline step, so its cost is
+# spread across the run and invisible in per-step wall-clock alone. This probe
+# accumulates counters for whichever step is currently active; `groups` is the
+# number of distinct column signatures the batch was split into, which is how a
+# fragmented batch (many small round trips instead of a few large ones) shows up.
+#
+# Thread-local because APScheduler runs pipeline jobs in a pool — two concurrent
+# runs would otherwise cross-contaminate each other's counters. Inactive by
+# default: with no probe installed the write path costs one getattr.
+
+_upsert_local = threading.local()
+
+
+class UpsertProbe:
+    """reset()/read() counter matching the probe protocol in pipeline.timing.
+
+    Install one per thread with `install()`; it stays active for that thread
+    until `uninstall()`. Counters are per-step: `reset()` zeroes them, `read()`
+    returns a snapshot of what the step just did.
+    """
+
+    @staticmethod
+    def install() -> "UpsertProbe":
+        probe = UpsertProbe()
+        _upsert_local.stats = _blank_upsert_stats()
+        return probe
+
+    @staticmethod
+    def uninstall() -> None:
+        _upsert_local.stats = None
+
+    def reset(self) -> None:
+        _upsert_local.stats = _blank_upsert_stats()
+
+    def read(self) -> dict | None:
+        stats = getattr(_upsert_local, "stats", None)
+        if not stats or not stats["calls"]:
+            return None
+        return {**stats, "seconds": round(stats["seconds"], 2)}
+
+
+def _blank_upsert_stats() -> dict:
+    return {"calls": 0, "groups": 0, "rows": 0, "seconds": 0.0}
+
+
+def _record_upsert(groups: int, rows: int, seconds: float) -> None:
+    stats = getattr(_upsert_local, "stats", None)
+    if stats is None:
+        return
+    stats["calls"] += 1
+    stats["groups"] += groups
+    stats["rows"] += rows
+    stats["seconds"] += seconds
 
 
 # Allowlist of writable columns. Used both as the upsert column set and to guard
@@ -115,6 +174,7 @@ def upsert_properties(conn, rows: list[dict], account_id: int) -> int:
         groups.setdefault(data_cols, []).append(values)
 
     count = 0
+    started = time.perf_counter()
     with conn.cursor() as cur:
         for data_cols, argslist in groups.items():
             # fetch=True aggregates the RETURNING rows across all internal pages,
@@ -126,6 +186,7 @@ def upsert_properties(conn, rows: list[dict], account_id: int) -> int:
             )
             count += len(returned)
         conn.commit()
+    _record_upsert(len(groups), count, time.perf_counter() - started)
     return count
 
 

@@ -33,8 +33,24 @@ def garage_spaces_from_sqft(sqft) -> int:
 
 
 def db_exists(db_path: str | None = None) -> bool:
-    path = Path(db_path or PERMIT_DB_PATH)
-    return path.exists() and path.stat().st_size > 0
+    """True only when a real, non-empty DuckDB file is configured.
+
+    An empty PERMIT_DB_PATH means "no DuckDB, use the Postgres mirror" — that is
+    exactly how Render is configured, since the web filesystem is ephemeral. It
+    must be handled explicitly: Path("") resolves to the current directory, which
+    exists and reports a non-zero size, so the naive check said the DuckDB was
+    present and every query then died in duckdb.connect("", read_only=True) with
+    "Cannot launch in-memory database in read-only mode" — raised before the
+    callers' fallback try/except, so it took the whole pipeline run down instead
+    of degrading to Postgres.
+
+    is_file() (not exists()) for the same reason: a directory is not a database.
+    """
+    raw = (db_path or PERMIT_DB_PATH or "").strip()
+    if not raw:
+        return False
+    path = Path(raw)
+    return path.is_file() and path.stat().st_size > 0
 
 
 def hcad_available(db_path: str | None = None) -> bool:

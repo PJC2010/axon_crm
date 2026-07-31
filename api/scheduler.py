@@ -40,6 +40,45 @@ def _job_id(schedule_id: int) -> str:
     return f"pipeline_schedule_{schedule_id}"
 
 
+def _resolved_config(zip_code: str, account_id: int, seed_source: str | None,
+                     region_id: str | None, skip: set[str], conn) -> dict:
+    """Which providers this run will actually use, and how big the ZIP is.
+
+    Recorded because the answer is not knowable from the repo: render.yaml commits
+    the paid keys as empty, but the Render dashboard can override them, and
+    whether a serial per-property HTTP loop runs at all is the single biggest
+    factor in how long a run takes. Booleans only — key values are never logged.
+    """
+    from config import (
+        SEED_SOURCE, RENTCAST_API_KEY, GOOGLE_GEOCODE_KEY, CENSUS_API_KEY,
+        CONTACT_PROVIDER, PROPERTY_FIELD_SOURCES,
+    )
+    from pipeline import hcad_store
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM properties WHERE zip = %s AND account_id = %s",
+                (zip_code, account_id),
+            )
+            existing = cur.fetchone()[0]
+    except Exception:
+        conn.rollback()
+        existing = None
+
+    return {
+        "seed_source":     "hcad" if region_id else (seed_source or SEED_SOURCE or "rentcast"),
+        "hcad_source":     "duckdb" if hcad_store.db_exists() else "postgres",
+        "rentcast":        bool(RENTCAST_API_KEY),
+        "google_geocode":  bool(GOOGLE_GEOCODE_KEY),
+        "census_key":      bool(CENSUS_API_KEY),
+        "contact_provider": CONTACT_PROVIDER or None,
+        "property_sources": list(PROPERTY_FIELD_SOURCES),
+        "skip":            sorted(skip),
+        "properties_before_run": existing,
+    }
+
+
 def _run_summary(conn, zip_code: str, account_id: int, sources: dict) -> dict:
     """Plain-language outcome of a pipeline run for the ZIP: how many properties
     are scored, how many at each top grade, and how many paid skip-traces this
@@ -141,15 +180,37 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
     "property", "contact", "demographics"). The public ZIP-sample autorun passes
     the three paid steps so on-demand demo seeding is provably free.
     """
+    from pipeline.db import UpsertProbe
+    from pipeline.timing import StepTimer
+
     conn = psycopg2.connect(DATABASE_URL)
     capped = bool(top_n or (center_address and radius_mi))
     skip = skip or set()
 
+    # Per-ZIP timers, hoisted to this scope so the cancelled/failed paths below
+    # can serialize whatever was measured before the run stopped. A slow run is
+    # the one most likely to be cancelled, which is exactly when the per-step
+    # numbers are worth having.
+    timers: dict[str, StepTimer] = {}
+    run_config: dict = {}
+
+    def _timings() -> dict:
+        """Flat for a single-ZIP run (matching the existing result shape), keyed
+        by ZIP for a region run that fans out across several."""
+        if not region_id and len(timers) == 1:
+            return next(iter(timers.values())).as_dict()
+        return {z: t.as_dict() for z, t in timers.items()}
+
     def _set_status(status: str, result: dict | None = None):
+        payload = dict(result or {})
+        if timers:
+            payload.setdefault("timings", _timings())
+        if run_config:
+            payload.setdefault("config", run_config)
         with conn.cursor() as cur:
             cur.execute(
                 "UPDATE pipeline_runs SET status = %s, finished_at = NOW(), result_json = %s WHERE id = %s",
-                (status, psycopg2.extras.Json(result or {}), run_id),
+                (status, psycopg2.extras.Json(payload), run_id),
             )
         conn.commit()
 
@@ -165,34 +226,48 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
         """Run the full step sequence for one ZIP. Returns the per-ZIP result, or
         None if the run was cancelled mid-way (status already set)."""
         sources: dict = {}
+        # Each step is timed individually and reports the rows it processed; the
+        # probe attributes upsert cost (round trips, batch groups) to the step
+        # that caused it. See pipeline/timing.py for why sec_per_1k is the metric
+        # that separates per-row overhead from a fixed per-step cost.
+        timer = StepTimer(probe=UpsertProbe.install())
+        timers[zip_code] = timer
 
         # Step 1 — Seed (free HCAD for region runs and for seed_source="hcad",
         # else RentCast/CSV). `seed()` resolves the default when seed_source is None.
         if _check_cancel(): return None
         from config import SEED_SOURCE
         from pipeline.seed import seed
-        n = seed(zip_code, account_id, csv_path=None, limit=None, region_id=region_id,
-                 seed_source=seed_source)
+        with timer.step("seed") as s:
+            n = seed(zip_code, account_id, csv_path=None, limit=None, region_id=region_id,
+                     seed_source=seed_source)
+            s.rows = n
         resolved = "hcad" if region_id else (seed_source or SEED_SOURCE or "rentcast")
         log.info("[1/8] run=%d Seed (%s): %d records", run_id, resolved, n)
 
         # Step 2 — Census
         if _check_cancel(): return None
         from pipeline.census import enrich_census
-        n = enrich_census(zip_code, account_id)
+        with timer.step("census") as s:
+            n = enrich_census(zip_code, account_id)
+            s.rows = n
         log.info("[2/8] run=%d Census: %d updated", run_id, n)
 
         # Step 3 — Geocode
         if _check_cancel(): return None
         from pipeline.geocode import enrich_geocode
-        n = enrich_geocode(zip_code, account_id)
+        with timer.step("geocode") as s:
+            n = enrich_geocode(zip_code, account_id)
+            s.rows = n
         log.info("[3/8] run=%d Geocode: %d updated", run_id, n)
 
         # Step 4 — HCAD fallback (free) — runs BEFORE paid RentCast so it
         # only spends calls on fields HCAD couldn't fill.
         if _check_cancel(): return None
         from pipeline.hcad_enrichment import enrich_hcad
-        n = enrich_hcad(zip_code, account_id)
+        with timer.step("hcad") as s:
+            n = enrich_hcad(zip_code, account_id)
+            s.rows = n
         log.info("[4/8] run=%d HCAD fallback: %d backfilled", run_id, n)
 
         # Step 4.5 — Selection (volume control) — after all FREE steps, before
@@ -207,17 +282,22 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
                 if center is None:
                     log.warning("run=%d could not geocode center address %r — "
                                 "radius filter skipped", run_id, center_address)
-            sources["selection"] = select_for_enrichment(
-                conn, zip_code, account_id, top_n=top_n, center=center,
-                radius_mi=radius_mi, vertical=vertical,
-            )
+            with timer.step("select"):
+                sources["selection"] = select_for_enrichment(
+                    conn, zip_code, account_id, top_n=top_n, center=center,
+                    radius_mi=radius_mi, vertical=vertical,
+                )
             log.info("[4.5/8] run=%d Selection: %s", run_id, sources["selection"])
 
         # Step 5 — Property detail (RentCast, paid)
         if "property" not in skip:
             if _check_cancel(): return None
             from pipeline.property import enrich_property
-            counters = enrich_property(zip_code, account_id, selected_only=capped)
+            with timer.step("property") as s:
+                counters = enrich_property(zip_code, account_id, selected_only=capped)
+                # Rows here means properties the paid source was actually called
+                # for — the number that drives both the time and the bill.
+                s.rows = sum(c.get("ok", 0) + c.get("fail", 0) for c in counters.values())
             sources.update(counters)
             log.info("[5/8] run=%d Property: %s", run_id, counters)
         else:
@@ -226,26 +306,35 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
         # Step 6 — Permits
         if _check_cancel(): return None
         from pipeline.permits import enrich_permits
-        n = enrich_permits(zip_code, account_id, csv_path=None)
+        with timer.step("permits") as s:
+            n = enrich_permits(zip_code, account_id, csv_path=None)
+            s.rows = n
         log.info("[6/8] run=%d Permits: %d updated", run_id, n)
 
         # Step 6.5 — Storm/hail enrichment (free, needs lat/lng from step 3).
         if _check_cancel(): return None
         from pipeline.storm import enrich_storm
-        n = enrich_storm(zip_code, account_id)
+        with timer.step("storm") as s:
+            n = enrich_storm(zip_code, account_id)
+            s.rows = n
         log.info("[6.5/8] run=%d Storm: %d matched", run_id, n)
 
         # Step 6.75 — Neighborhood value benchmark. Account-wide (geohash cells
         # cross ZIP lines) and must precede scoring so the neighborhood signal
         # reads fresh ratios that include this ZIP's just-enriched values.
+        # Timed separately because it scales with the whole account, not this
+        # ZIP — its cost grows with every ZIP ever seeded.
         if _check_cancel(): return None
         from pipeline.neighborhood import recompute_neighborhood_values
-        recompute_neighborhood_values(conn, account_id)
+        with timer.step("neighborhood") as s:
+            s.rows = recompute_neighborhood_values(conn, account_id)
 
         # Step 7 — Score
         if _check_cancel(): return None
         from pipeline.scorer import score_zip
-        n = score_zip(zip_code, account_id, vertical=vertical)
+        with timer.step("score") as s:
+            n = score_zip(zip_code, account_id, vertical=vertical)
+            s.rows = n
         log.info("[7/8] run=%d Scoring: %d scored", run_id, n)
 
         # Step 7.5 — Precision trim: now that real scores exist, cut the
@@ -253,14 +342,19 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
         if capped and top_n:
             if _check_cancel(): return None
             from pipeline.select import trim_to_top_n
-            kept = trim_to_top_n(conn, zip_code, account_id, top_n)
+            with timer.step("trim") as s:
+                kept = trim_to_top_n(conn, zip_code, account_id, top_n)
+                s.rows = kept
             log.info("[7.5/8] run=%d Trim: kept top %d", run_id, kept)
 
         # Step 8 — Contact / skip-trace (paid; after scoring for optional grade gate)
         if "contact" not in skip:
             if _check_cancel(): return None
             from pipeline.contact import enrich_contact
-            sources["contact"] = enrich_contact(zip_code, account_id, selected_only=capped)
+            with timer.step("contact") as s:
+                sources["contact"] = enrich_contact(zip_code, account_id, selected_only=capped)
+                c = sources["contact"]
+                s.rows = c.get("ok", 0) + c.get("fail", 0)
             log.info("[8/8] run=%d Contact: %s", run_id, sources["contact"])
         else:
             log.info("[8/8] run=%d Contact: skipped", run_id)
@@ -269,7 +363,10 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
         if "demographics" not in skip:
             if _check_cancel(): return None
             from pipeline.demographics import enrich_demographics
-            sources["demographics"] = enrich_demographics(zip_code, account_id, selected_only=capped)
+            with timer.step("demographics") as s:
+                sources["demographics"] = enrich_demographics(zip_code, account_id, selected_only=capped)
+                d = sources["demographics"]
+                s.rows = d.get("ok", 0) + d.get("fail", 0)
             log.info("[8.5/8] run=%d Demographics: %s", run_id, sources["demographics"])
         else:
             log.info("[8.5/8] run=%d Demographics: skipped", run_id)
@@ -278,7 +375,8 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
         # previous run's baseline, record signal_events, fire signal_event rules.
         if _check_cancel(): return None
         from pipeline.signals import detect_signals
-        sources["signals"] = detect_signals(zip_code, account_id)
+        with timer.step("signals"):
+            sources["signals"] = detect_signals(zip_code, account_id)
         log.info("[signals] run=%d %s", run_id, sources["signals"])
 
         # Storm Mode (audit P1): the morning-after moment. When this run found
@@ -291,9 +389,14 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
         # Coverage snapshot for the frontend + the plain-language run summary
         # ("what did this run cost / produce") shown in Settings → Recent runs.
         from pipeline.coverage import fill_rates
-        coverage = fill_rates(conn, zip_code, account_id)
+        with timer.step("coverage"):
+            coverage = fill_rates(conn, zip_code, account_id)
+        with timer.step("summary"):
+            summary = _run_summary(conn, zip_code, account_id, sources)
+
+        log.info("run=%d %s", run_id, timer.format_table(title=f"ZIP {zip_code}"))
         return {"zip": zip_code, "sources": sources, "coverage": coverage,
-                "summary": _run_summary(conn, zip_code, account_id, sources)}
+                "summary": summary, "timings": timer.as_dict()}
 
     try:
         with conn.cursor() as cur:
@@ -305,6 +408,13 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
 
         import sys, os
         sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+        # Record which providers are actually live before any step runs. Whether
+        # a serial per-property HTTP loop executes at all dominates run time, and
+        # that depends on dashboard env vars the repo cannot see.
+        run_config.update(_resolved_config(zip_code, account_id, seed_source,
+                                           region_id, skip, conn))
+        log.info("run=%d config: %s", run_id, run_config)
 
         # Region runs fan out across every ZIP the neighborhood touches; a plain
         # ZIP run is just a single-element list.
@@ -351,6 +461,9 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
             pass
     finally:
         _clear_cancel(run_id)
+        # APScheduler reuses pool threads; drop the probe so it doesn't keep
+        # counting against whatever job runs on this thread next.
+        UpsertProbe.uninstall()
         conn.close()
 
 

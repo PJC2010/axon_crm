@@ -5,7 +5,31 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.entitlements import require_module
+from config import LOG_LEVEL
+
+# Configure the root logger before anything else emits. Uvicorn installs handlers
+# on its own `uvicorn*` loggers but leaves root at WARNING with no handler, so
+# without this every log.info() in api/ and pipeline/ is dropped — the per-step
+# pipeline progress lines never reach the Render log stream. Mirrors the format
+# run_pipeline.py already uses so CLI and server logs read the same.
+logging.basicConfig(
+    level=LOG_LEVEL,
+    format="%(asctime)s  %(levelname)-7s  %(name)s  %(message)s",
+    datefmt="%H:%M:%S",
+)
+# basicConfig is a no-op when the root logger already has a handler (a custom
+# --log-config, say), and then the level above would not be applied. Set it
+# directly so LOG_LEVEL is honoured either way.
+logging.getLogger().setLevel(LOG_LEVEL)
+# Root at INFO would otherwise pull in third-party chatter (a line per APScheduler
+# job execution, a line per pooled HTTP connection) and bury the pipeline output.
+for _noisy in ("apscheduler.executors.default", "apscheduler.scheduler",
+               "urllib3.connectionpool", "httpx", "botocore", "asyncio"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
+
+# Imports below the logging setup on purpose, so anything these modules log at
+# import time lands in the configured handler.
+from api.entitlements import require_module  # noqa: E402
 from api.routes import leads, notes, history, export, record_fields, segments, messaging
 from api.routes import lead_events
 from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, hcad, workflows, imports, quotes

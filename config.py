@@ -3,6 +3,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# ── Logging ───────────────────────────────────────────────────────────────────
+# The API process configures the root logger from this (api/main.py). Without it
+# uvicorn leaves root at WARNING with no application handler, so every log.info()
+# in api/ and pipeline/ is silently dropped — including the per-step pipeline
+# progress lines. Set to DEBUG for provider-level HTTP detail, WARNING to quiet.
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").strip().upper()
+
 # ── Database ──────────────────────────────────────────────────────────────────
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost/smart_crm")
 

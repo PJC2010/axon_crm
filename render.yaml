@@ -31,6 +31,11 @@ services:
           property: connectionString
       - key: JWT_SECRET
         generateValue: true        # required; the app hard-fails if unset.
+      # Application log level. INFO surfaces the per-step pipeline progress and
+      # timing tables; without it uvicorn leaves root at WARNING and every
+      # log.info() in api/ and pipeline/ is dropped. Set WARNING to quiet down.
+      - key: LOG_LEVEL
+        value: INFO
       # HCAD-first, paid sources off. The DuckDB never ships to Render, so leave
       # PERMIT_DB_PATH empty to force the durable Postgres mirror path.
       - key: SEED_SOURCE

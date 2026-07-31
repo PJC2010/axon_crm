@@ -53,6 +53,31 @@ def _log_coverage(zip_code: str, account_id: int, stage: str) -> None:
     log.info("%s", "\n".join(lines))
 
 
+def _resolved_config(skip: set) -> dict:
+    """Which providers this run will actually use.
+
+    Logged up front because whether a serial per-property HTTP loop runs at all
+    is the single biggest factor in how long a run takes, and that depends on
+    env vars rather than on anything in the repo. Booleans only — key values are
+    never logged.
+    """
+    from config import (
+        SEED_SOURCE, RENTCAST_API_KEY, GOOGLE_GEOCODE_KEY, CENSUS_API_KEY,
+        CONTACT_PROVIDER, PROPERTY_FIELD_SOURCES,
+    )
+    from pipeline import hcad_store
+    return {
+        "seed_source":      SEED_SOURCE or "rentcast",
+        "hcad_source":      "duckdb" if hcad_store.db_exists() else "postgres",
+        "rentcast":         bool(RENTCAST_API_KEY),
+        "google_geocode":   bool(GOOGLE_GEOCODE_KEY),
+        "census_key":       bool(CENSUS_API_KEY),
+        "contact_provider": CONTACT_PROVIDER or None,
+        "property_sources": list(PROPERTY_FIELD_SOURCES),
+        "skip":             sorted(skip),
+    }
+
+
 def _zip_already_seeded(zip_code: str, account_id: int) -> bool:
     """Return True if the ZIP already has properties for this org in the DB."""
     from pipeline.db import get_conn
@@ -65,6 +90,26 @@ def _zip_already_seeded(zip_code: str, account_id: int) -> bool:
 
 
 def run_zip(zip_code: str, args) -> None:
+    """Run the full step sequence for one ZIP, always reporting timings.
+
+    The table is emitted from a `finally` so a step that raises still says where
+    the time went — a run that dies partway is exactly when that matters most.
+    """
+    from pipeline.db import UpsertProbe
+    from pipeline.timing import StepTimer
+
+    # Same instrumentation the scheduler uses, so a Render Shell run and a
+    # UI-triggered run produce directly comparable tables. The gap between them
+    # is what in-process contention on the web dyno costs.
+    timer = StepTimer(probe=UpsertProbe.install())
+    try:
+        _run_zip_steps(zip_code, args, timer)
+    finally:
+        UpsertProbe.uninstall()
+        log.info("%s", timer.format_table(title=f"ZIP {zip_code}"))
+
+
+def _run_zip_steps(zip_code: str, args, timer) -> None:
     skip = set(s.strip() for s in (args.skip or "").split(",") if s.strip())
     account_id = args.account_id
     top_n = getattr(args, "top_n", None)
@@ -72,28 +117,35 @@ def run_zip(zip_code: str, args) -> None:
     center_address = getattr(args, "address", None)
     capped = bool(top_n or (center_address and radius_mi))
     log.info("━━━  ZIP %s  ━━━", zip_code)
+    log.info("Config: %s", _resolved_config(skip))
 
     if "seed" not in skip:
         from pipeline.seed import seed
         if not args.force_seed and _zip_already_seeded(zip_code, account_id):
             log.info("[1/7] Seed: skipped (ZIP already in DB — use --force-seed to re-fetch)")
         else:
-            n = seed(zip_code, account_id, csv_path=args.seed_csv, limit=args.limit,
-                     seed_source=getattr(args, "seed_source", None))
+            with timer.step("seed") as s:
+                n = seed(zip_code, account_id, csv_path=args.seed_csv, limit=args.limit,
+                         seed_source=getattr(args, "seed_source", None))
+                s.rows = n
             log.info("[1/7] Seed: %d records", n)
     else:
         log.info("[1/7] Seed: skipped")
 
     if "census" not in skip:
         from pipeline.census import enrich_census
-        n = enrich_census(zip_code, account_id)
+        with timer.step("census") as s:
+            n = enrich_census(zip_code, account_id)
+            s.rows = n
         log.info("[2/7] Census: %d updated", n)
     else:
         log.info("[2/7] Census: skipped")
 
     if "geocode" not in skip:
         from pipeline.geocode import enrich_geocode
-        n = enrich_geocode(zip_code, account_id)
+        with timer.step("geocode") as s:
+            n = enrich_geocode(zip_code, account_id)
+            s.rows = n
         log.info("[3/7] Geocode: %d updated", n)
     else:
         log.info("[3/7] Geocode: skipped")
@@ -104,11 +156,14 @@ def run_zip(zip_code: str, args) -> None:
     # sees a smaller work queue and makes fewer paid API calls.
     if "hcad" not in skip:
         from pipeline.hcad_enrichment import enrich_hcad
-        n = enrich_hcad(zip_code, account_id)
+        with timer.step("hcad") as s:
+            n = enrich_hcad(zip_code, account_id)
+            s.rows = n
         log.info("[4/7] HCAD (free): %d fields backfilled", n)
         # Checkpoint: what the free steps left NULL — i.e. what RentCast
         # would be paid to fill. Inspect this before an unskipped paid run.
-        _log_coverage(zip_code, account_id, "HCAD (free steps done, before paid)")
+        with timer.step("coverage:after_hcad"):
+            _log_coverage(zip_code, account_id, "HCAD (free steps done, before paid)")
     else:
         log.info("[4/7] HCAD: skipped")
 
@@ -125,26 +180,34 @@ def run_zip(zip_code: str, args) -> None:
                             center_address)
         conn = get_conn()
         try:
-            res = select_for_enrichment(conn, zip_code, account_id, top_n=top_n, center=center,
-                                        radius_mi=radius_mi, vertical=args.vertical)
+            with timer.step("select"):
+                res = select_for_enrichment(conn, zip_code, account_id, top_n=top_n, center=center,
+                                            radius_mi=radius_mi, vertical=args.vertical)
         finally:
             conn.close()
         log.info("[4.5/8] Selection: %s", res)
 
     if "property" not in skip:
         from pipeline.property import enrich_property
-        counters = enrich_property(zip_code, account_id, selected_only=capped)
+        with timer.step("property") as s:
+            counters = enrich_property(zip_code, account_id, selected_only=capped)
+            # Rows here means properties the paid source was actually called for
+            # — the number that drives both the time and the bill.
+            s.rows = sum(c.get("ok", 0) + c.get("fail", 0) for c in counters.values())
         log.info("[5/8] Property detail (RentCast): %s",
                  _fmt_counters(counters))
         # Checkpoint: what RentCast refined and what is still NULL for the
         # skip-trace/demographics (BatchData) steps further down.
-        _log_coverage(zip_code, account_id, "property detail (before skip-trace)")
+        with timer.step("coverage:after_property"):
+            _log_coverage(zip_code, account_id, "property detail (before skip-trace)")
     else:
         log.info("[5/8] Property detail: skipped")
 
     if "permits" not in skip:
         from pipeline.permits import enrich_permits
-        n = enrich_permits(zip_code, account_id, csv_path=args.permit_csv)
+        with timer.step("permits") as s:
+            n = enrich_permits(zip_code, account_id, csv_path=args.permit_csv)
+            s.rows = n
         log.info("[6/8] Permits: %d updated", n)
     else:
         log.info("[6/8] Permits: skipped")
@@ -152,14 +215,18 @@ def run_zip(zip_code: str, args) -> None:
     # Storm/hail enrichment runs after geocode (needs lat/lng), before scoring.
     if "storm" not in skip:
         from pipeline.storm import enrich_storm
-        n = enrich_storm(zip_code, account_id)
+        with timer.step("storm") as s:
+            n = enrich_storm(zip_code, account_id)
+            s.rows = n
         log.info("[6.5/8] Storm: %d matched", n)
     else:
         log.info("[6.5/8] Storm: skipped")
 
     if "score" not in skip:
         from pipeline.scorer import score_zip
-        n = score_zip(zip_code, account_id, vertical=args.vertical)
+        with timer.step("score") as s:
+            n = score_zip(zip_code, account_id, vertical=args.vertical)
+            s.rows = n
         log.info("[7/8] Scoring: %d scored", n)
     else:
         log.info("[7/8] Scoring: skipped")
@@ -171,7 +238,9 @@ def run_zip(zip_code: str, args) -> None:
         from pipeline.select import trim_to_top_n
         conn = get_conn()
         try:
-            kept = trim_to_top_n(conn, zip_code, account_id, top_n)
+            with timer.step("trim") as s:
+                kept = trim_to_top_n(conn, zip_code, account_id, top_n)
+                s.rows = kept
         finally:
             conn.close()
         log.info("[7.5/8] Trim: kept top %d", kept)
@@ -179,7 +248,9 @@ def run_zip(zip_code: str, args) -> None:
     # Contact runs after scoring so the optional min-grade gate can apply.
     if "contact" not in skip:
         from pipeline.contact import enrich_contact
-        c = enrich_contact(zip_code, account_id, selected_only=capped)
+        with timer.step("contact") as s:
+            c = enrich_contact(zip_code, account_id, selected_only=capped)
+            s.rows = c.get("ok", 0) + c.get("fail", 0)
         log.info("[8/8] Contact: %d filled%s", c.get("updated", 0),
                  " (skipped: no provider)" if c.get("skipped_no_key") else "")
     else:
@@ -188,7 +259,9 @@ def run_zip(zip_code: str, args) -> None:
     # Demographics enrichment runs after scoring so the grade gate can apply.
     if "demographics" not in skip:
         from pipeline.demographics import enrich_demographics
-        c = enrich_demographics(zip_code, account_id, selected_only=capped)
+        with timer.step("demographics") as s:
+            c = enrich_demographics(zip_code, account_id, selected_only=capped)
+            s.rows = c.get("ok", 0) + c.get("fail", 0)
         log.info("[demo] Demographics: %d filled%s", c.get("updated", 0),
                  " (skipped: no provider)" if c.get("skipped_no_key") else "")
     else:
@@ -198,7 +271,9 @@ def run_zip(zip_code: str, args) -> None:
     # run's baseline, record signal_events, fire signal_event workflow rules.
     if "signals" not in skip:
         from pipeline.signals import detect_signals
-        log.info("[signals] %s", detect_signals(zip_code, account_id))
+        with timer.step("signals"):
+            signals = detect_signals(zip_code, account_id)
+        log.info("[signals] %s", signals)
     else:
         log.info("[signals] skipped")
 
@@ -207,10 +282,11 @@ def run_zip(zip_code: str, args) -> None:
         from pipeline.db import get_conn
         conn = get_conn()
         try:
-            weak = sorted(
-                ((f, r["pct"]) for f, r in fill_rates(conn, zip_code, account_id).items()),
-                key=lambda kv: kv[1],
-            )[:5]
+            with timer.step("coverage:final"):
+                weak = sorted(
+                    ((f, r["pct"]) for f, r in fill_rates(conn, zip_code, account_id).items()),
+                    key=lambda kv: kv[1],
+                )[:5]
         finally:
             conn.close()
         log.info("Weakest columns for ZIP %s: %s", zip_code,
