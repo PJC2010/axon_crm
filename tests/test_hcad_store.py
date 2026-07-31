@@ -33,6 +33,43 @@ class _FakeConn:
         pass
 
 
+def test_db_exists_false_for_empty_path(monkeypatch):
+    """Regression: an empty PERMIT_DB_PATH means "use the Postgres mirror".
+
+    Render sets PERMIT_DB_PATH="" on purpose (ephemeral web filesystem). Path("")
+    resolves to the current directory, which exists and has a non-zero size, so
+    the naive exists() check reported a DuckDB that was not there and every query
+    then died in duckdb.connect("", read_only=True) — before the callers'
+    fallback, taking down the whole pipeline run.
+    """
+    monkeypatch.setattr(hcad_store, "PERMIT_DB_PATH", "")
+    assert hcad_store.db_exists() is False
+    assert hcad_store.db_exists("") is False
+    assert hcad_store.db_exists("   ") is False
+
+
+def test_db_exists_false_for_a_directory(tmp_path, monkeypatch):
+    """A directory is not a database — is_file(), not exists()."""
+    monkeypatch.setattr(hcad_store, "PERMIT_DB_PATH", str(tmp_path))
+    assert hcad_store.db_exists() is False
+
+
+def test_db_exists_false_for_missing_and_empty_files(tmp_path, monkeypatch):
+    missing = tmp_path / "nope.duckdb"
+    monkeypatch.setattr(hcad_store, "PERMIT_DB_PATH", str(missing))
+    assert hcad_store.db_exists() is False
+
+    empty = tmp_path / "empty.duckdb"
+    empty.write_bytes(b"")
+    assert hcad_store.db_exists(str(empty)) is False
+
+
+def test_db_exists_true_for_a_real_non_empty_file(tmp_path):
+    real = tmp_path / "harris_county.duckdb"
+    real.write_bytes(b"not really duckdb, but non-empty")
+    assert hcad_store.db_exists(str(real)) is True
+
+
 def test_available_true_when_duckdb_present(monkeypatch):
     # DuckDB file present → available without touching Postgres.
     monkeypatch.setattr(hcad_store, "db_exists", lambda *a, **k: True)
