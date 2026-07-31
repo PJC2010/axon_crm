@@ -167,7 +167,11 @@ def _run_zip_steps(zip_code: str, args, timer) -> None:
     else:
         log.info("[4/7] HCAD: skipped")
 
-    # Selection (volume control) — after all FREE steps, before any PAID step.
+    # Selection (volume control) — marks the subset that proceeds to the paid
+    # steps below. It cannot move ahead of geocode: radius narrowing filters on
+    # the coordinates geocode produces (pipeline/select.py::_within_radius), so
+    # geocode is capped at the provider level instead (free Census batch, paid
+    # Google limited to GEOCODE_FALLBACK_MAX misses).
     if capped and "select" not in skip:
         from pipeline.db import get_conn
         from pipeline.select import select_for_enrichment

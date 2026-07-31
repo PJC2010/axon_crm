@@ -50,6 +50,40 @@ def get_json(url, *, headers=None, params=None, timeout=30,
     return None
 
 
+def post_file_text(url, *, files=None, data=None, timeout=300,
+                   retries=None, backoff=None):
+    """POST a multipart file upload and return the response body as **text**.
+
+    Same retry/backoff contract as get_json (returns None on failure, raises
+    nothing). Needed for the Census batch geocoder, which takes a CSV file
+    upload and answers with CSV rather than JSON. The default timeout is much
+    longer than the JSON helpers' because a 10,000-address batch legitimately
+    takes minutes to come back.
+    """
+    retries = HTTP_RETRIES if retries is None else retries
+    backoff = HTTP_BACKOFF if backoff is None else backoff
+
+    last_err = None
+    for attempt in range(retries + 1):
+        try:
+            resp = requests.post(url, files=files, data=data, timeout=timeout)
+            if resp.status_code in _RETRY_STATUS:
+                last_err = f"HTTP {resp.status_code}"
+                raise requests.HTTPError(last_err, response=resp)
+            resp.raise_for_status()
+            return resp.text
+        except requests.RequestException as e:
+            last_err = e
+            if attempt < retries:
+                delay = backoff * (2 ** attempt)
+                log.debug("POST %s failed (%s); retry %d/%d in %.1fs",
+                          url, e, attempt + 1, retries, delay)
+                time.sleep(delay)
+
+    log.warning("POST %s failed after %d attempts: %s", url, retries + 1, last_err)
+    return None
+
+
 def post_json(url, *, json=None, headers=None, timeout=30,
               retries=None, backoff=None):
     """POST `json` to `url` and return parsed JSON, retrying transient failures.

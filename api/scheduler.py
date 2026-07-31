@@ -270,8 +270,14 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
             s.rows = n
         log.info("[4/8] run=%d HCAD fallback: %d backfilled", run_id, n)
 
-        # Step 4.5 — Selection (volume control) — after all FREE steps, before
-        # any PAID enrichment. Marks the subset that proceeds to paid steps.
+        # Step 4.5 — Selection (volume control). Marks the subset that proceeds
+        # to the paid steps below (property, contact, demographics).
+        #
+        # It cannot move ahead of geocode: radius narrowing filters on the
+        # coordinates geocode produces (pipeline/select.py::_within_radius). So
+        # geocode is not bounded by top_n — its cost is capped at the provider
+        # level instead (free Census batch, with paid Google limited to
+        # GEOCODE_FALLBACK_MAX misses).
         if capped:
             if _check_cancel(): return None
             from pipeline.select import select_for_enrichment

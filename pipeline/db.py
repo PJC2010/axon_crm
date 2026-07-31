@@ -221,7 +221,8 @@ def fetch_missing_field(conn, field: str, account_id: int, zip_code: str | None 
 
 
 def fetch_missing_any(conn, fields: list[str], account_id: int, zip_code: str | None = None,
-                      selected_only: bool = False) -> list[dict]:
+                      selected_only: bool = False, checked_flag: str | None = None,
+                      recheck_days: int | None = None) -> list[dict]:
     """Return this org's properties where AT LEAST ONE of `fields` is NULL.
 
     Column names are validated against ALL_COLS before interpolation, so this is
@@ -229,6 +230,14 @@ def fetch_missing_any(conn, fields: list[str], account_id: int, zip_code: str | 
 
     When `selected_only` is True, restrict to rows the selection step picked for
     paid enrichment (enrichment_selected = TRUE). Used by capped/radius runs.
+
+    `checked_flag` names an enrichment_flags key holding the ISO date a paid
+    source was last asked about this row; rows carrying one newer than
+    `recheck_days` are excluded. Without it a "gap" the source structurally
+    cannot fill — last_sale_price in non-disclosure states like Texas, say —
+    keeps every row eligible on every run, so the whole ZIP is re-billed forever.
+    Dates are stored and compared as YYYY-MM-DD text, which sorts chronologically
+    and avoids a timestamp cast that a malformed value could fail on.
     """
     bad = [f for f in fields if f not in ALL_COLS]
     if bad:
@@ -237,12 +246,21 @@ def fetch_missing_any(conn, fields: list[str], account_id: int, zip_code: str | 
         return []
     clause = " OR ".join(f"{f} IS NULL" for f in fields)
     where = f"WHERE ({clause}) AND account_id = %s"
-    params = [account_id]
+    params: list = [account_id]
     if zip_code:
         where += " AND zip = %s"
         params.append(zip_code)
     if selected_only:
         where += " AND enrichment_selected = TRUE"
+    if checked_flag:
+        if recheck_days and recheck_days > 0:
+            where += (" AND (enrichment_flags->>%s IS NULL"
+                      "      OR enrichment_flags->>%s"
+                      "         < to_char(NOW() - make_interval(days => %s), 'YYYY-MM-DD'))")
+            params.extend([checked_flag, checked_flag, recheck_days])
+        else:
+            where += " AND enrichment_flags->>%s IS NULL"
+            params.append(checked_flag)
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(f"SELECT * FROM properties {where}", params)
         return [dict(r) for r in cur.fetchall()]

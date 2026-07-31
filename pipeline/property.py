@@ -8,10 +8,11 @@ the fields still missing, so paid calls are spent on genuine gaps.
 """
 import logging
 import time
+from datetime import date
 
 from config import (
     RENTCAST_API_KEY, RENTCAST_BASE_URL,
-    PROPERTY_FIELD_SOURCES, SOURCE_FIELDS,
+    PROPERTY_FIELD_SOURCES, SOURCE_FIELDS, PROPERTY_RECHECK_DAYS,
 )
 from pipeline.db import get_conn, fetch_missing_any, upsert_properties
 from pipeline.equity import estimate_equity
@@ -56,24 +57,35 @@ def enrich_property(zip_code: str, account_id: int, selected_only: bool = False)
                             source.upper(), source)
                 continue
 
+            checked_flag = f"{source}_checked"
             rows = fetch_missing_any(conn, SOURCE_FIELDS[source], account_id, zip_code,
-                                     selected_only=selected_only)
+                                     selected_only=selected_only,
+                                     checked_flag=checked_flag,
+                                     recheck_days=PROPERTY_RECHECK_DAYS)
             if cfg["cap"]:
                 rows = rows[: cfg["cap"]]
             if not rows:
+                log.info("%s: no properties due for enrichment.", source)
                 continue
 
             log.info("%s enriching %d properties…", source, len(rows))
+            today = date.today().isoformat()
             updates = []
             for row in rows:
                 data = fetchers[source](row["address"], row.get("zip", ""))
+                # Stamp the row as asked either way. Some fields a source is
+                # queried for can never be filled — RentCast has no sale price in
+                # non-disclosure states — so without this marker the row stays
+                # "missing" and is re-billed on every future run, forever.
+                flags = {**cfg["flag"], checked_flag: today} if data else {checked_flag: today}
+                update = {"address": row["address"], "zip": row["zip"],
+                          "enrichment_flags": flags}
                 if data:
                     counter["ok"] += 1
-                    data.update({"address": row["address"], "zip": row["zip"],
-                                 "enrichment_flags": cfg["flag"]})
-                    updates.append(data)
+                    update.update(data)
                 else:
                     counter["fail"] += 1
+                updates.append(update)
                 time.sleep(cfg["delay"])
             counter["updated"] = upsert_properties(conn, updates, account_id)
     finally:
