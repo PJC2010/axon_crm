@@ -61,6 +61,9 @@ class _FakeConn:
     def commit(self):
         self.commits += 1
 
+    def close(self):
+        pass
+
 
 # ── The tenant-isolation boundary ─────────────────────────────────────────────
 
@@ -230,6 +233,28 @@ def test_link_existing_matches_on_normalized_address():
     assert parcels.link_existing(_FakeConn(cur), "77449", 1) == 3
     assert "axon_normalize_address(p.address) = pc.address_norm" in cur.sql
     assert "p.parcel_id IS NULL" in cur.sql
+
+
+def test_seed_links_pre_existing_rows_before_seeding_them(monkeypatch):
+    """Order matters: seed_account gap-fills existing rows via sync(), which
+    joins on parcel_id. Linking after the seed makes that join match nothing, so
+    a ZIP seeded by an older build would not pick up cached data until a second
+    run — exactly the state a killed run leaves behind."""
+    from pipeline import seed as seed_mod
+
+    calls = []
+    monkeypatch.setattr(seed_mod, "get_conn", lambda: _FakeConn(_FakeCursor()))
+    monkeypatch.setattr(parcels, "ensure_from_hcad",
+                        lambda c, z: calls.append("ensure") or 10)
+    monkeypatch.setattr(parcels, "link_existing",
+                        lambda c, z, a: calls.append("link") or 0)
+    monkeypatch.setattr(parcels, "seed_account",
+                        lambda c, z, a, limit=None: calls.append("seed") or 10)
+    monkeypatch.setattr(parcels, "coverage",
+                        lambda c, z: {"parcels": 10, "geocoded": 0})
+
+    seed_mod._seed_from_parcels("77449", 1)
+    assert calls.index("link") < calls.index("seed"), f"link must precede seed: {calls}"
 
 
 @pytest.mark.parametrize("call,expected_commits", [
