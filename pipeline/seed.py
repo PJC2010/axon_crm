@@ -242,9 +242,13 @@ def _seed_from_parcels(zip_code: str, account_id: int, limit: int | None = None)
             log.info("HCAD seed: no parcels for ZIP %s (is hcad_properties "
                      "loaded? see docs/RENDER_DEPLOYMENT.md)", zip_code)
             return 0
-        n = parcels.seed_account(conn, zip_code, account_id, limit=limit)
-        # Attach any rows this account already had from an earlier, pre-cache run.
+        # Attach rows this account already had before the cache existed, BEFORE
+        # seeding. seed_account gap-fills existing rows through sync(), which
+        # joins on parcel_id — link afterwards and that join matches nothing, so
+        # a ZIP seeded by an older build would not pick up cached data until a
+        # second run.
         parcels.link_existing(conn, zip_code, account_id)
+        n = parcels.seed_account(conn, zip_code, account_id, limit=limit)
         cov = parcels.coverage(conn, zip_code)
         log.info("HCAD seed: %d properties for ZIP %s (shared cache: %d parcels, "
                  "%d already geocoded)", n, zip_code, cov["parcels"], cov["geocoded"])
