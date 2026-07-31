@@ -56,6 +56,8 @@ There is no root-level Python linter/formatter configured; match surrounding sty
 ### Multi-tenancy: everything is scoped by `account_id`
 An **account** is an organization/tenant (`db/migrations/0017_org_isolation.sql`). Every CRM-owned table carries `account_id`, and the property uniqueness key is `(account_id, address, zip)` — each org gets its own copy of a property. Raw county reference tables (`hcad_*`) are **shared** (not scoped).
 
+**`parcels` is also shared** (`db/migrations/0065_shared_parcels.sql`, `pipeline/parcels.py`). It caches the tenant-*independent* half of a property — assessor data, coordinates, storm history, neighborhood — once, so seeding a ZIP for an org is an `INSERT … SELECT` inside the database rather than a per-org re-run of the enrichment pipeline. `properties.parcel_id` links a tenant row back to its parcel. Data moves in four directions, all server-side: `ensure_from_hcad` (build the cache), `seed_account` (materialize a tenant's rows), `promote` (share a run's findings back), `sync` (adopt findings). **`parcels.SHARED_COLS` is a security boundary** — skip-traced contacts and the demographic append are per-account *purchases* and CRM state is tenant opinion, so neither is ever promoted. Add a column there only if it is a free, objective fact about the parcel.
+
 **When writing any query that touches tenant data, scope it by `account_id`.** The current user (with `account_id`) comes from `Depends(get_current_user)` in `api/deps.py`. Forgetting the scope leaks data across tenants — this is the single most important correctness rule in the codebase.
 
 ### Feature gating via modules & plans
@@ -98,7 +100,7 @@ A recurring pattern: pure, dependency-free logic lives in its own module so it c
 - Design-system primitives in `frontend/components/ds/`.
 
 ## Database migrations
-Sequential numbered SQL files in `db/migrations/` (currently 61, `0000`–`0061`, 4-digit zero-padded so filename order matches numeric order), tracked in a `schema_migrations` table. **Always create new migrations with `python db/migrate.py create <name>`** — never hand-edit an already-applied migration; add a new one. Render runs `python db/migrate.py` as its pre-deploy command.
+Sequential numbered SQL files in `db/migrations/` (currently 64, `0000`–`0065`, 4-digit zero-padded so filename order matches numeric order), tracked in a `schema_migrations` table. **Always create new migrations with `python db/migrate.py create <name>`** — never hand-edit an already-applied migration; add a new one. Render runs `python db/migrate.py` as its pre-deploy command.
 
 ## Git workflow for this task
 - Work on branch `claude/claude-md-docs-hg7dzp`. Create it from latest `master` if needed.

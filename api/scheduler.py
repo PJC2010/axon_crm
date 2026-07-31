@@ -325,6 +325,16 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
             s.rows = n
         log.info("[6.5/8] run=%d Storm: %d matched", run_id, n)
 
+        # Step 6.7 — Promote this run's tenant-independent findings (coordinates,
+        # assessor backfill, permits, storm) into the shared parcel cache, so the
+        # next account to seed this ZIP inherits them without paying for them
+        # again. Restricted to parcels.SHARED_COLS: paid contact/demographic data
+        # and CRM state are structurally excluded.
+        if _check_cancel(): return None
+        from pipeline import parcels as parcel_cache
+        with timer.step("promote") as s:
+            s.rows = parcel_cache.promote(conn, zip_code, account_id)
+
         # Step 6.75 — Neighborhood value benchmark. Account-wide (geohash cells
         # cross ZIP lines) and must precede scoring so the neighborhood signal
         # reads fresh ratios that include this ZIP's just-enriched values.

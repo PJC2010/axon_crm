@@ -226,6 +226,20 @@ def _run_zip_steps(zip_code: str, args, timer) -> None:
     else:
         log.info("[6.5/8] Storm: skipped")
 
+    # Promote this run's tenant-independent findings (coordinates, assessor
+    # backfill, permits, storm) into the shared parcel cache so the next account
+    # to seed this ZIP inherits them for free. Restricted to parcels.SHARED_COLS,
+    # so paid contact/demographic data and CRM state never leave the tenant.
+    if "promote" not in skip:
+        from pipeline import parcels as parcel_cache
+        from pipeline.db import get_conn
+        conn = get_conn()
+        try:
+            with timer.step("promote") as s:
+                s.rows = parcel_cache.promote(conn, zip_code, account_id)
+        finally:
+            conn.close()
+
     if "score" not in skip:
         from pipeline.scorer import score_zip
         with timer.step("score") as s:
@@ -316,7 +330,7 @@ def main():
     parser.add_argument("--permit-csv", default=None,
                         help="CSV file with permit counts (address, zip, permit_count)")
     parser.add_argument("--skip",       default="",
-                        help="Comma-separated steps to skip: seed,census,geocode,hcad,select,property,permits,storm,score,contact,demographics,signals")
+                        help="Comma-separated steps to skip: seed,census,geocode,hcad,select,property,permits,storm,promote,score,contact,demographics,signals")
     parser.add_argument("--limit",      type=int, default=None,
                         help="Cap the number of seeded records (useful for testing)")
     parser.add_argument("--top-n",      type=int, default=None, dest="top_n",
