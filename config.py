@@ -94,6 +94,14 @@ PROPERTY_FIELD_SOURCES = [
     if s in SOURCE_FIELDS
 ]
 
+# How long a paid property lookup is trusted before the row is eligible again.
+# Some fields above can never be filled for some markets — RentCast has no sale
+# price in non-disclosure states like Texas — so "row still has a NULL" alone is
+# not a safe trigger: it matches 100% of rows on every run and re-bills the whole
+# ZIP forever. Each row is instead stamped with the date it was last asked about
+# and skipped until this many days have passed. 0 disables re-checking entirely.
+PROPERTY_RECHECK_DAYS = int(os.getenv("PROPERTY_RECHECK_DAYS", "90"))
+
 # ── Equity estimation ─────────────────────────────────────────────────────────
 # Fallback fraction of value treated as equity when no mortgage/sale data exists.
 EQUITY_FALLBACK_PCT = float(os.getenv("EQUITY_FALLBACK_PCT", "0.6"))
@@ -663,6 +671,26 @@ CENSUS_GEOCODER_URL = os.getenv(
     "CENSUS_GEOCODER_URL",
     "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress",
 )
+
+# ── Bulk (per-ZIP) geocoding ──────────────────────────────────────────────────
+# The pipeline's geocode step used one Google request per property, serially: on
+# ZIP 77449 (41,334 parcels) that measured ~2h52m and ~$200 of Google Geocoding.
+# The Census *batch* endpoint takes 10,000 addresses per POST and is free, so the
+# same ZIP costs 5 requests. Google is kept only as a fallback for the addresses
+# Census cannot match, bounded by GEOCODE_FALLBACK_MAX so the bill stays capped.
+CENSUS_BATCH_GEOCODER_URL = os.getenv(
+    "CENSUS_BATCH_GEOCODER_URL",
+    "https://geocoding.geo.census.gov/geocoder/locations/addressbatch",
+)
+CENSUS_BATCH_BENCHMARK = os.getenv("CENSUS_BATCH_BENCHMARK", "Public_AR_Current")
+# A 10k batch legitimately takes minutes; well above the usual HTTP timeouts.
+CENSUS_BATCH_TIMEOUT   = int(os.getenv("CENSUS_BATCH_TIMEOUT", "600"))
+# Addresses Census misses that may go to paid Google per ZIP. 0 disables the
+# fallback entirely (free-only geocoding); those rows keep NULL coordinates.
+GEOCODE_FALLBACK_MAX     = int(os.getenv("GEOCODE_FALLBACK_MAX", "2000"))
+# The fallback is pure I/O-bound HTTP, so it runs in a small thread pool rather
+# than the old strictly-serial loop.
+GEOCODE_FALLBACK_WORKERS = int(os.getenv("GEOCODE_FALLBACK_WORKERS", "8"))
 
 # ── Geo Phase 2: clustering + heatmap ─────────────────────────────────────────
 # Customer clustering (pure-Python DBSCAN over haversine distance — the

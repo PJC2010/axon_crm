@@ -167,7 +167,11 @@ def _run_zip_steps(zip_code: str, args, timer) -> None:
     else:
         log.info("[4/7] HCAD: skipped")
 
-    # Selection (volume control) — after all FREE steps, before any PAID step.
+    # Selection (volume control) — marks the subset that proceeds to the paid
+    # steps below. It cannot move ahead of geocode: radius narrowing filters on
+    # the coordinates geocode produces (pipeline/select.py::_within_radius), so
+    # geocode is capped at the provider level instead (free Census batch, paid
+    # Google limited to GEOCODE_FALLBACK_MAX misses).
     if capped and "select" not in skip:
         from pipeline.db import get_conn
         from pipeline.select import select_for_enrichment
@@ -221,6 +225,20 @@ def _run_zip_steps(zip_code: str, args, timer) -> None:
         log.info("[6.5/8] Storm: %d matched", n)
     else:
         log.info("[6.5/8] Storm: skipped")
+
+    # Promote this run's tenant-independent findings (coordinates, assessor
+    # backfill, permits, storm) into the shared parcel cache so the next account
+    # to seed this ZIP inherits them for free. Restricted to parcels.SHARED_COLS,
+    # so paid contact/demographic data and CRM state never leave the tenant.
+    if "promote" not in skip:
+        from pipeline import parcels as parcel_cache
+        from pipeline.db import get_conn
+        conn = get_conn()
+        try:
+            with timer.step("promote") as s:
+                s.rows = parcel_cache.promote(conn, zip_code, account_id)
+        finally:
+            conn.close()
 
     if "score" not in skip:
         from pipeline.scorer import score_zip
@@ -312,7 +330,7 @@ def main():
     parser.add_argument("--permit-csv", default=None,
                         help="CSV file with permit counts (address, zip, permit_count)")
     parser.add_argument("--skip",       default="",
-                        help="Comma-separated steps to skip: seed,census,geocode,hcad,select,property,permits,storm,score,contact,demographics,signals")
+                        help="Comma-separated steps to skip: seed,census,geocode,hcad,select,property,permits,storm,promote,score,contact,demographics,signals")
     parser.add_argument("--limit",      type=int, default=None,
                         help="Cap the number of seeded records (useful for testing)")
     parser.add_argument("--top-n",      type=int, default=None, dest="top_n",

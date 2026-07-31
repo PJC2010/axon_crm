@@ -187,23 +187,32 @@ def seed_from_hcad(region_id: str, zip_code: str, account_id: int,
 
 
 def seed_from_hcad_zip(zip_code: str, account_id: int, limit: int | None = None) -> int:
-    """Seed every parcel in a ZIP directly from the local HCAD data — zero paid
-    API calls. The free counterpart to seed_from_rentcast for Harris County.
+    """Seed every parcel in a ZIP from the free HCAD data — zero paid API calls.
+    The free counterpart to seed_from_rentcast for Harris County.
 
-    Unlike seed_from_hcad (which is scoped to one HCAD neighborhood/region), this
-    seeds the whole ZIP, so it slots straight into the ZIP-based pipeline. It also
-    pre-fills the assessor fields RentCast would otherwise be paid to fetch;
-    downstream geocode/scoring run unchanged on the seeded rows.
+    Two routes to the same result:
+
+    * When HCAD lives in Postgres (production — see render.yaml), the assessor
+      mirror and `properties` are in the *same database*, so the seed runs
+      entirely server-side through the shared parcel cache and no row crosses the
+      wire. On ZIP 77449 (41,334 parcels) the old Python round trip measured
+      8m58s.
+
+    * When HCAD is a local DuckDB file (dev), the data has to come across a
+      process boundary regardless, so the original path is kept.
     """
     from pipeline import hcad_store
 
-    parcels = hcad_store.query_parcels_for_zip(zip_code)
-    if not parcels:
+    if not hcad_store.db_exists():
+        return _seed_from_parcels(zip_code, account_id, limit=limit)
+
+    parcels_by_addr = hcad_store.query_parcels_for_zip(zip_code)
+    if not parcels_by_addr:
         log.info("HCAD seed: no parcels for ZIP %s (is the DuckDB built and "
                  "PERMIT_DB_PATH set?)", zip_code)
         return 0
 
-    rows = [_normalize_hcad(p, region_id=None) for p in parcels.values()]
+    rows = [_normalize_hcad(p, region_id=None) for p in parcels_by_addr.values()]
     if limit:
         rows = rows[:limit]
 
@@ -214,6 +223,34 @@ def seed_from_hcad_zip(zip_code: str, account_id: int, limit: int | None = None)
         conn.close()
     log.info("HCAD seed: %d parcels for ZIP %s", n, zip_code)
     return n
+
+
+def _seed_from_parcels(zip_code: str, account_id: int, limit: int | None = None) -> int:
+    """Server-side seed via the shared parcel cache.
+
+    Builds (or refreshes) the ZIP's shared parcels from the HCAD mirror, then
+    materializes this account's rows from them. The cache is what makes a second
+    account's seed of an already-enriched ZIP free: it inherits coordinates and
+    assessor data another account's run already produced, with no API calls.
+    """
+    from pipeline import parcels
+
+    conn = get_conn()
+    try:
+        cached = parcels.ensure_from_hcad(conn, zip_code)
+        if not cached and not parcels.coverage(conn, zip_code)["parcels"]:
+            log.info("HCAD seed: no parcels for ZIP %s (is hcad_properties "
+                     "loaded? see docs/RENDER_DEPLOYMENT.md)", zip_code)
+            return 0
+        n = parcels.seed_account(conn, zip_code, account_id, limit=limit)
+        # Attach any rows this account already had from an earlier, pre-cache run.
+        parcels.link_existing(conn, zip_code, account_id)
+        cov = parcels.coverage(conn, zip_code)
+        log.info("HCAD seed: %d properties for ZIP %s (shared cache: %d parcels, "
+                 "%d already geocoded)", n, zip_code, cov["parcels"], cov["geocoded"])
+        return n
+    finally:
+        conn.close()
 
 
 def seed(zip_code: str, account_id: int, csv_path: str | None = None,
