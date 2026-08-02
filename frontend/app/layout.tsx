@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Roboto_Slab, Geist, Geist_Mono } from "next/font/google";
 import { GoogleAnalytics } from "@next/third-parties/google";
+import MetaPixel from "@/components/MetaPixel";
 import "./globals.css";
 
 // Google Analytics 4 measurement ID (G-XXXXXXX). Optional — analytics is off
@@ -92,6 +93,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${robotoSlab.variable} ${geist.variable} ${geistMono.variable}`}>
       <body>{children}</body>
       {GA_ID && <GoogleAnalytics gaId={GA_ID} />}
+      {/* Self-gating on NEXT_PUBLIC_META_PIXEL_ID — see components/MetaPixel. */}
+      <MetaPixel />
     </html>
   );
 }

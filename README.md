@@ -288,6 +288,11 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 # Page views (including client-side navigation) are tracked automatically;
 # conversion events (sign_up, login, begin_checkout) fire via lib/analytics.ts.
 NEXT_PUBLIC_GA_MEASUREMENT_ID=G-XXXXXXXXXX
+
+# Optional: Meta (Facebook) pixel. Leave unset to skip loading the pixel.
+# Mounted by components/MetaPixel; the same lib/analytics.ts helpers fan the
+# conversion events out to Meta (CompleteRegistration, InitiateCheckout).
+NEXT_PUBLIC_META_PIXEL_ID=1234567890123456
 ```
 
 ### Database Setup
