@@ -296,6 +296,21 @@ STRIPE_PRICE_STARTER = os.getenv("STRIPE_PRICE_STARTER", "")
 STRIPE_PRICE_GROWTH  = os.getenv("STRIPE_PRICE_GROWTH", "")
 STRIPE_PRICE_PRO     = os.getenv("STRIPE_PRICE_PRO", "")
 
+# ── Meta Conversions API (server-side conversion tracking) ────────────────────
+# The server half of Meta ad measurement (api/connectors/meta_capi.py): sends
+# conversions Meta can't see from the browser — notably the trial→paid Subscribe
+# that fires on the Stripe billing webhook, with plan value, so ad optimization
+# learns on *paying* subscribers. The browser Pixel is gated separately on the
+# frontend's NEXT_PUBLIC_META_PIXEL_ID; the two share an event_id for dedup.
+# Empty token/pixel = CAPI disabled (emits are best-effort no-ops). Generate the
+# token in Events Manager → your dataset → Settings → Conversions API. The
+# TEST_EVENT_CODE (Events Manager → Test Events) routes emits to the test stream
+# only — leave it empty in production.
+META_PIXEL_ID         = os.getenv("META_PIXEL_ID", "")
+META_CAPI_TOKEN       = os.getenv("META_CAPI_TOKEN", "")
+META_CAPI_API_VERSION = os.getenv("META_CAPI_API_VERSION", "v20.0")
+META_TEST_EVENT_CODE  = os.getenv("META_TEST_EVENT_CODE", "")
+
 # ── Public ZIP-sample widget (landing-page growth loop) ───────────────────────
 # "Enter your ZIP, see your best leads free": the landing page serves a masked
 # teaser of scored properties from this designated sample account. Empty =

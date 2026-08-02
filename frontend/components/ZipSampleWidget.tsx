@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, FormEvent } from 'react'
 import { ArrowRight, Loader2, MapPin } from 'lucide-react'
 import { getZipSample, type ZipSampleResult } from '@/lib/api'
+import { trackZipDemo } from '@/lib/analytics'
 
 const TRADES = [
   { value: '', label: 'Any trade' },
@@ -60,6 +61,10 @@ export function ZipSampleWidget() {
       if (res.available) {
         setResult(res)
         setState('done')
+        // Value delivered before the ask — the demo-used conversion the ad
+        // strategy optimises toward. Exactly one success per submit (the poll
+        // loop resolves at most once), so fire unconditionally here.
+        trackZipDemo(zipCode, tradeKey || undefined)
         return
       }
       if (res.queued && polls.current < MAX_POLLS) {

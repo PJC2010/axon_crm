@@ -35,17 +35,29 @@ function fbq(): ((...args: unknown[]) => void) | undefined {
 }
 
 /**
+ * A shared id for one logical conversion, so the browser Pixel and the
+ * server-side Conversions API (api/connectors/meta_capi.py) report the same
+ * event once instead of twice — Meta dedups on `eventID` + event name. Pass the
+ * same value to both sides. randomUUID with a cheap fallback for old browsers.
+ */
+export function newEventId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+  return `e-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+/**
  * Fire a Meta *standard* event (one of the names Meta recognises for ad
  * optimisation and reporting). Use trackMetaCustom for anything else — an
  * unrecognised name here would sit unusable in the standard-event reports.
+ * Pass `eventID` when a server-side counterpart fires the same conversion.
  */
-export function trackMeta(name: string, params?: Record<string, unknown>) {
-  fbq()?.('track', name, params ?? {})
+export function trackMeta(name: string, params?: Record<string, unknown>, eventID?: string) {
+  fbq()?.('track', name, params ?? {}, eventID ? { eventID } : undefined)
 }
 
 /** Fire a Meta custom event (no standard-event equivalent exists). */
-export function trackMetaCustom(name: string, params?: Record<string, unknown>) {
-  fbq()?.('trackCustom', name, params ?? {})
+export function trackMetaCustom(name: string, params?: Record<string, unknown>, eventID?: string) {
+  fbq()?.('trackCustom', name, params ?? {}, eventID ? { eventID } : undefined)
 }
 
 /**
@@ -56,10 +68,22 @@ export function trackMetaPageView() {
   trackMeta('PageView')
 }
 
-/** New workspace created (self-serve signup). */
+/** New workspace created (self-serve signup). Axon's trial needs no card, so a
+ *  signup *is* a trial start — fire both the registration and StartTrial
+ *  standard events, the latter being the funnel event the ad strategy
+ *  optimises toward before the paid Subscribe. */
 export function trackSignUp(method: AuthMethod) {
   trackEvent('sign_up', { method })
   trackMeta('CompleteRegistration', { method })
+  trackMeta('StartTrial', { method })
+}
+
+/** Visitor used the public ZIP-demo widget and got scored leads back — the
+ *  "value delivered before the ask" moment the ad strategy optimises on.
+ *  Fires on a successful sample; see components/ZipSampleWidget. */
+export function trackZipDemo(zip: string, trade?: string) {
+  trackEvent('view_search_results', { search_term: zip, trade })
+  trackMeta('ViewContent', { content_name: 'zip_demo', content_category: trade || 'any', zip })
 }
 
 /** Successful login. */
