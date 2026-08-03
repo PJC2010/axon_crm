@@ -82,10 +82,27 @@ export function getMe(): Promise<User> {
 // same shape as login(), so the caller stores access_token the same way.
 // smsConsent is the optional A2P opt-in from the form's checkbox — the server
 // stamps it on the user row with timestamp + source 'signup' (migration 064).
-export function signup(companyName: string, email: string, password: string, smsConsent = false): Promise<{ access_token: string }> {
+// `meta` carries the Meta CAPI dedup id + the pixel's _fbp/_fbc cookies so the
+// server can fire a matching, high-EMQ StartTrial (see lib/analytics.ts). All
+// optional — omit for a plain signup.
+export function signup(
+  companyName: string,
+  email: string,
+  password: string,
+  smsConsent = false,
+  meta?: { event_id?: string; fbp?: string; fbc?: string },
+): Promise<{ access_token: string }> {
   return req('/auth/signup', {
     method: 'POST',
-    body: JSON.stringify({ company_name: companyName, email, password, sms_consent: smsConsent }),
+    body: JSON.stringify({
+      company_name: companyName,
+      email,
+      password,
+      sms_consent: smsConsent,
+      meta_event_id: meta?.event_id,
+      fbp: meta?.fbp,
+      fbc: meta?.fbc,
+    }),
   })
 }
 
