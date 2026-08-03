@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { signup, getSignupStatus, loginWithGoogle, loginWithApple } from '@/lib/api'
 import { setToken } from '@/lib/auth'
-import { trackSignUp, type AuthMethod } from '@/lib/analytics'
+import { trackSignUp, newEventId, readFbCookies, type AuthMethod } from '@/lib/analytics'
 import { Logo, Card, Button, Input } from '@/components/ds'
 
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_OAUTH_CLIENT_ID
@@ -52,8 +52,12 @@ export default function SignupPage() {
   const [enabled, setEnabled] = useState(true)
   const googleBtn = useRef<HTMLDivElement>(null)
 
-  function onTokenSuccess(access_token: string, method: AuthMethod) {
-    trackSignUp(method)
+  // metaEventId is passed for the email path, where we also fire a server-side
+  // StartTrial that dedups against the browser one on this shared id. The OAuth
+  // paths provision through a different route with no server StartTrial yet, so
+  // they fire the browser StartTrial alone (un-ided).
+  function onTokenSuccess(access_token: string, method: AuthMethod, metaEventId?: string) {
+    trackSignUp(method, metaEventId)
     setToken(access_token)
     router.push('/home')
   }
@@ -70,8 +74,17 @@ export default function SignupPage() {
     setError(null)
     setLoading(true)
     try {
-      const { access_token } = await signup(company, email, password, smsConsent)
-      onTokenSuccess(access_token, 'email')
+      // One id shared by the browser StartTrial and the server StartTrial the
+      // signup route fires; forward the pixel cookies so the server event has
+      // real match keys (they can't reach the cross-origin API as cookies).
+      const metaEventId = newEventId()
+      const { fbp, fbc } = readFbCookies()
+      const { access_token } = await signup(company, email, password, smsConsent, {
+        event_id: metaEventId,
+        fbp,
+        fbc,
+      })
+      onTokenSuccess(access_token, 'email', metaEventId)
     } catch (err) {
       setError(reason(err, 'Could not create your account — try again.'))
     } finally {

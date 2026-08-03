@@ -145,6 +145,25 @@ def send_event(event_name: str, user_data: dict, *, event_id: str,
 
 # ── Event-ladder helpers ──────────────────────────────────────────────────────
 
+def track_start_trial(*, email: str | None, external_id: str | None, event_id: str,
+                      fbp: str | None = None, fbc: str | None = None,
+                      client_ip: str | None = None, client_ua: str | None = None,
+                      event_source_url: str | None = None) -> bool:
+    """Self-serve signup = trial start (an Axon trial needs no card, so creating a
+    workspace *is* StartTrial — the funnel event ads optimize toward before the
+    paid Subscribe). Fired from the signup route so the event carries hashed
+    email + external_id and the browser's fbp/fbc/ip/ua: the browser Pixel alone
+    only has fbp/fbc, so this is where StartTrial's EMQ actually comes from. Shares
+    `event_id` with the browser StartTrial (same value the client generates), so
+    Meta dedups the pair into one. external_id is the account id — the same key
+    track_subscribe uses, so Meta links this trial to its later paid conversion."""
+    ud = build_user_data(email=email, external_id=external_id,
+                         fbp=fbp, fbc=fbc, client_ip=client_ip, client_ua=client_ua)
+    return send_event("StartTrial", ud, event_id=event_id,
+                      custom_data={"content_name": "self_serve_signup"},
+                      event_source_url=event_source_url)
+
+
 def track_subscribe(*, email: str | None, value: float | int | None,
                     event_id: str, external_id: str | None = None) -> bool:
     """trial→paid conversion. Fired from the billing webhook so Meta optimizes on

@@ -87,3 +87,37 @@ def test_track_subscribe_builds_expected_payload(monkeypatch):
     assert ev["user_data"]["em"] == [_sha("a@b.com")]
     assert ev["user_data"]["external_id"] == [_sha("42")]
     assert "123/events" in captured["url"]
+
+
+def test_track_start_trial_builds_expected_payload(monkeypatch):
+    monkeypatch.setattr(mc, "META_PIXEL_ID", "123", raising=False)
+    monkeypatch.setattr(mc, "META_CAPI_TOKEN", "tok", raising=False)
+    captured = {}
+
+    class _Resp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return b'{"events_received": 1}'
+
+    def fake_urlopen(req, timeout=None):
+        captured["body"] = __import__("json").loads(req.data.decode())
+        return _Resp()
+
+    monkeypatch.setattr(mc.urllib.request, "urlopen", fake_urlopen)
+
+    ok = mc.track_start_trial(
+        email="a@b.com", external_id="42", event_id="trial_42",
+        fbp="fb.1.2.3", fbc="fb.1.2.click", client_ip="203.0.113.7",
+        client_ua="UA/1.0", event_source_url="https://axonhtx.com/signup",
+    )
+    assert ok is True
+    ev = captured["body"]["data"][0]
+    assert ev["event_name"] == "StartTrial"
+    assert ev["event_id"] == "trial_42"                       # shared with browser Pixel for dedup
+    assert ev["action_source"] == "website"
+    assert ev["event_source_url"] == "https://axonhtx.com/signup"
+    assert ev["user_data"]["em"] == [_sha("a@b.com")]
+    assert ev["user_data"]["external_id"] == [_sha("42")]     # same key as Subscribe → links trial→paid
+    assert ev["user_data"]["fbp"] == "fb.1.2.3"               # forwarded browser cookie, not hashed
+    assert ev["user_data"]["fbc"] == "fb.1.2.click"
+    assert ev["user_data"]["client_ip_address"] == "203.0.113.7"

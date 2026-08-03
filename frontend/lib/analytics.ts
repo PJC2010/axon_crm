@@ -71,11 +71,27 @@ export function trackMetaPageView() {
 /** New workspace created (self-serve signup). Axon's trial needs no card, so a
  *  signup *is* a trial start — fire both the registration and StartTrial
  *  standard events, the latter being the funnel event the ad strategy
- *  optimises toward before the paid Subscribe. */
-export function trackSignUp(method: AuthMethod) {
+ *  optimises toward before the paid Subscribe.
+ *
+ *  `eventID` (from newEventId, passed through the signup request) is set on the
+ *  StartTrial only: the signup route fires the same StartTrial server-side with
+ *  hashed match keys, and a shared eventID lets Meta dedup the pair into one.
+ *  CompleteRegistration has no server twin, so it stays un-ided. */
+export function trackSignUp(method: AuthMethod, eventID?: string) {
   trackEvent('sign_up', { method })
   trackMeta('CompleteRegistration', { method })
-  trackMeta('StartTrial', { method })
+  trackMeta('StartTrial', { method }, eventID)
+}
+
+/** Read the Meta pixel's first-party cookies so the signup request can forward
+ *  them to the (cross-origin) API, where they lift the server StartTrial's EMQ.
+ *  _fbp is set by the base pixel; _fbc only exists after an ad click (fbclid).
+ *  Returns undefined values when absent or off the browser. */
+export function readFbCookies(): { fbp?: string; fbc?: string } {
+  if (typeof document === 'undefined') return {}
+  const read = (name: string) =>
+    document.cookie.split('; ').find((c) => c.startsWith(`${name}=`))?.split('=')[1]
+  return { fbp: read('_fbp'), fbc: read('_fbc') }
 }
 
 /** Visitor used the public ZIP-demo widget and got scored leads back — the
