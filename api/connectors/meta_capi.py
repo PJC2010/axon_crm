@@ -160,7 +160,8 @@ def track_start_trial(*, email: str | None, external_id: str | None, event_id: s
     ud = build_user_data(email=email, external_id=external_id,
                          fbp=fbp, fbc=fbc, client_ip=client_ip, client_ua=client_ua)
     return send_event("StartTrial", ud, event_id=event_id,
-                      custom_data={"content_name": "self_serve_signup"},
+                      custom_data={"content_name": "self_serve_signup",
+                                 "currency": CURRENCY, "value": 0},
                       event_source_url=event_source_url)
 
 

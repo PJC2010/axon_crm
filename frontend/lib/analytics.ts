@@ -80,7 +80,7 @@ export function trackMetaPageView() {
 export function trackSignUp(method: AuthMethod, eventID?: string) {
   trackEvent('sign_up', { method })
   trackMeta('CompleteRegistration', { method })
-  trackMeta('StartTrial', { method }, eventID)
+  trackMeta('StartTrial', { method, value: 0, currency: 'USD' }, eventID)
 }
 
 /** Read the Meta pixel's first-party cookies so the signup request can forward

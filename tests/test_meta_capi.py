@@ -121,3 +121,5 @@ def test_track_start_trial_builds_expected_payload(monkeypatch):
     assert ev["user_data"]["fbp"] == "fb.1.2.3"               # forwarded browser cookie, not hashed
     assert ev["user_data"]["fbc"] == "fb.1.2.click"
     assert ev["user_data"]["client_ip_address"] == "203.0.113.7"
+    assert ev["custom_data"]["currency"] == "USD"            # Meta Diagnostics: StartTrial needs value+currency
+    assert ev["custom_data"]["value"] == 0                  # free trial → explicit zero
