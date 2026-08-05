@@ -1,8 +1,9 @@
 """
 GET /api/map/cells       — geohash-6 aggregates for the service-area choropleth
 GET /api/map/properties  — lightweight property pins within a viewport bbox
+GET /api/map/zips        — ZIPs the account has leads in, with their extents
 
-Both power the interactive property map. They reuse the account scoping,
+All three power the interactive property map. They reuse the account scoping,
 archived-lead exclusion, and filter-building (`_build_filters`) established in
 api/routes/leads.py so the map sees exactly the same leads the rest of the app
 does. Each row carries both color bases (recent intent signals + lead score) so
@@ -14,7 +15,7 @@ from fastapi import APIRouter, Depends, Query
 from psycopg2.extensions import connection as PGConn
 
 from api.deps import get_db, dict_fetchall, get_current_user
-from api.models import MapCell, MapPoint
+from api.models import MapCell, MapPoint, MapZip
 from api.routes.leads import _build_filters
 
 router = APIRouter()
@@ -116,3 +117,50 @@ def map_properties(
         cur.execute(sql, params)
         rows = dict_fetchall(cur)
     return [MapPoint(**r) for r in rows]
+
+
+@router.get("/map/zips", response_model=list[MapZip])
+def map_zips(
+    vertical: str | None = Query(None),
+    status: str | None = Query(None),
+    db: PGConn = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Every ZIP the caller's account holds geocoded leads in, with the bounding
+    box of those leads.
+
+    Backs the map's ZIP jump control. Deriving the extent from the account's own
+    rows (rather than a ZIP-centroid gazetteer or a geocoding call) means the
+    picker only ever offers territory the account actually has data for, and
+    fitting to a real extent frames the ZIP better than a centroid plus a guessed
+    zoom would. Honours the same vertical/status filters as the other map
+    endpoints so the list matches what the map is currently showing.
+    """
+    conditions, filter_params = _build_filters(
+        user["account_id"], vertical=vertical, status=status,
+    )
+    conditions += ["zip IS NOT NULL", "latitude IS NOT NULL", "longitude IS NOT NULL"]
+    where = f"WHERE {' AND '.join(conditions)}"
+
+    # Percentiles, not MIN/MAX. A single mis-geocoded row (a Houston ZIP with a
+    # lat/lng that landed in another state — there are a few hundred in real data)
+    # would blow the extent up to a continental box and make "jump to this ZIP"
+    # useless. The 1st/99th percentile tracks MIN/MAX within metres for a clean
+    # ZIP while ignoring the strays. A single-row ZIP yields a zero-area box,
+    # which the frontend's fitBounds maxZoom handles.
+    sql = f"""
+        SELECT zip,
+               COUNT(*) AS leads,
+               percentile_cont(0.01) WITHIN GROUP (ORDER BY latitude)  AS min_lat,
+               percentile_cont(0.99) WITHIN GROUP (ORDER BY latitude)  AS max_lat,
+               percentile_cont(0.01) WITHIN GROUP (ORDER BY longitude) AS min_lng,
+               percentile_cont(0.99) WITHIN GROUP (ORDER BY longitude) AS max_lng
+        FROM properties
+        {where}
+        GROUP BY zip
+        ORDER BY zip
+    """
+    with db.cursor() as cur:
+        cur.execute(sql, filter_params)
+        rows = dict_fetchall(cur)
+    return [MapZip(**r) for r in rows]

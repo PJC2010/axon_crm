@@ -15,17 +15,18 @@
  * MapLibre is imported lazily inside an effect (never at module scope) so it
  * never touches `window` during SSR.
  */
-import { useEffect, useRef, useState, useCallback, useSyncExternalStore, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, useCallback, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Home, RefreshCw, Signal, Award, Grid3x3, Sparkles, Zap, X, SlidersHorizontal, ChevronDown, ChevronUp } from 'lucide-react'
+import { ArrowLeft, Home, RefreshCw, Signal, Award, Grid3x3, Sparkles, Zap, X, SlidersHorizontal, ChevronDown, ChevronUp, MapPin } from 'lucide-react'
 import ngeohash from 'ngeohash'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Map as MLMap, GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
-import { getMapCells, getMapProperties, getLead, getGeoHeatmap, getGeoClusters, prospectArea, getGeoEvents } from '@/lib/api'
+import { getMapCells, getMapProperties, getMapZips, getLead, getGeoHeatmap, getGeoClusters, prospectArea, getGeoEvents } from '@/lib/api'
+import { serviceAreaBounds, serviceAreaLabel, clampToServiceArea, clampBoundsToServiceArea } from '@/lib/serviceArea'
 import { AuthGuard } from '@/components/AuthGuard'
 import { ContactDrawer } from '@/components/ContactDrawer'
 import { ToastStack, useToast } from '@/components/Toast'
-import type { MapCell, MapPoint, Lead, LeadStatus, HeatmapCell, HeatmapMetric } from '@/lib/types'
+import type { MapCell, MapPoint, MapZip, Lead, LeadStatus, HeatmapCell, HeatmapMetric } from '@/lib/types'
 
 type ColorMode = 'signals' | 'score'
 
@@ -222,6 +223,13 @@ function PropertyMapInner() {
   const [selectedCluster, setSelectedCluster] = useState<{ label: number; count: number } | null>(null)
   const [prospecting, setProspecting] = useState(false)
   const [showEvents, setShowEvents] = useState(false)
+  // ZIP jump control: the account's own ZIPs, loaded lazily the first time the
+  // picker is opened (most sessions never touch it).
+  const [zips, setZips] = useState<MapZip[]>([])
+  const [zipOpen, setZipOpen] = useState(false)
+  const [zipQuery, setZipQuery] = useState('')
+  const [zipsLoading, setZipsLoading] = useState(false)
+  const [activeZip, setActiveZip] = useState<string | null>(null)
   const { toasts, show: showToast, dismiss: dismissToast } = useToast()
   // Mobile layout: controls collapse behind a Filters button, legend collapses.
   const isMobile = useMediaQuery('(max-width: 767px)')
@@ -248,15 +256,19 @@ function PropertyMapInner() {
       cellsRef.current = cells
       ;(map.getSource('cells') as GeoJSONSource | undefined)?.setData(cellsToGeoJSON(cells, mode, pal))
       // Fit to the data once on first load so users land on their territory.
+      // Clamped to the service area: a handful of mis-geocoded rows (a lat/lng
+      // in another state) would otherwise drag the opening view out to a
+      // continental zoom. Falls back to the whole service area if nothing is
+      // inside it.
       if (!fittedRef.current && cells.length) {
-        const lats = cells.map(c => c.lat).filter((x): x is number => x != null)
-        const lngs = cells.map(c => c.lng).filter((x): x is number => x != null)
-        if (lats.length && lngs.length) {
-          map.fitBounds(
-            [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
-            { padding: 60, maxZoom: 12, duration: 0 },
-          )
-        }
+        const located = cells.filter(c => c.lat != null && c.lng != null)
+        const dataBounds = clampToServiceArea(
+          located.map(c => c.lng as number),
+          located.map(c => c.lat as number),
+        )
+        map.fitBounds(dataBounds ?? serviceAreaBounds(), {
+          padding: 60, maxZoom: 12, duration: 0,
+        })
         fittedRef.current = true
       }
     } catch (e) {
@@ -286,6 +298,48 @@ function PropertyMapInner() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vertical, status, signalDays, mode, showToast])
+
+  // The 'moveend' handler is registered once, inside the init effect, so it would
+  // otherwise capture the FIRST render's loadPoints and keep refetching with the
+  // filters/mode that were active at mount — silently undoing a filter as soon as
+  // the user pans, or jumps to a ZIP. Mirror the live callback in a ref (the same
+  // trick heatmapRef uses above) so the handler always calls the current one.
+  const loadPointsRef = useRef(loadPoints)
+  useEffect(() => { loadPointsRef.current = loadPoints }, [loadPoints])
+
+  const loadZips = useCallback(async () => {
+    setZipsLoading(true)
+    try {
+      setZips(await getMapZips({ vertical: vertical || undefined, status: status || undefined }))
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Failed to load ZIP codes', 'error')
+    } finally {
+      setZipsLoading(false)
+    }
+  }, [vertical, status, showToast])
+
+  const toggleZipPicker = useCallback(() => {
+    const opening = !zipOpen
+    setZipOpen(opening)
+    if (opening) {
+      setZipQuery('')
+      loadZips()
+    }
+  }, [zipOpen, loadZips])
+
+  // Fit to the ZIP's actual extent rather than flying to a centroid at a guessed
+  // zoom, so the whole ZIP frames correctly whatever its shape. The resulting
+  // moveend drives the normal pin fetch.
+  const jumpToZip = useCallback((z: MapZip) => {
+    const map = mapRef.current
+    if (!map) return
+    setActiveZip(z.zip)
+    setZipOpen(false)
+    map.fitBounds(
+      clampBoundsToServiceArea([[z.min_lng, z.min_lat], [z.max_lng, z.max_lat]]),
+      { padding: 48, maxZoom: 15, duration: 600 },
+    )
+  }, [])
 
   const openLead = useCallback(async (id: number) => {
     try {
@@ -369,17 +423,27 @@ function PropertyMapInner() {
         style: (ENV_STYLE as string) || (OSM_STYLE as unknown as string),
         center: HOME,
         zoom: 10,
+        // Hard-constrain panning/zooming to the configured service area. Widening
+        // coverage is a one-entry change in lib/serviceArea.ts — see SERVICE_REGIONS.
+        maxBounds: serviceAreaBounds(),
       })
       mapRef.current = map
       map.addControl(new maplibregl.NavigationControl(), 'top-right')
 
-      // Add our data layers as soon as the *style* is parsed — deliberately NOT
-      // on the 'load' event, which also waits for the basemap's first tiles to
-      // download. If the tile provider is slow or unreachable, 'load' can never
-      // fire, which would silently leave the map with no cells/pins. Gating on
-      // the style instead keeps the overlay working regardless of basemap tiles.
+      // Add our data layers as soon as the *style JSON* is parsed — deliberately
+      // NOT on 'load', which also waits for the basemap's first tiles. If the
+      // tile provider is slow or unreachable, 'load' can never fire, which would
+      // silently leave the map with no cells/pins.
+      //
+      // The only precondition for addSource/addLayer is Style._loaded, which
+      // MapLibre sets immediately BEFORE it fires 'styledata'. Do NOT gate on
+      // map.isStyleLoaded(): that is Style.loaded(), which additionally requires
+      // every source's tiles and the sprite to have finished downloading, so it
+      // is always false on the single 'styledata' tick the initial load emits.
+      // Tile completion fires 'sourcedata', not 'styledata', so a handler that
+      // bails on isStyleLoaded() is never retried and the overlay never appears.
       const setupLayers = () => {
-        if (!map || !map.isStyleLoaded() || map.getLayer('cell-fill')) return
+        if (!map || map.getLayer('cell-fill')) return
         // Choropleth (cells)
         map.addSource('cells', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
         map.addLayer({
@@ -404,9 +468,20 @@ function PropertyMapInner() {
             'circle-radius': ['step', ['get', 'point_count'], 14, 25, 20, 100, 28],
           },
         })
+        // `text-font` is pinned deliberately. MapLibre's style-spec default is
+        // ['Open Sans Regular', 'Arial Unicode MS Regular'], and it requests every
+        // stack entry from the `glyphs` endpoint. fonts.openmaptiles.org hosts the
+        // first but answers the second with an HTML error page under HTTP 200 —
+        // MapLibre sees a 200, hands the HTML to the pbf decoder, and it throws
+        // "Unimplemented type: 4" (wire type 4 = deprecated end-group). Requesting
+        // only the stack that actually exists keeps the console clean.
         map.addLayer({
           id: 'cluster-count', type: 'symbol', source: 'points', filter: ['has', 'point_count'],
-          layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-size': 12 },
+          layout: {
+            'text-field': ['get', 'point_count_abbreviated'],
+            'text-size': 12,
+            'text-font': ['Open Sans Regular'],
+          },
           paint: { 'text-color': '#ffffff' },
         })
         // Bigger pins on touch devices so they're tappable with a finger.
@@ -506,18 +581,22 @@ function PropertyMapInner() {
         map.on('zoomend', applyZoom)
         map.on('moveend', () => {
           if (moveTimer.current) clearTimeout(moveTimer.current)
-          moveTimer.current = setTimeout(() => { if (map && map.getZoom() >= PIN_ZOOM) loadPoints() }, 350)
+          moveTimer.current = setTimeout(() => {
+            if (map && map.getZoom() >= PIN_ZOOM) loadPointsRef.current()
+          }, 350)
         })
 
         applyZoom()
         loadCells()
       }
 
-      // Run now if the style is already parsed, otherwise on each styledata tick
-      // until it is. setupLayers is idempotent (guards on cell-fill), so the
-      // repeated listener is harmless and self-terminates after the first run.
+      // Registered synchronously after construction, so the 'styledata' emitted
+      // from Style._load() can never be missed. setupLayers is idempotent
+      // (guards on cell-fill), so later style events — sprite loads, style
+      // swaps — are harmless no-ops. The direct call covers the edge case of a
+      // style that was somehow already fully loaded by this point.
+      map.on('styledata', setupLayers)
       if (map.isStyleLoaded()) setupLayers()
-      else map.on('styledata', setupLayers)
     })()
 
     return () => {
@@ -681,6 +760,20 @@ function PropertyMapInner() {
           ))}
         </div>
 
+        {/* ZIP jump — deliberately outside `filterControls` so it stays visible on
+            mobile instead of collapsing behind the Filters button. Navigating to a
+            ZIP is the primary way to move around the map on a phone. */}
+        <button
+          onClick={toggleZipPicker}
+          title="Jump to a ZIP code"
+          aria-label="Jump to a ZIP code"
+          aria-expanded={zipOpen}
+          aria-haspopup="listbox"
+          style={{ ...overlayBtn(zipOpen || activeZip != null), minHeight: isMobile ? 36 : undefined }}
+        >
+          <MapPin size={13} strokeWidth={1.5} /> {activeZip ?? 'ZIP'}
+        </button>
+
         {!isMobile && filterControls}
 
         <div style={{ flex: 1 }} />
@@ -727,6 +820,18 @@ function PropertyMapInner() {
           }}>
             {zoomedIn ? 'Properties · zoom out for blocks' : 'Regions · zoom in for pins'}
           </span>
+        )}
+        {zipOpen && (
+          <ZipPicker
+            zips={zips}
+            loading={zipsLoading}
+            query={zipQuery}
+            onQuery={setZipQuery}
+            onPick={jumpToZip}
+            onClose={() => setZipOpen(false)}
+            isMobile={isMobile}
+            areaLabel={serviceAreaLabel()}
+          />
         )}
         {showClusters && selectedCluster && (
           <ClusterActionPanel
@@ -804,6 +909,118 @@ function ClusterActionPanel({
       </button>
     </div>
   )
+}
+
+/**
+ * ZIP jump control — a bottom sheet on mobile, a dropdown on desktop.
+ *
+ * The list is the account's *own* ZIPs (GET /api/map/zips), so every entry is
+ * guaranteed to contain leads and picking one fits the map to that ZIP's real
+ * extent. Mobile affordances: full-width sheet with 44px rows, a numeric keypad
+ * via inputMode, a 16px font so iOS Safari doesn't auto-zoom the page on focus,
+ * and a tap-anywhere backdrop to dismiss.
+ */
+function ZipPicker({
+  zips, loading, query, onQuery, onPick, onClose, isMobile, areaLabel,
+}: {
+  zips: MapZip[]
+  loading: boolean
+  query: string
+  onQuery: (v: string) => void
+  onPick: (z: MapZip) => void
+  onClose: () => void
+  isMobile: boolean
+  areaLabel: string
+}) {
+  const term = query.trim()
+  const filtered = term ? zips.filter(z => z.zip.startsWith(term)) : zips
+
+  const panel: CSSProperties = isMobile
+    ? {
+        position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 6,
+        maxHeight: '62%', display: 'flex', flexDirection: 'column',
+        background: 'var(--color-paper)', borderTop: '1px solid var(--color-ink-200)',
+        borderTopLeftRadius: 16, borderTopRightRadius: 16,
+        boxShadow: 'var(--shadow-card)', padding: '10px 12px 14px',
+      }
+    : {
+        position: 'absolute', top: 12, left: 16, zIndex: 6,
+        width: 280, maxHeight: 380, display: 'flex', flexDirection: 'column',
+        background: 'var(--color-paper)', border: '1px solid var(--color-ink-200)',
+        borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)',
+        padding: '10px 12px 12px',
+      }
+
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{
+          position: 'absolute', inset: 0, zIndex: 5,
+          background: isMobile ? 'rgba(0,0,0,0.28)' : 'transparent',
+        }}
+      />
+      <div style={panel} role="dialog" aria-label="Jump to a ZIP code">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-ink-900)' }}>Jump to ZIP</div>
+            <div style={{ fontSize: 11, color: 'var(--color-ink-500)' }}>{areaLabel}</div>
+          </div>
+          <button onClick={onClose} className="dash-icon-btn borderless" title="Close" aria-label="Close">
+            <X size={15} strokeWidth={1.5} />
+          </button>
+        </div>
+
+        <input
+          autoFocus={!isMobile}
+          value={query}
+          onChange={e => onQuery(e.target.value.replace(/[^0-9]/g, '').slice(0, 5))}
+          onKeyDown={e => { if (e.key === 'Enter' && filtered.length) onPick(filtered[0]) }}
+          placeholder="Search ZIP…"
+          inputMode="numeric"
+          enterKeyHint="go"
+          aria-label="Filter ZIP codes"
+          style={{
+            width: '100%', padding: isMobile ? '11px 12px' : '8px 10px',
+            fontSize: 16, borderRadius: 'var(--radius-pill)',
+            border: '1px solid var(--color-ink-200)',
+            background: 'var(--color-paper)', color: 'var(--color-ink-900)',
+          }}
+        />
+
+        <div role="listbox" style={{ overflowY: 'auto', marginTop: 8, flex: 1 }}>
+          {loading && <ZipHint>Loading ZIP codes…</ZipHint>}
+          {!loading && !zips.length && <ZipHint>No mapped ZIP codes yet.</ZipHint>}
+          {!loading && zips.length > 0 && !filtered.length && (
+            <ZipHint>No ZIP starts with “{term}”.</ZipHint>
+          )}
+          {!loading && filtered.map(z => (
+            <button
+              key={z.zip}
+              role="option"
+              aria-selected={false}
+              onClick={() => onPick(z)}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                width: '100%', minHeight: 44, gap: 10, padding: '8px 10px', marginTop: 2,
+                border: 'none', borderRadius: 'var(--radius-card)', background: 'transparent',
+                cursor: 'pointer', textAlign: 'left',
+              }}
+            >
+              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-ink-900)' }}>{z.zip}</span>
+              <span style={{ fontSize: 11, color: 'var(--color-ink-500)' }}>
+                {z.leads.toLocaleString()} lead{z.leads === 1 ? '' : 's'}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  )
+}
+
+function ZipHint({ children }: { children: ReactNode }) {
+  return <div style={{ padding: '10px 4px', fontSize: 12, color: 'var(--color-ink-500)' }}>{children}</div>
 }
 
 function Legend({ mode, collapsible }: { mode: ColorMode; collapsible?: boolean }) {

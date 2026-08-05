@@ -163,6 +163,13 @@ export interface MapFilters {
   signal_days?: number
 }
 
+// A ZIP the account holds leads in, with the extent of those leads. Backs the
+// map's ZIP jump control, which fits straight to this box.
+export interface MapZip extends MapBounds {
+  zip: string
+  leads: number
+}
+
 // ── Geo layer (Phase 2–3) ──────────────────────────────────────────────────────
 
 export type HeatmapMetric = 'density' | 'avg_score'
