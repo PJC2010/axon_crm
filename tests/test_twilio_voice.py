@@ -114,7 +114,9 @@ def _setup(monkeypatch, *, provider="versium", append=VERSIUM_HIT):
         if isinstance(append, Exception):
             raise append
         return append
-    monkeypatch.setattr(pipeline.contact, "versium_phone_append", fake_append)
+    # The route calls the provider-agnostic dispatcher, so that's the seam to
+    # stub — PHONE_APPEND_PROVIDERS captures the real functions at import time.
+    monkeypatch.setattr(pipeline.contact, "phone_append", fake_append)
     return calls
 
 

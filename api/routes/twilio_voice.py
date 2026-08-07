@@ -7,9 +7,10 @@ The tenant is resolved from the To number via tracking_numbers, the caller is
 matched to a record by phone digits *scoped to that account* (unlike the SMS
 route's cross-account match), an unknown caller becomes a new lead, the call
 is logged, and the caller is forwarded to the business's real phone. When
-PHONE_APPEND_PROVIDER=versium, the caller's number is also reverse-appended
-(address/name/email) onto the lead — once per caller, flagged in
-enrichment_flags.phone_append.
+PHONE_APPEND_PROVIDER names a provider, the caller's number is also
+reverse-appended (address/name/email) onto the lead — once per caller, flagged
+in enrichment_flags.phone_append. Callers this webhook couldn't reach in time
+are backfilled later by api/call_append_sweep.py.
 
 POST /api/public/twilio/voice/dial-status — the <Dial> action callback: one
 request after the forwarded leg ends carrying DialCallStatus/DialCallDuration.
@@ -36,6 +37,7 @@ from config import (
 from api import call_logic
 from api.deps import get_db
 from api.lead_events_emit import emit_event
+from api.phone_append_logic import merge_append, merge_flags
 from api.routes.twilio_inbound import _match_account_property_id, _signature_valid, normalize_phone
 
 log = logging.getLogger(__name__)
@@ -76,25 +78,28 @@ def _active_tracking_number(db: PGConn, to_digits: str) -> dict | None:
     return {"id": row[0], "account_id": row[1], "forward_to": row[2]} if row else None
 
 
-# Columns a reverse phone append may fill — never user-editable-only fields.
-_APPEND_FIELDS = ("address", "city", "state", "zip", "contact_email")
-
-
 def _append_caller_address(db: PGConn, account_id: int, property_id: int | None,
                            from_digits: str, lead_created: bool) -> None:
-    """Reverse-append a caller's address via Versium onto their lead.
+    """Reverse-append a caller's address onto their lead via the configured provider.
 
     Runs once per caller: a newly created lead always gets one attempt, a
     matched lead only when it still lacks an address and no earlier attempt was
     flagged (enrichment_flags.phone_append). The flag is written after any
     completed attempt — match or no-match, the provider charged for the query —
-    so repeat calls from the same number never re-spend. Only empty fields are
-    filled; a real contact_name beats call_logic's "Caller ..." placeholder.
+    so repeat calls from the same number never re-spend. Which columns may be
+    filled is api/phone_append_logic.py's call, shared with the backfill sweep.
+
+    Best-effort by construction: this runs post-commit and every failure is
+    swallowed, because a provider outage must never stop the call connecting.
     """
-    if PHONE_APPEND_PROVIDER != "versium" or not PHONE_APPEND_API_KEY \
+    if not PHONE_APPEND_PROVIDER or not PHONE_APPEND_API_KEY \
             or not from_digits or property_id is None:
         return
-    from pipeline.contact import versium_phone_append  # late import: api <-> pipeline
+    # Late import: api <-> pipeline. The registry check rides along with it so
+    # an unknown provider name costs nothing but a dict lookup.
+    from pipeline.contact import PHONE_APPEND_PROVIDERS, phone_append
+    if PHONE_APPEND_PROVIDER not in PHONE_APPEND_PROVIDERS:
+        return
     try:
         with db.cursor() as cur:
             cur.execute(
@@ -108,20 +113,16 @@ def _append_caller_address(db: PGConn, account_id: int, property_id: int | None,
             return
         (cur_addr, cur_city, cur_state, cur_zip, cur_name, cur_email,
          cur_flags) = row
-        flags = dict(cur_flags or {})
-        if not lead_created and (cur_addr or flags.get("phone_append")):
+        if not lead_created and (cur_addr or (cur_flags or {}).get("phone_append")):
             return  # already has an address, or an attempt was already paid for
 
-        data = versium_phone_append(from_digits) or {}
-        current = {"address": cur_addr, "city": cur_city, "state": cur_state,
-                   "zip": cur_zip, "contact_email": cur_email}
-        updates = {f: data[f] for f in _APPEND_FIELDS
-                   if data.get(f) and not current[f]}
-        if data.get("contact_name") and \
-                (not cur_name or cur_name.startswith("Caller ")):
-            updates["contact_name"] = data["contact_name"]
+        data = phone_append(from_digits)
+        updates = merge_append(data, {
+            "address": cur_addr, "city": cur_city, "state": cur_state,
+            "zip": cur_zip, "contact_name": cur_name, "contact_email": cur_email,
+        })
+        flags = merge_flags(data, cur_flags, PHONE_APPEND_PROVIDER)
 
-        flags["phone_append"] = PHONE_APPEND_PROVIDER
         sets = [f"{k} = %s" for k in updates]
         params = list(updates.values())
         with db.cursor() as cur:

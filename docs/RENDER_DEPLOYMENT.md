@@ -76,6 +76,19 @@ can use the internal `DATABASE_URL` and you skip the External URL).
 - Run a pipeline (CLI or `POST /api/pipeline/run`) for a ZIP that exists in the data and
   confirm rows seed and score.
 
+## Twilio (SMS + call tracking)
+
+`render.yaml` sets `PUBLIC_API_BASE_URL` (the API's own origin, used to build the webhook
+URLs stamped onto purchased call-tracking numbers) but deliberately leaves the credentials
+out — set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM_NUMBER` in the
+service's env. Unset, SMS fails soft and `/api/calls/*` returns 503.
+
+The global number's inbound-SMS webhook is the one thing you must configure by hand, in the
+Twilio console: `https://<your-api-host>/api/public/twilio/sms`, HTTP POST, https, no
+trailing slash. Call-tracking numbers configure themselves at purchase time. Full
+walkthrough — including A2P 10DLC registration, which US SMS will not work without — in
+[`TWILIO_SETUP.md`](TWILIO_SETUP.md).
+
 ## Refreshing the data
 
 HCAD updates periodically (values ≈annually; deeds/permits more often). To refresh: rebuild

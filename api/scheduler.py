@@ -711,6 +711,49 @@ def schedule_recurring_invoices():
     log.info("Scheduled daily recurring invoices at %02d:30 UTC", WORKFLOW_TICK_HOUR)
 
 
+PHONE_APPEND_SWEEP_LOCK_KEY = 742026008
+
+
+def run_phone_append_sweep_tick():
+    """Daily: reverse-append missed-call leads the voice webhook left bare."""
+    from config import PHONE_APPEND_SWEEP_MAX
+    if PHONE_APPEND_SWEEP_MAX <= 0:
+        return  # sweep disabled — don't even take a connection
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_try_advisory_lock(%s)", (PHONE_APPEND_SWEEP_LOCK_KEY,))
+            if not cur.fetchone()[0]:
+                log.info("Phone append sweep skipped — another worker holds the lock")
+                return
+        try:
+            from api.call_append_sweep import run_sweep
+            summary = run_sweep(conn)
+            if summary["candidates"]:
+                log.info("Phone append sweep finished: %s", summary)
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_unlock(%s)", (PHONE_APPEND_SWEEP_LOCK_KEY,))
+            conn.commit()
+    except Exception:
+        log.exception("Phone append sweep failed")
+    finally:
+        conn.close()
+
+
+def schedule_phone_append_sweep():
+    """Register the daily missed-call append backfill (idempotent)."""
+    from config import WORKFLOW_TICK_HOUR
+    scheduler.add_job(
+        run_phone_append_sweep_tick,
+        trigger=CronTrigger(hour=WORKFLOW_TICK_HOUR, minute=20, timezone="UTC"),
+        id="phone_append_sweep_daily",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    log.info("Scheduled daily phone append sweep at %02d:20 UTC", WORKFLOW_TICK_HOUR)
+
+
 TRIAL_EXPIRY_LOCK_KEY = 742026005
 
 

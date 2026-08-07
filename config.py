@@ -35,10 +35,17 @@ CONTACT_MIN_GRADE        = os.getenv("CONTACT_MIN_GRADE", "")
 # Separate capability from CONTACT_* above so the batch skip-trace and the
 # inbound-call append can use different providers (e.g. BatchData for skip-trace,
 # Versium for caller address append). Default "" = the webhook append is a no-op.
-# Supported providers: "versium" (pipeline/contact.py versium_phone_append).
+# Supported providers: see pipeline/contact.py PHONE_APPEND_PROVIDERS —
+# "batchdata" (Reverse Skip Trace: batches 100/call, returns line type + DNC)
+# or "versium" (one GET per number).
 PHONE_APPEND_PROVIDER = os.getenv("PHONE_APPEND_PROVIDER", "")
 PHONE_APPEND_API_KEY  = os.getenv("PHONE_APPEND_API_KEY", "")
 PHONE_APPEND_BASE_URL = os.getenv("PHONE_APPEND_BASE_URL", "")
+# Daily backfill of missed-call leads the voice webhook couldn't append inside
+# Twilio's window (api/call_append_sweep.py). MAX is the per-run lookup cap and
+# defaults to 0 = sweep disabled, so the sweep never spends without an opt-in.
+PHONE_APPEND_SWEEP_MAX  = int(os.getenv("PHONE_APPEND_SWEEP_MAX", "0"))
+PHONE_APPEND_SWEEP_DAYS = int(os.getenv("PHONE_APPEND_SWEEP_DAYS", "30"))
 
 # ── Household demographics / life-events enrichment ───────────────────────────
 # Provider-pluggable (e.g. "versium"); default "" = step is a no-op.

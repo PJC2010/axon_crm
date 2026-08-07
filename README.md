@@ -111,7 +111,7 @@ See [Geo Scoring & Prospecting](#geo-scoring--prospecting) below. (A predictive-
 
 ### Pipeline Scheduler
 - Schedule pipeline runs by zip code, vertical, day of week, and hour; active/inactive toggle per schedule
-- Run history with status tracking; background execution via APScheduler (also drives nightly ML retraining, the workflow automation tick, account rescoring, recurring-invoice generation, and geo rescoring)
+- Run history with status tracking; background execution via APScheduler (also drives nightly ML retraining, the workflow automation tick, account rescoring, recurring-invoice generation, geo rescoring, and the missed-call phone-append backfill)
 
 ---
 
@@ -148,7 +148,7 @@ axon-crm/
 │   ├── entitlements.py          # Plans (starter/growth/pro) + require_module() gating
 │   ├── business_types.py        # Business-type/terminology presets (multi-vertical)
 │   ├── accounts.py              # New-account provisioning (default stages, etc.)
-│   ├── scheduler.py             # APScheduler setup: pipeline, retrain, workflow tick, rescore, recurring invoices
+│   ├── scheduler.py             # APScheduler setup: pipeline, retrain, workflow tick, rescore, recurring invoices, phone-append sweep
 │   ├── workflow_engine.py       # Status-change + scheduled workflow automation engine
 │   ├── ratelimit.py             # In-process rate limiting (login/import/pipeline-run)
 │   ├── oauth_verify.py          # Google/Apple OIDC ID token verification
@@ -157,6 +157,8 @@ axon-crm/
 │   ├── invoice_logic.py         # Shared invoice payment-state logic
 │   ├── invoice_pdf.py           # Invoice/quote PDF rendering (fpdf2)
 │   ├── lead_logic.py            # Shared lead status-change logic
+│   ├── phone_append_logic.py    # Which lead columns a reverse phone append may fill (pure/testable)
+│   ├── call_append_sweep.py     # Daily backfill: reverse-append missed-call leads in batches
 │   ├── import_logic.py          # Pure helpers for contact/lead CSV import
 │   ├── order_import_logic.py    # Pure helpers for retail order CSV import
 │   ├── recurring_invoices.py    # Recurring invoice generation
@@ -807,5 +809,6 @@ To rotate credentials, update `JWT_SECRET_KEY` in your environment. All existing
 - [`docs/GENERALIZATION_ROADMAP.md`](docs/GENERALIZATION_ROADMAP.md) — the multi-vertical platform strategy (plans, business types, custom fields, child objects)
 - [`docs/COST_OPTIMIZATION.md`](docs/COST_OPTIMIZATION.md) — HCAD-first enrichment strategy to minimize paid-API spend
 - [`docs/RENDER_DEPLOYMENT.md`](docs/RENDER_DEPLOYMENT.md) — deploying on Render given its ephemeral filesystem
+- [`docs/TWILIO_SETUP.md`](docs/TWILIO_SETUP.md) — Twilio credentials, the inbound-SMS webhook, A2P 10DLC registration, and how call-tracking numbers configure themselves
 - [`docs/hcad_real_property_mapping.md`](docs/hcad_real_property_mapping.md) — column-level mapping of HCAD's raw export files
 - [`docs/CODEBASE_REVIEW.md`](docs/CODEBASE_REVIEW.md) — architecture review and technical-debt/product roadmap
