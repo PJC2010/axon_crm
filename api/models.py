@@ -111,6 +111,21 @@ class MapPoint(BaseModel):
     signals: list[str] = []                # recent signal_type values
 
 
+class MapZip(BaseModel):
+    """A ZIP the account has mapped leads in, plus the extent of those leads.
+
+    Powers the map's ZIP jump control: the frontend fits straight to the returned
+    bounding box, so navigating to a ZIP needs no external geocoder and can only
+    offer ZIPs the account actually holds data for.
+    """
+    zip: str
+    leads: int
+    min_lat: float
+    min_lng: float
+    max_lat: float
+    max_lng: float
+
+
 # ── Expenses ──────────────────────────────────────────────────────────────────
 
 class ExpenseCreate(BaseModel):

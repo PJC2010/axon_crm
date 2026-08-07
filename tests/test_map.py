@@ -11,8 +11,8 @@ without needing Postgres. The SQL's aggregation semantics are exercised manually
 import pytest
 
 from api.routes.leads import _build_filters
-from api.routes.map import map_cells, map_properties
-from api.models import MapPoint
+from api.routes.map import map_cells, map_properties, map_zips
+from api.models import MapPoint, MapZip
 
 
 # ── fake DB ─────────────────────────────────────────────────────────────────────
@@ -177,3 +177,64 @@ class TestMapPointModel:
         p = MapPoint(id=1, latitude=29.7, longitude=-95.4)
         assert p.signals == []
         assert p.status == "new"
+
+
+# ── /map/zips ────────────────────────────────────────────────────────────────────
+
+_ZIP_ROW = {
+    "zip": "77396", "leads": 42,
+    "min_lat": 29.94, "max_lat": 29.99,
+    "min_lng": -95.22, "max_lng": -95.16,
+}
+
+
+class TestMapZips:
+    def test_maps_rows_to_model(self):
+        conn = _FakeConn([_ZIP_ROW])
+        result = map_zips(vertical=None, status=None, db=conn, user={"account_id": 3})
+        assert len(result) == 1
+        z = result[0]
+        assert z.zip == "77396" and z.leads == 42
+        assert z.min_lat == 29.94 and z.max_lng == -95.16
+
+    def test_account_scoped_and_requires_coordinates(self):
+        conn = _FakeConn([_ZIP_ROW])
+        map_zips(vertical=None, status=None, db=conn, user={"account_id": 3})
+        sql, params = conn.cur.executed[0]
+        # No signal subquery here, so account scoping is the very first param.
+        assert params[0] == 3
+        for frag in ("zip IS NOT NULL", "latitude IS NOT NULL",
+                     "longitude IS NOT NULL", "archived_at IS NULL", "GROUP BY zip"):
+            assert frag in sql
+
+    def test_filters_threaded_through(self):
+        conn = _FakeConn([_ZIP_ROW])
+        map_zips(vertical="roofing", status="new", db=conn, user={"account_id": 1})
+        sql, params = conn.cur.executed[0]
+        assert "vertical = %s" in sql and "status = %s" in sql
+        assert "roofing" in params and "new" in params
+
+    def test_extent_is_outlier_resistant(self):
+        """The extent must use percentiles, not MIN/MAX: a handful of rows with a
+        mis-geocoded lat/lng would otherwise stretch a ZIP's box across states and
+        make the jump-to-ZIP fit useless."""
+        conn = _FakeConn([_ZIP_ROW])
+        map_zips(vertical=None, status=None, db=conn, user={"account_id": 1})
+        sql, _ = conn.cur.executed[0]
+        assert sql.count("percentile_cont") == 4
+        assert "MIN(latitude)" not in sql and "MAX(longitude)" not in sql
+
+    def test_empty_result(self):
+        conn = _FakeConn([])
+        assert map_zips(vertical=None, status=None, db=conn, user={"account_id": 1}) == []
+
+
+class TestMapZipModel:
+    def test_extent_required(self):
+        with pytest.raises(Exception):
+            MapZip(zip="77396", leads=1)  # missing the bounding box
+
+    def test_round_trips_extent(self):
+        z = MapZip(zip="77346", leads=7, min_lat=29.9, min_lng=-95.3,
+                   max_lat=30.0, max_lng=-95.1)
+        assert (z.min_lat, z.min_lng, z.max_lat, z.max_lng) == (29.9, -95.3, 30.0, -95.1)

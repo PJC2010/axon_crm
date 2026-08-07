@@ -322,7 +322,7 @@ export function searchCustomers(q: string, limit = 20): Promise<CustomerSearchRe
 
 // ── Property map ────────────────────────────────────────────────────────────────
 
-import type { MapCell, MapPoint, MapBounds, MapFilters } from './types'
+import type { MapCell, MapPoint, MapBounds, MapFilters, MapZip } from './types'
 
 // Geohash-6 aggregates for the choropleth (zoomed-out view). Returns every cell
 // with leads — no min-member threshold — so the map is complete.
@@ -342,6 +342,16 @@ export function getMapProperties(bounds: MapBounds, filters: MapFilters = {}): P
     if (v !== undefined && v !== '') p.set(k, String(v))
   })
   return req<MapPoint[]>(`/map/properties?${p}`)
+}
+
+// ZIPs the account holds leads in, each with the extent of those leads. Backs
+// the map's ZIP jump control — no external geocoder involved.
+export function getMapZips(filters: MapFilters = {}): Promise<MapZip[]> {
+  const p = new URLSearchParams()
+  Object.entries(filters).forEach(([k, v]) => {
+    if (v !== undefined && v !== '') p.set(k, String(v))
+  })
+  return req<MapZip[]>(`/map/zips?${p}`)
 }
 
 // ── Geo layer (Phase 2–3): clusters, heatmap, prospecting, neighbors ────────────
