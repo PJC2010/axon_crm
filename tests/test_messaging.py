@@ -189,6 +189,62 @@ class TestSendLeadMessage:
             messaging_route.send_lead_message(42, SendMessageRequest(template_id=5), user=USER, db=conn)
         assert exc.value.status_code == 503
 
+    def test_sms_sends_from_the_accounts_own_tracking_number(self, monkeypatch):
+        """The account's number wins over the global TWILIO_FROM_NUMBER, so the
+        text comes from the number the contact already sees on caller ID and
+        replies thread back to this tenant."""
+        sent = {}
+        monkeypatch.setattr(messaging_route.notifications, "sms_configured",
+                            lambda from_number=None: True)
+        monkeypatch.setattr(messaging_route.notifications, "send_sms",
+                            lambda **kw: sent.update(kw))
+        conn = _Conn([
+            [self._record()],                    # record
+            [self._template(channel="sms", body="Hi {{first_name}}")],
+            [("Acme", None)],                    # account name
+            [("+18325550100",)],                 # account tracking number
+            [(77,)],                             # history
+        ])
+        result = messaging_route.send_lead_message(
+            42, SendMessageRequest(template_id=5), user=USER, db=conn)
+        assert result == {"sent": True, "channel": "sms", "to": "+15551112222"}
+        assert sent["from_number"] == "+18325550100"
+        # The tracking-number lookup is account-scoped.
+        sql, params = next((s, p) for s, p in conn.executed if "tracking_numbers" in s)
+        assert params == [3]
+
+    def test_sms_falls_back_to_the_global_number(self, monkeypatch):
+        sent = {}
+        monkeypatch.setattr(messaging_route.notifications, "sms_configured",
+                            lambda from_number=None: True)
+        monkeypatch.setattr(messaging_route.notifications, "send_sms",
+                            lambda **kw: sent.update(kw))
+        conn = _Conn([
+            [self._record()],
+            [self._template(channel="sms", body="Hi")],
+            [("Acme", None)],
+            [],                                  # account has no tracking number
+            [(77,)],
+        ])
+        messaging_route.send_lead_message(42, SendMessageRequest(template_id=5),
+                                          user=USER, db=conn)
+        assert sent["from_number"] is None      # resolved to TWILIO_FROM_NUMBER downstream
+
+    def test_sms_diagnostics_hides_other_tenants_numbers(self, monkeypatch):
+        monkeypatch.setattr(messaging_route.notifications, "verify_sms_sender",
+                            lambda from_number=None: {
+                                "sender": "+13466016971", "owned": False, "error": "nope",
+                                "available_senders": [{"phone_number": "+18325550100"},
+                                                      {"phone_number": "+17135550101"}],
+                            })
+        monkeypatch.setattr(messaging_route.notifications, "sms_configured",
+                            lambda from_number=None: True)
+        conn = _Conn([[]])                       # no tracking number for this account
+        report = messaging_route.sms_diagnostics(current_user=USER, db=conn)
+        assert report["owned"] is False
+        assert report["owned_number_count"] == 2
+        assert "available_senders" not in report
+
     def test_lead_not_found_404(self):
         conn = _Conn([[]])
         with pytest.raises(HTTPException) as exc:
@@ -345,16 +401,17 @@ class TestSendTemplateMultiChannel:
     def _configure(self, monkeypatch, email=True, sms=True):
         from api import notifications
         monkeypatch.setattr(notifications, "email_configured", lambda: email)
-        monkeypatch.setattr(notifications, "sms_configured", lambda: sms)
+        monkeypatch.setattr(notifications, "sms_configured", lambda from_number=None: sms)
 
     def test_sms_first_sends_sms_only(self, monkeypatch):
         self._configure(monkeypatch)
         sent = {}
         from api import notifications
-        monkeypatch.setattr(notifications, "send_sms", lambda *, to_phone, body: sent.update(sms=(to_phone, body)))
+        monkeypatch.setattr(notifications, "send_sms", lambda *, to_phone, body, from_number=None: sent.update(sms=(to_phone, body)))
         monkeypatch.setattr(notifications, "send_email", lambda **kw: sent.update(email=kw))
         conn = _Conn([
             [self._sms_template()], [self._email_template()],   # template loads
+            [],                                                  # no tracking number
             [self._record()],                                    # record
             [("Acme", None)],                                         # account name
             [(88,)],                                             # history (sms)
@@ -374,6 +431,7 @@ class TestSendTemplateMultiChannel:
                             lambda *, to_email, subject, html: sent.update(email=(to_email, subject)))
         conn = _Conn([
             [self._sms_template()], [self._email_template()],
+            [],                                                  # no tracking number
             [self._record(contact_phone=None)],
             [("Acme", None)],
             [(88,)],
@@ -391,6 +449,7 @@ class TestSendTemplateMultiChannel:
                             lambda *, to_email, subject, html: sent.update(email=to_email))
         conn = _Conn([
             [self._sms_template()], [self._email_template()],
+            [],                                                  # no tracking number
             [self._record()],
             [("Acme", None)],
             [(88,)],
@@ -403,12 +462,13 @@ class TestSendTemplateMultiChannel:
         self._configure(monkeypatch)
         sent = {}
         from api import notifications
-        monkeypatch.setattr(notifications, "send_sms", lambda *, to_phone, body: sent.update(sms=to_phone))
+        monkeypatch.setattr(notifications, "send_sms", lambda *, to_phone, body, from_number=None: sent.update(sms=to_phone))
         monkeypatch.setattr(notifications, "send_email",
                             lambda *, to_email, subject, html: sent.update(email=to_email))
         cfg = {"templates": {"sms": 5, "email": 7}, "delivery": "both"}
         conn = _Conn([
             [self._sms_template()], [self._email_template()],
+            [],                                                  # no tracking number
             [self._record()],
             [("Acme", None)],
             [(88,)], [(89,)],                                    # two history inserts
@@ -423,6 +483,7 @@ class TestSendTemplateMultiChannel:
         self._configure(monkeypatch)
         conn = _Conn([
             [self._sms_template()], [self._email_template()],
+            [],                                                  # no tracking number
             [self._record(contact_phone=None, contact_email=None)],
         ])
         result = we._send_template(conn, self._CFG, 42, self._rule(), 3)
@@ -442,6 +503,7 @@ class TestSendTemplateMultiChannel:
                             lambda *, to_email, subject, html: sent.update(email=to_email))
         conn = _Conn([
             [self._sms_template()], [self._email_template()],
+            [],                                                  # no tracking number
             [self._record()],
             [("Acme", None)],
             [(88,)],
@@ -461,6 +523,7 @@ class TestSendTemplateMultiChannel:
         monkeypatch.setattr(notifications, "send_email", boom)
         conn = _Conn([
             [self._sms_template()], [self._email_template()],
+            [],                                                  # no tracking number
             [self._record()],
             [("Acme", None)],
         ])
@@ -471,9 +534,10 @@ class TestSendTemplateMultiChannel:
         self._configure(monkeypatch)
         sent = {}
         from api import notifications
-        monkeypatch.setattr(notifications, "send_sms", lambda *, to_phone, body: sent.update(body=body))
+        monkeypatch.setattr(notifications, "send_sms", lambda *, to_phone, body, from_number=None: sent.update(body=body))
         conn = _Conn([
             [self._sms_template()], [self._email_template()],
+            [],                                                  # no tracking number
             [self._record()],
             [("Acme", None)],
             [(88,)],

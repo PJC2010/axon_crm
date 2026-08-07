@@ -149,7 +149,8 @@ def _speed_to_lead_response(db: PGConn, account_id: int, lead_id: int, row: dict
         )
         db.commit()
 
-    if not (row.get("contact_phone") and notifications.sms_configured()):
+    sms_from = notifications.account_sms_from(db, account_id)
+    if not (row.get("contact_phone") and notifications.sms_configured(sms_from)):
         return
     with db.cursor() as cur:
         cur.execute(
@@ -165,7 +166,7 @@ def _speed_to_lead_response(db: PGConn, account_id: int, lead_id: int, row: dict
         acct = cur.fetchone()
     body = messaging.render_template(
         template[0], messaging.build_context(row, acct[0] if acct else None))
-    notifications.send_sms(to_phone=row["contact_phone"], body=body)
+    notifications.send_sms(to_phone=row["contact_phone"], body=body, from_number=sms_from)
     with db.cursor() as cur:
         cur.execute(
             "INSERT INTO contact_history (property_id, action, outcome, channel, direction, body) "

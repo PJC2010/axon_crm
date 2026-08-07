@@ -4,6 +4,7 @@ POST   /api/message-templates        — create (owner)
 PATCH  /api/message-templates/{id}   — update (owner)
 DELETE /api/message-templates/{id}   — delete (owner)
 POST   /api/leads/{id}/message       — render + send a message to the record's contact
+GET    /api/sms/diagnostics          — why SMS sending is/isn't working (owner)
 
 Contact-level messaging (Phase 7). Templates carry {{merge_fields}} resolved
 per record (see api/messaging.py); sends go out via the same Resend/Twilio
@@ -172,9 +173,13 @@ def send_lead_message(lead_id: int, body: SendMessageRequest, user: dict = Depen
             html = rendered_body.replace("\n", "<br>")
             notifications.send_email(to_email=recipient, subject=rendered_subject or "(no subject)", html=html)
         else:
-            if not notifications.sms_configured():
+            # Prefer the account's own tracking number so the text comes from
+            # the number this contact already has on caller ID (and so replies
+            # thread back to this tenant); TWILIO_FROM_NUMBER is the fallback.
+            sms_from = notifications.account_sms_from(db, account_id)
+            if not notifications.sms_configured(sms_from):
                 raise HTTPException(status_code=503, detail="SMS is not configured")
-            notifications.send_sms(to_phone=recipient, body=rendered_body)
+            notifications.send_sms(to_phone=recipient, body=rendered_body, from_number=sms_from)
     except HTTPException:
         raise
     except Exception as exc:
@@ -197,3 +202,22 @@ def send_lead_message(lead_id: int, body: SendMessageRequest, user: dict = Depen
         db.commit()
 
     return {"sent": True, "channel": channel, "to": recipient}
+
+
+@router.get("/sms/diagnostics")
+def sms_diagnostics(current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+    """Why SMS sends are failing, without sending one.
+
+    Twilio's 21659 ("not a Twilio phone number or Short Code country mismatch")
+    only says the send was refused, not which half of the pair is wrong. This
+    asks Twilio directly whether the resolved sender is a number the configured
+    Account SID actually owns and whether it is SMS-capable.
+
+    The Twilio project's other numbers stay out of the response — only the count
+    is reported — since one tenant has no business seeing another's number.
+    """
+    sms_from = notifications.account_sms_from(db, current_user["account_id"])
+    report = notifications.verify_sms_sender(sms_from)
+    owned_count = len(report.pop("available_senders", []))
+    return {**report, "owned_number_count": owned_count,
+            "configured": notifications.sms_configured(sms_from)}
