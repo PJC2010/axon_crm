@@ -769,8 +769,17 @@ def _send_template(conn, cfg: dict, lead_id: int, rule: dict, account_id: int,
     else:
         channels, send_all = [next(iter(by_channel))], False
 
+    # A call-event rule carries the tracking number the caller dialed; otherwise
+    # fall back to the account's own number before the platform-wide default, so
+    # an account with its own number stays sendable if that default is unset.
+    # Only looked up when this rule could actually text — an email-only rule
+    # shouldn't pay for the query.
+    sms_from = None
+    if "sms" in channels and "sms" in by_channel:
+        sms_from = (extra or {}).get("sms_from") or notifications.account_sms_from(conn, account_id)
+
     def _configured(ch: str) -> bool:
-        return notifications.email_configured() if ch == "email" else notifications.sms_configured()
+        return notifications.email_configured() if ch == "email" else notifications.sms_configured(sms_from)
 
     skipped: dict[str, str] = {}
     viable = []
@@ -831,8 +840,7 @@ def _send_template(conn, cfg: dict, lead_id: int, rule: dict, account_id: int,
                 subject = messaging.render_template(template["subject"], ctx) or template["name"]
                 notifications.send_email(to_email=recipient, subject=subject, html=body.replace("\n", "<br>"))
             else:
-                notifications.send_sms(to_phone=recipient, body=body,
-                                     from_number=(extra or {}).get("sms_from"))
+                notifications.send_sms(to_phone=recipient, body=body, from_number=sms_from)
         except Exception as exc:
             log.exception("send_template rule %r failed on %s", rule["name"], channel)
             skipped[channel] = f"send_failed: {exc}"

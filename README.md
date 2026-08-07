@@ -568,6 +568,7 @@ The FastAPI server exposes interactive docs at `http://localhost:8000/docs` (Swa
 | GET/POST/PATCH/DELETE | `/api/segments[/{id}]` | Saved segments (filter sets) |
 | GET/POST/PATCH/DELETE | `/api/message-templates[/{id}]` | Reusable email/SMS templates (write = owner) |
 | POST | `/api/leads/{id}/message` | Render + send a template (or ad-hoc message) to a record's contact |
+| GET | `/api/sms/diagnostics` | Whether the resolved Twilio sender is owned by this project and SMS-capable (owner) |
 
 ### Tasks
 | Method | Path | Description |

@@ -23,7 +23,7 @@ from api.invoice_logic import (
     _calc_totals, _recalc_paid, _update_invoice_payment_state, _load_invoice,
 )
 from api.invoice_pdf import build_invoice_pdf
-from api.notifications import send_invoice_email, send_invoice_sms
+from api.notifications import account_sms_from, send_invoice_email, send_invoice_sms
 from api.models import (
     Invoice, InvoiceCreate, InvoiceUpdate,
     InvoicePayment, PaymentCreate, LineItem, SendInvoiceRequest,
@@ -526,6 +526,7 @@ def send_invoice(
                     to_phone=inv["client_phone"], business_name=business_name,
                     invoice_number=inv["invoice_number"], amount_due=amount_due,
                     pdf_url=pdf_url, pay_url=pay_url,
+                    from_number=account_sms_from(db, current_user["account_id"]),
                 )
                 sent.append("sms")
             except Exception as e:

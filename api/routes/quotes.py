@@ -28,7 +28,7 @@ from psycopg2.extensions import connection as PGConn
 from config import APP_BASE_URL
 from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user, require_owner
 from api.invoice_logic import _calc_totals, _load_invoice
-from api.notifications import send_quote_email, send_quote_sms
+from api.notifications import account_sms_from, send_quote_email, send_quote_sms
 from api.ratelimit import client_ip, public_quote_limiter
 from api.models import (
     Quote, QuoteCreate, QuoteUpdate, ConvertQuoteRequest, PublicDeclineRequest,
@@ -289,6 +289,7 @@ def send_quote(
                 send_quote_sms(
                     to_phone=quote["client_phone"], business_name=business_name,
                     quote_number=quote["quote_number"], total=total, quote_url=quote_url,
+                    from_number=account_sms_from(db, current_user["account_id"]),
                 )
                 sent.append("sms")
             except Exception as e:

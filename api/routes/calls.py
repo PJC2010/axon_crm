@@ -109,6 +109,9 @@ def search_available_numbers(
             area_code=int(area_code) if area_code and area_code.isdigit() else None,
             contains=contains or None,
             voice_enabled=True,
+            # Outbound texts and the inbound-SMS webhook both hang off this
+            # number, so a voice-only one would buy a number that can't message.
+            sms_enabled=True,
             limit=20,
         )
     except Exception as exc:
