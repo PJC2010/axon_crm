@@ -38,13 +38,13 @@ def send_email(*, to_email: str, subject: str, html: str) -> None:
     })
 
 
-def send_sms(*, to_phone: str, body: str) -> None:
-    """Generic SMS primitive."""
+def send_sms(*, to_phone: str, body: str, from_number: str | None = None) -> None:
+    """Generic SMS primitive. from_number overrides TWILIO_FROM_NUMBER when set."""
     if not sms_configured():
         raise RuntimeError("SMS is not configured (TWILIO_* env vars)")
     from twilio.rest import Client
     client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-    client.messages.create(body=body, from_=TWILIO_FROM_NUMBER, to=to_phone)
+    client.messages.create(body=body, from_=from_number or TWILIO_FROM_NUMBER, to=to_phone)
 
 
 def admin_alerts_configured() -> bool:

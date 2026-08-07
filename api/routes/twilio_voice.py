@@ -245,14 +245,14 @@ async def dial_status(
             "UPDATE calls SET status = 'completed', outcome = %s, duration_seconds = %s, "
             "completed_at = NOW() "
             "WHERE call_sid = %s AND status <> 'completed' "
-            "RETURNING account_id, property_id, from_digits",
+            "RETURNING account_id, property_id, from_digits, tracking_number_id",
             (outcome, duration, CallSid),
         )
         row = cur.fetchone()
         if not row:
             db.rollback()  # duplicate callback (or unknown sid) — nothing to do
             return _twiml(call_logic.build_hangup_twiml())
-        account_id, property_id, from_digits = row
+        account_id, property_id, from_digits, tracking_number_id = row
 
         cur.execute(
             "UPDATE contact_history SET action = %s, outcome = %s WHERE external_id = %s",
@@ -271,26 +271,67 @@ async def dial_status(
         except Exception:
             db.rollback()
             log.exception("Missed-call task failed for lead %s", property_id)
+        try:
+            _fire_call_event(db, account_id, property_id, outcome, tracking_number_id)
+        except Exception:
+            db.rollback()
+            log.exception("Missed-call event rules failed for lead %s", property_id)
 
     return _twiml(call_logic.build_hangup_twiml())
 
 
-def _missed_call_task(db: PGConn, account_id: int, property_id: int, from_digits: str | None) -> None:
-    """Speed-to-lead for a missed call: an urgent same-day call-back task for
-    the account's owner (the task half of public_intake._speed_to_lead_response)."""
+def _account_owner_id(db: PGConn, account_id: int) -> int | None:
+    """Lookup the account's owner user ID."""
     with db.cursor() as cur:
         cur.execute(
             "SELECT id FROM users WHERE account_id = %s AND role = 'owner' AND is_active = TRUE "
             "ORDER BY id LIMIT 1",
             (account_id,),
         )
-        owner = cur.fetchone()
-        if not owner:
-            return  # nobody to assign work to — skip quietly
-        caller = call_logic.format_phone_display(from_digits or "") or "unknown number"
+        row = cur.fetchone()
+    return row[0] if row else None
+
+
+def _missed_call_task(db: PGConn, account_id: int, property_id: int, from_digits: str | None) -> None:
+    """Speed-to-lead for a missed call: an urgent same-day call-back task for
+    the account's owner (the task half of public_intake._speed_to_lead_response)."""
+    owner_id = _account_owner_id(db, account_id)
+    if not owner_id:
+        return  # nobody to assign work to — skip quietly
+    caller = call_logic.format_phone_display(from_digits or "") or "unknown number"
+    with db.cursor() as cur:
         cur.execute(
             "INSERT INTO tasks (property_id, title, due_date, priority, created_by, account_id) "
             "VALUES (%s, %s, CURRENT_DATE, 'urgent', %s, %s)",
-            (property_id, f"Missed call from {caller} — call back now", owner[0], account_id),
+            (property_id, f"Missed call from {caller} — call back now", owner_id, account_id),
         )
         db.commit()
+
+
+def _fire_call_event(db: PGConn, account_id: int, property_id: int, outcome: str,
+                     tracking_number_id: int | None) -> None:
+    """Fire call_event workflow rules for a missed or busy call. Runs with
+    extra context about the tracking number for from-number overrides."""
+    if outcome == "answered":
+        return  # only fire for missed/busy
+    owner_id = _account_owner_id(db, account_id)
+    if not owner_id:
+        return  # no user to attribute the action to
+    extra = None
+    if tracking_number_id:
+        with db.cursor() as cur:
+            cur.execute(
+                "SELECT phone_number FROM tracking_numbers WHERE id = %s AND status = 'active'",
+                (tracking_number_id,),
+            )
+            row = cur.fetchone()
+        if row:
+            extra = {"sms_from": row[0]}
+    from api.workflow_engine import execute_object_event_rules
+    try:
+        execute_object_event_rules(
+            db, account_id=account_id, lead_id=property_id,
+            object_type="call", event=outcome, user_id=owner_id, extra=extra,
+        )
+    except Exception:
+        log.exception("execute_object_event_rules failed for call event")

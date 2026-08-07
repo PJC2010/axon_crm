@@ -19,7 +19,7 @@ router = APIRouter()
 
 TRIGGER_TYPES = ("status_change", "signal_event", "lead_imported", "quote_event",
                  "date_offset", "inactivity",
-                 "policy_event", "order_event", "appointment_event")
+                 "policy_event", "order_event", "appointment_event", "call_event")
 ACTION_TYPES = ("create_task", "log_history", "move_lead_status", "send_notification", "send_template")
 
 
@@ -77,6 +77,13 @@ def _validate_rule(trigger_type: str, trigger_config: dict, action_type: str, ac
         raise HTTPException(status_code=400, detail="send_notification supports only the email channel")
 
     if action_type == "send_template":
+        # Validate delay_minutes if present
+        delay_minutes = action_config.get("delay_minutes")
+        if delay_minutes is not None:
+            if not isinstance(delay_minutes, int) or isinstance(delay_minutes, bool) or delay_minutes < 0:
+                raise HTTPException(status_code=400, detail="delay_minutes must be a non-negative integer")
+            if delay_minutes > 60:
+                raise HTTPException(status_code=400, detail="delay_minutes must not exceed 60 minutes")
         templates = action_config.get("templates")
         if templates is not None:
             from api.messaging import DELIVERY_MODES

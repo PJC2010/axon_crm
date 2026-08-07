@@ -20,11 +20,12 @@ const DATE_SOURCES: { value: string; label: string; module?: ModuleKey }[] = [
   { value: 'appointments.starts_at', label: 'Appointment start', module: 'appointments' },
 ]
 
-const TRIGGER_OPTIONS = [
+const TRIGGER_OPTIONS: { value: string; label: string; module?: ModuleKey }[] = [
   { value: 'status_change', label: 'Status changes' },
   { value: 'date_offset', label: 'Date-based' },
   { value: 'inactivity', label: 'No contact in…' },
   { value: 'quote_event', label: 'Quote event' },
+  { value: 'call_event', label: 'Missed call', module: 'calls' },
 ]
 
 const ACTION_OPTIONS = [
@@ -61,7 +62,10 @@ export function WorkflowRuleForm({ onCreated, onCancel }: { onCreated: () => voi
   const [inactivityDays, setInactivityDays] = useState(60)
   // quote_event
   const [quoteEvent, setQuoteEvent] = useState('sent')
+  // call_event
+  const [callEvent, setCallEvent] = useState('missed')
   // action
+  const [delayMinutes, setDelayMinutes] = useState(0)
   const [actionType, setActionType] = useState('create_task')
   const [taskTitle, setTaskTitle] = useState('')
   const [dueDays, setDueDays] = useState(3)
@@ -80,6 +84,7 @@ export function WorkflowRuleForm({ onCreated, onCancel }: { onCreated: () => voi
     getMessageTemplates().then(setTemplates).catch(() => setTemplates([]))
   }, [])
 
+  const triggerOptions = TRIGGER_OPTIONS.filter(t => !t.module || hasModule(t.module))
   const dateOptions = DATE_SOURCES.filter(f => !f.module || hasModule(f.module))
   const smsTemplates = templates.filter(tp => tp.channel === 'sms')
   const emailTemplates = templates.filter(tp => tp.channel === 'email')
@@ -110,18 +115,21 @@ export function WorkflowRuleForm({ onCreated, onCancel }: { onCreated: () => voi
       trigger_config = { days: inactivityDays }
     } else if (triggerType === 'quote_event') {
       trigger_config = { event: quoteEvent }
+    } else if (triggerType === 'call_event') {
+      trigger_config = callEvent ? { event: callEvent } : {}
     }
 
     let action_config: WorkflowActionConfig
     if (actionType === 'create_task') {
       action_config = { title: taskTitle.trim(), due_days_offset: dueDays, priority }
     } else if (actionType === 'send_template') {
-      action_config = delivery === 'single'
+      const base = delivery === 'single'
         ? { template_id: templateId as number }
         : {
             templates: { sms: smsTemplateId as number, email: emailTemplateId as number },
             delivery: delivery as 'sms_first' | 'email_first' | 'both',
           }
+      action_config = delayMinutes > 0 ? { ...base, delay_minutes: delayMinutes } : base
     } else {
       action_config = { channel: 'email', subject: subject.trim(), ...(message.trim() ? { message: message.trim() } : {}) }
     }
@@ -164,7 +172,7 @@ export function WorkflowRuleForm({ onCreated, onCancel }: { onCreated: () => voi
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <span style={LABEL_STYLE}>When</span>
         <select value={triggerType} onChange={e => setTriggerType(e.target.value)} className="drawer-input" style={{ width: 150 }}>
-          {TRIGGER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          {triggerOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
 
         {triggerType === 'status_change' && (
@@ -208,6 +216,14 @@ export function WorkflowRuleForm({ onCreated, onCancel }: { onCreated: () => voi
             <option value="sent">quote sent</option>
             <option value="accepted">accepted</option>
             <option value="declined">declined</option>
+          </select>
+        )}
+
+        {triggerType === 'call_event' && (
+          <select value={callEvent} onChange={e => setCallEvent(e.target.value)} className="drawer-input" style={{ width: 120 }}>
+            <option value="">any</option>
+            <option value="missed">call missed</option>
+            <option value="busy">line busy</option>
           </select>
         )}
       </div>
@@ -263,6 +279,9 @@ export function WorkflowRuleForm({ onCreated, onCancel }: { onCreated: () => voi
                   </select>
                 </>
               )}
+              <span style={HINT_STYLE}>send after</span>
+              <input type="number" value={delayMinutes} onChange={e => setDelayMinutes(Number(e.target.value))} className="drawer-input" style={{ width: 56 }} min={0} max={60} />
+              <span style={HINT_STYLE}>min</span>
             </>
           ) : (
             <span style={HINT_STYLE}>Create a message template in Settings first.</span>
@@ -294,6 +313,8 @@ export function describeTrigger(w: { trigger_type: string; trigger_config: Workf
       return `signal: ${c.signal_type || 'any'}`
     case 'quote_event':
       return `quote ${c.event || 'any'}`
+    case 'call_event':
+      return `call ${c.event || 'missed or busy'}`
     case 'lead_imported':
       return 'on import'
     case 'date_offset': {

@@ -72,7 +72,7 @@ DATE_TRIGGER_SOURCES = {
 }
 
 # Object types whose routes fire lifecycle events ({object_type}_event rules).
-OBJECT_EVENT_TYPES = ("policy", "order", "appointment")
+OBJECT_EVENT_TYPES = ("policy", "order", "appointment", "call")
 
 
 def execute_status_change_rules(conn, lead_id: int, old_status: str | None, new_status: str, user_id: int, account_id: int) -> list[dict]:
@@ -244,13 +244,15 @@ def execute_quote_event_rules(conn, account_id: int, lead_id: int | None, event:
 
 
 def execute_object_event_rules(conn, account_id: int, lead_id: int | None,
-                               object_type: str, event: str, user_id: int) -> list[dict]:
+                               object_type: str, event: str, user_id: int,
+                               extra: dict | None = None) -> list[dict]:
     """Run active {object_type}_event rules for a child-object lifecycle event.
 
     Mirrors execute_quote_event_rules: `event` is 'created' or the object's new
     status (e.g. 'active', 'refunded', 'no_show'); rules whose trigger_config
     names a different event are skipped, and lead-targeting actions are skipped
-    when the object isn't linked to a lead.
+    when the object isn't linked to a lead. `extra` carries trigger context
+    (e.g. {"sms_from": phone} for call events) for actions that render merge fields.
     """
     if object_type not in OBJECT_EVENT_TYPES:
         log.warning("Unknown object_type for event rules: %r", object_type)
@@ -279,7 +281,7 @@ def execute_object_event_rules(conn, account_id: int, lead_id: int | None,
             continue  # all current actions target the linked lead
 
         try:
-            result = _execute_action(conn, rule, lead_id, user_id, account_id)
+            result = _execute_action(conn, rule, lead_id, user_id, account_id, extra=extra)
             if result:
                 results.append(result)
         except Exception as exc:
@@ -543,6 +545,9 @@ def _execute_action(conn, rule: dict, lead_id: int, user_id: int, account_id: in
     if action_type == "send_notification":
         return _send_notification(conn, cfg, lead_id, rule, account_id)
     if action_type == "send_template":
+        delay_minutes = cfg.get("delay_minutes", 0)
+        if delay_minutes and delay_minutes > 0:
+            return _schedule_template_send(conn, rule["id"], lead_id, user_id, account_id, extra)
         return _send_template(conn, cfg, lead_id, rule, account_id, extra=extra)
 
     log.warning("Unknown action_type: %s", action_type)
@@ -645,6 +650,70 @@ def _send_notification(conn, cfg: dict, lead_id: int, rule: dict, account_id: in
         history_id = cur.fetchone()[0]
     conn.commit()
     return {"action": "notification_sent", "rule_name": rule["name"], "to": to_email, "history_id": history_id}
+
+
+def _schedule_template_send(conn, rule_id: int, lead_id: int, user_id: int, account_id: int,
+                            extra: dict | None = None) -> dict | None:
+    """Schedule a delayed send_template action; called by _execute_action when
+    delay_minutes > 0. Returns a "scheduled" action result; the actual send
+    happens asynchronously in run_delayed_template_send."""
+    from api.scheduler import scheduler
+    from apscheduler.triggers.date import DateTrigger
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT action_config FROM workflow_rules WHERE id = %s", (rule_id,))
+        row = cur.fetchone()
+    if not row:
+        return None
+    cfg = row[0]
+    if isinstance(cfg, str):
+        cfg = json.loads(cfg)
+    delay_minutes = cfg.get("delay_minutes", 0)
+
+    run_at = datetime.utcnow() + timedelta(minutes=delay_minutes)
+    try:
+        scheduler.add_job(
+            run_delayed_template_send,
+            trigger=DateTrigger(run_date=run_at),
+            id=f"template_send_{rule_id}_{lead_id}_{run_at.timestamp()}",
+            args=[rule_id, lead_id, user_id, account_id, extra],
+            replace_existing=False,
+            misfire_grace_time=300,
+        )
+    except Exception:
+        log.exception("Failed to schedule template send for rule %d lead %d", rule_id, lead_id)
+        return None
+    return {"action": "template_scheduled", "rule_id": rule_id, "run_at": run_at.isoformat()}
+
+
+def run_delayed_template_send(rule_id: int, lead_id: int, user_id: int, account_id: int,
+                              extra: dict | None = None) -> None:
+    """Scheduled job: fetch the rule, re-validate it's still active, and send the template.
+    Runs in a scheduler thread with its own DB connection."""
+    from config import DATABASE_URL
+
+    conn = None
+    try:
+        conn = __import__('psycopg2').connect(DATABASE_URL)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT name, action_config FROM workflow_rules WHERE id = %s AND account_id = %s AND is_active = TRUE",
+                (rule_id, account_id),
+            )
+            rule_row = cur.fetchone()
+        if not rule_row:
+            log.info("Skipping template send: rule %d not found or inactive", rule_id)
+            return
+        rule_name, action_config = rule_row
+        cfg = action_config if isinstance(action_config, dict) else json.loads(action_config)
+        # Reconstruct just enough rule dict for _send_template
+        rule = {"id": rule_id, "name": rule_name, "action_config": cfg, "created_by": user_id}
+        _send_template(conn, cfg, lead_id, rule, account_id, extra=extra)
+    except Exception:
+        log.exception("Delayed template send failed for rule %d lead %d", rule_id, lead_id)
+    finally:
+        if conn:
+            conn.close()
 
 
 def _send_template(conn, cfg: dict, lead_id: int, rule: dict, account_id: int,
@@ -762,7 +831,8 @@ def _send_template(conn, cfg: dict, lead_id: int, rule: dict, account_id: int,
                 subject = messaging.render_template(template["subject"], ctx) or template["name"]
                 notifications.send_email(to_email=recipient, subject=subject, html=body.replace("\n", "<br>"))
             else:
-                notifications.send_sms(to_phone=recipient, body=body)
+                notifications.send_sms(to_phone=recipient, body=body,
+                                     from_number=(extra or {}).get("sms_from"))
         except Exception as exc:
             log.exception("send_template rule %r failed on %s", rule["name"], channel)
             skipped[channel] = f"send_failed: {exc}"
