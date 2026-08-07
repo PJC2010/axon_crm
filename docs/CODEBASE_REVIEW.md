@@ -1,6 +1,47 @@
 # Axon CRM v1 — Codebase Review & Product Roadmap
 
 *Review date: June 2026 · Scope: full repository (API, pipeline, frontend, schema)*
+*Resolution status appended: 2026-08-07*
+
+> ## ⚠️ Read this first — historical snapshot
+>
+> **This is a point-in-time review from June 2026, kept as a record of what was found
+> and why the work that followed was prioritized. Most of it has since been fixed.**
+> Do not treat the findings below as a current bug list.
+>
+> ### Resolved since this review
+>
+> | Finding | Status | Where |
+> |---|---|---|
+> | D1 — missing `(account_id, status)` index | ✅ Fixed | `0021_perf_indexes.sql` |
+> | S1 — hardcoded fallback JWT secret | ✅ Fixed | `api/security.py` raises unless `ALLOW_INSECURE_DEV_JWT=true` |
+> | S2 — no rate limiting | ✅ Fixed | `api/ratelimit.py` |
+> | S3 — uncapped import upload | ✅ Fixed | `IMPORT_MAX_BYTES` (5 MB), `RECEIPT_MAX_BYTES` (10 MB) |
+> | §2.3 — no API tests (~1,100 lines, pipeline only) | ✅ Largely fixed | **68 test modules** under `tests/` |
+> | §3.1 — event-driven triggers | ✅ Built | `signal_events` (`0022`), `signal_event` workflow trigger |
+> | §3.2 — storm/hail triggers | ✅ Built | `pipeline/storm.py`, `0027_storm_events.sql`, `storm` scoring signal |
+> | §3.3 — neighbor-of-customer targeting | ✅ Built | `api/neighbors.py`, geo Phase 3 |
+> | §3.4 — more verticals (3 profiles) | ✅ Built | **8** verticals in `config.VERTICAL_WEIGHTS` |
+> | §4 — quotes + quote→invoice | ✅ Built | `0023_quotes.sql`, `api/routes/quotes.py` |
+> | §4 — two-way communication log | ✅ Built | `0048_two_way_sms.sql`, `api/routes/twilio_inbound.py` |
+> | §4 — automated payment reminders | ✅ Built | `api/recurring_invoices.py`, workflow `date_offset` rules |
+> | §4 — QuickBooks export | ✅ Built | `api/qbo_export.py` |
+>
+> ### Superseded by a product-direction change
+>
+> §4 states that "online-payment/Stripe work … [is] explicitly **out of scope**." That
+> decision was reversed: **Stripe Connect Express** (customers paying an account's
+> invoices, `0047_stripe_payments.sql`) and **Stripe Billing** (accounts paying for Axon,
+> `0056_subscription_billing.sql`) both shipped.
+>
+> ### Still open
+>
+> D5/D6 (kanban and job-costing pagination), D7/D8 (unpaginated `/api/zips`, row-by-row
+> CSV insert), §2.3 process-local scheduler cancellation state, §2.4 frontend items, and
+> dedicated tenant-isolation endpoint tests.
+>
+> For the *current* architecture see [`TECHNICAL_DEEP_DIVE.md`](TECHNICAL_DEEP_DIVE.md);
+> for platform strategy see [`GENERALIZATION_ROADMAP.md`](GENERALIZATION_ROADMAP.md).
 
 ---
 

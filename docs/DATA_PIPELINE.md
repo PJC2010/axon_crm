@@ -1,6 +1,6 @@
 # Axon CRM — Data Pipelines Reference
 
-Last reviewed: 2026-07-01. Covers every data flow in the system: the lead
+Last reviewed: 2026-08-07. Covers every data flow in the system: the lead
 enrichment pipeline (the main one), the ML scoring pipeline, the HCAD data-store
 build, user-driven imports (contacts CSV, Meta/social exports, receipt OCR), and
 outbound delivery.
@@ -56,12 +56,25 @@ Processes one ZIP (or an HCAD region's ZIPs) per run, for one account.
 - **Mechanism:** one GET per **unique ZIP** (de-duped, not per property).
 - **Data pulled:** `zip_median_income`.
 
-### Step 3 — Geocode (`pipeline/geocode.py`)
-- **Source:** Google Maps Geocoding API (`GOOGLE_GEOCODE_KEY`). Paid, large free tier.
-  Skipped entirely if the key is unset.
-- **Mechanism:** `GET /geocode/json` per row missing lat/lng, 0.05 s throttle;
-  geohash-6 computed locally via `geohash2`.
-- **Data pulled:** `latitude`, `longitude`, `geohash`.
+### Step 3 — Geocode (`pipeline/geocode.py`, `pipeline/geocode_batch.py`)
+- **Source:** **US Census batch geocoder first (free, no key)**, with Google
+  Maps Geocoding (`GOOGLE_GEOCODE_KEY`) as a *bounded* fallback for the
+  addresses Census cannot match.
+- **Why bulk-first:** the old design sent one Google request per property,
+  serially. On ZIP 77449 (41,334 parcels) that measured **~2h52m and ~$200** of
+  Google Geocoding. The Census batch endpoint accepts **10,000 addresses per
+  POST** and is free, so the same ZIP costs 5 requests.
+- **Mechanism:** the ZIP's whole backlog is chunked (`geocode_batch.chunk`) and
+  POSTed to `CENSUS_BATCH_GEOCODER_URL` (`CENSUS_BATCH_TIMEOUT` 600 s — a 10k
+  batch legitimately takes minutes). A failed batch is logged and skipped, not
+  raised. Misses then go to Google, capped at `GEOCODE_FALLBACK_MAX` (2000;
+  **`0` disables paid geocoding entirely**) across `GEOCODE_FALLBACK_WORKERS`
+  (8) threads. Geohash-6 is computed locally via `geohash2`.
+- **Data pulled:** `latitude`, `longitude`, `geohash`, plus `geocode_source`
+  (`census` / `google`) and `geocode_confidence` for provenance.
+- **Note:** because geocode is capped at the *provider* level, it deliberately
+  runs **before** the Top-N/radius selection step — radius narrowing filters on
+  the very coordinates this step produces.
 
 ### Step 4 — HCAD backfill (`pipeline/hcad_enrichment.py` → `pipeline/hcad_store.py`)
 - **Source:** local `harris_county.duckdb` (read-only), falling back to Postgres
@@ -114,6 +127,39 @@ Processes one ZIP (or an HCAD region's ZIPs) per run, for one account.
   property damage. The feed uses NWS product abbreviations (`TSTM WND DMG`,
   not `THUNDERSTORM WIND`); `pipeline/storm.py::_TYPE_MAP` must match exactly.
 - **Data pulled:** last_storm_date, last_storm_type, hail_size_in, storm_count_24mo.
+
+### Step 6.75 — Promote to the shared parcel cache (`pipeline/parcels.py`)
+- **Source:** none (server-side `INSERT … SELECT`). Free.
+- **Mechanism:** `parcels.promote()` copies this run's **tenant-independent**
+  findings — coordinates, assessor backfill, permits, storm history,
+  neighborhood — from the account's `properties` rows into the **shared
+  `parcels` table** (migration `0065`), so the next account to seed this ZIP
+  inherits them without re-running enrichment. Seeding then becomes an
+  `INSERT … SELECT` inside the database rather than a per-org Python round trip:
+  on ZIP 77449 (41,334 parcels) the old path measured **8m58s** in the seed step
+  alone.
+- **Security boundary:** the copy is restricted to `parcels.SHARED_COLS`.
+  Skip-traced contacts and the demographic append are per-account *purchases*
+  (sharing them would hand one tenant another's paid data, and provider terms
+  forbid redistribution), and CRM state — status, assignment, score, notes — is
+  tenant opinion, not fact about the parcel. **Never add a column to
+  `SHARED_COLS` unless it is a free, objective fact about the parcel.**
+- **Related directions:** `ensure_from_hcad` (build the cache from the HCAD
+  mirror), `seed_account` (materialize a tenant's rows), `sync` (adopt findings),
+  `link_existing` (attach pre-existing rows to their parcel).
+- Skippable with `--skip promote`.
+
+### Step 6.9 — Neighborhood values (`pipeline/neighborhood.py`) — scheduler only
+- **Source:** none (pure SQL over the account's own rows). Free.
+- **Mechanism:** `recompute_neighborhood_values()` recomputes each row's
+  value-per-sqft ratio against its geohash-block median (falling back to the ZIP
+  median below `NEIGHBORHOOD_MIN_MEMBERS` = 5), feeding the `neighborhood`
+  scoring signal. Must precede scoring.
+- ⚠️ **This step runs in `api/scheduler.py::_run_pipeline` but NOT in the
+  `run_pipeline.py` CLI.** A CLI run scores against whatever
+  `neighborhood_value_ratio` was last computed. Run
+  `POST /api/pipeline/rescore-all` (which calls the same function) after a CLI
+  run when the neighborhood signal carries real weight for the vertical.
 
 ### Step 7 — Scoring (`pipeline/scorer.py` + `pipeline/scoring.py`)
 - **Source:** none (pure computation over the enriched row). Free.
@@ -202,6 +248,10 @@ Recommended two-phase run for a new ZIP:
 - ZIP-already-seeded short-circuit; per-account rate limit on manual runs.
 - Shared retry/backoff for all outbound HTTP (`pipeline/http.py`,
   `HTTP_RETRIES`/`HTTP_BACKOFF`).
+- Free Census **batch** geocoding replaces per-row Google calls; the paid
+  fallback is hard-capped by `GEOCODE_FALLBACK_MAX` (and `0` turns it off).
+- The shared `parcels` cache (step 6.75) means enrichment for a ZIP is paid for
+  **once across all tenants**, not once per tenant.
 
 See `docs/COST_OPTIMIZATION.md` for the HCAD-first strategy and roadmap.
 
@@ -270,6 +320,40 @@ pipeline leans on:
 
 ---
 
+## 4.5 Inbound call tracking (`calls` module)
+
+A second acquisition path that creates leads from phone calls rather than ZIP
+scans. Gated on the `calls` module; the webhooks themselves are public.
+
+- **Purchase & wiring** — `api/routes/calls.py` buys a Twilio tracking number
+  and sets its voice webhook to `PUBLIC_API_BASE_URL` (falling back to the
+  incoming request URL).
+- **Inbound call** — `POST /api/public/twilio/voice` resolves the tenant from
+  the *To* number via `tracking_numbers`, matches the caller to a record by
+  phone digits **scoped to that account**, creates a lead if the caller is
+  unknown, logs the call, and forwards to the business's real phone.
+  Idempotency anchor: `calls.call_sid` is UNIQUE, so Twilio retries skip all
+  side effects and re-return the same TwiML.
+- **Reverse phone append** — when `PHONE_APPEND_PROVIDER` is set, the caller's
+  number is reverse-appended (address/name/email) inline, once per caller,
+  flagged in `enrichment_flags.phone_append`. This runs inside Twilio's 15 s
+  webhook window with an 8 s timeout and no retries — tuned for keeping calls
+  connecting, not for reliability.
+- **Backfill sweep** — `api/call_append_sweep.py` (daily, `phone_append_sweep_daily`)
+  picks up the callers the webhook couldn't reach. Batched via BatchData's
+  Reverse Skip Trace (100 numbers per request). **Off by default:**
+  `PHONE_APPEND_SWEEP_MAX=0` means "never spend", bounded by
+  `PHONE_APPEND_SWEEP_DAYS` (30).
+- **Dial outcome** — `POST /api/public/twilio/voice/dial-status` records
+  `DialCallStatus`/`DialCallDuration`, rewrites the timeline line, and on a
+  missed call drops an urgent call-back task on the owner (speed-to-lead).
+  A `call_event` workflow trigger fires here too.
+
+Both routes are signature-verified against `X-Twilio-Signature` and must answer
+2xx TwiML for every business-level miss — a non-2xx makes Twilio retry forever.
+
+---
+
 ## 5. Outbound delivery (data leaving the system)
 
 - **Email:** Resend (`RESEND_API_KEY`/`RESEND_FROM_EMAIL`) — invoices, quote
@@ -286,7 +370,8 @@ pipeline leans on:
 | Source | Used by | Key / config | Cost |
 |---|---|---|---|
 | RentCast (`api.rentcast.io/v1`) | Seed (default), property detail | `RENTCAST_API_KEY` | Paid |
-| Google Geocoding | Geocode step, radius centers | `GOOGLE_GEOCODE_KEY` | Paid (free tier) |
+| US Census **batch** geocoder | Geocode step (primary) | `CENSUS_BATCH_GEOCODER_URL` | Free, no key |
+| Google Geocoding | Geocode fallback (capped), radius centers | `GOOGLE_GEOCODE_KEY`, `GEOCODE_FALLBACK_MAX` | Paid (free tier) |
 | US Census ACS 5-yr (2022) | ZIP median income | `CENSUS_API_KEY` (optional) | Free |
 | HCAD (local DuckDB / Postgres mirror) | Seed (free mode), backfill, permits | `PERMIT_DB_PATH` | Free |
 | NOAA/IEM Local Storm Reports | Storm/hail enrichment | `IEM_LSR_URL`, `STORM_WFO` | Free, no key |
@@ -294,5 +379,8 @@ pipeline leans on:
 | Versium | Contact append, demographic append | `CONTACT_*` / `DEMO_*` (provider `versium`) | Paid (highest/record) |
 | BatchData | Contact append, demographic append | `CONTACT_*` / `DEMO_*` (provider `batchdata`) | Paid |
 | Anthropic | Receipt OCR (expenses) | `ANTHROPIC_API_KEY`, `RECEIPT_SCAN_MODEL` | Paid |
+| BatchData / Versium **reverse** append | Inbound caller phone → address/name (call tracking) | `PHONE_APPEND_*` | Paid |
 | Meta (file export, not API) | Social/ads metrics import | — (OAuth is a future seam) | Free |
-| Resend / Twilio | Outbound email / SMS | `RESEND_*` / `TWILIO_*` | Paid |
+| Meta Conversions API | Server-side conversion tracking (trial→paid) | `META_PIXEL_ID`, `META_CAPI_TOKEN` | Free |
+| Stripe | Connect payments + Axon subscription billing | `STRIPE_SECRET_KEY`, `STRIPE_*_WEBHOOK_SECRET` | Paid (fees) |
+| Resend / Twilio | Outbound email / SMS, call tracking numbers | `RESEND_*` / `TWILIO_*` | Paid |

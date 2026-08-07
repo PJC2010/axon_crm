@@ -15,7 +15,11 @@ endpoint, and the map UI (heatmap overlay, cluster hulls + "prospect this area",
 *Phase 4 — event layers: `geo_events` (manual polygon upload), an additive event
 bonus in scoring named in the breakdown, and an event overlay on the map.*
 
-Companion: `juncto-geospatial-layer-plan.md` (the full four-phase plan).
+*All four phases have shipped; this document is the record of what was built.*
+
+> The original four-phase design brief (`juncto-geospatial-layer-plan.md`) is not in this
+> repository. Everything it specified that was actually implemented is captured below,
+> including the deliberate deviations (§"Key adaptation: no PostGIS").
 
 ---
 

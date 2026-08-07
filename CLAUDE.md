@@ -61,7 +61,7 @@ An **account** is an organization/tenant (`db/migrations/0017_org_isolation.sql`
 **When writing any query that touches tenant data, scope it by `account_id`.** The current user (with `account_id`) comes from `Depends(get_current_user)` in `api/deps.py`. Forgetting the scope leaks data across tenants — this is the single most important correctness rule in the codebase.
 
 ### Feature gating via modules & plans
-Optional features are grouped into **modules** (`prospecting`, `map`, `invoicing`, `bookkeeping`, `quotes`, `marketing`, `automation`, `policies`, `orders`, `appointments`). `core` features (leads, Kanban board, tasks, notes, history, export) are always on and are deliberately *not* modules.
+Optional features are grouped into **modules** (`prospecting`, `map`, `invoicing`, `bookkeeping`, `quotes`, `marketing`, `automation`, `policies`, `orders`, `appointments`, `calls`). `core` features (leads, Kanban board, tasks, notes, history, export) are always on and are deliberately *not* modules.
 
 - Source of truth: `api/entitlements.py` (`MODULE_KEYS`, `PLAN_CATALOG`, `get_account_modules`, `require_module`).
 - Whole-module routers are gated in `api/main.py` with `dependencies=[Depends(require_module("x"))]`. Mixed-concern routers (e.g. `pipeline.py`) gate **per-endpoint** instead.
@@ -73,7 +73,11 @@ Optional features are grouped into **modules** (`prospecting`, `map`, `invoicing
 Axon began home-services-specific but is general. Each account has a **business type** (`api/business_types.py`) that bundles terminology overrides (lead↔deal, property↔record), category picklists, whether the property pipeline applies, and default modules. Same code-defined-catalog pattern as entitlements. Terminology resolves in layers: `home_services` is the base, other presets merge on top; frontend ships matching defaults (`frontend/lib/terminology.ts`, `useTerminology.ts`). Keep terminology keys in sync across `api/business_types.py`, `frontend/lib/terminology.ts`, and the frontend fallback.
 
 ### The data pipeline (`pipeline/`, `run_pipeline.py`)
-A 13-step, per-ZIP enrichment + scoring flow that runs **independently of the API** (also schedulable — see `api/scheduler.py`). Steps in order: seed → census → geocode → hcad_enrichment → select(trim) → property(RentCast) → permits → storm → scorer → select(precision-trim) → contact(skip-trace) → demographics → signals. See README "How the Pipeline Works" for the table.
+A per-ZIP enrichment + scoring flow that runs **independently of the API** (also schedulable — see `api/scheduler.py`). Steps in order: seed → census → geocode → hcad_enrichment → select(trim) → property(RentCast) → permits → storm → **parcels.promote** → **neighborhood** → scorer → select(precision-trim) → contact(skip-trace) → demographics → signals. See README "How the Pipeline Works" for the table.
+
+Two things to know before editing the sequence:
+- **Geocode is Census-batch-first**, not Google-per-row. The free Census batch endpoint takes 10k addresses per POST; Google is only a fallback for unmatched addresses, capped by `GEOCODE_FALLBACK_MAX` (`0` = free-only). It runs *before* select because radius narrowing needs the coordinates it produces.
+- **The CLI and the scheduler differ by one step:** `api/scheduler.py::_run_pipeline` runs `neighborhood` between `promote` and `score`; `run_pipeline.py` does not.
 
 Key design rules when touching the pipeline:
 - **Provider-pluggable, degrade-gracefully.** Paid/optional steps (contact, demographics, property sources, geo H3, ML accelerators) no-op cleanly when no API key/dependency is configured. `config.py` env vars default to `""` = "step skipped". Never make a step hard-fail because a key is missing.

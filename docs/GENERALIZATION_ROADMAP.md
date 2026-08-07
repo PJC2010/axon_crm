@@ -1,27 +1,37 @@
 # Axon CRM — Multi-Vertical Generalization Roadmap
 
-*Drafted: July 2026 · Scope: evolving Axon from a home-services lead-gen CRM into a general
-CRM platform for the majority of small business types (insurance agencies, retail,
-appointment-based services, professional services), while keeping the property-data
-enrichment pipeline as a differentiator for the verticals where it applies.*
+*Drafted: July 2026 · Status refreshed: 2026-08-07 · Scope: evolving Axon from a
+home-services lead-gen CRM into a general CRM platform for the majority of small business
+types (insurance agencies, retail, appointment-based services, professional services),
+while keeping the property-data enrichment pipeline as a differentiator for the verticals
+where it applies.*
 
 Companion doc: [`CODEBASE_REVIEW.md`](CODEBASE_REVIEW.md) covers technical debt and the
 enrichment roadmap; this doc covers the platform generalization strategy.
 
+> **Status as of 2026-08-07: Phases 1–7 have shipped; Phase 8 is partial.** This document
+> was drafted when Phases 1–3 were complete and 4–8 were plans. The plan text below is
+> preserved as the design rationale — read §1 for what actually exists today, and treat
+> each phase heading's ✅/◐ marker as authoritative over the prose beneath it.
+
 ---
 
-## 1. Where we are: Phases 1–3 are done
+## 1. Where we are: Phases 1–7 are done
 
-The generalization effort has already landed three layers of scaffolding. Everything in
-this roadmap builds on them rather than inventing new mechanisms.
+The generalization effort has landed every layer of scaffolding it set out to build.
 
-| Phase | What it added | Key files |
-|---|---|---|
-| 1 — Feature modules & plans | Per-account module gating (prospecting, map, invoicing, bookkeeping, quotes, marketing, automation) behind starter/growth/pro plans; `require_module()` dependency; module overrides per account | `api/entitlements.py`, `db/migrations/0039_account_plans.sql`, `frontend/hooks/useEntitlements.ts`, `frontend/components/ModuleGate.tsx`, `frontend/lib/nav.ts` |
-| 2 — Business types & terminology | Account-level `business_type` presets (`home_services`, `general_sales`, `professional_services`) bundling terminology overrides (lead↔deal↔client, property↔account), category picklists, `property_based` flag, default modules | `api/business_types.py`, `db/migrations/0040_account_business_type.sql`, `frontend/lib/terminology.ts`, `frontend/hooks/useTerminology.ts` |
-| 3 — Custom fields | Account-defined field schema (text/number/date/boolean/select) + JSONB value bag on the core record | `api/routes/record_fields.py`, `db/migrations/0041_custom_fields.sql`, `properties.custom_fields` |
+| Phase | Status | What it added | Key files |
+|---|---|---|---|
+| 1 — Feature modules & plans | ✅ | Per-account module gating (11 modules: prospecting, map, invoicing, bookkeeping, quotes, marketing, automation, policies, orders, appointments, calls) behind starter/growth/pro plans; `require_module()` dependency; module overrides per account | `api/entitlements.py`, `db/migrations/0039_account_plans.sql`, `frontend/hooks/useEntitlements.ts`, `frontend/components/ModuleGate.tsx`, `frontend/lib/nav.ts` |
+| 2 — Business types & terminology | ✅ | Account-level `business_type` presets — now **five**: `home_services`, `general_sales`, `professional_services`, `insurance_agency`, `retail` — bundling terminology overrides (lead↔deal↔client, property↔account), category picklists, `property_based` flag, default modules | `api/business_types.py`, `db/migrations/0040_account_business_type.sql`, `frontend/lib/terminology.ts`, `frontend/hooks/useTerminology.ts` |
+| 3 — Custom fields | ✅ | Account-defined field schema (text/number/date/boolean/select) + JSONB value bag on the core record | `api/routes/record_fields.py`, `db/migrations/0041_custom_fields.sql`, `properties.custom_fields` |
+| 4 — Generalized engines | ✅ | `date_offset` + `inactivity` workflow triggers with a daily tick; config-driven **scoring profiles**; saved segments | `api/workflow_engine.py`, `pipeline/profiles.py`, `pipeline/account_rescore.py`, `api/routes/segments.py`, `db/migrations/0042_workflow_generalization.sql` |
+| 5 — Typed child objects | ✅ | `policies`, `orders`, `appointments` tables + CRUD routes, module-gated | `db/migrations/0043_child_objects.sql`, `api/routes/{policies,orders,appointments}.py` |
+| 6 — Vertical preset packs | ✅ | `insurance_agency` and `retail` presets; retail order CSV import | `api/business_types.py`, `api/routes/order_imports.py`, `api/order_import_logic.py`, `db/migrations/0046_order_import.sql` |
+| 7 — Communication hub & recurring revenue | ✅ | Message templates with merge fields, per-record send, two-way SMS, recurring invoices | `api/messaging.py`, `api/routes/messaging.py`, `api/recurring_invoices.py`, `db/migrations/0044_message_templates.sql`, `0045_recurring_invoices.sql`, `0048_two_way_sms.sql` |
+| 8 — Integrations layer | ◐ | QuickBooks export shipped (`api/qbo_export.py`); Stripe Connect + Stripe Billing shipped; **Square/Shopify and Google Calendar sync not built** | `api/integrations/stripe/`, `db/migrations/0047_stripe_payments.sql`, `0056_subscription_billing.sql` |
 
-Also already vertical-agnostic: multi-tenancy (`account_id` on every table, every query
+Also vertical-agnostic: multi-tenancy (`account_id` on every table, every query
 scoped), tasks, invoicing/AR/payments, quotes, expenses, bookkeeping/P&L, workflow rules,
 configurable kanban stages, CSV import/export, email/SMS delivery (Resend/Twilio),
 receipt OCR.
@@ -30,18 +40,22 @@ receipt OCR.
 
 1. **The core record is a property.** The primary table is literally `properties`
    (year_built, square_footage, equity, garage_spaces, HCAD fields…); "lead" is a UI
-   alias. Non-property businesses can hide these columns but the record has no natural
-   second object (a policy, an order, an appointment) to hang revenue and dates on.
-2. **The workflow engine has one trigger type.** `api/workflow_engine.py` fires only on
-   `status_change`. Every vertical's killer automation (insurance renewals, retail
-   win-back, service reminders) is *date*-driven.
-3. **Scoring is hardwired to property signals.** `pipeline/score.py` + `VERTICAL_WEIGHTS`
-   / `FACTOR_META` in `config.py` read property columns; the engine shape (weighted
-   signals → 0–100 grade + explanation) is generic but the signal definitions aren't.
-4. **The prospecting pipeline, Map page, and territory filters assume geocoded Houston
+   alias. Phase 5's typed child objects (policy, order, appointment) now give revenue and
+   dates somewhere natural to live, so this is a naming/ergonomics debt rather than a
+   functional gap. The "rename behind a view" decision in §3 still stands as *not yet
+   worth doing*.
+2. **The prospecting pipeline, Map page, and territory filters assume geocoded Houston
    property data.** Correctly gated behind the `prospecting`/`map` modules and the
-   `property_based` flag already — they become the home-services/real-estate premium
+   `property_based` flag already — they are the home-services/real-estate premium
    modules rather than something to generalize.
+3. **No live POS/calendar sync.** Retail orders and appointments are CSV/manual only
+   (Phase 8, below).
+
+*(Two items from the original draft are resolved: the workflow engine now supports
+`status_change`, `signal_event`, `date_offset`, `inactivity`, and `call_event` triggers;
+and scoring is now profile-driven via `pipeline/profiles.py`, which the original text
+referred to by the never-existing filename `pipeline/score.py` — the real modules are
+`pipeline/scorer.py` and `pipeline/scoring.py`.)*
 
 ---
 
@@ -105,7 +119,7 @@ behind a SQL view only after non-property verticals prove out.
 
 ## 4. Roadmap
 
-### Phase 4 — Generalize the engines (vertical-neutral, highest leverage)
+### Phase 4 — Generalize the engines (vertical-neutral, highest leverage) ✅ SHIPPED
 
 The three platform gaps that block *every* new vertical, fixed once:
 
@@ -129,7 +143,7 @@ The three platform gaps that block *every* new vertical, fixed once:
    workflow/marketing targeting. Reuse the shared WHERE-builder consolidation already
    recommended in `CODEBASE_REVIEW.md` §2.3.
 
-### Phase 5 — Associated objects: policies, orders, appointments
+### Phase 5 — Associated objects: policies, orders, appointments ✅ SHIPPED
 
 - Three typed tables, one pattern: `account_id` FK, `record_id` FK to the core record,
   status, money and date columns per object, `custom_fields` JSONB (reuse the Phase-3
@@ -140,7 +154,7 @@ The three platform gaps that block *every* new vertical, fixed once:
   next appointment; SQL aggregates, indexed by `(account_id, record_id)`.
 - Object timelines merge into the existing `contact_history` activity feed.
 
-### Phase 6 — Vertical preset packs (insurance first, then retail)
+### Phase 6 — Vertical preset packs (insurance first, then retail) ✅ SHIPPED
 
 Extend the Phase-2 preset payload from {terminology, categories, modules} to a full
 provisioning pack: default pipeline stages, enabled objects, default custom fields,
@@ -163,7 +177,7 @@ categories.
 - Later packs: `appointments` (salon/fitness — needs Phase-7 recurring billing),
   enriched `professional_services` (matters = quotes+tasks composition).
 
-### Phase 7 — Communication hub & recurring revenue
+### Phase 7 — Communication hub & recurring revenue ✅ SHIPPED
 
 - Generalize invoice email/SMS (`api/notifications.py`) into contact-level messaging:
   template library with merge fields, per-record send log in `contact_history`, simple
@@ -173,7 +187,7 @@ categories.
   memberships (fitness/salon), retainers (professional services), maintenance contracts
   (home services). Builds directly on the complete invoice→payment→AR loop.
 
-### Phase 8 — Integrations layer
+### Phase 8 — Integrations layer ◐ PARTIAL
 
 - The connector framework exists (`api/connectors/base.py`, Meta connector,
   `connections.py` routes). Priority order: **Square/Shopify** (retail orders sync —
@@ -183,10 +197,15 @@ categories.
 
 ### Platform prerequisites (gate before onboarding new-vertical customers)
 
-From `CODEBASE_REVIEW.md` §2, these become more urgent as account types multiply:
-tenant-isolation API tests (zero endpoint coverage today), JWT-secret hard-fail, rate
-limiting on login/import/pipeline-run, the missing `properties(account_id, status)`
-index, and kanban/job-costing pagination.
+From `CODEBASE_REVIEW.md` §2. **Most of these have since been resolved:** the JWT-secret
+hard-fail (`api/security.py` raises unless `ALLOW_INSECURE_DEV_JWT=true`), rate limiting
+(`api/ratelimit.py`), the import size cap (`IMPORT_MAX_BYTES`), and the
+`properties(account_id, status)` index (`0021_perf_indexes.sql`) all shipped. Test
+coverage grew from ~1,100 lines to **68 test modules**.
+
+Still open: kanban / job-costing pagination, and dedicated **tenant-isolation** endpoint
+tests (assert account B can never read account A's record) — cheap insurance that becomes
+more valuable, not less, as account types multiply.
 
 ---
 

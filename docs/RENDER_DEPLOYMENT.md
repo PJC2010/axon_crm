@@ -63,9 +63,36 @@ can use the internal `DATABASE_URL` and you skip the External URL).
 - `preDeployCommand: python db/migrate.py` — applies migrations on every deploy.
 - `startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT`
 - `healthCheckPath: /api/health`
-- Env: `DATABASE_URL` (from the DB), `JWT_SECRET` (generated), `SEED_SOURCE=hcad`,
+- Env: `DATABASE_URL` (from the DB), `JWT_SECRET_KEY` (generated), `SEED_SOURCE=hcad`,
   `PERMIT_DB_PATH=""` (forces the Postgres path), paid API keys blank.
 - Use **Starter** Postgres or higher — the free database expires after ~30 days.
+
+> ### ⚠️ Known blueprint bug: the JWT env var name is wrong
+>
+> `render.yaml` currently declares the generated secret as **`JWT_SECRET`**, but
+> `api/security.py` reads **`JWT_SECRET_KEY`** and raises at import time when it is
+> unset:
+>
+> ```
+> RuntimeError: JWT_SECRET_KEY is not set. Set it to a long random string, …
+> ```
+>
+> **A fresh Blueprint deploy therefore crashes on startup.** Every other reference in
+> the project (`.env.example`, `README.md`, `TECHNICAL_DEEP_DIVE.md`) uses
+> `JWT_SECRET_KEY` — `render.yaml` is the odd one out.
+>
+> **Fix:** rename the key in `render.yaml` to `JWT_SECRET_KEY`:
+>
+> ```yaml
+>       - key: JWT_SECRET_KEY
+>         generateValue: true
+> ```
+>
+> On an **already-running** service that was rescued by setting `JWT_SECRET_KEY` by hand
+> in the dashboard, the manual value wins and the rename is a no-op — `generateValue`
+> only fills a variable that does not already exist. Confirm the dashboard value is
+> present before redeploying, because a newly generated secret invalidates every issued
+> token and logs all users out.
 
 ## Verify it's working
 

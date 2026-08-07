@@ -134,7 +134,8 @@ list — it is intentionally *not* env-configurable.
 
 ## 2. The Central Data Model
 
-The schema is defined by **61 numbered migrations** in `db/migrations/`, run in
+The schema is defined by **64 numbered migrations** in `db/migrations/`
+(`0000`–`0065`; `0053` and `0062` are unused numbers), run in
 filename order by `db/migrate.py`, which tracks applied files in a
 `schema_migrations` table. **`db/schema.sql` is NOT authoritative** — it predates
 the migration system and only mirrors migration `0000`.
@@ -319,14 +320,14 @@ set. `oauth_identities` records the provider linkage.
 
 Optional features are grouped into **modules** (`MODULE_KEYS`): `prospecting`,
 `map`, `invoicing`, `bookkeeping`, `quotes`, `marketing`, `automation`,
-`policies`, `orders`, `appointments`. **Core features are deliberately not
-modules** — leads, Kanban, tasks, notes, history, export, custom fields,
+`policies`, `orders`, `appointments`, `calls`. **Core features are deliberately
+not modules** — leads, Kanban, tasks, notes, history, export, custom fields,
 segments, and messaging are always on.
 
 Plans bundle modules (`PLAN_CATALOG`):
-- `starter` → core only (empty set)
-- `growth` → `invoicing, bookkeeping, quotes, automation, appointments`
-- `pro` → everything
+- `starter` → `{prospecting}`
+- `growth` → `{prospecting, invoicing, bookkeeping, quotes, automation, appointments}`
+- `pro` → `set(MODULE_KEYS) - {marketing}` — everything except the marketing module
 
 **Resolution is permissive by design** (`get_account_modules`): start from the
 plan's defaults, then apply per-account overrides from `account_plans.modules`
@@ -372,22 +373,31 @@ column config; `nav.ts` hides nav items whose module isn't enabled.
 
 ## 6. The Data Acquisition Pipeline
 
-`run_pipeline.py` (CLI) and `api/scheduler.py::_run_pipeline` (in-app) run the
-**same ordered enrichment sequence** for a ZIP (or a fanned-out HCAD region).
-Each step is a module under `pipeline/`. The canonical order, with the exact
-step numbering used in the scheduler's logs:
+`run_pipeline.py` (CLI) and `api/scheduler.py::_run_pipeline` (in-app) run
+essentially the same ordered enrichment sequence for a ZIP (or a fanned-out HCAD
+region). Each step is a module under `pipeline/`.
+
+> **The two entry points differ in one step.** The scheduler runs
+> `neighborhood.py` (6.9) between `promote` and `score`; the CLI does **not**.
+> A CLI run therefore scores against whatever `neighborhood_value_ratio` was
+> last computed, rather than a freshly recomputed one. Use
+> `POST /api/pipeline/rescore-all` (which calls `recompute_neighborhood_values`)
+> after a CLI run if that signal matters for the vertical being scored.
+
+The canonical order, with the exact step numbering used in the logs:
 
 | # | Module | What it does | Cost |
 |---|---|---|---|
 | 1 | `seed.py` | Seed addresses: RentCast `/properties` scan (default), local HCAD mirror (`--seed-source hcad`), or CSV. Filters to `SEED_PROPERTY_TYPES`. Can auto-expand the search radius when a ZIP returns < `SEED_EXPAND_THRESHOLD` rows (`geo_expand.py`). | paid/free |
 | 2 | `census.py` | Median household income per ZIP from Census ACS (`B19013_001E`). | free |
-| 3 | `geocode.py` | Address → lat/lng via Google Geocoding. | paid |
+| 3 | `geocode.py` | Address → lat/lng. **Bulk-first:** the ZIP's whole backlog goes to the free **US Census batch** endpoint (`geocode_batch.py`, 10k addresses per POST); only the addresses Census misses fall through to Google, capped at `GEOCODE_FALLBACK_MAX` (2000, `0` disables) across `GEOCODE_FALLBACK_WORKERS` threads. `geocode_source`/`geocode_confidence` record which provider matched. | free + capped paid |
 | 4 | `hcad_enrichment.py` | **Free backfill first**: property/owner/mailing fields from HCAD DuckDB (or Postgres mirror), so paid steps only fill genuine gaps. | free |
 | 4.5 | `select.py` | *(capped runs only)* Top-N / radius trim **after free steps, before paid ones** — marks `enrichment_selected`. | — |
 | 5 | `property.py` | RentCast paid enrichment — only fills columns still NULL after HCAD. | paid |
 | 6 | `permits.py` | 24-month permit counts from HCAD. | free |
 | 6.5 | `storm.py` | Match NOAA/IEM hail/wind/tornado history to geocoded points within `STORM_MATCH_RADIUS_MI`. | free |
-| 6.75 | `neighborhood.py` | Recompute value-per-sqft ratios vs. each geohash block (account-wide; must precede scoring). | free |
+| 6.75 | `parcels.py::promote` | Promote this run's **tenant-independent** findings (coordinates, assessor backfill, permits, storm) into the shared `parcels` cache, so the next account to seed this ZIP inherits them for free. Restricted to `parcels.SHARED_COLS` — paid contact/demographic data and CRM state never leave the tenant. | free |
+| 6.9 | `neighborhood.py` | Recompute value-per-sqft ratios vs. each geohash block (account-wide; must precede scoring). **Scheduler runs only — not in the CLI.** | free |
 | 7 | `scorer.py` | Score 0–100 + grade A–D; also backfills `estimated_equity` and `estimated_job_value`; captures ML feature snapshots. | free |
 | 7.5 | `select.py::trim_to_top_n` | *(capped runs)* Precision cut to exact top-N using real scores, before paid skip-trace. | — |
 | 8 | `contact.py` | Skip-trace contact enrichment (BatchData/Versium), optionally grade-gated. | paid |
@@ -754,6 +764,10 @@ running jobs in a thread pool inside the FastAPI process. Registered jobs:
 | `recurring_invoices_daily` | :30 UTC | Generate due recurring invoices |
 | `account_rescore_daily` | :45 UTC | Rescore non-property accounts (renewal proximity, RFM) |
 | `geo_rescore_nightly` | :50 UTC | Drain geocode queue, refresh areas, rescore, recluster |
+| `phone_append_sweep_daily` | daily | Backfill missed-call leads the voice webhook couldn't append inside Twilio's window (`api/call_append_sweep.py`). Disabled unless `PHONE_APPEND_SWEEP_MAX > 0`, so it never spends without an opt-in. |
+| `trial_expiry_daily` | daily | Downgrade expired `pro` trials with no subscription to `starter` |
+| `unverified_digest_daily` | daily | Platform-owner digest of unverified signups |
+| `user_digest_daily` | `USER_DIGEST_HOUR` UTC (13:00 ≈ 7–8am US Central) | Opt-in "who to call today" email digest (`api/digest.py`) |
 
 The **:15 → :30 → :45 → :50 ordering is deliberate**: renewal-proximity scores
 are fresh before date rules read them; property scores are fresh before the geo
@@ -763,10 +777,19 @@ blend reads them.
 
 Because the scheduler runs in *every* Uvicorn worker, a multi-worker deploy would
 otherwise run each daily job N times. Each tick takes a **Postgres advisory lock**
-(`pg_try_advisory_lock` with a fixed key per job — `742026001`–`742026004`); if it
+(`pg_try_advisory_lock` with a fixed key per job — `742026001`–`742026008`); if it
 can't acquire it, another worker is running and it skips. The firings ledger would
 make double-runs *safe* anyway, but the lock avoids the wasted concurrent scan.
 `misfire_grace_time=3600` tolerates a late fire.
+
+> **These locks are session-scoped, which constrains DB hosting.**
+> `pg_try_advisory_lock` binds to a backend *session*, not a transaction. Behind
+> a **transaction-mode pooler** (PgBouncer `pool_mode=transaction`, Neon's
+> `-pooler` endpoint, Supabase port 6543) the acquire and the release can land on
+> different backends — the lock leaks permanently and every job above silently
+> stops running, leaving only an `INFO` log line. `DATABASE_URL` must point at a
+> **session-mode / direct** endpoint. See
+> [`DATABASE_ALTERNATIVES.md`](DATABASE_ALTERNATIVES.md) §1.2.
 
 ### Pipeline execution
 
@@ -1042,7 +1065,7 @@ take the *same* path (e.g. both move a lead's status through
 
 ## 21. Testing
 
-`pytest` (config in `pytest.ini` + `conftest.py`), ~45 test modules under
+`pytest` (config in `pytest.ini` + `conftest.py`), **68 test modules** under
 `tests/`. Coverage centers on the **pure cores** (fast, deterministic, no DB):
 `test_scoring` (signal math + explanation parity), `test_geo_scoring`/
 `test_geo_clustering`/`test_geo_neighbor`/`test_geo_events`/`test_geo_expand`/
