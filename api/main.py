@@ -36,7 +36,7 @@ from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, h
 from api.routes import policies, orders, appointments, objects, order_imports
 from api.routes import connections, insights, ml, oauth, map as map_routes, geo
 from api.routes import stripe_payments, twilio_inbound, public_intake, prospects, signup, billing
-from api.routes import zip_sample, calls, twilio_voice
+from api.routes import zip_sample, calls, twilio_voice, data_quality
 
 log = logging.getLogger(__name__)
 
@@ -133,6 +133,9 @@ app.include_router(export.router,   prefix="/api", tags=["Export"])
 # are gated per-endpoint on the `prospecting` module (see api/routes/pipeline.py).
 app.include_router(tasks.router,    prefix="/api", tags=["Tasks"])
 app.include_router(pipeline.router,  prefix="/api", tags=["Pipeline"])
+# Property-data audit / RentCast backfill. Gated per-endpoint on `prospecting`
+# for the same reason pipeline.py is: it is data-acquisition, not board state.
+app.include_router(data_quality.router, prefix="/api", tags=["Pipeline"])
 # Single-concern feature routers are gated as whole modules here. Mixed-concern
 # routers (pipeline.py) gate per-endpoint instead. connections.py stays ungated:
 # it is generic integration infra (Meta + Stripe OAuth); only the marketing

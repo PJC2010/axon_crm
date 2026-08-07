@@ -1,8 +1,12 @@
 """Tests for pipeline/db.py pure helpers (no database required)."""
 import threading
 
+import pytest
+
 import config
-from pipeline.db import UpsertProbe, _record_upsert, clamp_garage_spaces
+from pipeline.db import (
+    UpsertProbe, _record_upsert, clamp_garage_spaces, fetch_missing_any,
+)
 
 
 def test_clamp_caps_implausible_counts():
@@ -104,3 +108,83 @@ def test_recording_in_a_thread_with_no_probe_is_a_no_op():
         assert not errors
     finally:
         UpsertProbe.uninstall()
+
+
+# ── fetch_missing_any ─────────────────────────────────────────────────────────
+# The SQL is built by string interpolation from a caller-supplied field list, so
+# these assert on the statement itself rather than on query results.
+
+class _RecordingCursor:
+    def __init__(self, sink):
+        self.sink = sink
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def execute(self, sql, params):
+        self.sink["sql"] = " ".join(sql.split())
+        self.sink["params"] = list(params)
+
+    def fetchall(self):
+        return []
+
+
+class _RecordingConn:
+    def __init__(self):
+        self.last = {}
+
+    def cursor(self, **kwargs):
+        return _RecordingCursor(self.last)
+
+
+def _query(**kwargs) -> dict:
+    conn = _RecordingConn()
+    fetch_missing_any(conn, ["year_built", "owner_name"], 7, **kwargs)
+    return conn.last
+
+
+def test_unknown_column_is_rejected_before_it_reaches_sql():
+    with pytest.raises(ValueError):
+        fetch_missing_any(_RecordingConn(), ["year_built; DROP TABLE properties"], 7)
+
+
+def test_query_is_always_scoped_to_the_account():
+    assert "account_id = %s" in _query()["sql"]
+    assert _query()["params"][0] == 7
+
+
+def test_no_limit_means_no_order_by_or_limit_clause():
+    """Existing callers' query plans must not change."""
+    sql = _query()["sql"]
+    assert "ORDER BY" not in sql
+    assert "LIMIT" not in sql
+
+
+def test_limit_orders_emptiest_rows_first():
+    """A capped, paid run should spend its budget where it fills the most holes."""
+    result = _query(limit=25)
+    assert ("ORDER BY ((year_built IS NULL)::int + (owner_name IS NULL)::int) DESC"
+            in result["sql"])
+    assert result["sql"].endswith("LIMIT %s")
+    assert result["params"][-1] == 25
+
+
+def test_limit_ordering_is_deterministic_across_ties():
+    """Without a tiebreak, two rows with equal gaps could swap between pages and
+    a resumed sweep would re-bill one while never reaching the other."""
+    assert "DESC, id LIMIT" in _query(limit=10)["sql"]
+
+
+def test_recheck_window_excludes_rows_asked_about_recently():
+    result = _query(checked_flag="rentcast_checked", recheck_days=90)
+    assert "make_interval(days => %s)" in result["sql"]
+    assert result["params"][-1] == 90
+
+
+def test_zero_recheck_days_asks_each_row_at_most_once():
+    result = _query(checked_flag="rentcast_checked", recheck_days=0)
+    assert "enrichment_flags->>%s IS NULL" in result["sql"]
+    assert "make_interval" not in result["sql"]

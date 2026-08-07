@@ -36,6 +36,23 @@ def compute_fill_rates(rows: list[dict], fields: list[str] | None = None) -> dic
     return out
 
 
+def rates_from_counts(total: int, filled: dict) -> dict:
+    """Pure: same {field: {filled, total, pct}} shape, from pre-aggregated counts.
+
+    compute_fill_rates counts in Python and needs every row in memory, which is
+    fine for one ZIP inside a pipeline run. An account-wide report cannot afford
+    that, so it counts with SQL (``COUNT(col)`` ignores NULLs) and formats here.
+    """
+    return {
+        field: {
+            "filled": n,
+            "total": total,
+            "pct": round(100 * n / total, 1) if total else 0.0,
+        }
+        for field, n in filled.items()
+    }
+
+
 def fill_rates(conn, zip_code: str, account_id: int | None = None,
                fields: list[str] | None = None) -> dict:
     """Compute fill rates for `zip_code` straight from the DB.

@@ -560,6 +560,110 @@ def enqueue_region_run(run_id: int, region_id: str, vertical: str | None, accoun
     )
 
 
+def _run_backfill(run_id: int, account_id: int, zip_code: str | None,
+                  mode: str, limit: int | None, dry_run: bool,
+                  rescore: bool = True):
+    """Execute an account-wide RentCast backfill/verification sweep.
+
+    Tracked in `pipeline_runs` like any other run so the same UI lists it, using
+    the `backfill` sentinel in the `zip` column — the same trick region runs use
+    for `region:<id>` — with the structured detail in result_json.
+
+    Scoring runs afterwards by default: the sweep fills estimated_value,
+    year_built and square_footage, which are scoring inputs, so leaving the old
+    grades in place would show freshly-enriched leads at their pre-enrichment
+    rank. Skipped on a dry run, which changes nothing.
+    """
+    conn = psycopg2.connect(DATABASE_URL)
+
+    def _set_status(status: str, result: dict | None = None):
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE pipeline_runs SET status = %s, finished_at = NOW(), "
+                "result_json = %s WHERE id = %s",
+                (status, psycopg2.extras.Json(dict(result or {})), run_id),
+            )
+        conn.commit()
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE pipeline_runs SET status = 'running', started_at = NOW() "
+                "WHERE id = %s", (run_id,),
+            )
+        conn.commit()
+
+        import sys, os
+        sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+        from pipeline.backfill import audit, sweep
+
+        before = audit(conn, account_id, zip_code=zip_code)
+        counter = sweep(conn, account_id, zip_code=zip_code, limit=limit, mode=mode,
+                        dry_run=dry_run, should_stop=lambda: is_cancelled(run_id))
+
+        scored = 0
+        if rescore and not dry_run and counter["rows_updated"]:
+            scored = _rescore_account(conn, account_id, zip_code)
+
+        after = audit(conn, account_id, zip_code=zip_code)
+        if counter.get("cancelled"):
+            _clear_cancel(run_id)
+        _set_status("cancelled" if counter.get("cancelled") else "done", {
+            "status": "cancelled" if counter.get("cancelled") else "completed",
+            "kind": "backfill",
+            "zip": zip_code,
+            "backfill": counter,
+            "scored": scored,
+            "coverage_before": before["fields"],
+            "coverage_after": after["fields"],
+            "remaining": after["rentcast"],
+            "discrepancies": after["discrepancies"],
+        })
+        log.info("Backfill run %d done: %s", run_id,
+                 {k: v for k, v in counter.items() if k != "by_field"})
+    except Exception as exc:
+        log.exception("Backfill run %d failed", run_id)
+        _set_status("failed", {"error": str(exc)})
+    finally:
+        conn.close()
+
+
+def _rescore_account(conn, account_id: int, zip_code: str | None) -> int:
+    """Re-score the affected ZIPs after a backfill changed scoring inputs.
+
+    The neighborhood benchmark is refreshed first and account-wide: geohash cells
+    cross ZIP boundaries, so scoring one ZIP against a stale benchmark would read
+    ratios that ignore everything the sweep just filled.
+    """
+    from pipeline.neighborhood import recompute_neighborhood_values
+    from pipeline.scorer import score_zip
+    recompute_neighborhood_values(conn, account_id)
+    if zip_code:
+        zips = [zip_code]
+    else:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT DISTINCT zip FROM properties "
+                "WHERE zip IS NOT NULL AND account_id = %s ORDER BY zip",
+                (account_id,),
+            )
+            zips = [row[0] for row in cur.fetchall()]
+    return sum(score_zip(z, account_id, vertical=None) for z in zips)
+
+
+def enqueue_backfill(run_id: int, account_id: int, zip_code: str | None = None,
+                     mode: str = "fill", limit: int | None = None,
+                     dry_run: bool = False, rescore: bool = True):
+    """Fire a one-off property backfill sweep immediately in the thread pool."""
+    scheduler.add_job(
+        _run_backfill,
+        id=f"run_{run_id}",
+        kwargs={"run_id": run_id, "account_id": account_id, "zip_code": zip_code,
+                "mode": mode, "limit": limit, "dry_run": dry_run, "rescore": rescore},
+        replace_existing=True,
+    )
+
+
 def retrain_models():
     """Nightly: refresh outcome labels and retrain the predictive models.
 

@@ -77,12 +77,15 @@ A 13-step, per-ZIP enrichment + scoring flow that runs **independently of the AP
 
 Key design rules when touching the pipeline:
 - **Provider-pluggable, degrade-gracefully.** Paid/optional steps (contact, demographics, property sources, geo H3, ML accelerators) no-op cleanly when no API key/dependency is configured. `config.py` env vars default to `""` = "step skipped". Never make a step hard-fail because a key is missing.
-- **Cost discipline.** Free HCAD backfill runs *before* any paid source; paid upserts write **non-NULL only**, so money is spent only on genuine field gaps.
+- **Cost discipline.** Free HCAD backfill runs *before* any paid source, and rows are queued for a paid source only when they have a genuine gap. A row is stamped (`enrichment_flags.<source>_checked`) with the date it was last asked about, so a field the source structurally cannot fill (sale price in a non-disclosure state like Texas) does not keep the row eligible and re-bill it forever.
+- **Filling vs. verifying are separate jobs.** A pipeline run is per-ZIP and only fills gaps. `pipeline/backfill.py` sweeps a whole account instead — `audit()` is a free SQL-only null report, `sweep()` re-asks RentCast and applies `pipeline/reconcile.py`'s policy. The policy is the load-bearing part: static county facts are **fill-only** (HCAD outranks an AVM), values that genuinely move are **refreshable**, and disagreements are recorded in `property_field_audits` for review rather than applied. Overwriting is opt-in (`mode="refresh"`) because `estimated_value` feeds scoring, so a refresh moves grades.
 - **Scoring is rule-based and testable.** `pipeline/scorer.py` / `pipeline/scoring.py` compute 0–100 scores + A/B/C/D grades from weighted signals. Weights live in `config.py` (`DEFAULT_WEIGHTS`, `VERTICAL_WEIGHTS` — must sum to 1.0 per vertical; optional signals use `weights.get()`). Adding a vertical = adding a key. Grade bands are in `config.py` (`GRADE_BANDS`).
 - **Predictive ML** (`pipeline/ml/`) is a *separate* subsystem from `scorer.py`: a dependency-free pure-Python logistic-regression trainer. scikit-learn/lightgbm/shap are commented-out optional accelerators — do not make them required.
 
 ### Pure logic split out for testability
-A recurring pattern: pure, dependency-free logic lives in its own module so it can be unit-tested without a DB or network — e.g. `api/messaging.py` (merge-field rendering), `api/import_logic.py` / `order_import_logic.py` (CSV parsing), `api/invoice_logic.py`, `api/lead_logic.py`, `pipeline/equity.py`, `pipeline/job_value.py`. When adding a feature with non-trivial computation, follow this split and add a `tests/test_*.py`.
+A recurring pattern: pure, dependency-free logic lives in its own module so it can be unit-tested without a DB or network — e.g. `api/messaging.py` (merge-field rendering), `api/import_logic.py` / `order_import_logic.py` (CSV parsing), `api/invoice_logic.py`, `api/lead_logic.py`, `pipeline/equity.py`, `pipeline/job_value.py`, `pipeline/reconcile.py`. When adding a feature with non-trivial computation, follow this split and add a `tests/test_*.py`.
+
+Where SQL is built by interpolating column names (`pipeline/db.py::fetch_missing_any`, `pipeline/backfill.py`), the allowlist check against `db.ALL_COLS` **is** the injection guard — never skip it, and note that psycopg2 binds `%s` positionally in the order placeholders appear in the statement text, which is not always the order the clauses were written in.
 
 ### Backend layout
 - `api/main.py` — app entry: CORS, lifespan (starts APScheduler jobs), router registration + module gating. Read this first to understand what's wired up.
@@ -100,7 +103,7 @@ A recurring pattern: pure, dependency-free logic lives in its own module so it c
 - Design-system primitives in `frontend/components/ds/`.
 
 ## Database migrations
-Sequential numbered SQL files in `db/migrations/` (currently 64, `0000`–`0065`, 4-digit zero-padded so filename order matches numeric order), tracked in a `schema_migrations` table. **Always create new migrations with `python db/migrate.py create <name>`** — never hand-edit an already-applied migration; add a new one. Render runs `python db/migrate.py` as its pre-deploy command.
+Sequential numbered SQL files in `db/migrations/` (currently 65, `0000`–`0066`, 4-digit zero-padded so filename order matches numeric order), tracked in a `schema_migrations` table. **Always create new migrations with `python db/migrate.py create <name>`** — never hand-edit an already-applied migration; add a new one. Render runs `python db/migrate.py` as its pre-deploy command.
 
 ## Git workflow for this task
 - Work on branch `claude/claude-md-docs-hg7dzp`. Create it from latest `master` if needed.
