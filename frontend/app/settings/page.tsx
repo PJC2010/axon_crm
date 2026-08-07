@@ -476,6 +476,7 @@ function SettingsPage() {
                     <td style={{ padding: '8px', color: 'var(--color-ink-500)', fontSize: 12 }}>
                       {w.action_config.title || w.action_type}
                       {w.action_config.due_days_offset != null && ` (${w.action_config.due_days_offset}d)`}
+                      {w.action_config.delay_minutes != null && ` (${w.action_config.delay_minutes}m delay)`}
                     </td>
                     <td style={{ padding: '8px', color: 'var(--color-ink-500)' }}>{w.vertical || 'All'}</td>
                     <td style={{ padding: '8px' }}>

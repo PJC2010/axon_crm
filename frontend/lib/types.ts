@@ -1099,10 +1099,12 @@ export interface WorkflowActionConfig {
   message?: string
   // send_template — either a single template_id, or per-channel templates with
   // a delivery mode ("sms_first" / "email_first" fall back when the preferred
-  // channel has no address; "both" sends on every deliverable channel)
+  // channel has no address; "both" sends on every deliverable channel); optional
+  // delay_minutes queues the send for later instead of delivering immediately
   template_id?: number
   templates?: { sms?: number; email?: number }
   delivery?: 'sms_first' | 'email_first' | 'both'
+  delay_minutes?: number
 }
 
 export interface WorkflowRule {

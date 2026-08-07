@@ -355,9 +355,21 @@ class TestValidateRule:
         ("inactivity", {"days": "sixty"}, "create_task", {}),
         ("inactivity", {}, "create_task", {}),
         ("status_change", {}, "send_notification", {"channel": "sms"}),
+        ("send_template", {}, "send_template", {"delay_minutes": -5}),
+        ("send_template", {}, "send_template", {"delay_minutes": 120}),
     ])
     def test_invalid_configs_rejected(self, trigger_type, trigger_config, action_type, action_config):
         from fastapi import HTTPException
         with pytest.raises(HTTPException) as exc:
             self._validate(trigger_type, trigger_config, action_type, action_config)
         assert exc.value.status_code == 400
+
+    def test_valid_send_template_with_delay(self):
+        self._validate("quote_event", {"event": "sent"}, "send_template",
+                      {"template_id": 1, "delay_minutes": 5})
+
+    def test_valid_call_event(self):
+        self._validate("call_event", {"event": "missed"}, "send_template", {"template_id": 1})
+
+    def test_call_event_any_outcome(self):
+        self._validate("call_event", {}, "send_template", {"template_id": 1})

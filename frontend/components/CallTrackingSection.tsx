@@ -166,6 +166,9 @@ export function CallTrackingSection() {
                 No forwarding phone set — calls to your tracking number can&apos;t connect until you add one.
               </p>
             )}
+            <p style={{ fontSize: 12, color: 'var(--color-ink-400)', margin: '12px 0 0' }}>
+              Tip: Set up auto-reply text messages for missed calls in <a href="/settings?tab=automation" style={{ color: 'var(--color-link)' }}>Settings → Automation</a> to create a missed-call workflow.
+            </p>
           </div>
         ) : (
           <div>
