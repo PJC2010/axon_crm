@@ -108,4 +108,4 @@ Sequential numbered SQL files in `db/migrations/` (currently 64, `0000`–`0065`
 - Do **not** open a PR unless explicitly asked.
 
 ## Further reading
-`docs/` has deeper dives: `TECHNICAL_DEEP_DIVE.md`, `DATA_PIPELINE.md`, `geo_scoring.md`, `COST_OPTIMIZATION.md`, `GENERALIZATION_ROADMAP.md`, `RENDER_DEPLOYMENT.md`, `CODEBASE_REVIEW.md`, `hcad_real_property_mapping.md`.
+`docs/` has deeper dives: `TECHNICAL_DEEP_DIVE.md`, `DATA_PIPELINE.md`, `geo_scoring.md`, `COST_OPTIMIZATION.md`, `GENERALIZATION_ROADMAP.md`, `RENDER_DEPLOYMENT.md`, `TWILIO_SETUP.md`, `CODEBASE_REVIEW.md`, `hcad_real_property_mapping.md`.

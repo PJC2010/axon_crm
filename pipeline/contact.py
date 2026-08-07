@@ -15,8 +15,12 @@ Adding a provider = add a normalizer to PROVIDERS that maps the provider's
 response to {"contact_name", "contact_phone", "contact_email"}.
 
 The reverse lookup (caller phone → name/address/email) used by the inbound-call
-webhook in api/routes/twilio_voice.py also lives here — versium_phone_append,
-configured separately via PHONE_APPEND_PROVIDER/PHONE_APPEND_API_KEY.
+webhook in api/routes/twilio_voice.py also lives here, configured separately via
+PHONE_APPEND_PROVIDER/PHONE_APPEND_API_KEY and dispatched through
+PHONE_APPEND_PROVIDERS. Two providers: versium_phone_append (one GET per
+number) and batchdata_phone_append (Reverse Skip Trace, up to 100 numbers per
+POST, and the only one that returns line type + DNC). Use phone_append /
+phone_append_batch rather than a provider function directly.
 """
 import logging
 import re
@@ -40,6 +44,14 @@ _VERSIUM_CONTACT_URL = "https://api.versium.com/v2/contact"
 
 # Default BatchData Skip Trace endpoint — overridable via CONTACT_BASE_URL.
 _BATCHDATA_SKIPTRACE_URL = "https://api.batchdata.com/api/v1/property/skip-trace"
+
+# Default BatchData Reverse Skip Trace endpoint — overridable via
+# PHONE_APPEND_BASE_URL. Note the v3: the forward skip-trace above is v1-only
+# and the reverse direction is v3-only; there is no /api/v1 reverse route.
+_BATCHDATA_REVERSE_URL = "https://api.batchdata.com/api/v3/property/reverse-skip-trace"
+
+# Reverse Skip Trace rejects a body with more than 100 lookups in it.
+BATCHDATA_REVERSE_MAX_BATCH = 100
 
 
 def _batchdata_lookup(row: dict) -> dict | None:
@@ -257,6 +269,196 @@ def versium_phone_append(phone_digits: str) -> dict | None:
         if {"address", "city", "state", "zip"} <= out.keys():
             break
     return out or None
+
+
+def batchdata_phone_append_batch(
+    phone_digits: list[str], *, timeout: int = 20, retries: int | None = None,
+) -> dict[str, dict | None]:
+    """Reverse-append callers via BatchData's Reverse Skip Trace API.
+
+    The batch counterpart of versium_phone_append: up to 100 numbers per HTTP
+    call (BATCHDATA_REVERSE_MAX_BATCH — a longer list is rejected outright), so
+    the sweep in api/call_append_sweep.py backfills a whole backlog in a few
+    requests. Duplicates are collapsed before the call.
+
+    Returns {digits: data-or-None}. A key is present only when the provider
+    actually answered for that number, so callers can distinguish "asked, no
+    match" (present, None — the query was billed, don't re-ask) from "never
+    asked" (absent — a transport failure, safe to retry). `data` carries the
+    same fields as versium_phone_append plus the line-type and compliance
+    signals only BatchData returns.
+
+    The per-row error model is the trap here: a malformed body is an HTTP 400,
+    but a bad *row* comes back inside an HTTP 200 as data[i].meta.error, so a
+    2xx alone is not success.
+    """
+    wanted = list(dict.fromkeys(d for d in phone_digits if _is_us_phone(d)))
+    if not wanted or PHONE_APPEND_PROVIDER != "batchdata" or not PHONE_APPEND_API_KEY:
+        return {}
+    if len(wanted) > BATCHDATA_REVERSE_MAX_BATCH:
+        raise ValueError(
+            f"reverse skip trace takes at most {BATCHDATA_REVERSE_MAX_BATCH} "
+            f"numbers per call, got {len(wanted)}")
+
+    payload = post_json(
+        PHONE_APPEND_BASE_URL or _BATCHDATA_REVERSE_URL,
+        json={"requests": [{"phone": d} for d in wanted]},
+        headers={
+            "Authorization": f"Bearer {PHONE_APPEND_API_KEY}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        timeout=timeout,
+        retries=retries,
+    )
+    if not payload:
+        return {}  # transport failure — nothing was billed, retry later
+
+    records = ((payload.get("result") or {}).get("data")) or []
+    if not isinstance(records, list):
+        return {}
+
+    out: dict[str, dict | None] = {}
+    for index, record in enumerate(records):
+        if not isinstance(record, dict):
+            continue
+        # data[] runs parallel to requests[], and `input` echoes the number
+        # back — trust the echo when it's there, fall back to position.
+        echoed = _str((record.get("input") or {}).get("phone"))
+        digits = echoed if echoed in wanted else (
+            wanted[index] if index < len(wanted) else None)
+        if not digits:
+            continue
+
+        meta = record.get("meta") or {}
+        if meta.get("error"):
+            # A rejected row (non-US number, missing input) was never run; log
+            # it and leave the key absent so nothing gets flagged as spent.
+            log.warning("Reverse skip trace rejected %s: %s",
+                        digits, meta.get("errorMessage"))
+            continue
+
+        persons = record.get("persons") or []
+        person = _ranked_first(persons, prefer_key="propertyOwner")
+        out[digits] = _batchdata_person_append(person) if person else None
+    return out
+
+
+def batchdata_phone_append(phone_digits: str) -> dict | None:
+    """Single-caller reverse append — the inbound-webhook path.
+
+    A batch of one, with the tight timeout and no retries the Twilio webhook
+    window demands (same reasoning as versium_phone_append).
+    """
+    if PHONE_APPEND_PROVIDER != "batchdata" or not PHONE_APPEND_API_KEY:
+        return None
+    return batchdata_phone_append_batch(
+        [(phone_digits or "").strip()], timeout=8, retries=0,
+    ).get((phone_digits or "").strip())
+
+
+def _batchdata_person_append(person: dict) -> dict | None:
+    """Map one reverse-skip-trace person onto our append fields.
+
+    Address preference is deliberate: `property.address` is the parcel BatchData
+    tied the caller to — the place the work would happen — whereas addresses[]
+    is a ranked history that can lead with a mailing address. Falls back to the
+    best-ranked address when there's no property on the record.
+    """
+    name = person.get("name") or {}
+    full = _str(name.get("full")) or _full_name(
+        _str(name.get("first")), _str(name.get("last")))
+
+    prop = person.get("property") or {}
+    addr = prop.get("address") if isinstance(prop, dict) else None
+    if not (isinstance(addr, dict) and addr.get("street")):
+        addr = _ranked_first(person.get("addresses") or [],
+                             prefer_key="propertyMailingAddress") or {}
+
+    email = _ranked_first(person.get("emails") or [], prefer_key="tested") or {}
+    phone = _ranked_first(person.get("phones") or [], prefer_key="reachable") or {}
+
+    out = {
+        "contact_name":  full,
+        "contact_email": _str(email.get("email")),
+        "address":       _str(addr.get("street")),
+        "city":          _str(addr.get("city")),
+        "state":         _str(addr.get("state")),
+        "zip":           _str(addr.get("zip")),
+        # Line type and compliance flags have no column of their own — the
+        # caller stashes them in enrichment_flags so an SMS follow-up can tell
+        # a mobile from a landline before it spends a segment.
+        "phone_type":      _str(phone.get("type")),
+        "phone_reachable": phone.get("reachable"),
+        "phone_dnc":       phone.get("dnc"),
+        "litigator":       person.get("litigator"),
+        "property_owner":  person.get("propertyOwner"),
+    }
+    out = {k: v for k, v in out.items() if v not in (None, "")}
+    return out or None
+
+
+def _ranked_first(items, *, prefer_key: str | None = None) -> dict | None:
+    """Best entry from one of BatchData's rank-ordered lists.
+
+    Rows flagged with `prefer_key` (propertyOwner, reachable, tested…) sort
+    ahead of unflagged ones, then by BatchData's own rank. Rank is 1-based and
+    may be missing, so absent ranks sort last rather than winning as 0.
+    """
+    rows = [i for i in (items or []) if isinstance(i, dict)]
+    if not rows:
+        return None
+
+    def sort_key(row: dict) -> tuple[int, int]:
+        flagged = 0 if (prefer_key and row.get(prefer_key)) else 1
+        rank = row.get("rank")
+        return (flagged, rank if isinstance(rank, int) else 1 << 30)
+
+    return sorted(rows, key=sort_key)[0]
+
+
+def _is_us_phone(digits) -> bool:
+    """BatchData rejects anything that isn't a 10-digit US number."""
+    return isinstance(digits, str) and len(digits.strip()) == 10 \
+        and digits.strip().isdigit()
+
+
+# Reverse-append provider name → single-number lookup function. Keyed on
+# PHONE_APPEND_PROVIDER, separate from PROVIDERS above so the batch skip-trace
+# and the inbound-call append can run on different vendors.
+PHONE_APPEND_PROVIDERS = {
+    "batchdata": batchdata_phone_append,
+    "versium": versium_phone_append,
+}
+
+
+def phone_append(phone_digits: str) -> dict | None:
+    """Reverse-append one caller via whichever provider is configured."""
+    lookup = PHONE_APPEND_PROVIDERS.get(PHONE_APPEND_PROVIDER)
+    return lookup(phone_digits) if lookup else None
+
+
+def phone_append_batch(phone_digits: list[str]) -> dict[str, dict | None]:
+    """Reverse-append many callers, batching when the provider supports it.
+
+    BatchData answers up to 100 numbers per request; Versium has no batch form,
+    so it degrades to one call per number. Same {digits: data-or-None} contract
+    as batchdata_phone_append_batch — an absent key means "never asked".
+    """
+    if PHONE_APPEND_PROVIDER == "batchdata":
+        results: dict[str, dict | None] = {}
+        wanted = list(dict.fromkeys(phone_digits))
+        for start in range(0, len(wanted), BATCHDATA_REVERSE_MAX_BATCH):
+            chunk = wanted[start:start + BATCHDATA_REVERSE_MAX_BATCH]
+            results.update(batchdata_phone_append_batch(chunk))
+        return results
+
+    lookup = PHONE_APPEND_PROVIDERS.get(PHONE_APPEND_PROVIDER)
+    if not lookup:
+        return {}
+    # A per-number provider can't report "asked but no match" separately from a
+    # failed call, so every completed loop iteration counts as asked.
+    return {digits: lookup(digits) for digits in dict.fromkeys(phone_digits)}
 
 
 def _full_name(first: str | None, last: str | None) -> str | None:

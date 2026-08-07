@@ -6,9 +6,10 @@ key or DB is required.
 import pytest
 
 from pipeline.contact import (
-    PROVIDERS, _is_business, _owner_name_candidates, _clean_person_tokens,
-    _full_name, _first_value, _versium_lookup, _batchdata_lookup,
-    versium_phone_append,
+    PHONE_APPEND_PROVIDERS, PROVIDERS, _is_business, _owner_name_candidates,
+    _clean_person_tokens, _full_name, _first_value, _versium_lookup,
+    _batchdata_lookup, batchdata_phone_append, batchdata_phone_append_batch,
+    phone_append, phone_append_batch, versium_phone_append,
 )
 
 
@@ -278,3 +279,192 @@ class TestVersiumPhoneAppend:
         assert versium_phone_append("7135550142") == {
             "contact_name": "Greta Fisher", "address": "123 Main St",
         }
+
+
+# ── batchdata_phone_append (Reverse Skip Trace: caller phone → property) ─────
+
+def _reverse_payload(*records):
+    """A Reverse Skip Trace envelope wrapping already-built data[] records."""
+    return {"status": {"code": 200, "text": "OK"},
+            "result": {"data": list(records), "meta": {}}}
+
+
+def _reverse_person(phone, **person):
+    """One matched data[] record for `phone`, defaults filled in."""
+    base = {
+        "propertyOwner": True,
+        "name": {"first": "Greta", "last": "Fisher", "full": "Greta Fisher"},
+        "phones": [{"rank": 1, "number": "7135550142", "type": "Mobile",
+                    "reachable": True, "dnc": False}],
+        "emails": [{"rank": 1, "email": "g@example.com", "tested": True}],
+        "property": {"id": "abc", "address": {
+            "street": "123 Main St", "city": "Humble", "state": "TX",
+            "zip": "77396", "fullAddress": "123 Main St, Humble, TX 77396"}},
+    }
+    return {"input": {"phone": phone}, "persons": [{**base, **person}],
+            "meta": {"matched": True, "error": False}}
+
+
+class TestBatchdataPhoneAppend:
+    def _configured(self, monkeypatch):
+        monkeypatch.setattr("pipeline.contact.PHONE_APPEND_PROVIDER", "batchdata")
+        monkeypatch.setattr("pipeline.contact.PHONE_APPEND_API_KEY", "test-key")
+
+    def test_posts_a_bearer_batch_and_maps_the_property(self, monkeypatch):
+        self._configured(monkeypatch)
+        captured = {}
+        def fake(url, *, json=None, headers=None, timeout=None, retries=None):
+            captured.update(url=url, json=json, headers=headers,
+                            timeout=timeout, retries=retries)
+            return _reverse_payload(_reverse_person("7135550142"))
+        monkeypatch.setattr("pipeline.contact.post_json", fake)
+
+        assert batchdata_phone_append("7135550142") == {
+            "contact_name": "Greta Fisher",
+            "contact_email": "g@example.com",
+            "address": "123 Main St",
+            "city": "Humble",
+            "state": "TX",
+            "zip": "77396",
+            "phone_type": "Mobile",
+            "phone_reachable": True,
+            "phone_dnc": False,
+            "property_owner": True,
+        }
+        assert captured["url"].endswith("/api/v3/property/reverse-skip-trace")
+        assert captured["json"] == {"requests": [{"phone": "7135550142"}]}
+        assert captured["headers"]["Authorization"] == "Bearer test-key"
+        assert captured["retries"] == 0  # runs inside Twilio's webhook window
+        assert captured["timeout"] == 8
+
+    def test_prefers_the_property_owner_person(self, monkeypatch):
+        self._configured(monkeypatch)
+        record = _reverse_person("7135550142")
+        record["persons"].insert(0, {
+            "propertyOwner": False,
+            "name": {"full": "Roommate Renter"},
+            "addresses": [{"rank": 1, "street": "9 Other St", "city": "Katy",
+                           "state": "TX", "zip": "77494"}],
+        })
+        monkeypatch.setattr("pipeline.contact.post_json",
+                            lambda *a, **k: _reverse_payload(record))
+        assert batchdata_phone_append("7135550142")["contact_name"] == "Greta Fisher"
+
+    def test_falls_back_to_best_ranked_address(self, monkeypatch):
+        # No property on the record — addresses[] is a ranked history, and the
+        # mailing address for the property wins over an older rank-2 entry.
+        self._configured(monkeypatch)
+        record = _reverse_person("7135550142", property=None, addresses=[
+            {"rank": 2, "street": "9 Old Rd", "city": "Katy", "state": "TX",
+             "zip": "77494"},
+            {"rank": 1, "street": "123 Main St", "city": "Humble", "state": "TX",
+             "zip": "77396", "propertyMailingAddress": True},
+        ])
+        monkeypatch.setattr("pipeline.contact.post_json",
+                            lambda *a, **k: _reverse_payload(record))
+        assert batchdata_phone_append("7135550142")["address"] == "123 Main St"
+
+    def test_row_error_inside_a_200_is_not_a_match(self, monkeypatch):
+        # The trap: a rejected row rides inside an HTTP 200. It was never run,
+        # so the key stays absent and nothing gets flagged as spent.
+        self._configured(monkeypatch)
+        monkeypatch.setattr("pipeline.contact.post_json", lambda *a, **k: _reverse_payload(
+            {"input": {"phone": "7135550142"}, "persons": [],
+             "meta": {"matched": False, "error": True,
+                      "errorMessage": "Only US phone numbers are supported."}}))
+        assert batchdata_phone_append_batch(["7135550142"]) == {}
+
+    def test_no_match_is_present_but_empty(self, monkeypatch):
+        # Billed but unmatched — the key must exist so the caller stamps the
+        # flag and never re-queries this number.
+        self._configured(monkeypatch)
+        monkeypatch.setattr("pipeline.contact.post_json", lambda *a, **k: _reverse_payload(
+            {"input": {"phone": "7135550142"}, "persons": [],
+             "meta": {"matched": False, "error": False}}))
+        assert batchdata_phone_append_batch(["7135550142"]) == {"7135550142": None}
+
+    def test_transport_failure_leaves_every_key_absent(self, monkeypatch):
+        self._configured(monkeypatch)
+        monkeypatch.setattr("pipeline.contact.post_json", lambda *a, **k: None)
+        assert batchdata_phone_append_batch(["7135550142", "7135550143"]) == {}
+
+    def test_maps_results_back_by_echoed_number(self, monkeypatch):
+        # data[] is parallel to requests[], but the echo is authoritative —
+        # pin that a reordered response still lands on the right lead.
+        self._configured(monkeypatch)
+        monkeypatch.setattr("pipeline.contact.post_json", lambda *a, **k: _reverse_payload(
+            _reverse_person("7135550143", name={"full": "Second Caller"}),
+            _reverse_person("7135550142", name={"full": "First Caller"})))
+        results = batchdata_phone_append_batch(["7135550142", "7135550143"])
+        assert results["7135550142"]["contact_name"] == "First Caller"
+        assert results["7135550143"]["contact_name"] == "Second Caller"
+
+    def test_dedupes_and_drops_non_us_numbers(self, monkeypatch):
+        self._configured(monkeypatch)
+        captured = {}
+        monkeypatch.setattr("pipeline.contact.post_json",
+                            lambda url, *, json=None, **k: captured.update(json=json)
+                            or _reverse_payload(_reverse_person("7135550142")))
+        batchdata_phone_append_batch(["7135550142", "7135550142", "555014", ""])
+        assert captured["json"] == {"requests": [{"phone": "7135550142"}]}
+
+    def test_rejects_an_oversized_batch(self, monkeypatch):
+        self._configured(monkeypatch)
+        monkeypatch.setattr("pipeline.contact.post_json", lambda *a, **k: None)
+        with pytest.raises(ValueError, match="at most 100"):
+            batchdata_phone_append_batch([f"71355{i:05d}" for i in range(101)])
+
+    def test_unconfigured_skips_the_call(self, monkeypatch):
+        called = {"n": 0}
+        def boom(*a, **k):
+            called["n"] += 1
+        monkeypatch.setattr("pipeline.contact.post_json", boom)
+        monkeypatch.setattr("pipeline.contact.PHONE_APPEND_PROVIDER", "versium")
+        assert batchdata_phone_append("7135550142") is None
+        self._configured(monkeypatch)
+        assert batchdata_phone_append("555") is None  # not a 10-digit number
+        assert called["n"] == 0
+
+
+# ── phone_append / phone_append_batch (provider dispatch) ────────────────────
+
+class TestPhoneAppendDispatch:
+    def test_registry_holds_both_directions(self):
+        assert set(PHONE_APPEND_PROVIDERS) == {"batchdata", "versium"}
+
+    def test_dispatches_to_the_configured_provider(self, monkeypatch):
+        monkeypatch.setattr("pipeline.contact.PHONE_APPEND_PROVIDER", "batchdata")
+        monkeypatch.setattr("pipeline.contact.PHONE_APPEND_API_KEY", "test-key")
+        monkeypatch.setattr("pipeline.contact.post_json",
+                            lambda *a, **k: _reverse_payload(_reverse_person("7135550142")))
+        assert phone_append("7135550142")["address"] == "123 Main St"
+
+    def test_unknown_provider_is_a_no_op(self, monkeypatch):
+        monkeypatch.setattr("pipeline.contact.PHONE_APPEND_PROVIDER", "nope")
+        assert phone_append("7135550142") is None
+        assert phone_append_batch(["7135550142"]) == {}
+
+    def test_batch_chunks_at_the_provider_limit(self, monkeypatch):
+        monkeypatch.setattr("pipeline.contact.PHONE_APPEND_PROVIDER", "batchdata")
+        monkeypatch.setattr("pipeline.contact.PHONE_APPEND_API_KEY", "test-key")
+        sizes = []
+        monkeypatch.setattr(
+            "pipeline.contact.post_json",
+            lambda url, *, json=None, **k: sizes.append(len(json["requests"]))
+            or _reverse_payload(*(_reverse_person(r["phone"]) for r in json["requests"])))
+        numbers = [f"71355{i:05d}" for i in range(150)]
+        assert len(phone_append_batch(numbers)) == 150
+        assert sizes == [100, 50]
+
+    def test_versium_degrades_to_one_call_per_number(self, monkeypatch):
+        # No batch form upstream; the sweep still works, just serially.
+        monkeypatch.setattr("pipeline.contact.PHONE_APPEND_PROVIDER", "versium")
+        monkeypatch.setattr("pipeline.contact.PHONE_APPEND_API_KEY", "test-key")
+        calls = []
+        monkeypatch.setattr(
+            "pipeline.contact.get_json",
+            lambda url, *, params=None, **k: calls.append(params["phone"])
+            or _versium_payload("Greta", "Fisher", **{"Address": "123 Main St"}))
+        results = phone_append_batch(["7135550142", "7135550143"])
+        assert calls == ["7135550142", "7135550143"]
+        assert results["7135550142"]["address"] == "123 Main St"

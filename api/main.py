@@ -67,7 +67,7 @@ async def lifespan(app: FastAPI):
         scheduler, load_active_schedules, schedule_retraining,
         schedule_workflow_tick, schedule_account_rescore, schedule_recurring_invoices,
         schedule_geo_rescore, schedule_trial_expiry, schedule_unverified_digest,
-        schedule_user_digest,
+        schedule_user_digest, schedule_phone_append_sweep,
     )
     scheduler.start()
     load_active_schedules()
@@ -79,6 +79,7 @@ async def lifespan(app: FastAPI):
     schedule_trial_expiry()
     schedule_unverified_digest()
     schedule_user_digest()
+    schedule_phone_append_sweep()
     _check_hcad_source()
     yield
     scheduler.shutdown(wait=False)
