@@ -30,8 +30,13 @@ def _fmt_counters(counters: dict) -> str:
         if c.get("skipped_no_key"):
             parts.append(f"{src}=skipped(no key)")
         else:
+            # `fail` = the source answered but had no record; `unanswered` = the
+            # lookup never got through. Only the latter is worth retrying, so
+            # surface it separately rather than folding it into `fail`.
+            unanswered = c.get("unanswered", 0)
+            suffix = f"/{unanswered} unanswered" if unanswered else ""
             parts.append(f"{src}: {c.get('updated', 0)} updated "
-                         f"({c.get('ok', 0)} ok/{c.get('fail', 0)} fail)")
+                         f"({c.get('ok', 0)} ok/{c.get('fail', 0)} fail{suffix})")
     return "; ".join(parts) or "nothing to do"
 
 

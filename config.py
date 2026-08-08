@@ -90,7 +90,8 @@ HTTP_BACKOFF = float(os.getenv("HTTP_BACKOFF", "0.5"))   # seconds, exponential
 # Env-overridable (comma-separated); unknown names are dropped.
 SOURCE_FIELDS = {
     "rentcast": [
-        "year_built", "square_footage", "estimated_value", "estimated_equity",
+        "year_built", "square_footage", "lot_size", "property_type",
+        "estimated_value", "estimated_equity",
         "last_sale_date", "last_sale_price", "owner_name", "owner_occupied",
         "ownership_years", "garage_spaces", "garage_type",
     ],
@@ -108,6 +109,23 @@ PROPERTY_FIELD_SOURCES = [
 # ZIP forever. Each row is instead stamped with the date it was last asked about
 # and skipped until this many days have passed. 0 disables re-checking entirely.
 PROPERTY_RECHECK_DAYS = int(os.getenv("PROPERTY_RECHECK_DAYS", "90"))
+
+# ── Account-wide property backfill / verification sweep ───────────────────────
+# The per-ZIP `property` step above only ever runs as part of a pipeline run.
+# pipeline/backfill.py sweeps an account's whole book instead — every ZIP at
+# once — to fill leftover NULLs and (optionally) re-check values already stored.
+# It is the same paid API, so the same cost discipline applies: an explicit cap
+# per run, and rows still bounded by the PROPERTY_RECHECK_DAYS stamp above.
+PROPERTY_BACKFILL_MAX = int(os.getenv("PROPERTY_BACKFILL_MAX", "500"))
+
+# Seconds between lookups during a sweep — RentCast's published limit is 20
+# requests/second; this keeps a long sweep an order of magnitude under it.
+PROPERTY_BACKFILL_DELAY = float(os.getenv("PROPERTY_BACKFILL_DELAY", "0.05"))
+
+# How far two sources may differ on a money/area figure before it counts as a
+# real discrepancy rather than rounding. Applied as a fraction of the larger
+# value, so one number works across a $12k lot and a $1.2M house.
+PROPERTY_VALUE_TOLERANCE_PCT = float(os.getenv("PROPERTY_VALUE_TOLERANCE_PCT", "0.05"))
 
 # ── Equity estimation ─────────────────────────────────────────────────────────
 # Fallback fraction of value treated as equity when no mortgage/sale data exists.

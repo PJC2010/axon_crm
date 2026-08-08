@@ -21,6 +21,7 @@ A full-stack, multi-tenant business intelligence and CRM platform, originally bu
   - [How the Pipeline Works](#how-the-pipeline-works)
   - [Lead Scoring Engine](#lead-scoring-engine)
   - [Running the Pipeline](#running-the-pipeline)
+  - [Auditing and Backfilling Existing Data](#auditing-and-backfilling-existing-data)
   - [Harris County (HCAD) data](#harris-county-hcad-data)
   - [Scheduled Pipeline Runs](#scheduled-pipeline-runs)
 - [Geo Scoring & Prospecting](#geo-scoring--prospecting)
@@ -458,6 +459,38 @@ python run_pipeline.py --address "123 Main St, Houston, TX" --radius 1
 
 Available verticals (defined in `config.py`): `epoxy_flooring`, `pool_maintenance`, `solar`, `roofing`, `hvac`, `fencing`, `landscaping`, `pressure_washing` — or pass any custom string.
 
+### Auditing and Backfilling Existing Data
+
+A pipeline run only ever touches one ZIP, so it cannot answer "what is still missing across everything I've pulled so far?" — or "is what I already stored still correct?". `pipeline/backfill.py` sweeps an account's whole book for both.
+
+```bash
+# Free: per-field NULL report for every ZIP + how many lookups a sweep would cost
+python -m pipeline.backfill --account-id 1 --audit
+
+# Plan the sweep without spending anything
+python -m pipeline.backfill --account-id 1 --dry-run
+
+# Fill the gaps (default: writes only into NULLs, never overwrites)
+python -m pipeline.backfill --account-id 1 --limit 500
+
+# Also refresh stale market/sale values on rows already populated
+python -m pipeline.backfill --account-id 1 --mode refresh
+
+# One ZIP at a time
+python -m pipeline.backfill --account-id 1 --zip 77396
+```
+
+Two modes, because "missing" and "wrong" want different treatment:
+
+- **`fill`** (default) writes only into NULL columns. Where a stored value disagrees with RentCast, the difference is recorded in `property_field_audits` and the stored value is kept.
+- **`refresh`** additionally overwrites the fields that legitimately move — `estimated_value`, `last_sale_date` / `last_sale_price`, `owner_occupied`. Structural facts (year built, square footage, lot size, garage) are still never overwritten: HCAD is the county's own record and runs upstream for free, so an AVM does not get to overrule it.
+
+Review what disagrees before deciding to refresh, via `GET /api/property-data/discrepancies` or the `Open discrepancies` block in the audit output.
+
+Entries under the **`address`** field there are a different and more serious finding. RentCast lookups are by address string, resolved by RentCast's own parser with `limit=1`, so a lookup can quietly come back describing a neighbouring parcel. Every record is now checked against the address it was requested for; one that describes a different property is rejected rather than written, and logged here. Read those first — they mean a lead's data may otherwise have been a stranger's.
+
+Cost controls match the rest of the pipeline: every run is capped (`PROPERTY_BACKFILL_MAX`, default 500), rows are queued only when they have a genuine gap, and each row is stamped with the date it was last asked about so a field RentCast structurally cannot supply (sale price in non-disclosure states like Texas) is not re-billed on every run — see `PROPERTY_RECHECK_DAYS`. The same sweep is available from the UI as `POST /api/property-data/backfill`, which runs it in the background, re-scores the affected ZIPs afterwards, and reports into the normal run history.
+
 ### Harris County (HCAD) data
 
 Step 4 (`hcad_enrichment.py`) backfills property, owner, and owner mailing address fields for free from Harris County Appraisal District data. It reads a local `harris_county.duckdb` (path in `PERMIT_DB_PATH`), falling back to the Postgres `hcad_*` tables.
@@ -598,6 +631,9 @@ The FastAPI server exposes interactive docs at `http://localhost:8000/docs` (Swa
 | GET | `/api/pipeline/runs[/{id}]` **(prospecting)** | Run history / detail |
 | POST | `/api/pipeline/rescore` / `/rescore-all` **(prospecting)** | Rescore a ZIP / every ZIP (owner) |
 | DELETE | `/api/pipeline/runs/{id}` **(prospecting)** | Cancel a running pipeline (owner) |
+| GET | `/api/property-data/audit` **(prospecting)** | Per-field NULL report for the whole account + what a sweep would cost (free — no vendor calls) |
+| POST | `/api/property-data/backfill` **(prospecting)** | Queue an account-wide RentCast gap-fill / verification sweep (owner, rate-limited) |
+| GET | `/api/property-data/discrepancies` **(prospecting)** | Stored values RentCast disagrees with |
 
 ### Expenses **(bookkeeping)**
 | Method | Path | Description |

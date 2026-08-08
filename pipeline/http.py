@@ -25,6 +25,29 @@ def get_json(url, *, headers=None, params=None, timeout=30,
     Returns the decoded JSON on success, or None if every attempt failed.
     Raises nothing — callers already treat None as "no data".
     """
+    return get_json_result(url, headers=headers, params=params, timeout=timeout,
+                           retries=retries, backoff=backoff)[0]
+
+
+def get_json_result(url, *, headers=None, params=None, timeout=30,
+                    retries=None, backoff=None):
+    """As get_json, but also reports whether the server ever actually answered.
+
+    Returns ``(data, answered)``. `answered` is True when the server gave a
+    definitive response — a 2xx, or a non-retryable 4xx such as the 404 a
+    property vendor returns for an address it has no record of. It is False only
+    when every attempt failed to get an answer at all (timeout, connection
+    error, or a retryable 5xx/429 that never cleared).
+
+    The distinction matters to any caller that stamps a row as "asked" so it is
+    not re-queried and re-billed: `None` alone conflates "asked, no match" with
+    "never got through", and stamping the second kind means one vendor outage
+    quietly disqualifies a whole batch from being retried. See
+    pipeline/backfill.py.
+
+    A non-retryable 4xx returns immediately rather than burning the retry budget
+    on a "no" that cannot change.
+    """
     retries = HTTP_RETRIES if retries is None else retries
     backoff = HTTP_BACKOFF if backoff is None else backoff
 
@@ -35,8 +58,10 @@ def get_json(url, *, headers=None, params=None, timeout=30,
             if resp.status_code in _RETRY_STATUS:
                 last_err = f"HTTP {resp.status_code}"
                 raise requests.HTTPError(last_err, response=resp)
-            resp.raise_for_status()
-            return resp.json()
+            if not resp.ok:
+                log.debug("GET %s answered HTTP %d", url, resp.status_code)
+                return None, True
+            return resp.json(), True
         except (requests.RequestException, ValueError) as e:
             last_err = e
             # Don't sleep after the final attempt.
@@ -47,7 +72,7 @@ def get_json(url, *, headers=None, params=None, timeout=30,
                 time.sleep(delay)
 
     log.warning("GET %s failed after %d attempts: %s", url, retries + 1, last_err)
-    return None
+    return None, False
 
 
 def post_file_text(url, *, files=None, data=None, timeout=300,

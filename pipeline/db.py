@@ -222,7 +222,8 @@ def fetch_missing_field(conn, field: str, account_id: int, zip_code: str | None 
 
 def fetch_missing_any(conn, fields: list[str], account_id: int, zip_code: str | None = None,
                       selected_only: bool = False, checked_flag: str | None = None,
-                      recheck_days: int | None = None) -> list[dict]:
+                      recheck_days: int | None = None,
+                      limit: int | None = None) -> list[dict]:
     """Return this org's properties where AT LEAST ONE of `fields` is NULL.
 
     Column names are validated against ALL_COLS before interpolation, so this is
@@ -238,6 +239,13 @@ def fetch_missing_any(conn, fields: list[str], account_id: int, zip_code: str | 
     keeps every row eligible on every run, so the whole ZIP is re-billed forever.
     Dates are stored and compared as YYYY-MM-DD text, which sorts chronologically
     and avoids a timestamp cast that a malformed value could fail on.
+
+    `limit` caps the result in SQL, ordered by how many of `fields` are NULL
+    (emptiest first). The ordering only matters when the result is being
+    truncated — it decides which rows a capped, paid run spends its budget on —
+    so it is applied only alongside a limit, leaving unlimited callers' plans
+    untouched. Without it an account-wide caller would pull its entire book into
+    memory to throw most of it away.
     """
     bad = [f for f in fields if f not in ALL_COLS]
     if bad:
@@ -261,6 +269,11 @@ def fetch_missing_any(conn, fields: list[str], account_id: int, zip_code: str | 
         else:
             where += " AND enrichment_flags->>%s IS NULL"
             params.append(checked_flag)
+    order = ""
+    if limit is not None:
+        gaps = " + ".join(f"({f} IS NULL)::int" for f in fields)
+        order = f" ORDER BY ({gaps}) DESC, id LIMIT %s"
+        params.append(limit)
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute(f"SELECT * FROM properties {where}", params)
+        cur.execute(f"SELECT * FROM properties {where}{order}", params)
         return [dict(r) for r in cur.fetchall()]
