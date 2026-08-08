@@ -255,3 +255,49 @@ def test_empty_row_against_a_full_record_fills_everything():
     result = reconcile.reconcile({}, _record())
     assert set(result["updates"]) == set(RECONCILED_FIELDS)
     assert all(v == FILL for v in result["verdicts"].values())
+
+
+# ── verify_record ─────────────────────────────────────────────────────────────
+# RentCast resolves the address string itself and limit=1 hides any ambiguity,
+# so a lookup can silently answer about a different parcel. verify_record is the
+# gate; it returns None to accept, or the address actually answered with.
+
+def test_accepts_the_record_for_the_address_we_asked_about():
+    assert reconcile.verify_record(_record(), "123 Main St") is None
+
+
+def test_accepts_a_differently_formatted_same_address():
+    record = _record(addressLine1="123 Main Street")
+    assert reconcile.verify_record(record, "123 MAIN ST") is None
+
+
+def test_rejects_a_neighbouring_parcel():
+    """The failure this exists for: a house number away, silently written onto
+    our row along with its year built, value and owner."""
+    record = _record(addressLine1="125 Main St")
+    assert reconcile.verify_record(record, "123 Main St") == "125 Main St"
+
+
+def test_rejects_a_different_street():
+    record = _record(addressLine1="123 Oak St")
+    assert reconcile.verify_record(record, "123 Main St") == "123 Oak St"
+
+
+def test_falls_back_to_the_formatted_address():
+    """Some records carry only formattedAddress; its first segment is the
+    street line."""
+    record = _record(addressLine1=None,
+                     formattedAddress="123 Main St, Houston, TX 77396")
+    assert reconcile.verify_record(record, "123 Main St") is None
+    assert reconcile.record_address(record) == "123 Main St"
+
+
+def test_a_record_with_no_address_is_unverifiable_not_accepted():
+    record = _record(addressLine1=None, formattedAddress=None)
+    assert reconcile.verify_record(record, "123 Main St") is not None
+
+
+def test_record_address_prefers_the_street_line():
+    record = _record(addressLine1="123 Main St",
+                     formattedAddress="999 Wrong Ave, Houston, TX 77396")
+    assert reconcile.record_address(record) == "123 Main St"

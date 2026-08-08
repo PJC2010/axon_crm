@@ -36,6 +36,7 @@ estimated_value feeds lead scoring, so a refresh moves grades.
 from datetime import date
 
 from config import PROPERTY_VALUE_TOLERANCE_PCT
+from pipeline.addr import same_address
 from pipeline.equity import estimate_equity
 
 # ── Verdicts ──────────────────────────────────────────────────────────────────
@@ -162,6 +163,40 @@ def map_record(record: dict) -> dict:
         "city":             record.get("city"),
         "state":            record.get("state"),
     }
+
+
+def record_address(record: dict) -> str | None:
+    """The street address a RentCast record claims to describe.
+
+    `addressLine1` is the street line; `formattedAddress` is the whole thing
+    ("123 Main St, Houston, TX 77396"), so its first comma-separated segment is
+    the same street line. Returns None when the record carries neither, which
+    callers must treat as unverifiable rather than as a match.
+    """
+    line = (record.get("addressLine1") or "").strip()
+    if line:
+        return line
+    formatted = (record.get("formattedAddress") or "").strip()
+    return formatted.split(",")[0].strip() or None if formatted else None
+
+
+def verify_record(record: dict, requested_address: str) -> str | None:
+    """Check a record describes the property we asked about.
+
+    Returns None when it does, or the address the vendor actually answered with
+    when it does not.
+
+    The lookup is by address string and the vendor's own parser decides what that
+    resolves to — we send "500 W 12TH 1/2 ST" and get back whatever it matched,
+    with `limit=1` hiding any ambiguity. Without this check a neighbouring
+    parcel's year built, value and owner land on our row silently, and the row
+    still gets stamped as enriched. `same_address` is deliberately lenient, so a
+    rejection here means the two are clearly different properties.
+    """
+    answered = record_address(record)
+    if answered is None:
+        return "(no address on record)"
+    return None if same_address(requested_address, answered) else answered
 
 
 def map_detail(record: dict) -> dict:

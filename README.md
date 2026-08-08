@@ -487,6 +487,8 @@ Two modes, because "missing" and "wrong" want different treatment:
 
 Review what disagrees before deciding to refresh, via `GET /api/property-data/discrepancies` or the `Open discrepancies` block in the audit output.
 
+Entries under the **`address`** field there are a different and more serious finding. RentCast lookups are by address string, resolved by RentCast's own parser with `limit=1`, so a lookup can quietly come back describing a neighbouring parcel. Every record is now checked against the address it was requested for; one that describes a different property is rejected rather than written, and logged here. Read those first — they mean a lead's data may otherwise have been a stranger's.
+
 Cost controls match the rest of the pipeline: every run is capped (`PROPERTY_BACKFILL_MAX`, default 500), rows are queued only when they have a genuine gap, and each row is stamped with the date it was last asked about so a field RentCast structurally cannot supply (sale price in non-disclosure states like Texas) is not re-billed on every run — see `PROPERTY_RECHECK_DAYS`. The same sweep is available from the UI as `POST /api/property-data/backfill`, which runs it in the background, re-scores the affected ZIPs afterwards, and reports into the normal run history.
 
 ### Harris County (HCAD) data

@@ -52,7 +52,7 @@ from config import (
 from pipeline.coverage import TRACKED_FIELDS, rates_from_counts
 from pipeline.db import ALL_COLS, fetch_missing_any, get_conn, upsert_properties
 from pipeline.reconcile import (
-    FILL, MISMATCH, RECONCILED_FIELDS, REPORTED_FIELDS, reconcile,
+    FILL, MISMATCH, REPORTED_FIELDS, reconcile, verify_record,
 )
 
 log = logging.getLogger(__name__)
@@ -69,6 +69,13 @@ CANDIDATE_FIELDS = SOURCE_FIELDS.get(SOURCE, [])
 
 # Columns whose fill rate the audit reports.
 _TRACKED = list(TRACKED_FIELDS)
+
+# What may appear in the audit trail: every field-level verdict, plus `address`.
+# The address entry is a different kind of finding — not "two sources disagree
+# about this house" but "the vendor answered about a different house" — and it
+# belongs in the same report because it is the one an operator most needs to see.
+ADDRESS_FIELD = "address"
+AUDITED_FIELDS = [ADDRESS_FIELD, *REPORTED_FIELDS]
 
 
 def _guard_columns() -> None:
@@ -171,13 +178,17 @@ def sweep(conn, account_id: int, *, zip_code: str | None = None,
     One lookup per property, applied under the reconcile policy. Returns a
     counter dict::
 
-        {"candidates", "queried", "matched", "unanswered", "rows_updated",
-         "fields_filled", "fields_refreshed", "mismatches", "dry_run", "mode",
-         "skipped_no_key", "cancelled", "by_field": {field: {"filled", "mismatched"}}}
+        {"candidates", "queried", "matched", "unanswered", "address_mismatch",
+         "rows_updated", "fields_filled", "fields_refreshed", "mismatches",
+         "dry_run", "mode", "skipped_no_key", "cancelled",
+         "by_field": {field: {"filled", "mismatched"}}}
 
     `queried` counts properties RentCast answered for — billed whether or not it
     had a match. `unanswered` counts lookups that never got through at all; those
     rows are left unstamped and stay eligible for the next run.
+    `address_mismatch` counts answers that described a different property; those
+    records are rejected rather than written, and each one is recorded in
+    property_field_audits under the `address` field.
 
     `should_stop` is an optional zero-arg predicate polled between properties, so
     a UI-triggered sweep can be cancelled without losing what it already paid for.
@@ -193,9 +204,10 @@ def sweep(conn, account_id: int, *, zip_code: str | None = None,
     recheck_days = PROPERTY_RECHECK_DAYS if recheck_days is None else recheck_days
     counter = {
         "candidates": 0, "queried": 0, "matched": 0, "unanswered": 0,
-        "rows_updated": 0, "fields_filled": 0, "fields_refreshed": 0,
-        "mismatches": 0, "dry_run": dry_run, "mode": mode,
-        "skipped_no_key": False, "cancelled": False, "by_field": {},
+        "address_mismatch": 0, "rows_updated": 0, "fields_filled": 0,
+        "fields_refreshed": 0, "mismatches": 0, "dry_run": dry_run,
+        "mode": mode, "skipped_no_key": False, "cancelled": False,
+        "by_field": {},
     }
 
     if not RENTCAST_API_KEY:
@@ -262,6 +274,24 @@ def sweep(conn, account_id: int, *, zip_code: str | None = None,
             continue
 
         counter["queried"] += 1
+
+        # RentCast resolves the address string itself, so confirm it answered
+        # about this property before writing anything. A rejection is recorded
+        # like any other finding: it is the single most useful thing in the
+        # report, because it says a lead's data may already be a stranger's.
+        wrong = verify_record(record, row["address"])
+        if wrong:
+            counter["address_mismatch"] += 1
+            log.warning("RentCast answered %r for %r — record rejected.",
+                        wrong, row["address"])
+            findings.append((row["id"], {
+                "field": "address", "stored": row["address"], "remote": wrong,
+                "verdict": MISMATCH, "resolution": "kept",
+            }))
+            updates.append(update)
+            time.sleep(PROPERTY_BACKFILL_DELAY)
+            continue
+
         counter["matched"] += 1
         result = reconcile(row, record, mode=mode)
 
@@ -309,7 +339,7 @@ def record_findings(conn, account_id: int, findings: list[tuple[int, dict]]) -> 
     previous verdict rather than appending — the table stays a current-state
     report, bounded by properties × fields, not an ever-growing log.
     """
-    reportable = [(pid, f) for pid, f in findings if f["field"] in REPORTED_FIELDS]
+    reportable = [(pid, f) for pid, f in findings if f["field"] in AUDITED_FIELDS]
     if not reportable:
         return 0
     values = [
@@ -362,7 +392,7 @@ def list_discrepancies(conn, account_id: int, *, field: str | None = None,
     params: list = [account_id, MISMATCH]
     if field:
         # Guarded against injection by the allowlist, not by quoting.
-        if field not in RECONCILED_FIELDS:
+        if field not in AUDITED_FIELDS:
             raise ValueError(f"Unknown field: {field}")
         sql += " AND a.field = %s"
         params.append(field)

@@ -147,6 +147,7 @@ class _Result(NamedTuple):
 
 
 RECORD = {
+    "addressLine1": "123 Main St",
     "yearBuilt": 1998, "squareFootage": 2100, "lotSize": 7200,
     "propertyType": "Single Family", "subdivision": "Summerwood",
     "price": 340_000, "lastSalePrice": 250_000, "lastSaleDate": "2015-06-01",
@@ -381,3 +382,51 @@ def test_audit_reports_zero_without_dividing_by_zero():
     assert report["properties"] == 0
     assert report["rentcast"]["eligible"] == 0
     assert all(r["pct"] == 0.0 for r in report["fields"].values())
+
+
+# ── Vendor answered about the wrong property ──────────────────────────────────
+# RentCast resolves the address string itself and limit=1 hides any ambiguity,
+# so a lookup can come back describing a neighbouring parcel. Writing that would
+# put a stranger's year built, value and owner on the lead — and stamp it as
+# enriched, so nothing would ever look again.
+
+def test_a_wrong_property_is_rejected_not_written(stub_sweep):
+    wrong = {**RECORD, "addressLine1": "125 Main St"}
+    r = stub_sweep([_row(year_built=None)], wrong)
+    written = r.writes[0]
+    assert "year_built" not in written          # the stranger's data is not stored
+    assert r.counter["address_mismatch"] == 1
+    assert r.counter["matched"] == 0
+
+
+def test_a_wrong_property_is_still_stamped(stub_sweep):
+    """Asking again tomorrow returns the same wrong answer, so the row is
+    stamped; the recheck window is what eventually retries it."""
+    r = stub_sweep([_row(year_built=None)], {**RECORD, "addressLine1": "125 Main St"})
+    assert r.writes[0]["enrichment_flags"] == {CHECKED_FLAG: date.today().isoformat()}
+    assert "property" not in r.writes[0]["enrichment_flags"]
+
+
+def test_a_wrong_property_is_recorded_for_review(stub_sweep):
+    """It lands in the same report as field discrepancies, under `address` —
+    it is the finding an operator most needs to see."""
+    r = stub_sweep([_row(year_built=None)], {**RECORD, "addressLine1": "125 Main St"})
+    (_, finding), = r.audits
+    assert finding["field"] == "address"
+    assert finding["stored"] == "123 Main St"
+    assert finding["remote"] == "125 Main St"
+
+
+def test_address_is_auditable_but_never_a_paid_candidate(stub_sweep):
+    """It may appear in the trail, but a NULL address must not earn a lookup."""
+    assert "address" in backfill.AUDITED_FIELDS
+    assert "address" not in CANDIDATE_FIELDS
+
+
+def test_a_differently_formatted_same_address_is_accepted(stub_sweep):
+    """Verification must not reject on formatting — a false negative silently
+    throws away data already paid for."""
+    r = stub_sweep([_row(year_built=None)], {**RECORD, "addressLine1": "123 MAIN STREET"})
+    assert r.counter["address_mismatch"] == 0
+    assert r.counter["matched"] == 1
+    assert r.writes[0]["year_built"] == 1998

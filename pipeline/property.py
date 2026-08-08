@@ -16,7 +16,7 @@ from config import (
 )
 from pipeline.db import get_conn, fetch_missing_any, upsert_properties
 from pipeline.http import get_json_result
-from pipeline.reconcile import map_detail
+from pipeline.reconcile import map_detail, verify_record
 
 log = logging.getLogger(__name__)
 
@@ -129,4 +129,13 @@ def _rentcast_detail(address: str, zip_code: str) -> tuple[dict | None, bool]:
     if not data:
         return None, answered
     record = data[0] if isinstance(data, list) else data
+
+    # RentCast resolves the address string itself and `limit=1` hides any
+    # ambiguity, so confirm it answered about the property we asked about before
+    # writing a stranger's year built and owner onto this row.
+    wrong = verify_record(record, address)
+    if wrong:
+        log.warning("RentCast answered %r for %r — record rejected.", wrong, address)
+        return None, True
+
     return map_detail(record), True

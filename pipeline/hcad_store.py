@@ -14,9 +14,26 @@ from pathlib import Path
 import duckdb
 
 from config import PERMIT_DB_PATH, GARAGE_SQFT_PER_SPACE, MAX_GARAGE_SPACES
-from pipeline.addr import normalize   # shared single source of truth
+from pipeline.addr import normalize, sql_normalize   # shared single source of truth
 
 log = logging.getLogger(__name__)
+
+# Match keys, built in SQL from the one rule `normalize` implements.
+#
+# Every query below used to inline its own expression that replaced punctuation
+# with a SPACE and never collapsed whitespace, while its callers
+# (hcad_enrichment.py, permits.py) looked the results up with the Python
+# normalizer, which DROPS punctuation and DOES collapse. The two disagreed on any
+# address carrying punctuation or a double space — "500 W 12TH 1/2 ST" keyed as
+# "500 w 12th 1 2 st" but was looked up as "500 w 12th 12 st" — so those parcels
+# silently failed to match and the free county data never landed on them. Worse
+# than a coverage gap: the field stayed NULL, which made the row eligible for the
+# paid source, so we were billed for data HCAD had already given us.
+#
+# Derived, never hand-copied, so the two can no longer drift apart.
+_ADDR_NORM_PS = sql_normalize("ps.site_address")
+_ADDR_NORM_HP = sql_normalize("hp.site_address")
+_ADDR_NORM = sql_normalize("site_address")
 
 
 def garage_spaces_from_sqft(sqft) -> int:
@@ -86,9 +103,9 @@ def query_permits(zip_code: str, db_path: str | None = None) -> dict[str, int]:
     if db_exists(db_file):
         con = duckdb.connect(str(db_file), read_only=True)
         try:
-            rows = con.execute("""
+            rows = con.execute(f"""
                 SELECT
-                    LOWER(TRIM(REGEXP_REPLACE(ps.site_address, '[^a-zA-Z0-9 ]', ' ', 'g'))) AS address_norm,
+                    {_ADDR_NORM_PS} AS address_norm,
                     COUNT(p.id) AS permit_count
                 FROM property_summary ps
                 JOIN permits p ON ps.acct = p.acct
@@ -115,9 +132,9 @@ def query_properties(zip_code: str, db_path: str | None = None) -> dict[str, dic
     if db_exists(db_file):
         con = duckdb.connect(str(db_file), read_only=True)
         try:
-            rows = con.execute("""
+            rows = con.execute(f"""
                 SELECT
-                    LOWER(TRIM(REGEXP_REPLACE(ps.site_address, '[^a-zA-Z0-9 ]', ' ', 'g'))) AS address_norm,
+                    {_ADDR_NORM_PS} AS address_norm,
                     TRY_CAST(ps.year_built AS INTEGER)   AS year_built,
                     ps.building_sqft                     AS square_footage,
                     ps.land_sqft                         AS lot_size,
@@ -161,9 +178,9 @@ def query_properties(zip_code: str, db_path: str | None = None) -> dict[str, dic
 
 
 def _duckdb_query_properties_no_nbhd(con, zip_code: str) -> dict[str, dict]:
-    rows = con.execute("""
+    rows = con.execute(f"""
         SELECT
-            LOWER(TRIM(REGEXP_REPLACE(site_address, '[^a-zA-Z0-9 ]', ' ', 'g'))) AS address_norm,
+            {_ADDR_NORM} AS address_norm,
             TRY_CAST(year_built AS INTEGER)   AS year_built,
             building_sqft                     AS square_footage,
             land_sqft                         AS lot_size,
@@ -212,9 +229,9 @@ def query_extra_features(zip_code: str, db_path: str | None = None) -> dict[str,
     if db_exists(db_file):
         con = duckdb.connect(str(db_file), read_only=True)
         try:
-            rows = con.execute("""
+            rows = con.execute(f"""
                 SELECT
-                    LOWER(TRIM(REGEXP_REPLACE(ps.site_address, '[^a-zA-Z0-9 ]', ' ', 'g'))) AS address_norm,
+                    {_ADDR_NORM_PS} AS address_norm,
                     BOOL_OR(UPPER(ef.l_dscr) LIKE '%POOL%')                                  AS has_pool,
                     BOOL_OR(UPPER(ef.l_dscr) LIKE '%CRACKED SLAB%'
                             OR UPPER(ef.s_dscr) LIKE '%CRACK%')                             AS has_cracked_slab,
@@ -341,7 +358,7 @@ def _duckdb_query_region(con, region_id: str, zip_code: str, joined: bool) -> di
     join_clause = "LEFT JOIN neighborhood_codes nc ON nc.cd = ps.neighborhood_code" if joined else ""
     rows = con.execute(f"""
         SELECT
-            LOWER(TRIM(REGEXP_REPLACE(ps.site_address, '[^a-zA-Z0-9 ]', ' ', 'g'))) AS address_norm,
+            {_ADDR_NORM_PS} AS address_norm,
             ps.site_address,
             ps.site_zip,
             ps.mail_city,
@@ -405,7 +422,7 @@ def _duckdb_query_zip(con, zip_code: str, joined: bool) -> dict[str, dict]:
     join_clause = "LEFT JOIN neighborhood_codes nc ON nc.cd = ps.neighborhood_code" if joined else ""
     rows = con.execute(f"""
         SELECT
-            LOWER(TRIM(REGEXP_REPLACE(ps.site_address, '[^a-zA-Z0-9 ]', ' ', 'g'))) AS address_norm,
+            {_ADDR_NORM_PS} AS address_norm,
             ps.site_address,
             ps.site_zip,
             ps.mail_city,
@@ -452,9 +469,9 @@ def _pg_query_permits(zip_code: str) -> dict[str, int]:
         import psycopg2.extras
         conn = get_conn()
         with conn.cursor() as cur:
-            cur.execute("""
+            cur.execute(f"""
                 SELECT
-                    LOWER(TRIM(REGEXP_REPLACE(hp.site_address, '[^a-zA-Z0-9 ]', ' ', 'g'))) AS address_norm,
+                    {_ADDR_NORM_HP} AS address_norm,
                     COUNT(hm.permit_id) AS permit_count
                 FROM hcad_properties hp
                 JOIN hcad_permits hm ON hm.acct = hp.acct
@@ -479,9 +496,9 @@ def _pg_query_extra_features(zip_code: str) -> dict[str, dict]:
         from pipeline.db import get_conn
         conn = get_conn()
         with conn.cursor() as cur:
-            cur.execute("""
+            cur.execute(f"""
                 SELECT
-                    LOWER(TRIM(REGEXP_REPLACE(hp.site_address, '[^a-zA-Z0-9 ]', ' ', 'g'))) AS address_norm,
+                    {_ADDR_NORM_HP} AS address_norm,
                     BOOL_OR(UPPER(ef.l_dscr) LIKE '%%POOL%%')                               AS has_pool,
                     BOOL_OR(UPPER(ef.l_dscr) LIKE '%%CRACKED SLAB%%'
                             OR UPPER(ef.s_dscr) LIKE '%%CRACK%%')                          AS has_cracked_slab,
@@ -518,9 +535,9 @@ def _pg_query_properties(zip_code: str) -> dict[str, dict]:
         from pipeline.db import get_conn
         conn = get_conn()
         with conn.cursor() as cur:
-            cur.execute("""
+            cur.execute(f"""
                 SELECT
-                    LOWER(TRIM(REGEXP_REPLACE(site_address, '[^a-zA-Z0-9 ]', ' ', 'g'))) AS address_norm,
+                    {_ADDR_NORM} AS address_norm,
                     CAST(NULLIF(year_built, '') AS INTEGER) AS year_built,
                     building_sqft AS square_footage,
                     land_sqft AS lot_size,
@@ -614,9 +631,9 @@ def _pg_query_properties_for_region(region_id: str, zip_code: str) -> dict[str, 
         from pipeline.db import get_conn
         conn = get_conn()
         with conn.cursor() as cur:
-            cur.execute("""
+            cur.execute(f"""
                 SELECT
-                    LOWER(TRIM(REGEXP_REPLACE(site_address, '[^a-zA-Z0-9 ]', ' ', 'g'))) AS address_norm,
+                    {_ADDR_NORM} AS address_norm,
                     site_address,
                     site_zip,
                     mail_city,
@@ -661,9 +678,9 @@ def _pg_query_parcels_for_zip(zip_code: str) -> dict[str, dict]:
         from pipeline.db import get_conn
         conn = get_conn()
         with conn.cursor() as cur:
-            cur.execute("""
+            cur.execute(f"""
                 SELECT
-                    LOWER(TRIM(REGEXP_REPLACE(site_address, '[^a-zA-Z0-9 ]', ' ', 'g'))) AS address_norm,
+                    {_ADDR_NORM} AS address_norm,
                     site_address,
                     site_zip,
                     mail_city,

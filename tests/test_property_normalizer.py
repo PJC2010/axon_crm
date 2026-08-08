@@ -15,6 +15,7 @@ def _stub(monkeypatch, payload, answered=True):
 
 def test_rentcast_detail_maps_fields(monkeypatch):
     fixture = [{
+        "addressLine1": "123 Main St",
         "yearBuilt": 2005,
         "squareFootage": 1800,
         "price": 300000,
@@ -40,7 +41,7 @@ def test_rentcast_detail_maps_fields(monkeypatch):
 
 def test_rentcast_detail_missing_features_block(monkeypatch):
     # No features/owner objects → those fields are None, not a crash.
-    _stub(monkeypatch, [{"price": 100000}])
+    _stub(monkeypatch, [{"addressLine1": "x", "price": 100000}])
     out, _ = prop._rentcast_detail("x", "y")
     assert out["garage_spaces"] is None
     assert out["garage_type"] is None
@@ -49,7 +50,7 @@ def test_rentcast_detail_missing_features_block(monkeypatch):
 
 def test_rentcast_detail_owner_flat_fallback(monkeypatch):
     # Older/flat shape with no nested owner object still resolves owner_name.
-    _stub(monkeypatch, [{"price": 100000, "ownerName": "FLAT OWNER"}])
+    _stub(monkeypatch, [{"addressLine1": "x", "price": 100000, "ownerName": "FLAT OWNER"}])
     out, _ = prop._rentcast_detail("x", "y")
     assert out["owner_name"] == "FLAT OWNER"
 
@@ -57,7 +58,8 @@ def test_rentcast_detail_owner_flat_fallback(monkeypatch):
 def test_rentcast_detail_fills_lot_size_and_property_type(monkeypatch):
     """Both are tracked coverage columns and lot_size feeds job-value estimation,
     but neither used to be read off a record we were already paying for."""
-    _stub(monkeypatch, [{"lotSize": 7200, "propertyType": "Single Family",
+    _stub(monkeypatch, [{"addressLine1": "x", "lotSize": 7200,
+                         "propertyType": "Single Family",
                          "subdivision": "Summerwood"}])
     out, _ = prop._rentcast_detail("x", "y")
     assert out["lot_size"] == 7200
@@ -68,7 +70,8 @@ def test_rentcast_detail_fills_lot_size_and_property_type(monkeypatch):
 def test_rentcast_detail_never_returns_coordinates(monkeypatch):
     """This step overwrites every column it returns, so carrying coordinates
     would move a pin the geocode step placed and contradict geocode_source."""
-    _stub(monkeypatch, [{"latitude": 29.9, "longitude": -95.2, "city": "Houston"}])
+    _stub(monkeypatch, [{"addressLine1": "x", "latitude": 29.9,
+                         "longitude": -95.2, "city": "Houston"}])
     out, _ = prop._rentcast_detail("x", "y")
     for field in ("latitude", "longitude", "city", "state"):
         assert field not in out
@@ -86,3 +89,40 @@ def test_unreachable_vendor_is_not_an_answer(monkeypatch):
     batch from being retried for PROPERTY_RECHECK_DAYS."""
     _stub(monkeypatch, None, answered=False)
     assert prop._rentcast_detail("x", "y") == (None, False)
+
+
+# ── Verification ──────────────────────────────────────────────────────────────
+# The lookup is by address string and RentCast's own parser decides what that
+# resolves to, with limit=1 hiding any ambiguity. Without a check, a neighbouring
+# parcel's data lands on the row and the row is stamped as enriched.
+
+def test_a_wrong_property_is_rejected(monkeypatch):
+    _stub(monkeypatch, [{"addressLine1": "125 Main St", "yearBuilt": 1998}])
+    data, answered = prop._rentcast_detail("123 Main St", "77396")
+    assert data is None
+    # Still an answer — RentCast responded, so the caller stamps the row rather
+    # than re-billing this address on every future run.
+    assert answered is True
+
+
+def test_a_differently_formatted_same_address_is_accepted(monkeypatch):
+    """Rejecting on formatting would discard data already paid for."""
+    _stub(monkeypatch, [{"addressLine1": "123 MAIN STREET", "yearBuilt": 1998}])
+    data, _ = prop._rentcast_detail("123 Main St", "77396")
+    assert data["year_built"] == 1998
+
+
+def test_formatted_address_is_enough_to_verify(monkeypatch):
+    _stub(monkeypatch, [{"formattedAddress": "123 Main St, Houston, TX 77396",
+                         "yearBuilt": 1998}])
+    data, _ = prop._rentcast_detail("123 Main St", "77396")
+    assert data["year_built"] == 1998
+
+
+def test_an_unverifiable_record_is_rejected(monkeypatch):
+    """Deliberate: a record carrying no address at all cannot be checked, and
+    accepting it would restore the silent-wrong-parcel hole. If RentCast ever
+    stops returning an address this fails loudly and uniformly (every row counts
+    as an address mismatch) rather than quietly writing unverifiable data."""
+    _stub(monkeypatch, [{"yearBuilt": 1998}])
+    assert prop._rentcast_detail("123 Main St", "77396") == (None, True)

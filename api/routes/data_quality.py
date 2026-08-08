@@ -99,7 +99,11 @@ def property_data_backfill(
 
 @router.get("/property-data/discrepancies")
 def property_data_discrepancies(
-    field: Optional[str] = Query(None, description="Restrict to one property field"),
+    field: Optional[str] = Query(
+        None,
+        description="Restrict to one property field. `address` returns the "
+                    "records RentCast answered about a different property.",
+    ),
     zip: Optional[str] = Query(None, description="Restrict to one ZIP"),
     limit: int = Query(DISCREPANCY_LIMIT, ge=1, le=1000),
     user: dict = Depends(get_current_user),
@@ -111,6 +115,10 @@ def property_data_discrepancies(
     A sweep in fill mode records these rather than acting on them: for structural
     facts the county appraisal district is the better record, and estimated_value
     feeds lead scoring, so an automatic overwrite would silently move grades.
+
+    Entries under the `address` field are a different and more serious finding —
+    RentCast resolved the lookup to a different property, so the record was
+    rejected rather than written. Read those first.
     """
     from pipeline.backfill import discrepancy_summary, list_discrepancies
     try:

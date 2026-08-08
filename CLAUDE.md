@@ -87,6 +87,12 @@ A recurring pattern: pure, dependency-free logic lives in its own module so it c
 
 Where SQL is built by interpolating column names (`pipeline/db.py::fetch_missing_any`, `pipeline/backfill.py`), the allowlist check against `db.ALL_COLS` **is** the injection guard — never skip it, and note that psycopg2 binds `%s` positionally in the order placeholders appear in the statement text, which is not always the order the clauses were written in.
 
+### How a property is matched across sources
+`properties` is the join point; HCAD and RentCast attach to it independently and are never matched to each other.
+
+- **HCAD → row**: exact match on a normalized address, in a per-ZIP dict. **`pipeline/addr.py` is the only normalization rule** — `normalize()` for Python lookups, `sql_normalize()` for query-built keys, `axon_normalize_address()` (migration 0065) for the `parcels` generated column. All three must stay byte-compatible; a key built by one and looked up by another that disagrees fails **silently**, which is exactly how HCAD enrichment used to skip every address containing punctuation. `tests/test_addr.py` runs the SQL in a real DuckDB and compares key-for-key — keep that test working rather than hand-copying the expression.
+- **RentCast → row**: not a join. One lookup per property by address string, resolved by RentCast's own parser with `limit=1`. Because that can silently resolve to a neighbouring parcel, `reconcile.verify_record` checks the echoed address before anything is written and records a rejection under the `address` field in `property_field_audits`. `addr.same_address` is deliberately lenient — it gates whether paid data is accepted, so a false negative throws away data you already bought.
+
 ### Backend layout
 - `api/main.py` — app entry: CORS, lifespan (starts APScheduler jobs), router registration + module gating. Read this first to understand what's wired up.
 - `api/routes/` — ~30 route modules. Route docstrings list their endpoints.
