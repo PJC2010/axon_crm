@@ -1,8 +1,8 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Phone, DoorOpen, Mail, MessageSquare, FileText, CheckSquare, Zap } from 'lucide-react'
+import { Plus, Phone, DoorOpen, Mail, MessageSquare, FileText, CheckSquare, Zap, Send } from 'lucide-react'
 import type { TimelineEntry } from '@/lib/types'
-import { getTimeline, addNote, addHistory } from '@/lib/api'
+import { getTimeline, addNote, addHistory, sendLeadMessage } from '@/lib/api'
 import { fmt } from './format'
 
 const ACTION_OPTIONS = ['Called', 'Door knocked', 'Emailed', 'Texted', 'Left voicemail', 'Meeting']
@@ -10,14 +10,23 @@ const OUTCOME_OPTIONS = ['No answer', 'Left message', 'Not interested', 'Interes
 
 const SECTION_BORDER: React.CSSProperties = { borderBottom: '1px solid var(--color-ink-100)' }
 
-/** Log-contact + add-note forms and the unified activity timeline. Self-fetching
- *  by lead id so it can be reused by the drawer and the full lead page. */
-export function ActivityPanel({ leadId }: { leadId: number }) {
+/** Log-contact + add-note forms, the two-way text composer, and the unified
+ *  activity timeline. Self-fetching by lead id so it can be reused by the
+ *  drawer and the full lead page.
+ *
+ *  `contactPhone` is what gates the text composer — pass the record's phone and
+ *  the reply box appears under the conversation. Sends go out from the account's
+ *  own tracking number when it has one, so replies come back to the same thread
+ *  (api/notifications.py::account_sms_from). */
+export function ActivityPanel({ leadId, contactPhone }: { leadId: number; contactPhone?: string | null }) {
   const [timeline, setTimeline] = useState<TimelineEntry[]>([])
   const [noteText, setNoteText] = useState('')
   const [action, setAction]     = useState('Called')
   const [outcome, setOutcome]   = useState('')
   const [saving, setSaving]     = useState(false)
+  const [smsText, setSmsText]   = useState('')
+  const [sendingSms, setSendingSms] = useState(false)
+  const [smsError, setSmsError] = useState<string | null>(null)
   const noteRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -27,6 +36,21 @@ export function ActivityPanel({ leadId }: { leadId: number }) {
 
   function refreshTimeline() {
     getTimeline(leadId).then(setTimeline).catch(() => {})
+  }
+
+  async function submitSms(e: React.FormEvent) {
+    e.preventDefault()
+    const body = smsText.trim()
+    if (!body) return
+    setSendingSms(true)
+    setSmsError(null)
+    try {
+      await sendLeadMessage(leadId, { channel: 'sms', body })
+      setSmsText('')
+      refreshTimeline()
+    } catch (err: unknown) {
+      setSmsError(err instanceof Error ? err.message : 'Text failed to send')
+    } finally { setSendingSms(false) }
   }
 
   async function submitNote(e: React.FormEvent) {
@@ -105,6 +129,64 @@ export function ActivityPanel({ leadId }: { leadId: number }) {
           </button>
         </form>
       </section>
+
+      {/* Two-way texting: type a reply straight into the thread below. */}
+      {contactPhone && (
+        <section style={{ padding: '16px 24px', ...SECTION_BORDER }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+            <MessageSquare size={13} strokeWidth={1.5} style={{ color: 'var(--color-accent)' }} />
+            <p className="t-eyebrow" style={{ margin: 0 }}>Send a text</p>
+          </div>
+          <form onSubmit={submitSms} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <textarea
+              value={smsText}
+              onChange={e => { setSmsText(e.target.value); setSmsError(null) }}
+              placeholder={`Text ${contactPhone}…`}
+              rows={2}
+              maxLength={1600}
+              onKeyDown={e => {
+                // ⌘/Ctrl+Enter sends — Enter alone keeps making new lines, since
+                // a text is often more than one.
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault()
+                  if (smsText.trim() && !sendingSms) submitSms(e)
+                }
+              }}
+              style={{
+                width: '100%',
+                fontSize: 13,
+                padding: '8px 12px',
+                borderRadius: 'var(--radius-input)',
+                border: '1px solid var(--color-ink-200)',
+                background: 'var(--color-paper)',
+                color: 'var(--color-ink-900)',
+                fontFamily: 'var(--font-sans)',
+                resize: 'none',
+                outline: 'none',
+              }}
+              onFocus={e => {
+                e.currentTarget.style.borderColor = 'var(--color-accent)'
+                e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent)'
+              }}
+              onBlur={e => {
+                e.currentTarget.style.borderColor = 'var(--color-ink-200)'
+                e.currentTarget.style.boxShadow = 'none'
+              }}
+            />
+            <button
+              type="submit"
+              disabled={sendingSms || !smsText.trim()}
+              className="btn-primary"
+              style={{ alignSelf: 'flex-end', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            >
+              <Send size={13} strokeWidth={1.5} /> {sendingSms ? 'Sending…' : 'Send text'}
+            </button>
+          </form>
+          {smsError && (
+            <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--color-rose)' }}>{smsError}</p>
+          )}
+        </section>
+      )}
 
       <section style={{ padding: '16px 24px' }}>
         <p className="t-eyebrow" style={{ marginBottom: 12 }}>Activity</p>

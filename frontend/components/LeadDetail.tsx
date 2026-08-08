@@ -153,7 +153,7 @@ export function LeadDetail({ leadId }: { leadId: number }) {
             {propertyBased && <PropertySignals lead={lead} />}
             {propertyBased && <WhyThisScore leadId={lead.id} />}
             <div id="lead-activity">
-              <ActivityPanel leadId={lead.id} />
+              <ActivityPanel leadId={lead.id} contactPhone={lead.contact_phone} />
             </div>
           </div>
         )}

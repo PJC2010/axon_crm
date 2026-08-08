@@ -528,9 +528,28 @@ export interface TrackingNumber {
   created_at: string
 }
 
+// The missed-call auto-text: an SMS template plus the `call_event` workflow rule
+// that sends it. `enabled` is the rule's is_active flag — turning it off keeps
+// the wording, so switching it back on restores whatever the owner wrote.
+export interface AutoReplySettings {
+  enabled: boolean
+  rule_id: number | null
+  template_id: number | null
+  body: string | null
+}
+
 export interface CallSettings {
   configured: boolean
   number: TrackingNumber | null
+  auto_reply: AutoReplySettings
+}
+
+// What POST /calls/activate and PATCH /calls/settings return — the same number
+// + auto-reply pair as CallSettings, minus the server-capability flag.
+export interface CallSettingsResponse {
+  ok: boolean
+  number: TrackingNumber | null
+  auto_reply: AutoReplySettings
 }
 
 export interface AvailableNumber {
