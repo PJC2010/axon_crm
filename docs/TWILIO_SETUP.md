@@ -138,18 +138,90 @@ consent can be demonstrated during a carrier audit.
 **Do not buy or configure these numbers by hand.** The app does it, and hand-bought numbers
 won't have a `tracking_numbers` row for the webhook to resolve.
 
-From the app (Settings → Calls, owner role required):
+From the app (Settings → Integrations → Call tracking, owner role required).
+
+### The one-click path (what the UI does)
+
+`POST /api/calls/activate` is the whole setup in one request. The owner types the phone
+their business line already rings on, accepts, and gets back a working tracking number:
+
+```json
+{"forward_to": "(713) 555-0142", "auto_reply": true}
+```
+
+1. Area codes to shop are derived from `forward_to` itself
+   (`api/call_setup_logic.py::search_area_codes`) — a tracking number reads as local when
+   it matches the line it forwards to. An explicit `area_code` overrides.
+2. Twilio's inventory is **live**: a number in the search results can be sold a second
+   later, and an area code can be empty. So activation walks candidates and only fails
+   once every candidate — ending with "anywhere in the US" — comes up empty. That last
+   fallback is deliberate: a number in the wrong area code still tracks calls, and
+   dead-ending the owner over cosmetics is worse.
+3. The number is bought with both webhooks already set (below), then recorded with
+   `forward_to`.
+4. Unless `auto_reply: false`, the missed-call auto-text is switched on (next section).
+   That step is **best-effort** — by then the number is live and forwarding, so a failure
+   there is something the owner can flip on in Settings, not a reason to fail activation
+   and leave them paying for a number they didn't get told about.
+
+### The manual path (pick your own digits)
 
 - `GET /api/calls/numbers/available?area_code=832` searches Twilio's inventory.
-- `POST /api/calls/numbers` purchases one and sets `voice_url` →
-  `/api/public/twilio/voice` and `sms_url` → `/api/public/twilio/sms`, both built from
-  `PUBLIC_API_BASE_URL`. If the DB insert then fails, the number is released back to
-  Twilio — real money was spent, so it doesn't strand.
-- `PATCH /api/calls/settings` sets `forward_to`, the business's real phone.
+- `POST /api/calls/numbers` purchases one specific number.
+
+Both paths buy through the same helper, which sets `voice_url` →
+`/api/public/twilio/voice` and `sms_url` → `/api/public/twilio/sms`, both built from
+`PUBLIC_API_BASE_URL`. If the DB insert then fails, the number is released back to Twilio —
+real money was spent, and an unrecorded number rings nowhere (the webhook resolves tenants
+through `tracking_numbers`) while still billing monthly.
+
+- `PATCH /api/calls/settings` sets `forward_to`, the business's real phone. It also
+  toggles/edits the auto-text (`auto_reply`, `auto_reply_body`) — that half is owner-only,
+  since it sends on the account's behalf.
 - `DELETE /api/calls/numbers/{id}` releases it.
 
 One active number per account (`idx_tracking_numbers_digits_active` enforces that an active
 number maps to exactly one tenant).
+
+### The missed-call auto-text
+
+Activation seeds two rows, both named by the constants in `api/call_setup_logic.py`:
+
+| Row | What it is |
+|---|---|
+| `message_templates` "Missed call auto-reply" | An SMS template holding the wording. `{{business_name}}` is left as a merge field, so renaming the account updates the text. |
+| `workflow_rules` "Missed call → auto-text the caller" | A `call_event` rule, `{"event": "missed"}` → `send_template`, no delay. |
+
+Deliberate choices worth knowing before you change them:
+
+- **Fires on `missed` only.** `busy` is a separate outcome — the line was engaged, so
+  somebody was already there.
+- **No `{{first_name}}`.** A lead auto-created from an unknown caller is named
+  "Caller (713) 555-0142" (`api/call_logic.py::new_lead_row`), so the greeting would read
+  "Hi Caller".
+- **It does not need the `automation` module.** `call_event` rules run straight from the
+  voice webhook, so the auto-text ships with `calls`.
+- **Toggling off disables the rule, it doesn't delete it** — flipping it back on restores
+  whatever wording the owner wrote. Re-enabling never overwrites an edited body.
+
+Because it's a plain workflow rule, Settings → Automation can grow it into a multi-step
+follow-up, or the owner can edit the template in Settings → Messaging. Both edits stick;
+the route looks the rows up by name rather than resurrecting the default.
+
+### Two-way texting, once a number exists
+
+No extra configuration — the direction each way already resolves through the same number:
+
+- **Outbound**: `api/notifications.py::account_sms_from` resolves the account's own
+  tracking number as the sender, falling back to `TWILIO_FROM_NUMBER`. Manual sends, the
+  lead page's text composer, template sends and workflow auto-texts all route through it.
+- **Inbound**: a reply to that number hits `/api/public/twilio/sms`, which resolves the
+  tenant from the **To** number, matches the sender *scoped to that account*, creates a
+  lead if they're unknown, and threads the message onto the record's timeline.
+
+The practical effect: a missed caller gets an auto-text from the number they just dialed,
+replies to it, and the reply lands on their lead — where the owner can type back from the
+record's activity panel.
 
 The call flow, `api/routes/twilio_voice.py`:
 
@@ -193,14 +265,21 @@ Without it, a lead created from a call arrives with just a phone number.
 
 ## Verifying
 
-- `GET /api/calls/settings` → `{"configured": true, "number": {...}}`. `configured: false`
-  means `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` aren't set.
+- `GET /api/calls/settings` → `{"configured": true, "number": {...}, "auto_reply": {...}}`.
+  `configured: false` means `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` aren't set.
 - Text the global number from a phone that matches a lead's `contact_phone`; the message
   should appear on that lead's timeline within a second.
 - Watch the logs for `invalid Twilio signature` (URL mismatch) or `matched no record`
   (working, but the sender isn't on any lead).
 - Call a tracking number and confirm it forwards, then check `GET /api/calls` for the row
   and the lead timeline for the "Inbound call" line.
+- **End-to-end, from a phone that matches no lead:** call the tracking number and don't
+  answer. Expect a new lead, an urgent call-back task, and — with the auto-text on — a
+  text back from the tracking number within a second or two. Reply to it and the reply
+  should land on that same lead's timeline; type back from the record's activity panel and
+  it goes out from the tracking number. Log lines to grep, in order:
+  `Inbound call: account=…`, `Missed-call auto-text enabled…` (at activation),
+  `send_template rule` failures if the text doesn't arrive.
 
 ## Known gaps
 

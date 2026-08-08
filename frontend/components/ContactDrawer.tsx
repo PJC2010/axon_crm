@@ -159,7 +159,7 @@ export function ContactDrawer({ lead, onClose, onStatusChange, onLeadChange, onT
           <AppointmentsSection key={`appt-${lead.id}`} leadId={lead.id} />
           {propertyBased && <PropertySignals lead={lead} />}
           {propertyBased && <WhyThisScore leadId={lead.id} />}
-          <ActivityPanel leadId={lead.id} />
+          <ActivityPanel leadId={lead.id} contactPhone={lead.contact_phone} />
         </div>
       </aside>
     </>

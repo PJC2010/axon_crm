@@ -1,5 +1,5 @@
 
-import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, StripeStatus, PublicPayInfo, BillingInfo, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, MessageTemplate, MessageTemplateCreate, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType, HeatmapMetric, HeatmapResponse, ClusterCollection, ProspectSeed, ProspectResult, BlastRadiusResult, ServiceArea, EventCollection, EventCreate, LeadEvent, LeadEventCreate, CallSettings, TrackingNumber, AvailableNumber, CallOutcome, CallLogPage } from './types'
+import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, StripeStatus, PublicPayInfo, BillingInfo, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, MessageTemplate, MessageTemplateCreate, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType, HeatmapMetric, HeatmapResponse, ClusterCollection, ProspectSeed, ProspectResult, BlastRadiusResult, ServiceArea, EventCollection, EventCreate, LeadEvent, LeadEventCreate, CallSettings, CallSettingsResponse, TrackingNumber, AvailableNumber, CallOutcome, CallLogPage } from './types'
 import { getToken, clearToken } from './auth'
 
 // Use 127.0.0.1 (not localhost): on macOS `localhost` resolves to IPv6 ::1
@@ -1097,8 +1097,21 @@ export function getCallSettings(): Promise<CallSettings> {
   return req<CallSettings>('/calls/settings')
 }
 
-export function updateCallSettings(forwardTo: string): Promise<{ ok: boolean; number: TrackingNumber | null }> {
-  return req('/calls/settings', { method: 'PATCH', body: JSON.stringify({ forward_to: forwardTo }) })
+/** One-click setup: the business line in, a tracking number that forwards to it
+ *  out. The server picks a number in that line's own area code and (unless
+ *  auto_reply is false) switches on the missed-call auto-text. */
+export function activateCallTracking(body: {
+  forward_to: string; area_code?: string; auto_reply?: boolean; auto_reply_body?: string
+}): Promise<CallSettingsResponse> {
+  return req('/calls/activate', { method: 'POST', body: JSON.stringify(body) })
+}
+
+/** PATCH any subset: the forwarding destination, the auto-text switch, its
+ *  wording. Omitted fields are left alone. */
+export function updateCallSettings(body: {
+  forward_to?: string; auto_reply?: boolean; auto_reply_body?: string
+}): Promise<CallSettingsResponse> {
+  return req('/calls/settings', { method: 'PATCH', body: JSON.stringify(body) })
 }
 
 export function searchCallNumbers(params: { area_code?: string; contains?: string } = {}): Promise<{ numbers: AvailableNumber[] }> {

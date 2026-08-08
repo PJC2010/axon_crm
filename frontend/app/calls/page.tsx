@@ -112,11 +112,12 @@ function CallsPage() {
           }}>
             <Phone size={22} strokeWidth={1.5} style={{ color: 'var(--color-ink-400)', marginBottom: 10 }} />
             <p style={{ fontSize: 14, color: 'var(--color-ink-600)', margin: '0 0 14px' }}>
-              No tracking number yet. Get a local number that forwards to your phone —
-              every call lands here and unknown callers become leads automatically.
+              No tracking number yet. Enter the phone your business line already rings on and
+              we&apos;ll assign you a local number that forwards to it — every call lands here,
+              unknown callers become leads, and missed callers get a text back automatically.
             </p>
             <Link
-              href="/settings"
+              href="/settings?tab=integrations"
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 padding: '10px 16px', borderRadius: 'var(--radius-button)',

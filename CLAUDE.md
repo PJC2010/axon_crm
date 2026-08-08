@@ -61,7 +61,7 @@ An **account** is an organization/tenant (`db/migrations/0017_org_isolation.sql`
 **When writing any query that touches tenant data, scope it by `account_id`.** The current user (with `account_id`) comes from `Depends(get_current_user)` in `api/deps.py`. Forgetting the scope leaks data across tenants — this is the single most important correctness rule in the codebase.
 
 ### Feature gating via modules & plans
-Optional features are grouped into **modules** (`prospecting`, `map`, `invoicing`, `bookkeeping`, `quotes`, `marketing`, `automation`, `policies`, `orders`, `appointments`). `core` features (leads, Kanban board, tasks, notes, history, export) are always on and are deliberately *not* modules.
+Optional features are grouped into **modules** (`prospecting`, `map`, `invoicing`, `bookkeeping`, `quotes`, `marketing`, `automation`, `policies`, `orders`, `appointments`, `calls`). `core` features (leads, Kanban board, tasks, notes, history, export) are always on and are deliberately *not* modules.
 
 - Source of truth: `api/entitlements.py` (`MODULE_KEYS`, `PLAN_CATALOG`, `get_account_modules`, `require_module`).
 - Whole-module routers are gated in `api/main.py` with `dependencies=[Depends(require_module("x"))]`. Mixed-concern routers (e.g. `pipeline.py`) gate **per-endpoint** instead.

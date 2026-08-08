@@ -101,7 +101,13 @@ The platform is self-hosted, multi-tenant, and data-sovereign: every table is is
 - Account-defined custom fields on any record
 - Saved segments (named, reusable filter sets)
 - Reusable message templates with merge-field rendering; per-record send (email/SMS) logs to the contact timeline
-- Two-way SMS: inbound Twilio messages are matched to a record by phone number and logged to its timeline
+- Two-way SMS: inbound Twilio messages are matched to a record by phone number and logged to its timeline; reply free-text from the record's activity panel, sent from the account's own tracking number so the thread stays in one place
+
+### Call Tracking **(calls)**
+- **One-click setup**: enter the phone your business line already rings on, accept, and the account is assigned a Twilio tracking number in that line's own area code, forwarding to it (`POST /api/calls/activate`). Both webhooks are configured at purchase time — nothing to do in the Twilio console
+- Every inbound call is logged with outcome and duration; the caller is matched to a record scoped to the account, and an unknown caller becomes a new lead (optionally address-appended from their number)
+- **Missed-call auto-text**, on by default at activation: a missed call texts the caller back from the tracking number, so their reply threads onto the same record. Toggleable and editable in Settings; it's a normal `call_event` workflow rule underneath, so it can grow into a multi-step follow-up
+- Missed calls also drop an urgent same-day call-back task on the owner (speed-to-lead)
 
 ### Marketing Insights
 - Connect Meta (Facebook/Instagram) via manual export upload (Business Suite CSV, Ads Manager CSV, "Download Your Information" JSON)
@@ -724,10 +730,23 @@ The FastAPI server exposes interactive docs at `http://localhost:8000/docs` (Swa
 | POST | `/api/public/pay/{pay_token}/checkout` **(public)** | Create Checkout Session |
 | POST | `/api/public/stripe/webhook` **(public)** | Signature-verified Stripe event sink |
 
+### Call Tracking **(calls)**
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/calls/activate` | One-click setup: business line in, tracking number + missed-call auto-text out (owner) |
+| GET | `/api/calls/settings` | Tracking number, forwarding destination, auto-text state |
+| PATCH | `/api/calls/settings` | Change the forwarding phone; toggle/edit the auto-text (auto-text = owner) |
+| GET | `/api/calls/numbers/available` | Search purchasable local numbers (for picking your own digits) |
+| POST | `/api/calls/numbers` | Buy a specific number (owner, one per account) |
+| DELETE | `/api/calls/numbers/{id}` | Release the number (owner) |
+| GET | `/api/calls` | Account-wide call log (filter by outcome) |
+
 ### Messaging Webhooks & Public Intake
 | Method | Path | Description |
 |---|---|---|
-| POST | `/api/public/twilio/sms` **(public)** | Inbound Twilio SMS webhook (two-way messaging) |
+| POST | `/api/public/twilio/sms` **(public)** | Inbound Twilio SMS webhook (two-way messaging; tracking-number texts resolve their tenant and auto-create leads) |
+| POST | `/api/public/twilio/voice` **(public)** | Inbound call webhook — logs the call and forwards it to the business line |
+| POST | `/api/public/twilio/voice/dial-status` **(public)** | Dial-outcome callback (answered/missed/busy + duration) |
 | POST | `/api/public/website-lead` **(public)** | Website lead intake (shared-secret authenticated) |
 
 ### HCAD **(prospecting)**
