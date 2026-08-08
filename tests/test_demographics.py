@@ -8,6 +8,8 @@ from pipeline.demographics import (
     _yn, _band_lower, _parse_ym_date, _credit_grade,
     _mortgage_rate_type, _age_midpoint, _normalize_life_stage,
     _decade_band, _iso_date, _latest_refi_date, _last_sale_year, _years_since,
+    _equity_from_percent, _recent_permit_lower_bound,
+    _recent_home_improvement,
     _batchdata_lookup, PROVIDERS,
     enrich_demographics,
 )
@@ -281,7 +283,12 @@ class TestBatchdataDemographics:
                     "individualOccupation": "Craftsman / Blue Collar",
                     "hasChildren": False,
                 },
-                "valuation": {"ltv": 0, "equityPercent": 100},
+                "valuation": {"ltv": 0, "equityPercent": 75},
+                "permit": {
+                    "permitCount": 4,
+                    "latestDate": date.today().isoformat(),
+                    "tags": {"roofing": True, "solar": False},
+                },
                 "quickLists": {"seniorOwner": False},
                 "mortgageHistory": [
                     {"transactionType": "Refi loans and 2nd trust deeds",
@@ -292,8 +299,9 @@ class TestBatchdataDemographics:
         monkeypatch.setattr("pipeline.demographics.post_json", fake)
         out = _batchdata_lookup({"owner_name": "Pete Castillo",
                                  "address": "3723 Apple Hollow Ln",
-                                 "city": "Humble", "state": "TX", "zip": "77396"})
-        from datetime import date
+                                 "city": "Humble", "state": "TX", "zip": "77396",
+                                 "estimated_value": 400000,
+                                 "permit_count_24mo": None})
         assert out["owner_age"] == 33
         assert out["age_range"] == "30-39"
         assert out["est_household_income"] == 40000
@@ -302,6 +310,11 @@ class TestBatchdataDemographics:
         assert out["occupation"] == "Craftsman / Blue Collar"
         assert out["has_children"] is False
         assert out["loan_to_value"] == 0
+        assert out["estimated_equity"] == 300000
+        # permitCount is lifetime; latestDate proves only a lower bound of one
+        # permit inside the 24-month scoring window.
+        assert out["permit_count_24mo"] == 1
+        assert out["home_improvement_flag"] is True
         assert out["senior_in_household"] is False
         assert out["refi_date"] == date(2003, 3, 19)
         assert out["length_of_residence_years"] == date.today().year - 1996
@@ -325,6 +338,57 @@ class TestBatchdataDemographics:
     def test_api_failure_returns_none(self, monkeypatch):
         monkeypatch.setattr("pipeline.demographics.post_json", lambda *a, **k: None)
         assert _batchdata_lookup({"address": "1 Oak St"}) is None
+
+    def test_preserves_precise_existing_permit_count(self, monkeypatch):
+        monkeypatch.setattr("pipeline.demographics.post_json",
+                            lambda *a, **k: {"results": {"properties": [{
+                                "valuation": {"ltv": 50},
+                                "permit": {"permitCount": 99,
+                                           "latestDate": date.today().isoformat()}
+                            }]}})
+        out = _batchdata_lookup({"address": "1 Oak St",
+                                 "permit_count_24mo": 3})
+        assert "permit_count_24mo" not in out
+
+
+class TestBatchdataScoringFields:
+    def test_equity_percent_to_dollars(self):
+        assert _equity_from_percent(500000, 40) == 200000
+
+    @pytest.mark.parametrize("value,percent", [
+        (None, 40), (500000, None), (500000, -1), (500000, 101),
+    ])
+    def test_equity_rejects_missing_or_invalid_inputs(self, value, percent):
+        assert _equity_from_percent(value, percent) is None
+
+    def test_recent_permit_is_safe_lower_bound_not_lifetime_total(self):
+        permit = {"permitCount": 453, "latestDate": date.today().isoformat()}
+        assert _recent_permit_lower_bound(permit) == 1
+
+    def test_stale_permit_is_zero_for_24_month_window(self):
+        permit = {"permitCount": 12,
+                  "latestDate": f"{date.today().year - 3}-01-01"}
+        assert _recent_permit_lower_bound(permit) == 0
+        assert _recent_home_improvement({**permit, "tags": {"roofing": True}}) is None
+
+    def test_positive_count_without_date_is_unknown(self):
+        assert _recent_permit_lower_bound({"permitCount": 2}) is None
+
+    def test_recent_improvement_tag_sets_behavioral_signal(self):
+        permit = {
+            "permitCount": 2,
+            "latestDate": date.today().isoformat(),
+            "tags": {"inspectionPassed": True, "remodel": True},
+        }
+        assert _recent_home_improvement(permit) is True
+
+    def test_non_improvement_tag_does_not_set_signal(self):
+        permit = {
+            "permitCount": 1,
+            "latestDate": date.today().isoformat(),
+            "tags": {"inspectionPassed": True},
+        }
+        assert _recent_home_improvement(permit) is None
 
 
 class TestEnrichDemographicsNoKey:

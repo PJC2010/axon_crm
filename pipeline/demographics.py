@@ -174,6 +174,7 @@ def _batchdata_lookup(row: dict) -> dict | None:
       valuation     → loan_to_value, equity
       mortgageHistory → most recent refinance date
       sale/deedHistory → length of residence
+      permit        → recent permit activity / confirmed home improvement
       quickLists    → seniorOwner household flag
     Mapped onto the same columns the Versium provider fills, so scoring and the
     ML feature set consume them identically regardless of provider.
@@ -209,6 +210,7 @@ def _batchdata_lookup(row: dict) -> dict | None:
 
     demo = prop.get("demographics") or {}
     val = prop.get("valuation") or {}
+    permit = prop.get("permit") or {}
     ql = prop.get("quickLists") or {}
 
     # ── Model-feature / scoring fields straight off demographics ───────────────
@@ -222,6 +224,18 @@ def _batchdata_lookup(row: dict) -> dict | None:
 
     # ── Valuation / equity ─────────────────────────────────────────────────────
     ltv            = _safe_float(val.get("ltv"))
+    equity         = _equity_from_percent(row.get("estimated_value"),
+                                          val.get("equityPercent"))
+
+    # BatchData's permitCount is lifetime activity, not a 24-month count. Its
+    # aggregate response does expose latestDate, though, so we can safely record
+    # a lower bound: 1 means at least one permit was issued in the last 24
+    # months; 0 means the property has no permits or its newest permit is older.
+    # Never replace a precise HCAD/county count already present on the row.
+    recent_permits = None
+    if row.get("permit_count_24mo") is None:
+        recent_permits = _recent_permit_lower_bound(permit)
+    home_improvement = _recent_home_improvement(permit)
 
     # ── Senior household flag: BatchData's seniorOwner, else derive from age ───
     # seniorOwner is a household-level flag (may reflect a co-owner), so it can
@@ -243,10 +257,13 @@ def _batchdata_lookup(row: dict) -> dict | None:
     life_stage = _normalize_life_stage(None, owner_age, tenure, life_stage_senior)
 
     result = {
-        # Scoring signals (only those BatchData provides — credit_rating,
-        # home_improvement, gardening, pets, decorating aren't in BatchData)
+        # Scoring signals (credit_rating, gardening, pets, and decorating remain
+        # Versium-only; recent permit tags provide a confirmed improvement signal)
         "refi_date":              refi_date,
         "has_children":           has_children,
+        "home_improvement_flag":  home_improvement,
+        "permit_count_24mo":      recent_permits,
+        "estimated_equity":       equity,
         # Model features
         "age_range":              age_range,
         "estimated_net_worth":    net_worth,
@@ -379,6 +396,73 @@ def _safe_float(value) -> float | None:
         return float(str(value).replace(",", "").replace("%", ""))
     except (ValueError, TypeError):
         return None
+
+
+def _equity_from_percent(value, equity_percent) -> int | None:
+    """Convert BatchData's equity percentage to dollars using our local AVM.
+
+    Live Property Search responses expose ``valuation.equityPercent`` but no
+    dollar balance. Reject percentages outside 0–100 rather than letting a bad
+    vendor value distort one of the scorer's strongest factors.
+    """
+    property_value = _safe_float(value)
+    percent = _safe_float(equity_percent)
+    if property_value is None or property_value < 0 or percent is None:
+        return None
+    if not 0 <= percent <= 100:
+        return None
+    return max(int(round(property_value * percent / 100)), 0)
+
+
+def _recent_permit_lower_bound(permit: dict) -> int | None:
+    """Return a safe lower bound for permits issued in the last 24 months.
+
+    BatchData provides a lifetime ``permitCount`` plus the newest permit date,
+    not individual permit dates. Therefore the only defensible 24-month count
+    is 1 when the newest permit is recent, 0 when there are no permits or the
+    newest is stale, and None when a positive lifetime count has no usable date.
+    """
+    if not isinstance(permit, dict):
+        return None
+    count = _safe_int(permit.get("permitCount"))
+    if count is None:
+        return None
+    if count <= 0:
+        return 0
+    latest = _iso_date(permit.get("latestDate"))
+    if latest is None:
+        return None
+    return 1 if latest >= _date_two_years_ago() else 0
+
+
+_HOME_IMPROVEMENT_PERMIT_TAGS = {
+    "addition", "adu", "bathroom", "battery", "demolition",
+    "electricMeter", "electrical", "evCharger", "fireSprinkler", "gas",
+    "generator", "grading", "heatPump", "hvac", "kitchen",
+    "newConstruction", "plumbing", "poolAndHotTub", "remodel", "roofing",
+    "solar", "waterHeater", "windowDoor",
+}
+
+
+def _recent_home_improvement(permit: dict) -> bool | None:
+    """True only for recent, explicitly tagged construction activity."""
+    recent = _recent_permit_lower_bound(permit)
+    if recent != 1:
+        return None
+    tags = permit.get("tags") if isinstance(permit, dict) else None
+    if not isinstance(tags, dict):
+        return None
+    return True if any(_yn(tags.get(tag)) is True
+                       for tag in _HOME_IMPROVEMENT_PERMIT_TAGS) else None
+
+
+def _date_two_years_ago() -> date:
+    """Calendar-accurate 24-month cutoff, including a Feb 29 fallback."""
+    today = date.today()
+    try:
+        return today.replace(year=today.year - 2)
+    except ValueError:
+        return today.replace(year=today.year - 2, day=28)
 
 
 def _band_lower(value) -> int | None:
