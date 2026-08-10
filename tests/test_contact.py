@@ -102,6 +102,9 @@ class TestOwnerNameCandidates:
 
     @pytest.mark.parametrize("name", [
         "RASPBERRY REALTY I LLC", "HOUSTON CITY OF", "MARIA", "", "   ",
+        # Assessor placeholders parse as a plausible person; without the junk
+        # guard each one billed two skip-trace lookups that can never match.
+        "CURRENT OWNER", "Current Property Owner", "UNKNOWN",
     ])
     def test_no_usable_person_returns_empty(self, name):
         assert _owner_name_candidates(name) == []

@@ -45,6 +45,14 @@ def test_normalize_owner_flat_fallback():
     assert row["owner_name"] == "FLAT OWNER"
 
 
+def test_normalize_nulls_placeholder_owner():
+    # Assessor placeholders must land as NULL so the row stays eligible for the
+    # paid owner fill — a stored "CURRENT OWNER" blocks it (pipeline/owner.py).
+    row = _normalize_rentcast({"addressLine1": "7 D St", "zipCode": "77002",
+                               "owner": {"names": ["CURRENT OWNER"]}})
+    assert row["owner_name"] is None
+
+
 def test_normalize_records_origin_zip_in_flags():
     row = _normalize_rentcast({"zipCode": "77003"}, origin_zip="77002")
     assert row["enrichment_flags"]["seed_origin_zip"] == "77002"

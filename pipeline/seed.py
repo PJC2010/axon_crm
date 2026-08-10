@@ -18,6 +18,7 @@ from config import (
 )
 from pipeline.db import get_conn, upsert_properties
 from pipeline.http import get_json
+from pipeline.owner import clean_owner_name
 
 log = logging.getLogger(__name__)
 
@@ -298,7 +299,7 @@ def _normalize_rentcast(p: dict, origin_zip: str | None = None) -> dict:
         "estimated_value": p.get("price"),
         "last_sale_date":  p.get("lastSaleDate"),
         "last_sale_price": p.get("lastSalePrice"),
-        "owner_name":      _owner_name(p),
+        "owner_name":      clean_owner_name(_owner_name(p)),
         "owner_occupied":  p.get("ownerOccupied"),
         "garage_spaces":   features.get("garageSpaces"),
         "garage_type":     features.get("garageType"),
@@ -328,7 +329,7 @@ def _normalize_hcad(p: dict, region_id: str | None = None) -> dict:
         "lot_size":               p.get("lot_size"),
         "estimated_value":        p.get("estimated_value"),
         "last_sale_date":         p.get("last_sale_date"),
-        "owner_name":             p.get("owner_name"),
+        "owner_name":             clean_owner_name(p.get("owner_name")),
         "owner_occupied":         p.get("owner_occupied"),
         "mailing_address":        p.get("mailing_address"),
         "hcad_neighborhood_code": p.get("neighborhood_code"),

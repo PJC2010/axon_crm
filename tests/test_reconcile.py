@@ -49,6 +49,13 @@ def test_map_record_falls_back_to_flat_owner_name():
     assert mapped["owner_name"] == "JOHN ROE"
 
 
+def test_map_record_nulls_placeholder_owner():
+    # A vendor echoing the county's "CURRENT OWNER" placeholder must map to
+    # None — it may neither fill a NULL nor mismatch against a real name.
+    mapped = map_record(_record(owner={"names": ["CURRENT OWNER"]}))
+    assert mapped["owner_name"] is None
+
+
 def test_map_record_covers_every_reconciled_field():
     mapped = map_record(_record())
     assert set(mapped) == set(RECONCILED_FIELDS)

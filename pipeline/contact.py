@@ -33,6 +33,7 @@ from config import (
 )
 from pipeline.db import get_conn, fetch_missing_field, upsert_properties
 from pipeline.http import get_json, post_json
+from pipeline.owner import is_junk_owner_name
 
 log = logging.getLogger(__name__)
 
@@ -528,7 +529,10 @@ def _owner_name_candidates(owner_name: str) -> list[tuple[str, str]]:
       - ambiguous First/Last order       → return BOTH orderings to try in turn
     """
     name = (owner_name or "").strip()
-    if not name or _is_business(name):
+    # Assessor placeholders ("CURRENT OWNER") parse as a plausible person and
+    # would bill two skip-trace lookups that can never match anyone. Ingestion
+    # nulls them now, but rows written before that guard still carry them.
+    if not name or is_junk_owner_name(name) or _is_business(name):
         return []
 
     # Multiple owners are joined by '&' or ' AND ' — keep the first only.

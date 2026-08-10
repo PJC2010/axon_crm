@@ -38,6 +38,7 @@ from datetime import date
 from config import PROPERTY_VALUE_TOLERANCE_PCT
 from pipeline.addr import same_address
 from pipeline.equity import estimate_equity
+from pipeline.owner import clean_owner_name
 
 # ── Verdicts ──────────────────────────────────────────────────────────────────
 FILL = "fill"           # we have nothing, RentCast does — free win
@@ -136,8 +137,10 @@ def map_record(record: dict) -> dict:
     features = record.get("features") or {}
     owner = record.get("owner") or {}
     names = owner.get("names")
-    owner_name = (names[0] if isinstance(names, list) and names
-                  else record.get("ownerName"))
+    # Placeholder owner names ("CURRENT OWNER") become None here so they can
+    # neither fill a NULL nor count as a mismatch against a real stored name.
+    owner_name = clean_owner_name(names[0] if isinstance(names, list) and names
+                                  else record.get("ownerName"))
 
     value = record.get("price")
     sale_price = record.get("lastSalePrice")

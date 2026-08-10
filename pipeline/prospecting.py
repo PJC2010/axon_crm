@@ -26,6 +26,7 @@ from pipeline import geo_h3
 from pipeline.addr import normalize
 from pipeline.equity import estimate_equity
 from pipeline.geo_scoring import haversine_km
+from pipeline.owner import clean_owner_name
 from pipeline.property_provider import get_provider
 
 log = logging.getLogger(__name__)
@@ -143,9 +144,9 @@ def refine(records: list[dict], preset: dict | None) -> list[dict]:
 def _owner_name(r: dict) -> str | None:
     owner = r.get("owner") or {}
     names = owner.get("names")
-    if isinstance(names, list) and names:
-        return names[0]
-    return r.get("ownerName")
+    raw = (names[0] if isinstance(names, list) and names
+           else r.get("ownerName"))
+    return clean_owner_name(raw)
 
 
 def map_record(r: dict, vertical: str | None) -> dict:

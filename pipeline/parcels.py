@@ -29,6 +29,8 @@ neither is ever promoted. SHARED_COLS below is the allowlist that enforces it.
 """
 import logging
 
+from pipeline.owner import sql_clean_owner_name
+
 log = logging.getLogger(__name__)
 
 
@@ -74,7 +76,7 @@ def ensure_from_hcad(conn, zip_code: str) -> int:
     """
     with conn.cursor() as cur:
         cur.execute(
-            """
+            f"""
             INSERT INTO parcels (
                 address, zip, city, state,
                 year_built, square_footage, lot_size, estimated_value,
@@ -92,7 +94,7 @@ def ensure_from_hcad(conn, zip_code: str) -> int:
                 h.land_sqft,
                 h.tot_appr_val,
                 h.last_sale_date,
-                h.owner_name,
+                {sql_clean_owner_name("h.owner_name")},
                 h.likely_owner_occupied,
                 NULLIF(CONCAT_WS(', ',
                     NULLIF(TRIM(h.mail_addr), ''),
