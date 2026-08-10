@@ -50,26 +50,39 @@ def zip_coverage(conn, zip_code: str | None):
     _print_header("1. SEEDED ZIP COVERAGE")
     where, params = ("WHERE p.zip = %s", (zip_code,)) if zip_code else ("", ())
 
-    total_zips, total_rows, total_accounts = _one(conn, f"""
-        SELECT COUNT(DISTINCT p.zip), COUNT(*), COUNT(DISTINCT p.account_id)
+    # A NULL or blank zip is possible (rows imported by CSV/API without one) —
+    # count those separately rather than letting them pose as a seeded ZIP.
+    total_zips, total_rows, total_accounts, total_blank = _one(conn, f"""
+        SELECT COUNT(DISTINCT p.zip) FILTER (WHERE TRIM(COALESCE(p.zip, '')) <> ''),
+               COUNT(*), COUNT(DISTINCT p.account_id),
+               COUNT(*) FILTER (WHERE TRIM(COALESCE(p.zip, '')) = '')
         FROM properties p {where}
     """, params)
     print(f"\nDistinct ZIPs seeded across ALL accounts: {total_zips}"
-          f"   ({total_rows:,} property rows, {total_accounts} account(s))\n")
+          f"   ({total_rows:,} property rows, {total_accounts} account(s))")
+    if total_blank:
+        print(f"  ⚠ {total_blank:,} row(s) have a NULL/blank zip — "
+              "excluded from the ZIP count")
 
-    print(f"{'account':>7}  {'name':<28} {'zips':>5} {'rows':>9}  zip list")
-    for acct_id, name, zips, rows, zip_list in _rows(conn, f"""
+    print(f"\n{'account':>7}  {'name':<28} {'zips':>5} {'rows':>9} "
+          f"{'no-zip':>7}  zip list")
+    for acct_id, name, zips, rows, blank, zip_list in _rows(conn, f"""
         SELECT p.account_id, COALESCE(a.name, '?'),
-               COUNT(DISTINCT p.zip), COUNT(*),
+               COUNT(DISTINCT p.zip) FILTER (WHERE TRIM(COALESCE(p.zip, '')) <> ''),
+               COUNT(*),
+               COUNT(*) FILTER (WHERE TRIM(COALESCE(p.zip, '')) = ''),
                ARRAY_AGG(DISTINCT p.zip ORDER BY p.zip)
+                   FILTER (WHERE TRIM(COALESCE(p.zip, '')) <> '')
         FROM properties p
         LEFT JOIN accounts a ON a.id = p.account_id
         {where}
         GROUP BY p.account_id, a.name
         ORDER BY p.account_id
     """, params):
+        zip_list = zip_list or []   # NULL when an account has only blank zips
         shown = ", ".join(zip_list[:8]) + (" …" if len(zip_list) > 8 else "")
-        print(f"{acct_id:>7}  {name[:28]:<28} {zips:>5} {rows:>9,}  {shown}")
+        print(f"{acct_id:>7}  {name[:28]:<28} {zips:>5} {rows:>9,} "
+              f"{blank:>7,}  {shown}")
 
     if _exists(conn, "parcels"):
         pz, pr = _one(conn, "SELECT COUNT(DISTINCT zip), COUNT(*) FROM parcels"
