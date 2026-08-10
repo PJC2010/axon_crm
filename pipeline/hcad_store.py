@@ -15,6 +15,7 @@ import duckdb
 
 from config import PERMIT_DB_PATH, GARAGE_SQFT_PER_SPACE, MAX_GARAGE_SPACES
 from pipeline.addr import normalize, sql_normalize   # shared single source of truth
+from pipeline.owner import sql_clean_owner_name
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +35,13 @@ log = logging.getLogger(__name__)
 _ADDR_NORM_PS = sql_normalize("ps.site_address")
 _ADDR_NORM_HP = sql_normalize("hp.site_address")
 _ADDR_NORM = sql_normalize("site_address")
+
+# Owner names leave here NULL when they are assessor placeholders ("CURRENT
+# OWNER") — a stored placeholder blocks the paid gap-fill that a NULL invites.
+# Same derive-don't-hand-copy discipline as the address keys above; the rule
+# lives in pipeline/owner.py.
+_OWNER_CLEAN_PS = sql_clean_owner_name("ps.owner_name")
+_OWNER_CLEAN = sql_clean_owner_name("owner_name")
 
 
 def garage_spaces_from_sqft(sqft) -> int:
@@ -140,7 +148,7 @@ def query_properties(zip_code: str, db_path: str | None = None) -> dict[str, dic
                     ps.land_sqft                         AS lot_size,
                     ps.tot_appr_val                      AS estimated_value,
                     ps.last_sale_date,
-                    ps.owner_name,
+                    {_OWNER_CLEAN_PS} AS owner_name,
                     ps.likely_owner_occupied             AS owner_occupied,
                     NULLIF(CONCAT_WS(', ',
                         NULLIF(TRIM(ps.mail_addr), ''),
@@ -186,7 +194,7 @@ def _duckdb_query_properties_no_nbhd(con, zip_code: str) -> dict[str, dict]:
             land_sqft                         AS lot_size,
             tot_appr_val                      AS estimated_value,
             last_sale_date,
-            owner_name,
+            {_OWNER_CLEAN} AS owner_name,
             likely_owner_occupied             AS owner_occupied,
             NULLIF(CONCAT_WS(', ',
                 NULLIF(TRIM(mail_addr), ''),
@@ -367,7 +375,7 @@ def _duckdb_query_region(con, region_id: str, zip_code: str, joined: bool) -> di
             ps.land_sqft                         AS lot_size,
             ps.tot_appr_val                      AS estimated_value,
             ps.last_sale_date,
-            ps.owner_name,
+            {_OWNER_CLEAN_PS} AS owner_name,
             ps.likely_owner_occupied             AS owner_occupied,
             NULLIF(CONCAT_WS(', ',
                 NULLIF(TRIM(ps.mail_addr), ''),
@@ -431,7 +439,7 @@ def _duckdb_query_zip(con, zip_code: str, joined: bool) -> dict[str, dict]:
             ps.land_sqft                         AS lot_size,
             ps.tot_appr_val                      AS estimated_value,
             ps.last_sale_date,
-            ps.owner_name,
+            {_OWNER_CLEAN_PS} AS owner_name,
             ps.likely_owner_occupied             AS owner_occupied,
             NULLIF(CONCAT_WS(', ',
                 NULLIF(TRIM(ps.mail_addr), ''),
@@ -543,7 +551,7 @@ def _pg_query_properties(zip_code: str) -> dict[str, dict]:
                     land_sqft AS lot_size,
                     tot_appr_val AS estimated_value,
                     last_sale_date,
-                    owner_name,
+                    {_OWNER_CLEAN} AS owner_name,
                     likely_owner_occupied AS owner_occupied,
                     NULLIF(CONCAT_WS(', ',
                         NULLIF(TRIM(mail_addr), ''),
@@ -643,7 +651,7 @@ def _pg_query_properties_for_region(region_id: str, zip_code: str) -> dict[str, 
                     tot_appr_val AS estimated_value,
                     last_sale_date,
                     likely_owner_occupied AS owner_occupied,
-                    owner_name,
+                    {_OWNER_CLEAN} AS owner_name,
                     NULLIF(CONCAT_WS(', ',
                         NULLIF(TRIM(mail_addr), ''),
                         NULLIF(TRIM(mail_city), ''),
@@ -689,7 +697,7 @@ def _pg_query_parcels_for_zip(zip_code: str) -> dict[str, dict]:
                     land_sqft AS lot_size,
                     tot_appr_val AS estimated_value,
                     last_sale_date,
-                    owner_name,
+                    {_OWNER_CLEAN} AS owner_name,
                     likely_owner_occupied AS owner_occupied,
                     NULLIF(CONCAT_WS(', ',
                         NULLIF(TRIM(mail_addr), ''),
