@@ -50,3 +50,40 @@ def test_stale_value_rendered_as_money():
 def test_app_url_cta_included():
     _, html = compose_digest(_base(overdue_tasks=1))
     assert "https://app.example.com/home" in html
+
+
+def _signals(counts, recent=None):
+    return {"total": sum(counts.values()), "counts": counts, "recent": recent or []}
+
+
+def test_signals_only_digest_is_sent():
+    composed = compose_digest(_base(signals=_signals({"just_sold": 2})))
+    assert composed is not None
+    subject, html = composed
+    assert subject == "Axon: 2 new signals"
+    assert "2 homes just sold" in html
+
+
+def test_signals_lead_the_subject():
+    subject, _ = compose_digest(_base(
+        signals=_signals({"score_changed": 1}),
+        top_leads=[{"label": "X", "grade": "A", "score": 90}],
+        overdue_tasks=4,
+    ))
+    assert subject == "Axon: 1 new signal, 1 lead to call today, 4 overdue tasks"
+
+
+def test_signal_counts_use_fixed_order_and_plurals():
+    _, html = compose_digest(_base(signals=_signals(
+        {"score_changed": 3, "just_sold": 1, "storm_event": 2, "new_permit": 4}
+    )))
+    assert "1 home just sold, 4 new permits, 2 storm hits, 3 grade changes" in html
+
+
+def test_signal_recent_items_named():
+    _, html = compose_digest(_base(signals=_signals(
+        {"just_sold": 1},
+        recent=[{"label": "123 Main St", "summary": "Sold 2026-08-01 (was 2019-03-12)"}],
+    )))
+    assert "123 Main St" in html
+    assert "Sold 2026-08-01" in html

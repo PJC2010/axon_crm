@@ -26,6 +26,15 @@ const TRIGGER_OPTIONS: { value: string; label: string; module?: ModuleKey }[] = 
   { value: 'inactivity', label: 'No contact in…' },
   { value: 'quote_event', label: 'Quote event' },
   { value: 'call_event', label: 'Missed call', module: 'calls' },
+  { value: 'signal_event', label: 'Property signal', module: 'prospecting' },
+]
+
+// Mirrors the signal types pipeline/signals.py can emit ("" = any signal).
+const SIGNAL_OPTIONS = [
+  { value: 'just_sold', label: 'just sold' },
+  { value: 'new_permit', label: 'new permit' },
+  { value: 'storm_event', label: 'storm event' },
+  { value: 'score_changed', label: 'grade changed' },
 ]
 
 const ACTION_OPTIONS = [
@@ -64,6 +73,8 @@ export function WorkflowRuleForm({ onCreated, onCancel }: { onCreated: () => voi
   const [quoteEvent, setQuoteEvent] = useState('sent')
   // call_event
   const [callEvent, setCallEvent] = useState('missed')
+  // signal_event ("" = any signal)
+  const [signalType, setSignalType] = useState('')
   // action
   const [delayMinutes, setDelayMinutes] = useState(0)
   const [actionType, setActionType] = useState('create_task')
@@ -117,6 +128,8 @@ export function WorkflowRuleForm({ onCreated, onCancel }: { onCreated: () => voi
       trigger_config = { event: quoteEvent }
     } else if (triggerType === 'call_event') {
       trigger_config = callEvent ? { event: callEvent } : {}
+    } else if (triggerType === 'signal_event') {
+      trigger_config = signalType ? { signal_type: signalType } : {}
     }
 
     let action_config: WorkflowActionConfig
@@ -224,6 +237,13 @@ export function WorkflowRuleForm({ onCreated, onCancel }: { onCreated: () => voi
             <option value="">any</option>
             <option value="missed">call missed</option>
             <option value="busy">line busy</option>
+          </select>
+        )}
+
+        {triggerType === 'signal_event' && (
+          <select value={signalType} onChange={e => setSignalType(e.target.value)} className="drawer-input" style={{ width: 150 }}>
+            <option value="">any signal</option>
+            {SIGNAL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         )}
       </div>

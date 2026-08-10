@@ -1,7 +1,9 @@
 """
 Daily "who to call today" digest — the habit-formation trigger that lives
 outside the app (UX audit §9): one short morning email per opted-in user
-listing overdue tasks, quotes to chase, and the day's best uncalled leads.
+listing overdue tasks, quotes to chase, the day's best uncalled leads, and
+the freshest timing signals (just sold / new permit / storm / grade change)
+detected since the last digest.
 
 Opt-in per user via users.preferences.daily_digest = true (Settings toggle,
 PATCH /api/auth/preferences). Degrades gracefully: no-ops when email isn't
@@ -19,6 +21,17 @@ log = logging.getLogger(__name__)
 # How many top leads to name in the email body.
 TOP_LEADS = 3
 
+# How many recent signal events to name in the email body.
+TOP_SIGNALS = 3
+
+# Display phrasing per signal type, in the order sections list them.
+SIGNAL_LABELS = (
+    ("just_sold", "home just sold", "homes just sold"),
+    ("new_permit", "new permit", "new permits"),
+    ("storm_event", "storm hit", "storm hits"),
+    ("score_changed", "grade change", "grade changes"),
+)
+
 
 # ── Pure composition ──────────────────────────────────────────────────────────
 
@@ -31,7 +44,8 @@ def compose_digest(data: dict) -> tuple[str, str] | None:
     nothing actionable (we never send an empty digest).
 
     data keys: overdue_tasks, due_today, quotes_to_chase, stale_count,
-    stale_value, top_leads (list of {label, grade, score}), app_url.
+    stale_value, top_leads (list of {label, grade, score}), signals
+    ({total, counts {signal_type: n}, recent [{label, summary}]}), app_url.
     """
     overdue = int(data.get("overdue_tasks") or 0)
     due_today = int(data.get("due_today") or 0)
@@ -39,13 +53,18 @@ def compose_digest(data: dict) -> tuple[str, str] | None:
     stale = int(data.get("stale_count") or 0)
     stale_value = float(data.get("stale_value") or 0)
     top_leads = data.get("top_leads") or []
+    signals = data.get("signals") or {}
+    signal_total = int(signals.get("total") or 0)
 
-    if not (overdue or due_today or quotes or stale or top_leads):
+    if not (overdue or due_today or quotes or stale or top_leads or signal_total):
         return None
 
     # Subject leads with the most actionable numbers, e.g.
-    # "3 leads to call today, 1 quote to chase".
+    # "3 leads to call today, 1 quote to chase". Fresh signals come first —
+    # a just-sold home is the most time-sensitive item in the email.
     bits = []
+    if signal_total:
+        bits.append(_plural(signal_total, "new signal"))
     if top_leads:
         bits.append(_plural(len(top_leads), "lead") + " to call today")
     if quotes:
@@ -57,6 +76,21 @@ def compose_digest(data: dict) -> tuple[str, str] | None:
     subject = "Axon: " + ", ".join(bits[:3])
 
     rows = []
+    if signal_total:
+        counts = signals.get("counts") or {}
+        parts = [
+            f"{counts[t]} {label if counts[t] == 1 else plural}"
+            for t, label, plural in SIGNAL_LABELS
+            if counts.get(t)
+        ]
+        rows.append(f"<p><b>Fresh signals:</b> {', '.join(parts)}.</p>")
+        recent = signals.get("recent") or []
+        if recent:
+            items = "".join(
+                f"<li><b>{s.get('label') or '—'}</b> — {s.get('summary') or ''}</li>"
+                for s in recent
+            )
+            rows.append(f"<ul>{items}</ul>")
     if top_leads:
         items = "".join(
             f"<li><b>{l.get('label') or '—'}</b>"
@@ -128,6 +162,26 @@ def build_digest_data(conn, account_id: int) -> dict:
         )
         leads = dict_fetchall(cur)
 
+        # Signals detected since the last digest, so each event is named in
+        # exactly one email (same one-window rule as the signup digest).
+        cur.execute(
+            "SELECT signal_type, COUNT(*) AS n FROM signal_events "
+            "WHERE account_id = %s AND detected_at > NOW() - INTERVAL '1 day' "
+            "GROUP BY signal_type",
+            (account_id,),
+        )
+        signal_counts = {r["signal_type"]: r["n"] for r in dict_fetchall(cur)}
+
+        cur.execute(
+            "SELECT se.details->>'summary' AS summary, "
+            "       p.address, p.owner_name, p.contact_name "
+            "FROM signal_events se JOIN properties p ON p.id = se.property_id "
+            "WHERE se.account_id = %s AND se.detected_at > NOW() - INTERVAL '1 day' "
+            "ORDER BY se.detected_at DESC LIMIT %s",
+            (account_id, TOP_SIGNALS),
+        )
+        recent_signals = dict_fetchall(cur)
+
     from config import APP_BASE_URL
     return {
         "overdue_tasks": tasks.get("overdue_tasks") or 0,
@@ -143,6 +197,17 @@ def build_digest_data(conn, account_id: int) -> dict:
             }
             for l in leads
         ],
+        "signals": {
+            "total": sum(signal_counts.values()),
+            "counts": signal_counts,
+            "recent": [
+                {
+                    "label": s.get("address") or s.get("owner_name") or s.get("contact_name") or "—",
+                    "summary": s.get("summary"),
+                }
+                for s in recent_signals
+            ],
+        },
         "app_url": APP_BASE_URL,
     }
 
