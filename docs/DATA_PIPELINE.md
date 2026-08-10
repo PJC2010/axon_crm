@@ -154,8 +154,9 @@ Processes one ZIP (or an HCAD region's ZIPs) per run, for one account.
   mortgage_rate_type.
 
 ### Final — Timing signals (`pipeline/signals.py`)
-- Diffs sale/permit/storm fields against the previous run's baseline, records
-  `signal_events`, and fires `signal_event` workflow rules
+- Diffs sale/permit/storm/score fields against the previous run's baseline
+  (`just_sold`, `new_permit`, `storm_event`, `score_changed` on grade-band
+  crossings), records `signal_events`, and fires `signal_event` workflow rules
   (`api/workflow_engine.py`). Free.
 
 ### Triggers

@@ -381,6 +381,8 @@ def get_timeline(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depend
             "SELECT id, property_id, 'signal' AS type, "
             "CASE signal_type WHEN 'just_sold' THEN 'Property just sold' "
             "                 WHEN 'new_permit' THEN 'New permit activity' "
+            "                 WHEN 'storm_event' THEN 'Storm hit this property' "
+            "                 WHEN 'score_changed' THEN 'Score changed' "
             "                 ELSE signal_type END AS title, "
             "details->>'summary' AS detail, "
             "NULL AS channel, NULL AS direction, NULL AS body, "
