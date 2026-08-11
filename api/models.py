@@ -48,6 +48,9 @@ class Lead(BaseModel):
     mailing_address: Optional[str] = None
     preferred_contact_method: Optional[str] = None
     best_time_to_call: Optional[str] = None
+    # Lead-level DNC flag (migration 0069): set by the dialer's do_not_call
+    # disposition, enforced by the dialer queue and the outbound dial webhook.
+    do_not_call: bool = False
     status: str = "new"
     assigned_to: Optional[int] = None
     lead_source: Optional[str] = None
@@ -518,6 +521,8 @@ class LeadContactUpdate(BaseModel):
     mailing_address: Optional[str] = None
     preferred_contact_method: Optional[str] = None
     best_time_to_call: Optional[str] = None
+    # Undo path for a mis-clicked do_not_call disposition (owner judgment call).
+    do_not_call: Optional[bool] = None
     assigned_to: Optional[int] = None
     lead_source: Optional[str] = None
 

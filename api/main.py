@@ -36,7 +36,7 @@ from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, h
 from api.routes import policies, orders, appointments, objects, order_imports
 from api.routes import connections, insights, ml, oauth, map as map_routes, geo
 from api.routes import stripe_payments, twilio_inbound, public_intake, prospects, signup, billing
-from api.routes import zip_sample, calls, twilio_voice, data_quality
+from api.routes import zip_sample, calls, twilio_voice, dialer, data_quality
 
 log = logging.getLogger(__name__)
 
@@ -164,6 +164,9 @@ app.include_router(twilio_inbound.public_router, prefix="/api", tags=["Messaging
 app.include_router(twilio_voice.public_router, prefix="/api", tags=["Calls"])
 # Call-tracking management (number provisioning + call log) — gated as a module.
 app.include_router(calls.router, prefix="/api", tags=["Calls"],
+                   dependencies=[Depends(require_module("calls"))])
+# The power dialer (queue + browser-calling token + dispositions) — same module.
+app.include_router(dialer.router, prefix="/api", tags=["Calls"],
                    dependencies=[Depends(require_module("calls"))])
 # Website lead intake (insure-auto) — server-to-server, shared-secret verified.
 app.include_router(public_intake.public_router, prefix="/api", tags=["PublicIntake"])

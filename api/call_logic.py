@@ -17,6 +17,19 @@ _DIAL_STATUS_OUTCOMES = {
     "busy": "busy",
 }
 
+# Outbound (power dialer) twin. The vocabulary is finer than inbound's because
+# the rep is watching live: 'missed' would be nonsense for a call they placed,
+# so unmapped/future verdicts land on 'no_answer' instead. Values mirror the
+# calls.outcome CHECK (migration 0069).
+_OUTBOUND_DIAL_STATUS_OUTCOMES = {
+    "completed": "answered",
+    "answered": "answered",
+    "busy": "busy",
+    "no-answer": "no_answer",
+    "failed": "failed",
+    "canceled": "canceled",
+}
+
 
 def build_dial_twiml(forward_to: str, action_url: str, timeout: int = 25) -> str:
     """TwiML that forwards the inbound call to the business's real phone.
@@ -32,6 +45,32 @@ def build_dial_twiml(forward_to: str, action_url: str, timeout: int = 25) -> str
         f'action={quoteattr(action_url)}>'
         f'<Number>{escape(forward_to)}</Number>'
         "</Dial></Response>"
+    )
+
+
+def build_outbound_dial_twiml(to_number: str, caller_id: str, action_url: str,
+                              timeout: int = 30) -> str:
+    """TwiML for the power dialer's browser leg: dial the lead's number,
+    presenting the account's own caller ID (their tracking number, so a
+    call-back rings the tenant, not the platform). answerOnBridge keeps the rep
+    hearing ringback until the lead picks up; the action URL receives
+    DialCallStatus/DialCallDuration after the leg ends."""
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        f'<Response><Dial callerId={quoteattr(caller_id)} answerOnBridge="true" '
+        f'timeout="{int(timeout)}" action={quoteattr(action_url)}>'
+        f'<Number>{escape(to_number)}</Number>'
+        "</Dial></Response>"
+    )
+
+
+def build_dialer_reject_twiml(message: str = "This lead cannot be dialed.") -> str:
+    """Played into the rep's browser when an outbound dial is refused for a
+    business-level reason (unknown lead, do-not-call, no caller ID). Always a
+    2xx — a non-2xx would make Twilio retry the webhook forever."""
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        f"<Response><Say>{escape(message)}</Say><Hangup/></Response>"
     )
 
 
@@ -51,6 +90,11 @@ def build_unconfigured_twiml() -> str:
 
 def map_dial_status(dial_call_status: str | None) -> str:
     return _DIAL_STATUS_OUTCOMES.get((dial_call_status or "").strip().lower(), "missed")
+
+
+def map_outbound_dial_status(dial_call_status: str | None) -> str:
+    return _OUTBOUND_DIAL_STATUS_OUTCOMES.get(
+        (dial_call_status or "").strip().lower(), "no_answer")
 
 
 def format_phone_display(digits: str) -> str:
@@ -96,3 +140,12 @@ def history_action_for(outcome: str, duration_seconds: int | None) -> str:
     if outcome == "busy":
         return "Missed call — line busy"
     return "Missed call"
+
+
+def outbound_history_action_for(outcome: str, duration_seconds: int | None) -> str:
+    """The timeline line for a finished outbound (dialer) call."""
+    if outcome == "answered":
+        return f"Outbound call — answered ({format_duration(duration_seconds)})"
+    if outcome == "busy":
+        return "Outbound call — line busy"
+    return "Outbound call — no answer"
