@@ -17,6 +17,21 @@ log = logging.getLogger(__name__)
 # Status codes worth retrying — transient server/rate-limit errors.
 _RETRY_STATUS = {429, 500, 502, 503, 504}
 
+# Statuses that say something is wrong with OUR request or account rather than
+# with the address we asked about: a malformed parameter, an expired or wrong
+# API key, an unpaid or insufficient plan, a rate/quota rule.
+#
+# These are NOT a definitive answer about a property, and the difference is
+# expensive. Callers stamp a row as "asked" when a vendor answers, so that it is
+# not re-billed for PROPERTY_RECHECK_DAYS. Folding these into "answered" meant an
+# expired key or a rejected parameter marked every row it touched as "checked,
+# nothing there" — silently, at DEBUG — poisoning the whole book for 90 days
+# while the operator saw only a uniform '0 ok / N fail'.
+#
+# A 404 stays out of this set: for a property vendor that genuinely is "no
+# record for this address", and re-asking will not change it.
+_CLIENT_ERROR_STATUS = {400, 401, 402, 403, 405, 409, 415, 422}
+
 
 def get_json(url, *, headers=None, params=None, timeout=30,
              retries=None, backoff=None):
@@ -58,6 +73,15 @@ def get_json_result(url, *, headers=None, params=None, timeout=30,
             if resp.status_code in _RETRY_STATUS:
                 last_err = f"HTTP {resp.status_code}"
                 raise requests.HTTPError(last_err, response=resp)
+            if resp.status_code in _CLIENT_ERROR_STATUS:
+                # Loud, and with the body: this is a misconfiguration an
+                # operator has to see and fix, not a fact about a property.
+                # `answered=False` keeps the row eligible so it is retried once
+                # the key/plan/parameter is corrected, instead of sitting out
+                # the recheck window on the strength of a rejected request.
+                log.warning("GET %s rejected: HTTP %d %s", url, resp.status_code,
+                            (resp.text or "")[:200])
+                return None, False
             if not resp.ok:
                 log.debug("GET %s answered HTTP %d", url, resp.status_code)
                 return None, True
