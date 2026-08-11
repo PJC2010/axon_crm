@@ -38,7 +38,7 @@ from datetime import date
 from config import PROPERTY_VALUE_TOLERANCE_PCT
 from pipeline.addr import same_address
 from pipeline.equity import estimate_equity
-from pipeline.owner import clean_owner_name
+from pipeline.owner import clean_owner_name, same_owner
 from pipeline.parcel_id import normalize_apn, same_parcel
 
 # ── Verdicts ──────────────────────────────────────────────────────────────────
@@ -80,7 +80,10 @@ FIELD_RULES: dict[str, dict] = {
     "garage_spaces":    {"kind": "number", "policy": "fill_only",   "tol": 0.0},
     "garage_type":      {"kind": "text",   "policy": "fill_only"},
     "subdivision":      {"kind": "text",   "policy": "fill_only"},
-    "owner_name":       {"kind": "text",   "policy": "fill_only"},
+    # "name", not "text": the two sources order names oppositely (HCAD writes
+    # LAST-FIRST, RentCast FIRST-LAST), so a literal fold reports every parcel
+    # as an ownership disagreement. See pipeline/owner.py::same_owner.
+    "owner_name":       {"kind": "name",   "policy": "fill_only"},
     # Parcel identity. fill_only and compared with same_parcel (padding- and
     # punctuation-blind): a mismatch here means the vendor answered about a
     # DIFFERENT PROPERTY even though the address echo looked right, which is
@@ -433,6 +436,10 @@ def _equal(mine, theirs, rule: dict) -> bool:
         if normalize_apn(mine) is None or normalize_apn(theirs) is None:
             return True
         return same_parcel(mine, theirs)
+    if kind == "name":
+        # Order-independent: the sources write names in opposite orders, which
+        # is not a disagreement about who owns the property.
+        return same_owner(mine, theirs)
     return _norm_text(mine) == _norm_text(theirs)
 
 

@@ -10,7 +10,8 @@ import duckdb
 import pytest
 
 from pipeline.owner import (
-    JUNK_OWNER_NAMES, clean_owner_name, is_junk_owner_name, sql_clean_owner_name,
+    JUNK_OWNER_NAMES, clean_owner_name, is_junk_owner_name, name_tokens,
+    same_owner, sql_clean_owner_name,
 )
 
 # Real-shaped values from the HCAD export alongside every placeholder variant.
@@ -121,3 +122,62 @@ def test_migration_0067_list_matches_python():
            "db/migrations/0067_null_junk_owner_names.sql").read_text()
     in_lists = set(re.findall(r"'([a-z /]+)'", sql.split("IN (")[1].split(")")[0]))
     assert in_lists == set(JUNK_OWNER_NAMES)
+
+
+# ── same_owner ────────────────────────────────────────────────────────────────
+# HCAD writes owner names LAST-FIRST, RentCast FIRST-LAST. reconcile compared
+# them literally, so 21 of 24 owner names in one 25-property sweep of ZIP 77007
+# were recorded as two sources disagreeing about who owns the house.
+
+@pytest.mark.parametrize("hcad, rentcast", [
+    ("CAPUCHINA LIZETTE", "Lizette Capuchina"),      # the plain reorder
+    ("HWANG PETER", "Peter Hwang"),
+    ("LANGLEY DONNA M", "Donna Langley"),            # middle initial one side
+    ("SMITH JOHN JR", "John Smith"),                 # generational suffix
+    ("MADDUX DOUGLAS H JR & LISA", "Douglas Maddux"),  # second owner one side
+    ("RAMOS ENRIQUE ANAYA", "Enrique Anaya Ramos"),  # two surnames
+    ("FR BALMORAL LLC", "FR Balmoral LLC"),          # business, casing only
+    ("HANNOVER ESTATES LTD", "Hannover Estates Ltd"),
+])
+def test_the_same_owner_is_not_a_discrepancy(hcad, rentcast):
+    assert same_owner(hcad, rentcast) is True
+
+
+@pytest.mark.parametrize("a, b", [
+    ("SMITH JOHN", "SMITH JANE"),          # one shared surname is not enough
+    ("HOSEA RONALD A", "Robert Smith"),
+    ("COUNTY OF HARRIS", "City of Houston"),
+    ("RODRIGUEZ JAIME", "Jaime Fernandez"),
+])
+def test_a_different_owner_is_still_reported(a, b):
+    assert same_owner(a, b) is False
+
+
+def test_an_empty_side_never_claims_a_match():
+    for a, b in [("SMITH JOHN", ""), ("", "SMITH JOHN"), (None, None)]:
+        assert same_owner(a, b) is False
+
+
+def test_name_tokens_drops_noise_but_keeps_identity():
+    assert name_tokens("Dr Robert A Jones III") == frozenset({"ROBERT", "JONES"})
+
+
+def test_reconcile_no_longer_reports_a_reordered_name():
+    """End to end through the policy that actually writes the audit trail.
+
+    The unit assertions above only prove the predicate; this proves reconcile
+    is wired to it, which is what stops the discrepancy report filling up.
+    """
+    from pipeline.reconcile import MATCH, MISMATCH, reconcile
+
+    stored = {"owner_name": "CAPUCHINA LIZETTE"}
+    record = {"addressLine1": "1 A St", "owner": {"names": ["Lizette Capuchina"]}}
+    out = reconcile(stored, record, fields=["owner_name"])
+    assert out["verdicts"]["owner_name"] == MATCH
+    assert out["findings"] == []          # nothing for an operator to review
+
+    # A genuinely different owner must still be reported, and still not written.
+    other = {"addressLine1": "1 A St", "owner": {"names": ["Jane Doe"]}}
+    out = reconcile(stored, other, fields=["owner_name"])
+    assert out["verdicts"]["owner_name"] == MISMATCH
+    assert "owner_name" not in out["updates"]     # fill_only: HCAD survives

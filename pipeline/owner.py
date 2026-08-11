@@ -94,3 +94,66 @@ def sql_clean_owner_name(column: str) -> str:
         f"CASE WHEN {sql_normalize(column)} IN ({junk}) "
         f"THEN NULL ELSE NULLIF(TRIM({column}), '') END"
     )
+
+
+# ── Comparing two owner names ────────────────────────────────────────────────
+# HCAD writes owner names LAST-FIRST ("CAPUCHINA LIZETTE", "LANGLEY DONNA M");
+# RentCast returns them FIRST-LAST ("Lizette Capuchina"). reconcile compared
+# them with a plain case/whitespace fold, so every such pair read as two sources
+# disagreeing about who owns the house — 21 of 24 owner names in one 25-property
+# sweep of ZIP 77007. That buries the real findings the discrepancy report
+# exists to surface, which is the same reason location and derived fields are
+# excluded from it.
+#
+# Like addr.same_address, this errs toward "same": a false positive here hides a
+# genuine ownership change from review, but a false negative floods the report
+# and trains an operator to ignore it. owner_name is fill_only either way, so
+# the stored county value is never overwritten on the strength of this call.
+
+# Dropped before comparing — they carry no identity and the two sources differ
+# freely on whether to include them.
+_NAME_NOISE = {
+    "MR", "MRS", "MS", "DR", "REV",              # honorifics
+    "JR", "SR", "II", "III", "IV", "V",          # generational suffixes
+    "ET", "AL", "ETAL", "ETUX", "ETVIR",         # "and others/wife/husband"
+    "AND", "THE", "OF",
+}
+
+
+def name_tokens(name) -> frozenset[str]:
+    """Significant, order-independent word tokens of an owner name.
+
+    Uppercased, punctuation dropped, honorifics/suffixes/joiners removed, and
+    single letters (middle initials) discarded — sources disagree on all of
+    those without disagreeing about the owner.
+    """
+    if not name:
+        return frozenset()
+    words = normalize(str(name)).upper().split()
+    return frozenset(w for w in words
+                     if len(w) > 1 and w not in _NAME_NOISE)
+
+
+def same_owner(a, b) -> bool:
+    """True when two owner strings plausibly name the same party.
+
+    Order-independent, because the two sources order names oppositely. Two
+    shared significant tokens (a surname and a given name) are treated as the
+    same party, which tolerates a middle name, a suffix, or a second owner
+    present on only one side — "MADDUX DOUGLAS H JR & LISA" and
+    "Douglas Maddux" are the same household. A single shared token is not
+    enough: "SMITH JOHN" and "SMITH JANE" are different people.
+    """
+    ta, tb = name_tokens(a), name_tokens(b)
+    if not ta or not tb:
+        return False           # nothing to compare — do not claim a match
+    if ta == tb:
+        return True
+    shared = ta & tb
+    if len(shared) >= 2:
+        return True
+    # A one-token name (a mononym, or a business reduced to one word) can only
+    # ever share one token, so require that its whole set be contained.
+    if shared and (len(ta) == 1 or len(tb) == 1):
+        return True
+    return False
