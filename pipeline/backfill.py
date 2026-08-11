@@ -49,6 +49,7 @@ from config import (
     PROPERTY_BACKFILL_DELAY, PROPERTY_BACKFILL_MAX, PROPERTY_RECHECK_DAYS,
     RENTCAST_API_KEY, SOURCE_FIELDS,
 )
+from pipeline.addr import sql_has_situs
 from pipeline.coverage import TRACKED_FIELDS, rates_from_counts
 from pipeline.db import ALL_COLS, fetch_missing_any, get_conn, upsert_properties
 from pipeline.reconcile import (
@@ -419,11 +420,18 @@ def _scope(account_id: int, zip_code: str | None) -> tuple[str, list]:
 def _gap_clause() -> str:
     """SQL for "this row has at least one field RentCast could fill".
 
+    A parcel with no situs address (zero house number) is not a gap however
+    many NULLs it carries — no address-keyed vendor can be asked about it.
+    Excluding those here keeps the audit's gap_rows/eligible equal to the
+    candidate pool fetch_missing_any hands the sweep, so the audit never
+    promises lookups the sweep will not make.
+
     Column names are interpolated, so they are validated against the upsert
     allowlist at import time (see _TRACKED / CANDIDATE_FIELDS below) rather than
     quoted — the same guard fetch_missing_any uses.
     """
-    return "(" + " OR ".join(f"{f} IS NULL" for f in CANDIDATE_FIELDS) + ")"
+    gaps = " OR ".join(f"{f} IS NULL" for f in CANDIDATE_FIELDS)
+    return f"(({gaps}) AND {sql_has_situs('address')})"
 
 
 def _due_clause(recheck_days: int) -> tuple[str, list]:

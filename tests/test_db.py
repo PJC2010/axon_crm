@@ -163,13 +163,26 @@ def test_no_limit_means_no_order_by_or_limit_clause():
     assert "LIMIT" not in sql
 
 
-def test_limit_orders_emptiest_rows_first():
-    """A capped, paid run should spend its budget where it fills the most holes."""
+def test_limit_orders_confirmed_buildings_then_emptiest():
+    """A capped, paid run should spend its budget where a vendor is likeliest
+    to answer (evidence of a building), then where it fills the most holes.
+    Pure emptiest-first sent a 100-call sweep entirely into vacant land."""
     result = _query(limit=25)
-    assert ("ORDER BY ((year_built IS NULL)::int + (owner_name IS NULL)::int) DESC"
+    assert ("ORDER BY (year_built IS NOT NULL OR square_footage IS NOT NULL) DESC, "
+            "((year_built IS NULL)::int + (owner_name IS NULL)::int) DESC"
             in result["sql"])
     assert result["sql"].endswith("LIMIT %s")
     assert result["params"][-1] == 25
+
+
+def test_no_situs_rows_never_become_paid_candidates():
+    """"0 TRUXTON ST" is HCAD's convention for a parcel with no street address —
+    unmatchable by every address-keyed vendor, so both fetchers exclude it."""
+    from pipeline.db import fetch_missing_field
+    assert "!~ '^0+(\\s|$)'" in _query()["sql"]
+    conn = _RecordingConn()
+    fetch_missing_field(conn, "contact_phone", 7)
+    assert "!~ '^0+(\\s|$)'" in conn.last["sql"]
 
 
 def test_limit_ordering_is_deterministic_across_ties():

@@ -5,6 +5,7 @@ import time
 import psycopg2
 import psycopg2.extras
 from config import DATABASE_URL, MAX_GARAGE_SPACES
+from pipeline.addr import sql_has_situs
 
 
 def get_conn():
@@ -208,7 +209,11 @@ def fetch_missing_field(conn, field: str, account_id: int, zip_code: str | None 
     """
     if field not in ALL_COLS:
         raise ValueError(f"Unknown field: {field}")
-    where = f"WHERE {field} IS NULL AND account_id = %s"
+    # Every caller of the fetch_missing_* pair is a paid, address-keyed vendor
+    # lookup (RentCast, skip-trace, demographics). A parcel with no situs
+    # address — HCAD stamps those with a zero house number, "0 TRUXTON ST" —
+    # can never be matched by any of them, so it never earns a call.
+    where = f"WHERE {field} IS NULL AND account_id = %s AND {sql_has_situs('address')}"
     params = [account_id]
     if zip_code:
         where += " AND zip = %s"
@@ -240,12 +245,17 @@ def fetch_missing_any(conn, fields: list[str], account_id: int, zip_code: str | 
     Dates are stored and compared as YYYY-MM-DD text, which sorts chronologically
     and avoids a timestamp cast that a malformed value could fail on.
 
-    `limit` caps the result in SQL, ordered by how many of `fields` are NULL
-    (emptiest first). The ordering only matters when the result is being
-    truncated — it decides which rows a capped, paid run spends its budget on —
-    so it is applied only alongside a limit, leaving unlimited callers' plans
-    untouched. Without it an account-wide caller would pull its entire book into
-    memory to throw most of it away.
+    `limit` caps the result in SQL, ordered so a capped, paid run spends its
+    budget where a vendor is likeliest to answer: rows with evidence of a
+    building (year_built or square_footage on file) first, emptiest rows first
+    within each class. The ordering only matters when the result is being
+    truncated, so it is applied only alongside a limit, leaving unlimited
+    callers' plans untouched. Without it an account-wide caller would pull its
+    entire book into memory to throw most of it away.
+
+    Rows whose address has no situs (zero house number — vacant land, easements)
+    are excluded outright: no address-keyed vendor can answer for them, at any
+    budget.
     """
     bad = [f for f in fields if f not in ALL_COLS]
     if bad:
@@ -253,7 +263,8 @@ def fetch_missing_any(conn, fields: list[str], account_id: int, zip_code: str | 
     if not fields:
         return []
     clause = " OR ".join(f"{f} IS NULL" for f in fields)
-    where = f"WHERE ({clause}) AND account_id = %s"
+    # No-situs parcels never earn a paid call — see fetch_missing_field.
+    where = f"WHERE ({clause}) AND account_id = %s AND {sql_has_situs('address')}"
     params: list = [account_id]
     if zip_code:
         where += " AND zip = %s"
@@ -271,8 +282,16 @@ def fetch_missing_any(conn, fields: list[str], account_id: int, zip_code: str | 
             params.append(checked_flag)
     order = ""
     if limit is not None:
+        # Confirmed structures first: on a county-seeded book the rows with the
+        # most NULLs are disproportionately vacant lots and new construction no
+        # vendor has a record of, so pure emptiest-first spends a capped budget
+        # on the least-matchable rows. Evidence of a building (a year built or
+        # a square footage on file) is the best available predictor that the
+        # paid lookup will actually answer; within each class, emptiest first
+        # still buys the most data per call.
         gaps = " + ".join(f"({f} IS NULL)::int" for f in fields)
-        order = f" ORDER BY ({gaps}) DESC, id LIMIT %s"
+        order = (" ORDER BY (year_built IS NOT NULL OR square_footage IS NOT NULL) DESC,"
+                 f" ({gaps}) DESC, id LIMIT %s")
         params.append(limit)
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(f"SELECT * FROM properties {where}{order}", params)
