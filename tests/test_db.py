@@ -163,13 +163,35 @@ def test_no_limit_means_no_order_by_or_limit_clause():
     assert "LIMIT" not in sql
 
 
-def test_limit_orders_emptiest_rows_first():
-    """A capped, paid run should spend its budget where it fills the most holes."""
+def test_limit_orders_confirmed_buildings_then_emptiest():
+    """A capped, paid run should spend its budget where a vendor is likeliest
+    to answer (evidence of a building), then where it fills the most holes.
+    Pure emptiest-first sent a 100-call sweep entirely into vacant land."""
     result = _query(limit=25)
-    assert ("ORDER BY ((year_built IS NULL)::int + (owner_name IS NULL)::int) DESC"
+    assert ("ORDER BY (COALESCE(year_built, 0) > 0 OR COALESCE(square_footage, 0) > 0) DESC, "
+            "((year_built IS NULL)::int + (owner_name IS NULL)::int) DESC"
             in result["sql"])
     assert result["sql"].endswith("LIMIT %s")
     assert result["params"][-1] == 25
+
+
+def test_building_evidence_is_tested_as_nonzero_not_non_null():
+    """HCAD writes a vacant parcel's building_sqft as 0, not NULL, so an
+    IS NOT NULL test is true for every HCAD-seeded row and ranks vacant land
+    first — the exact failure this ordering exists to prevent."""
+    sql = _query(limit=25)["sql"]
+    assert "square_footage IS NOT NULL" not in sql
+    assert "COALESCE(square_footage, 0) > 0" in sql
+
+
+def test_no_situs_rows_never_become_paid_candidates():
+    """"0 TRUXTON ST" is HCAD's convention for a parcel with no street address —
+    unmatchable by every address-keyed vendor, so both fetchers exclude it."""
+    from pipeline.db import fetch_missing_field
+    assert "!~ '^0+(\\s|$)'" in _query()["sql"]
+    conn = _RecordingConn()
+    fetch_missing_field(conn, "contact_phone", 7)
+    assert "!~ '^0+(\\s|$)'" in conn.last["sql"]
 
 
 def test_limit_ordering_is_deterministic_across_ties():

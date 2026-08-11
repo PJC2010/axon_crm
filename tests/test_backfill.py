@@ -76,6 +76,14 @@ def test_candidate_fields_never_include_paid_contact_data():
         assert field not in CANDIDATE_FIELDS
 
 
+def test_audit_gap_clause_excludes_no_situs_rows():
+    """The audit's gap_rows/eligible must equal the sweep's candidate pool.
+    fetch_missing_any excludes no-situs parcels, so the gap clause must too, or
+    the audit promises lookups the sweep never makes."""
+    from pipeline.backfill import _gap_clause
+    assert "!~ '^0+(\\s|$)'" in _gap_clause()
+
+
 # ── Sweep ─────────────────────────────────────────────────────────────────────
 
 class _StubProvider:

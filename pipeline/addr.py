@@ -62,6 +62,46 @@ def sql_normalize(column: str) -> str:
     )
 
 
+# ── No-situs parcels ──────────────────────────────────────────────────────────
+# County rolls include parcels that have no street address at all — vacant land,
+# easements, flood-control tracts. HCAD's convention is a house number of zero:
+# "0 TRUXTON ST", "0 LEE RD" (1,931 of ~20k parcels in ZIP 77396). No
+# address-keyed vendor can ever answer for one, so paid lookups (RentCast,
+# skip-trace, demographics) must never spend a call on them. Worse, they are
+# also the *emptiest* rows — no building means no year built, no sqft — so a
+# capped "emptiest first" sweep spends its entire budget on exactly these
+# unmatchable parcels unless they are excluded.
+
+_NO_SITUS = re.compile(r"\s*0+(\s|$)")   # house number consisting only of zeros
+
+
+def has_situs(address) -> bool:
+    """True when the address names a real street location a vendor could match.
+
+    False for empty/None and for HCAD's zero-house-number convention. A legit
+    address starting with a zero-padded number ("07 MAIN ST") passes — only a
+    number that is *all* zeros marks a parcel as situs-less.
+    """
+    if not address:
+        return False
+    text = str(address).strip()
+    return bool(text) and not _NO_SITUS.match(text)
+
+
+def sql_has_situs(column: str) -> str:
+    """`has_situs()` as a boolean SQL expression over `column` (Postgres).
+
+    Postgres only — `properties` lives nowhere else, and Postgres's `~` is a
+    partial (anchored-by-^) match where DuckDB's would be a full match, so this
+    expression must not be reused against DuckDB. Identifier validation matches
+    sql_normalize.
+    """
+    if not _SQL_IDENT.match(column or ""):
+        raise ValueError(f"Not a plain SQL identifier: {column!r}")
+    return (f"({column} IS NOT NULL AND TRIM({column}) <> '' "
+            f"AND TRIM({column}) !~ '^0+(\\s|$)')")
+
+
 # ── Verifying a vendor's answer ───────────────────────────────────────────────
 
 # Folded so an abbreviation and its long form compare equal. Only forms that are

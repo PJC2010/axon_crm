@@ -8,7 +8,9 @@ notices when they don't.
 import duckdb
 import pytest
 
-from pipeline.addr import normalize, same_address, sql_normalize
+from pipeline.addr import (
+    has_situs, normalize, same_address, sql_has_situs, sql_normalize,
+)
 from pipeline import hcad_store
 
 # Address shapes that separate the two rules. Anything carrying punctuation or a
@@ -98,6 +100,46 @@ def test_hcad_store_keys_are_built_from_the_shared_rule():
     assert store._ADDR_NORM_PS == sql_normalize("ps.site_address")
     assert store._ADDR_NORM_HP == sql_normalize("hp.site_address")
     assert store._ADDR_NORM == sql_normalize("site_address")
+
+
+# ── has_situs ─────────────────────────────────────────────────────────────────
+# Gates paid, address-keyed lookups: a no-situs parcel (HCAD's zero house
+# number) can never be matched by RentCast or a skip-trace, so it must never
+# earn a call — and being the emptiest rows, they hog any capped budget that
+# does not exclude them.
+
+@pytest.mark.parametrize("address", [
+    "0 TRUXTON ST", "0 LEE RD", "00 RANKIN RD", "  0 SMITH RD", "0", "", None,
+])
+def test_no_situs_addresses_are_rejected(address):
+    assert has_situs(address) is False
+
+
+@pytest.mark.parametrize("address", [
+    "16727 TRUXTON ST",
+    "07 MAIN ST",           # zero-padded, not all zeros
+    "1050 ZERO RD",
+    "13935 SMITH RD 112",
+    "500 W 12TH 1/2 ST",
+])
+def test_real_addresses_pass(address):
+    assert has_situs(address) is True
+
+
+def test_sql_has_situs_identifier_guard():
+    for bad in ["x; DROP TABLE y", "a' OR '1'='1", "", None, "a b"]:
+        with pytest.raises(ValueError):
+            sql_has_situs(bad)
+
+
+def test_paid_candidate_queries_carry_the_situs_guard():
+    """Regression: both fetch_missing_* builders must exclude no-situs rows, or
+    a capped sweep goes back to spending its whole budget on vacant land."""
+    import inspect
+    import pipeline.db as db
+    source = inspect.getsource(db.fetch_missing_any) + \
+        inspect.getsource(db.fetch_missing_field)
+    assert source.count("sql_has_situs('address')") == 2
 
 
 # ── same_address ──────────────────────────────────────────────────────────────
