@@ -289,8 +289,16 @@ def fetch_missing_any(conn, fields: list[str], account_id: int, zip_code: str | 
         # a square footage on file) is the best available predictor that the
         # paid lookup will actually answer; within each class, emptiest first
         # still buys the most data per call.
+        #
+        # Tested as `> 0`, never `IS NOT NULL`: HCAD records a vacant parcel's
+        # building_sqft as 0 rather than leaving it blank (3,315 of 20,160 rows
+        # in ZIP 77396), so an IS NOT NULL test is true for every HCAD-seeded
+        # row and ranks vacant land first — the exact behaviour this ordering
+        # exists to prevent. COALESCE keeps the predicate FALSE rather than NULL
+        # for genuinely empty rows, since DESC would otherwise sort NULLs first.
         gaps = " + ".join(f"({f} IS NULL)::int" for f in fields)
-        order = (" ORDER BY (year_built IS NOT NULL OR square_footage IS NOT NULL) DESC,"
+        order = (" ORDER BY (COALESCE(year_built, 0) > 0"
+                 " OR COALESCE(square_footage, 0) > 0) DESC,"
                  f" ({gaps}) DESC, id LIMIT %s")
         params.append(limit)
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:

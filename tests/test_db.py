@@ -168,11 +168,20 @@ def test_limit_orders_confirmed_buildings_then_emptiest():
     to answer (evidence of a building), then where it fills the most holes.
     Pure emptiest-first sent a 100-call sweep entirely into vacant land."""
     result = _query(limit=25)
-    assert ("ORDER BY (year_built IS NOT NULL OR square_footage IS NOT NULL) DESC, "
+    assert ("ORDER BY (COALESCE(year_built, 0) > 0 OR COALESCE(square_footage, 0) > 0) DESC, "
             "((year_built IS NULL)::int + (owner_name IS NULL)::int) DESC"
             in result["sql"])
     assert result["sql"].endswith("LIMIT %s")
     assert result["params"][-1] == 25
+
+
+def test_building_evidence_is_tested_as_nonzero_not_non_null():
+    """HCAD writes a vacant parcel's building_sqft as 0, not NULL, so an
+    IS NOT NULL test is true for every HCAD-seeded row and ranks vacant land
+    first — the exact failure this ordering exists to prevent."""
+    sql = _query(limit=25)["sql"]
+    assert "square_footage IS NOT NULL" not in sql
+    assert "COALESCE(square_footage, 0) > 0" in sql
 
 
 def test_no_situs_rows_never_become_paid_candidates():
