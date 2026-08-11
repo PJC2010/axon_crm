@@ -179,6 +179,31 @@ def address_format_test(zip_code: str) -> None:
     print("  All 404 → the per-address endpoint cannot retrieve this vendor's")
     print("  own records, and scan-and-match is the only workable path.")
 
+    # Which component actually carries the lookup, and how much a wrong one
+    # costs. This is not academic: HCAD-seeded rows take `city` from the OWNER'S
+    # mailing city (pipeline/seed.py::_normalize_hcad), and the geocode step
+    # reads `city` without ever writing back the one Google resolved. So for an
+    # absentee owner — the most valuable lead — the stored city names the wrong
+    # town. If a wrong city still resolves, the fix is to pass what we hold; if
+    # it does not, the fix must first learn each property's real city.
+    print(f"\n{'-' * 70}\nWHICH PARAMETER CARRIES THE LOOKUP\n{'-' * 70}")
+    _show("[E] state + zip, NO city",
+          {"address": line, "state": state, "zipCode": zc, "limit": 1})
+    _show("[F] city + zip, NO state",
+          {"address": line, "city": city, "zipCode": zc, "limit": 1})
+    _show("[G] city + state, NO zip",
+          {"address": line, "city": city, "state": state, "limit": 1})
+    _show("[H] WRONG city (absentee-owner case), right state + zip",
+          {"address": line, "city": "Dallas", "state": state,
+           "zipCode": zc, "limit": 1})
+    _show("[I] WRONG city inside the full address string",
+          {"address": f"{line}, Dallas, {state} {zc}", "limit": 1})
+
+    print("\n  [E] 200            → city is not required; pass state+zip and we are done.")
+    print("  [H]/[I] 200        → a wrong city is tolerated; stored mail_city is safe to send.")
+    print("  [H]/[I] 404        → the city must be RIGHT, so the geocode step has to")
+    print("                       persist the city Google already resolves.")
+
 
 def _zip_parcel_count(zip_code: str) -> int | None:
     """How many parcels the ZIP actually holds, for the sampling check.
