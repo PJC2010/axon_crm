@@ -187,7 +187,21 @@ def test_seed_account_applies_an_optional_limit_deterministically():
     cur = _FakeCursor(rowcount=1)
     parcels.seed_account(_FakeConn(cur), "77449", 7, limit=50)
     assert cur.params == ["77449", 7, 50, 7, 7]
-    assert "ORDER BY p.address_norm" in cur.sql and "LIMIT %s" in cur.sql
+    assert "LIMIT %s" in cur.sql
+    # address_norm remains the tiebreak, so a repeated capped run takes the
+    # same set — it is just no longer the *first* ordering term.
+    assert "p.address_norm" in cur.sql
+
+
+def test_capped_seed_takes_real_addresses_before_no_situs_parcels():
+    """HCAD addresses vacant land with a zero house number, and "0 ACKLEY DR"
+    sorts above "1 …" — so ordering by address_norm alone made a capped seed
+    take nothing but parcels no vendor can enrich and nobody lives at."""
+    cur = _FakeCursor(rowcount=1)
+    parcels.seed_account(_FakeConn(cur), "77449", 7, limit=50)
+    sql = " ".join(cur.sql.split())
+    assert "!~ '^0+(\\s|$)'" in sql, "no-situs test missing from the seed order"
+    assert "DESC, p.address_norm" in sql, "situs rank must precede the tiebreak"
 
 
 @pytest.mark.parametrize("limit", [None, 0, -1])

@@ -29,6 +29,7 @@ neither is ever promoted. SHARED_COLS below is the allowlist that enforces it.
 """
 import logging
 
+from pipeline.addr import sql_has_situs
 from pipeline.owner import sql_clean_owner_name
 
 log = logging.getLogger(__name__)
@@ -170,7 +171,9 @@ def seed_account(conn, zip_code: str, account_id: int, limit: int | None = None)
 
     `limit` caps how many of the ZIP's parcels this tenant takes — the shared
     cache itself is always built in full, since a partial cache would make later
-    accounts think the ZIP was already covered.
+    accounts think the ZIP was already covered. A capped seed takes parcels with
+    a real street address first (see the ordering below); without that it took
+    HCAD's no-situs parcels and nothing else.
 
     Returns rows inserted or updated.
     """
@@ -181,6 +184,15 @@ def seed_account(conn, zip_code: str, account_id: int, limit: int | None = None)
         # Deterministic so a repeated capped run takes the same parcels.
         limit_sql = "LIMIT %s"
         params.append(limit)
+
+    # Real street addresses first. Ordering by address_norm alone sorted HCAD's
+    # no-situs parcels — vacant land and easements, which it addresses with a
+    # zero house number — to the very top ("0 ACKLEY DR" < "1 …"), so a capped
+    # seed took nothing else: a 50-parcel seed of ZIP 77024 bought 50 parcels
+    # no vendor can enrich and nobody lives at, out of 12,403 available. The
+    # tiebreak stays address_norm, so a repeated capped run still takes the
+    # same set.
+    order_sql = f"ORDER BY {sql_has_situs('p.address')} DESC, p.address_norm"
     params.extend([account_id, account_id])
 
     with conn.cursor() as cur:
@@ -197,7 +209,7 @@ def seed_account(conn, zip_code: str, account_id: int, limit: int | None = None)
                       SELECT 1 FROM properties x
                       WHERE x.account_id = %s AND x.address = p.address AND x.zip = p.zip
                   )
-                ORDER BY p.address_norm
+                {order_sql}
                 {limit_sql}
             ),
             numbered AS (

@@ -9,10 +9,11 @@ from pipeline import http
 
 
 class _Response:
-    def __init__(self, status_code=200, payload=None, raises=None):
+    def __init__(self, status_code=200, payload=None, raises=None, text=""):
         self.status_code = status_code
         self._payload = payload
         self._raises = raises
+        self.text = text
 
     @property
     def ok(self) -> bool:
@@ -55,6 +56,31 @@ def test_not_found_is_an_answer_not_a_failure(fake_get):
     calls = fake_get(_Response(404))
     assert http.get_json_result("http://x") == (None, True)
     assert len(calls) == 1, "a 404 cannot change — do not spend retries on it"
+
+
+@pytest.mark.parametrize("status", [400, 401, 402, 403, 422])
+def test_a_rejected_request_is_not_an_answer_about_the_property(fake_get, status):
+    """An expired key, an unpaid plan or a malformed parameter says nothing
+    about the address we asked about. Counting these as answers let callers
+    stamp every row 'checked, nothing there' and sit out the recheck window on
+    the strength of a request the vendor never processed."""
+    fake_get(_Response(status, text="Invalid API key"))
+    assert http.get_json_result("http://x") == (None, False)
+
+
+def test_a_rejected_request_is_logged_loudly_with_its_status(fake_get, caplog):
+    """The failure mode this fixes was silent: a 4xx logged at DEBUG looked
+    exactly like 'no record' in an INFO-level pipeline log."""
+    fake_get(_Response(401, text="Invalid API key"))
+    with caplog.at_level("WARNING", logger="pipeline.http"):
+        http.get_json_result("http://x")
+    assert "401" in caplog.text and "Invalid API key" in caplog.text
+
+
+def test_a_rejected_request_does_not_burn_the_retry_budget(fake_get):
+    calls = fake_get(_Response(403))
+    http.get_json_result("http://x")
+    assert len(calls) == 1
 
 
 def test_timeout_is_not_an_answer(fake_get):
