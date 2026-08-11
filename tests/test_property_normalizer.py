@@ -67,6 +67,25 @@ def test_rentcast_detail_fills_lot_size_and_property_type(monkeypatch):
     assert out["subdivision"] == "Summerwood"
 
 
+def test_rentcast_detail_rides_along_parcel_and_features(monkeypatch):
+    """The migration-068 set: parcel identity plus county-record features, read
+    off the same paid call rather than triggering new ones."""
+    _stub(monkeypatch, [{"addressLine1": "x",
+                         "assessorID": "066-064-013-0020",
+                         "taxAssessments": {"2024": {"year": 2024, "value": 216_513}},
+                         "owner": {"names": ["JANE DOE"], "type": "Individual"},
+                         "features": {"roofType": "Asphalt",
+                                      "foundationType": "Slab", "pool": True}}])
+    out, _ = prop._rentcast_detail("x", "y")
+    assert out["parcel_apn"] == "0660640130020"
+    assert out["roof_type"] == "Asphalt"
+    assert out["foundation_type"] == "Slab"
+    assert out["has_pool"] is True
+    assert out["owner_type"] == "Individual"
+    # No flat price on current responses — assessed value carries the estimate.
+    assert out["estimated_value"] == 216_513
+
+
 def test_rentcast_detail_never_returns_coordinates(monkeypatch):
     """This step overwrites every column it returns, so carrying coordinates
     would move a pin the geocode step placed and contradict geocode_source."""

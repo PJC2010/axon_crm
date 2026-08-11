@@ -16,6 +16,7 @@ from datetime import date
 
 from pipeline.db import get_conn, fetch_by_zip, upsert_properties
 from pipeline.equity import estimate_equity
+from pipeline.parcel_id import normalize_apn
 from pipeline import hcad_store
 
 log = logging.getLogger(__name__)
@@ -51,6 +52,9 @@ def enrich_hcad(zip_code: str, account_id: int) -> int:
                 changed = True
 
         if hcad:
+            # The parcel number this address matched to — the identity the
+            # RentCast step later verifies its assessorID against.
+            _backfill("parcel_apn",              normalize_apn(hcad.get("parcel_apn")))
             _backfill("year_built",              hcad.get("year_built"))
             _backfill("square_footage",          hcad.get("square_footage"))
             _backfill("lot_size",                hcad.get("lot_size"))

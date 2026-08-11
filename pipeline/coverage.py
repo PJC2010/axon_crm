@@ -14,9 +14,13 @@ import psycopg2.extras
 from pipeline.db import get_conn
 
 # Columns whose fill rate is worth tracking (data the enrichment pipeline owns).
+# The migration-068 ride-along columns (roof_type etc.) are deliberately absent:
+# they start near-0% everywhere and would crowd the "worst columns" list with
+# noise; parcel_apn IS tracked because its coverage is what decides how much of
+# the book gets cross-source parcel verification.
 TRACKED_FIELDS = [
-    "latitude", "longitude", "year_built", "square_footage", "garage_spaces",
-    "garage_type", "lot_size", "property_type", "estimated_value",
+    "latitude", "longitude", "parcel_apn", "year_built", "square_footage",
+    "garage_spaces", "garage_type", "lot_size", "property_type", "estimated_value",
     "estimated_equity", "last_sale_date", "last_sale_price", "owner_name",
     "owner_occupied", "ownership_years", "zip_median_income", "permit_count_24mo",
     "has_pool", "has_cracked_slab", "contact_name", "contact_phone",

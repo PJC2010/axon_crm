@@ -19,6 +19,8 @@ from config import (
 from pipeline.db import get_conn, upsert_properties
 from pipeline.http import get_json
 from pipeline.owner import clean_owner_name
+from pipeline.parcel_id import normalize_apn
+from pipeline.reconcile import map_record
 
 log = logging.getLogger(__name__)
 
@@ -275,36 +277,29 @@ def seed(zip_code: str, account_id: int, csv_path: str | None = None,
 # ── Normalizers ───────────────────────────────────────────────────────────────
 
 def _normalize_rentcast(p: dict, origin_zip: str | None = None) -> dict:
+    """Map a RentCast /properties record to the upsert_properties shape.
+
+    Field extraction is delegated to reconcile.map_record — the one canonical
+    RentCast-record → properties-column mapping — so seeding, the per-ZIP
+    detail step, and the backfill sweep can never drift apart on how a record
+    is read (nested `features`/`owner` shapes, taxAssessments → estimated_value,
+    assessorID → parcel_apn, and the rest). This layer adds only what makes the
+    record a *row*: its identity (address/zip) and provenance flags.
+    """
     flags = {"seed": "rentcast"}
     if origin_zip and p.get("zipCode") != origin_zip:
         flags["seed_origin_zip"] = origin_zip
-    # Garage data lives in the nested `features` object; owner name lives in the
-    # nested `owner.names` list (NOT a flat `ownerName` field — confirmed live).
-    features = p.get("features") or {}
-    lat, lng = p.get("latitude"), p.get("longitude")
+    row = map_record(p)
     # RentCast records arrive pre-geocoded — persist provenance so these leads
     # never enter the Census geocode queue (juncto geo layer, Phase 1).
-    geocode_source = "rentcast" if lat is not None and lng is not None else None
-    return {
-        "address":         p.get("addressLine1", ""),
-        "city":            p.get("city", ""),
-        "state":           p.get("state", ""),
-        "zip":             p.get("zipCode", ""),
-        "latitude":        lat,
-        "longitude":       lng,
-        "geocode_source":  geocode_source,
-        "year_built":      p.get("yearBuilt"),
-        "square_footage":  p.get("squareFootage"),
-        "property_type":   p.get("propertyType"),
-        "estimated_value": p.get("price"),
-        "last_sale_date":  p.get("lastSaleDate"),
-        "last_sale_price": p.get("lastSalePrice"),
-        "owner_name":      clean_owner_name(_owner_name(p)),
-        "owner_occupied":  p.get("ownerOccupied"),
-        "garage_spaces":   features.get("garageSpaces"),
-        "garage_type":     features.get("garageType"),
+    if row["latitude"] is not None and row["longitude"] is not None:
+        row["geocode_source"] = "rentcast"
+    row.update({
+        "address":          p.get("addressLine1", ""),
+        "zip":              p.get("zipCode", ""),
         "enrichment_flags": flags,
-    }
+    })
+    return row
 
 
 def _normalize_hcad(p: dict, region_id: str | None = None) -> dict:
@@ -324,6 +319,7 @@ def _normalize_hcad(p: dict, region_id: str | None = None) -> dict:
         "zip":                    p.get("site_zip", ""),
         "latitude":               None,
         "longitude":              None,
+        "parcel_apn":             normalize_apn(p.get("parcel_apn")),
         "year_built":             p.get("year_built"),
         "square_footage":         p.get("square_footage"),
         "lot_size":               p.get("lot_size"),
@@ -338,15 +334,3 @@ def _normalize_hcad(p: dict, region_id: str | None = None) -> dict:
     }
 
 
-def _owner_name(p: dict) -> str | None:
-    """Pull the owner name from a RentCast record.
-
-    RentCast nests this as `owner.names` (a list, e.g. ["JOHN SMITH"]); the first
-    entry is used. Falls back to a flat `ownerName` for robustness against older
-    or differently-shaped responses.
-    """
-    owner = p.get("owner") or {}
-    names = owner.get("names")
-    if isinstance(names, list) and names:
-        return names[0]
-    return p.get("ownerName")

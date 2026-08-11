@@ -157,7 +157,8 @@ def query_properties(zip_code: str, db_path: str | None = None) -> dict[str, dic
                                                    NULLIF(TRIM(ps.mail_zip), ''))), '')
                     ), '')                               AS mailing_address,
                     ps.neighborhood_code,
-                    nc.dscr                              AS neighborhood_name
+                    nc.dscr                              AS neighborhood_name,
+                    ps.acct                              AS parcel_apn
                 FROM property_summary ps
                 LEFT JOIN neighborhood_codes nc ON nc.cd = ps.neighborhood_code
                 WHERE ps.site_zip = ?
@@ -166,7 +167,8 @@ def query_properties(zip_code: str, db_path: str | None = None) -> dict[str, dic
 
             cols = ["address_norm", "year_built", "square_footage", "lot_size",
                     "estimated_value", "last_sale_date", "owner_name", "owner_occupied",
-                    "mailing_address", "neighborhood_code", "neighborhood_name"]
+                    "mailing_address", "neighborhood_code", "neighborhood_name",
+                    "parcel_apn"]
             result = {}
             for row in rows:
                 d = dict(zip(cols, row))
@@ -203,7 +205,8 @@ def _duckdb_query_properties_no_nbhd(con, zip_code: str) -> dict[str, dict]:
                                            NULLIF(TRIM(mail_zip), ''))), '')
             ), '')                            AS mailing_address,
             neighborhood_code,
-            NULL::VARCHAR                     AS neighborhood_name
+            NULL::VARCHAR                     AS neighborhood_name,
+            acct                              AS parcel_apn
         FROM property_summary
         WHERE site_zip = ?
           AND site_address IS NOT NULL
@@ -211,7 +214,8 @@ def _duckdb_query_properties_no_nbhd(con, zip_code: str) -> dict[str, dict]:
 
     cols = ["address_norm", "year_built", "square_footage", "lot_size",
             "estimated_value", "last_sale_date", "owner_name", "owner_occupied",
-            "mailing_address", "neighborhood_code", "neighborhood_name"]
+            "mailing_address", "neighborhood_code", "neighborhood_name",
+            "parcel_apn"]
     result = {}
     for row in rows:
         d = dict(zip(cols, row))
@@ -384,7 +388,8 @@ def _duckdb_query_region(con, region_id: str, zip_code: str, joined: bool) -> di
                                            NULLIF(TRIM(ps.mail_zip), ''))), '')
             ), '')                               AS mailing_address,
             ps.neighborhood_code,
-            {name_expr}                          AS neighborhood_name
+            {name_expr}                          AS neighborhood_name,
+            ps.acct                              AS parcel_apn
         FROM property_summary ps
         {join_clause}
         WHERE ps.neighborhood_code = ?
@@ -395,7 +400,7 @@ def _duckdb_query_region(con, region_id: str, zip_code: str, joined: bool) -> di
     cols = ["address_norm", "site_address", "site_zip", "mail_city", "year_built",
             "square_footage", "lot_size", "estimated_value", "last_sale_date",
             "owner_name", "owner_occupied", "mailing_address",
-            "neighborhood_code", "neighborhood_name"]
+            "neighborhood_code", "neighborhood_name", "parcel_apn"]
     result = {}
     for row in rows:
         d = dict(zip(cols, row))
@@ -448,7 +453,8 @@ def _duckdb_query_zip(con, zip_code: str, joined: bool) -> dict[str, dict]:
                                            NULLIF(TRIM(ps.mail_zip), ''))), '')
             ), '')                               AS mailing_address,
             ps.neighborhood_code,
-            {name_expr}                          AS neighborhood_name
+            {name_expr}                          AS neighborhood_name,
+            ps.acct                              AS parcel_apn
         FROM property_summary ps
         {join_clause}
         WHERE ps.site_zip = ?
@@ -458,7 +464,7 @@ def _duckdb_query_zip(con, zip_code: str, joined: bool) -> dict[str, dict]:
     cols = ["address_norm", "site_address", "site_zip", "mail_city", "year_built",
             "square_footage", "lot_size", "estimated_value", "last_sale_date",
             "owner_name", "owner_occupied", "mailing_address",
-            "neighborhood_code", "neighborhood_name"]
+            "neighborhood_code", "neighborhood_name", "parcel_apn"]
     result = {}
     for row in rows:
         d = dict(zip(cols, row))
@@ -560,13 +566,15 @@ def _pg_query_properties(zip_code: str) -> dict[str, dict]:
                                                    NULLIF(TRIM(mail_zip), ''))), '')
                     ), '') AS mailing_address,
                     neighborhood_code,
-                    neighborhood_name
+                    neighborhood_name,
+                    acct AS parcel_apn
                 FROM hcad_properties
                 WHERE site_zip = %s AND site_address IS NOT NULL
             """, (zip_code,))
             cols = ["address_norm", "year_built", "square_footage", "lot_size",
                     "estimated_value", "last_sale_date", "owner_name", "owner_occupied",
-                    "mailing_address", "neighborhood_code", "neighborhood_name"]
+                    "mailing_address", "neighborhood_code", "neighborhood_name",
+                    "parcel_apn"]
             result = {}
             for row in cur.fetchall():
                 d = dict(zip(cols, row))
@@ -659,14 +667,15 @@ def _pg_query_properties_for_region(region_id: str, zip_code: str) -> dict[str, 
                                                    NULLIF(TRIM(mail_zip), ''))), '')
                     ), '') AS mailing_address,
                     neighborhood_code,
-                    neighborhood_name
+                    neighborhood_name,
+                    acct AS parcel_apn
                 FROM hcad_properties
                 WHERE neighborhood_code = %s AND site_zip = %s AND site_address IS NOT NULL
             """, (region_id, zip_code))
             cols = ["address_norm", "site_address", "site_zip", "mail_city", "year_built",
                     "square_footage", "lot_size", "estimated_value", "last_sale_date",
                     "owner_occupied", "owner_name", "mailing_address",
-                    "neighborhood_code", "neighborhood_name"]
+                    "neighborhood_code", "neighborhood_name", "parcel_apn"]
             result = {}
             for row in cur.fetchall():
                 d = dict(zip(cols, row))
@@ -706,14 +715,15 @@ def _pg_query_parcels_for_zip(zip_code: str) -> dict[str, dict]:
                                                    NULLIF(TRIM(mail_zip), ''))), '')
                     ), '') AS mailing_address,
                     neighborhood_code,
-                    neighborhood_name
+                    neighborhood_name,
+                    acct AS parcel_apn
                 FROM hcad_properties
                 WHERE site_zip = %s AND site_address IS NOT NULL
             """, (zip_code,))
             cols = ["address_norm", "site_address", "site_zip", "mail_city", "year_built",
                     "square_footage", "lot_size", "estimated_value", "last_sale_date",
                     "owner_name", "owner_occupied", "mailing_address",
-                    "neighborhood_code", "neighborhood_name"]
+                    "neighborhood_code", "neighborhood_name", "parcel_apn"]
             result = {}
             for row in cur.fetchall():
                 d = dict(zip(cols, row))

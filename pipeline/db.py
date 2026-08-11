@@ -84,6 +84,9 @@ ALL_COLS = [
     "geocode_source", "geocode_confidence", "h3_r8",
     # Prospecting cluster key (migration 051) — RentCast subdivision name
     "subdivision",
+    # Parcel identity + RentCast ride-along features (migration 068)
+    "parcel_apn", "roof_type", "foundation_type", "heating_type", "cooling_type",
+    "owner_type",
     # Lead attribution — rep ownership + acquisition source (migration 030)
     "assigned_to", "lead_source",
     # Storm/hail enrichment (migration 027)

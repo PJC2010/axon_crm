@@ -41,11 +41,14 @@ SHARED_COLS = [
     "city", "state",
     "latitude", "longitude", "geohash", "h3_r8",
     "geocode_source", "geocode_confidence",
+    "parcel_apn",
     "year_built", "square_footage", "lot_size", "property_type",
     "garage_spaces", "garage_type", "has_pool", "has_cracked_slab",
+    "roof_type", "foundation_type", "heating_type", "cooling_type",
     "estimated_value", "estimated_equity",
     "last_sale_date", "last_sale_price",
-    "owner_name", "owner_occupied", "ownership_years", "mailing_address",
+    "owner_name", "owner_type", "owner_occupied", "ownership_years",
+    "mailing_address",
     "hcad_neighborhood_code", "hcad_neighborhood_name", "subdivision",
     "zip_median_income", "permit_count_24mo",
     "last_storm_date", "last_storm_type", "hail_size_in", "storm_count_24mo",
@@ -78,7 +81,7 @@ def ensure_from_hcad(conn, zip_code: str) -> int:
         cur.execute(
             f"""
             INSERT INTO parcels (
-                address, zip, city, state,
+                address, zip, city, state, parcel_apn,
                 year_built, square_footage, lot_size, estimated_value,
                 last_sale_date, owner_name, owner_occupied, mailing_address,
                 hcad_neighborhood_code, hcad_neighborhood_name,
@@ -89,6 +92,11 @@ def ensure_from_hcad(conn, zip_code: str) -> int:
                 h.site_zip,
                 h.mail_city,
                 'TX',
+                -- Storage form of pipeline/parcel_id.py::normalize_apn
+                -- (alphanumerics only, uppercased). Byte-parity with the Python
+                -- rule is NOT load-bearing: parcel numbers are never a SQL join
+                -- key, and every comparison goes through same_parcel in Python.
+                NULLIF(UPPER(REGEXP_REPLACE(h.acct, '[^a-zA-Z0-9]', '', 'g')), ''),
                 NULLIF(h.year_built, '')::INTEGER,
                 h.building_sqft,
                 h.land_sqft,
@@ -124,6 +132,7 @@ def ensure_from_hcad(conn, zip_code: str) -> int:
             ON CONFLICT (address_norm, zip) DO UPDATE SET
                 city                   = COALESCE(parcels.city, EXCLUDED.city),
                 state                  = COALESCE(parcels.state, EXCLUDED.state),
+                parcel_apn             = COALESCE(parcels.parcel_apn, EXCLUDED.parcel_apn),
                 year_built             = COALESCE(parcels.year_built, EXCLUDED.year_built),
                 square_footage         = COALESCE(parcels.square_footage, EXCLUDED.square_footage),
                 lot_size               = COALESCE(parcels.lot_size, EXCLUDED.lot_size),

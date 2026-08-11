@@ -58,6 +58,39 @@ def test_normalize_records_origin_zip_in_flags():
     assert row["enrichment_flags"]["seed_origin_zip"] == "77002"
 
 
+def test_normalize_maps_parcel_and_ride_along_features():
+    """Seeding reads the same paid response the detail step does — the parcel
+    number and migration-068 features must land at seed time, for free."""
+    row = _normalize_rentcast({
+        "addressLine1": "8 E St", "zipCode": "77002",
+        "assessorID": "066-064-013-0020",
+        "owner": {"names": ["JANE DOE"], "type": "Organization"},
+        "features": {"roofType": "Asphalt", "pool": True},
+    })
+    assert row["parcel_apn"] == "0660640130020"
+    assert row["owner_type"] == "Organization"
+    assert row["roof_type"] == "Asphalt"
+    assert row["has_pool"] is True
+
+
+def test_normalize_estimated_value_from_tax_assessments():
+    # /properties records carry no flat price; the assessed value is the live
+    # source (see reconcile._latest_assessment).
+    row = _normalize_rentcast({
+        "addressLine1": "9 F St", "zipCode": "77002",
+        "taxAssessments": {"2024": {"year": 2024, "value": 216_513}},
+    })
+    assert row["estimated_value"] == 216_513
+
+
+def test_normalize_geocode_provenance_only_with_coordinates():
+    located = _normalize_rentcast({"addressLine1": "10 G St", "zipCode": "77002",
+                                   "latitude": 29.7, "longitude": -95.3})
+    assert located["geocode_source"] == "rentcast"
+    unlocated = _normalize_rentcast({"addressLine1": "11 H St", "zipCode": "77002"})
+    assert unlocated.get("geocode_source") is None
+
+
 # ── _normalize_hcad (free DuckDB seed mapper) ─────────────────────────────────
 
 def _hcad_parcel(**over):
@@ -68,6 +101,7 @@ def _hcad_parcel(**over):
         "last_sale_date": "2014-10-02", "owner_name": "CAPUCHINA LIZETTE",
         "owner_occupied": True, "mailing_address": "7003 PINETEX DR, HUMBLE TX 77396",
         "neighborhood_code": "8901.44", "neighborhood_name": "PINE TRAILS",
+        "parcel_apn": "1163040000015",
     }
     base.update(over)
     return base
@@ -82,6 +116,15 @@ def test_normalize_hcad_maps_core_fields():
     assert row["estimated_value"] == 234193
     assert row["hcad_neighborhood_code"] == "8901.44"
     assert row["hcad_neighborhood_name"] == "PINE TRAILS"
+
+
+def test_normalize_hcad_carries_the_parcel_number():
+    # The acct is the identity the RentCast step later verifies assessorID
+    # against — dropping it here would make every seeded row unverifiable.
+    row = _normalize_hcad(_hcad_parcel())
+    assert row["parcel_apn"] == "1163040000015"
+    row = _normalize_hcad(_hcad_parcel(parcel_apn=None))
+    assert row["parcel_apn"] is None
 
 
 def test_normalize_hcad_no_latlng_geocode_fills_later():
