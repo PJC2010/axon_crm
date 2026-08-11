@@ -72,7 +72,12 @@ def _seed_one_zip(conn, zip_code: str, account_id: int, limit: int | None = None
                      dropped, zip_code)
 
         rows = [_normalize_rentcast(p, origin_zip) for p in wanted]
-        n = upsert_properties(conn, rows, account_id)
+        # fill_only: the scheduler re-seeds ZIPs on every run, and a plain
+        # upsert overwrites on conflict — without this, a re-seed would replace
+        # HCAD facts, refreshed values, and (worst) the HCAD-sourced parcel_apn
+        # with RentCast's own assessorID, turning the parcel verification into
+        # RentCast-vs-RentCast and erasing the very signal it measures.
+        n = upsert_properties(conn, rows, account_id, fill_only=True)
         total += n
         log.info("Seeded %d records (offset %d) for ZIP %s", n, offset, zip_code)
 
@@ -182,7 +187,9 @@ def seed_from_hcad(region_id: str, zip_code: str, account_id: int,
 
     conn = get_conn()
     try:
-        n = upsert_properties(conn, rows, account_id)
+        # fill_only, matching the server-side parcels-cache seed path, which
+        # has always gap-filled (COALESCE) rather than overwritten on re-seed.
+        n = upsert_properties(conn, rows, account_id, fill_only=True)
     finally:
         conn.close()
     log.info("HCAD seed: %d parcels for region %s in ZIP %s", n, region_id, zip_code)
@@ -221,7 +228,9 @@ def seed_from_hcad_zip(zip_code: str, account_id: int, limit: int | None = None)
 
     conn = get_conn()
     try:
-        n = upsert_properties(conn, rows, account_id)
+        # fill_only, matching the server-side parcels-cache seed path, which
+        # has always gap-filled (COALESCE) rather than overwritten on re-seed.
+        n = upsert_properties(conn, rows, account_id, fill_only=True)
     finally:
         conn.close()
     log.info("HCAD seed: %d parcels for ZIP %s", n, zip_code)

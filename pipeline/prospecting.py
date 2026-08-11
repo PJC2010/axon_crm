@@ -24,10 +24,9 @@ from config import (
 )
 from pipeline import geo_h3
 from pipeline.addr import normalize
-from pipeline.equity import estimate_equity
 from pipeline.geo_scoring import haversine_km
-from pipeline.owner import clean_owner_name
 from pipeline.property_provider import get_provider
+from pipeline.reconcile import map_record as map_rentcast_record
 
 log = logging.getLogger(__name__)
 
@@ -141,48 +140,29 @@ def refine(records: list[dict], preset: dict | None) -> list[dict]:
 
 # ── Record mapping ────────────────────────────────────────────────────────────
 
-def _owner_name(r: dict) -> str | None:
-    owner = r.get("owner") or {}
-    names = owner.get("names")
-    raw = (names[0] if isinstance(names, list) and names
-           else r.get("ownerName"))
-    return clean_owner_name(raw)
-
-
 def map_record(r: dict, vertical: str | None) -> dict:
-    """Map a RentCast record to the upsert_properties row shape. Records arrive
-    pre-geocoded, so geocode_source='rentcast' and the equity proxy is derived
-    from sale price/date (RentCast carries no mortgage/lien data — Section 4)."""
-    features = r.get("features") or {}
-    lat, lng = r.get("latitude"), r.get("longitude")
-    value = r.get("price")
-    sale_price = r.get("lastSalePrice")
-    sale_date = r.get("lastSaleDate")
-    return {
+    """Map a RentCast record to the upsert_properties row shape.
+
+    Field extraction is delegated to reconcile.map_record — the one canonical
+    RentCast-record → properties-column mapping — so a prospected record is
+    read exactly like a seeded or detail-fetched one (taxAssessments →
+    estimated_value, assessorID → parcel_apn, nested owner/features shapes).
+    Reading everything off the record we already paid for is what keeps a
+    prospect from immediately re-queueing for a second paid lookup. This layer
+    adds row identity plus prospecting provenance (vertical, lead_source).
+    Records arrive pre-geocoded, so geocode_source='rentcast'.
+    """
+    row = map_rentcast_record(r)
+    if row["latitude"] is not None and row["longitude"] is not None:
+        row["geocode_source"] = "rentcast"
+    row.update({
         "address":          r.get("addressLine1") or r.get("formattedAddress") or "",
-        "city":             r.get("city"),
-        "state":            r.get("state"),
         "zip":              r.get("zipCode"),
-        "latitude":         lat,
-        "longitude":        lng,
-        "geocode_source":   "rentcast" if lat is not None and lng is not None else None,
-        "year_built":       r.get("yearBuilt"),
-        "square_footage":   r.get("squareFootage"),
-        "lot_size":         r.get("lotSize") or features.get("lotSize"),
-        "property_type":    r.get("propertyType"),
-        "estimated_value":  value,
-        "estimated_equity": estimate_equity(value, sale_price, sale_date),
-        "last_sale_date":   sale_date,
-        "last_sale_price":  sale_price,
-        "owner_name":       _owner_name(r),
-        "owner_occupied":   r.get("ownerOccupied"),
-        "garage_spaces":    features.get("garageSpaces"),
-        "garage_type":      features.get("garageType"),
-        "subdivision":      r.get("subdivision"),
         "vertical":         vertical,
         "lead_source":      "prospecting",
         "enrichment_flags": {"seed": "rentcast", "source": "prospecting"},
-    }
+    })
+    return row
 
 
 # ── Dedupe ────────────────────────────────────────────────────────────────────

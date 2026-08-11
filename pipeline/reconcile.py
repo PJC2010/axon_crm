@@ -190,7 +190,12 @@ def map_record(record: dict) -> dict:
         "foundation_type":  features.get("foundationType"),
         "heating_type":     features.get("heatingType"),
         "cooling_type":     features.get("coolingType"),
-        "has_pool":         features.get("pool"),
+        # True-or-None, never False: a county record listing no pool feature is
+        # absence of evidence, and every writer keeps that convention (HCAD only
+        # ever writes True). A stored False would hard-gate pool-vertical
+        # scoring (VERTICAL_GATES treats None as unknown but False as confirmed
+        # absence) and, via SHARED_COLS, seed that verdict to every tenant.
+        "has_pool":         True if features.get("pool") else None,
         "owner_type":       owner.get("type"),
         "mailing_address":  (owner.get("mailingAddress") or {}).get("formattedAddress"),
         "estimated_value":  value,
@@ -211,7 +216,10 @@ def _latest_assessment(record: dict) -> float | None:
 
     The object is keyed by tax year ({"2024": {"year": 2024, "value": …}}); the
     entry's own `year` field is trusted over the key, with the key as fallback.
-    Zero and unparseable entries are skipped rather than allowed to win.
+    Zero and unparseable entries are skipped rather than allowed to win — the
+    value must already be a JSON number, because it flows straight into
+    estimate_equity's float() and a junk string here would crash the whole
+    enrichment batch.
     """
     entries = record.get("taxAssessments")
     if not isinstance(entries, dict):
@@ -221,7 +229,7 @@ def _latest_assessment(record: dict) -> float | None:
         if not isinstance(entry, dict):
             continue
         value = entry.get("value")
-        if not value:
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or not value:
             continue
         try:
             year = int(entry.get("year") or key)
@@ -275,18 +283,56 @@ def map_detail(record: dict) -> dict:
 def parcel_finding(stored_apn, remote_apn) -> dict | None:
     """A shadow-mode finding when two APNs disagree, else None.
 
-    Used by the per-ZIP detail step, which accepts records on the address echo
-    check alone: when the stored parcel number (from HCAD) and the vendor's
-    assessorID name different parcels, the record is *still applied* — this
-    change observes before it enforces — but the disagreement is recorded so
-    the real-world rate of address-check false accepts can be measured in
+    Used by the enrichment steps, which accept matches on the address rule
+    alone: when the row's stored parcel number and the source's identifier name
+    different parcels, the match is *still applied* — this change observes
+    before it enforces — but the disagreement is recorded so the real-world
+    rate of address-match false accepts can be measured in
     property_field_audits before same_parcel is promoted to a gate. The
     account-wide sweep needs no equivalent: reconcile() reaches the same
     verdict through the parcel_apn FIELD_RULES entry.
+
+    A side that fails normalize_apn (junk, all-zero placeholder) is treated as
+    missing, not mismatching — an unverifiable identity is no evidence of a
+    wrong parcel, and counting it would pollute the very metric this collects.
     """
-    if not stored_apn or not remote_apn or same_parcel(stored_apn, remote_apn):
+    if not normalize_apn(stored_apn) or not normalize_apn(remote_apn) \
+            or same_parcel(stored_apn, remote_apn):
         return None
     return _finding("parcel_apn", stored_apn, remote_apn, MISMATCH, KEPT)
+
+
+def consistent_derived(stored: dict, updates: dict) -> dict:
+    """Recompute derived fields in `updates` against the row as it will exist
+    AFTER the write, returning a corrected copy.
+
+    ownership_years and estimated_equity arrive in a mapped record derived from
+    the *vendor's* sale/value facts. Under per-field fill-only, those basis
+    facts may be dropped (the row already holds its own), and writing the
+    vendor-derived number beside a retained basis produces a self-contradictory
+    row — a 2005 sale date with tenure counted from the vendor's 2019 sale,
+    feeding scoring. So each derived field is recomputed from the effective
+    post-write basis (the update where one is being written, the stored value
+    otherwise) and dropped entirely when that basis cannot support it.
+    """
+    def eff(field):
+        return updates[field] if field in updates else stored.get(field)
+
+    out = dict(updates)
+    if "ownership_years" in out:
+        years = years_owned(eff("last_sale_date"))
+        if years is None:
+            del out["ownership_years"]
+        else:
+            out["ownership_years"] = years
+    if "estimated_equity" in out:
+        equity = estimate_equity(eff("estimated_value"), eff("last_sale_price"),
+                                 eff("last_sale_date"))
+        if equity is None:
+            del out["estimated_equity"]
+        else:
+            out["estimated_equity"] = equity
+    return out
 
 
 def years_owned(sale_date) -> int | None:
@@ -356,7 +402,9 @@ def reconcile(stored: dict, record: dict, *, mode: str = "fill",
         findings.append(_finding(field, mine, theirs, MISMATCH,
                                  REFRESHED if refresh else KEPT))
 
-    return {"verdicts": verdicts, "updates": updates, "findings": findings}
+    return {"verdicts": verdicts,
+            "updates": consistent_derived(stored, updates),
+            "findings": findings}
 
 
 def _finding(field, stored, remote, verdict, resolution) -> dict:
@@ -380,6 +428,10 @@ def _equal(mine, theirs, rule: dict) -> bool:
     if kind == "bool":
         return _as_bool(mine) == _as_bool(theirs)
     if kind == "parcel":
+        # A side that fails normalize_apn is unverifiable, not different —
+        # the same junk-tolerance convention as _numbers_equal below.
+        if normalize_apn(mine) is None or normalize_apn(theirs) is None:
+            return True
         return same_parcel(mine, theirs)
     return _norm_text(mine) == _norm_text(theirs)
 

@@ -107,21 +107,31 @@ ALL_COLS = [
 UPSERT_PAGE_SIZE = 500
 
 
-def _upsert_sql(data_cols: tuple) -> str:
+def _upsert_sql(data_cols: tuple, fill_only: bool = False) -> str:
     """Build the INSERT ... ON CONFLICT statement for one column signature.
 
     `data_cols` is the ordered tuple of non-None columns shared by every row in
     a batch. account_id is prepended (it is part of the conflict key). Uses the
     ``VALUES %s`` placeholder that psycopg2's execute_values expands.
+
+    `fill_only` makes the conflict branch write only into NULLs (COALESCE keeps
+    the existing value). Seeding uses it: a re-seed of a ZIP that has since been
+    enriched must not replace HCAD facts, paid equity, or the row's parcel
+    identity with the seed source's copy — overwriting belongs to the sweep's
+    explicit refresh mode only.
     """
     col_names = ", ".join(["account_id", *data_cols])
-    updates = ", ".join(
-        f"{c} = EXCLUDED.{c}" for c in data_cols if c not in ("address", "zip")
-    )
+
+    def assign(c: str) -> str:
+        if fill_only:
+            return f"{c} = COALESCE(properties.{c}, EXCLUDED.{c})"
+        return f"{c} = EXCLUDED.{c}"
+
+    updates = ", ".join(assign(c) for c in data_cols if c not in ("address", "zip"))
     # Merge enrichment_flags rather than overwrite so earlier steps' flags survive.
     if "enrichment_flags" in data_cols:
         updates = updates.replace(
-            "enrichment_flags = EXCLUDED.enrichment_flags",
+            assign("enrichment_flags"),
             "enrichment_flags = properties.enrichment_flags || EXCLUDED.enrichment_flags",
         )
     # A row whose only non-key columns are address/zip has nothing to update; skip
@@ -145,12 +155,15 @@ def clamp_garage_spaces(value):
     return value
 
 
-def upsert_properties(conn, rows: list[dict], account_id: int) -> int:
+def upsert_properties(conn, rows: list[dict], account_id: int,
+                      fill_only: bool = False) -> int:
     """
     Upsert a list of property dicts into the properties table for one org.
     Conflict target is (account_id, address, zip) so each org keeps its own
-    copy of a property. Only non-None values are written so a partial
-    enrichment step does not clobber fields set by an earlier step.
+    copy of a property. A None value is never written — but a non-None value
+    OVERWRITES on conflict, so a caller that must not clobber earlier steps'
+    work either drops already-filled fields itself (pipeline/property.py) or
+    passes `fill_only=True` to write only into NULLs (the seed paths).
     Returns the number of rows affected.
 
     Rows are grouped by their set of non-None columns and each group is written
@@ -184,7 +197,7 @@ def upsert_properties(conn, rows: list[dict], account_id: int) -> int:
             # so len() is an exact affected-row count (insert + update) even when
             # execute_values splits the batch by page_size.
             returned = psycopg2.extras.execute_values(
-                cur, _upsert_sql(data_cols), argslist,
+                cur, _upsert_sql(data_cols, fill_only=fill_only), argslist,
                 page_size=UPSERT_PAGE_SIZE, fetch=True,
             )
             count += len(returned)

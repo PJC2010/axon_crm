@@ -23,7 +23,9 @@ from config import (
 from pipeline.backfill import record_findings
 from pipeline.db import get_conn, fetch_missing_any, upsert_properties
 from pipeline.http import get_json_result
-from pipeline.reconcile import map_detail, parcel_finding, verify_record
+from pipeline.reconcile import (
+    consistent_derived, map_detail, parcel_finding, verify_record,
+)
 
 log = logging.getLogger(__name__)
 
@@ -118,9 +120,13 @@ def enrich_property(zip_code: str, account_id: int, selected_only: bool = False)
                                     row["address"])
                         findings.append((row["id"], finding))
                     # Fill-only: drop what the row already has, so the paid
-                    # source only ever lands in genuine gaps.
-                    update.update({k: v for k, v in data.items()
-                                   if row.get(k) is None})
+                    # source only ever lands in genuine gaps. Derived fields
+                    # are then recomputed against the row's own retained basis
+                    # — vendor tenure next to a kept sale date would contradict
+                    # the row it lands on.
+                    fresh = {k: v for k, v in data.items()
+                             if row.get(k) is None}
+                    update.update(consistent_derived(row, fresh))
                 else:
                     counter["fail"] += 1
                 updates.append(update)

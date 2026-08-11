@@ -141,8 +141,11 @@ class TestMapRecord:
         assert "estimated_equity" in row
 
     def test_missing_coords_no_geocode_source(self):
+        # No coordinates → no provenance claimed. The delegated mapping omits
+        # the key rather than emitting an explicit None; upsert treats both
+        # identically (None values are never written).
         row = map_record(_rec(latitude=None, longitude=None), vertical=None)
-        assert row["geocode_source"] is None
+        assert row.get("geocode_source") is None
 
     def test_formatted_address_fallback(self):
         r = _rec()

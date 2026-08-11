@@ -15,6 +15,7 @@ behaviours are locked in here:
    is counted and recorded to property_field_audits — measure the address
    check's false-accept rate before same_parcel becomes a gate.
 """
+from datetime import date
 from types import SimpleNamespace
 
 import pytest
@@ -106,6 +107,17 @@ def test_a_fully_answered_row_is_still_stamped(run_enrich):
     assert written["enrichment_flags"]["property"] == "rentcast"
     assert "rentcast_checked" in written["enrichment_flags"]
     assert "year_built" not in written
+
+
+def test_filled_derived_fields_track_the_rows_own_basis(run_enrich):
+    """A kept 2005 sale date must not sit beside tenure counted from the
+    vendor's 2019 sale — derived fields are recomputed against the row."""
+    payload = [dict(PAYLOAD[0], lastSaleDate="2019-08-20")]
+    counter, writes, _ = run_enrich(
+        [_row(last_sale_date="2005-03-01")], payload)
+    written = writes[0]
+    assert "last_sale_date" not in written              # row keeps its own
+    assert written["ownership_years"] == date.today().year - 2005
 
 
 def test_no_record_stamps_without_source_flag(run_enrich):

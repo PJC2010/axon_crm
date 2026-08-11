@@ -92,11 +92,18 @@ def ensure_from_hcad(conn, zip_code: str) -> int:
                 h.site_zip,
                 h.mail_city,
                 'TX',
-                -- Storage form of pipeline/parcel_id.py::normalize_apn
-                -- (alphanumerics only, uppercased). Byte-parity with the Python
-                -- rule is NOT load-bearing: parcel numbers are never a SQL join
-                -- key, and every comparison goes through same_parcel in Python.
-                NULLIF(UPPER(REGEXP_REPLACE(h.acct, '[^a-zA-Z0-9]', '', 'g')), ''),
+                -- Storage form of pipeline/parcel_id.py::normalize_apn:
+                -- alphanumerics only, uppercased, and — load-bearing — NULL for
+                -- empty and ALL-ZERO placeholders. A zero-filled acct stored
+                -- here would be copied to every tenant, then read as a real
+                -- identity: spurious parcel_mismatch findings on every RentCast
+                -- answer, and (being non-NULL) it would block the genuine
+                -- assessorID from ever filling. Byte-parity beyond that is not
+                -- required: APNs are never a SQL join key — every comparison
+                -- goes through same_parcel in Python.
+                CASE WHEN BTRIM(REGEXP_REPLACE(h.acct, '[^a-zA-Z0-9]', '', 'g'), '0') = ''
+                     THEN NULL
+                     ELSE UPPER(REGEXP_REPLACE(h.acct, '[^a-zA-Z0-9]', '', 'g')) END,
                 NULLIF(h.year_built, '')::INTEGER,
                 h.building_sqft,
                 h.land_sqft,
