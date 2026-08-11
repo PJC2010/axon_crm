@@ -37,11 +37,12 @@ class PropertyDataProvider(ABC):
         point, applying whatever server-side filters the vendor supports."""
 
     @abstractmethod
-    def get_by_address(self, address: str, zip_code: str | None = None) -> dict | None:
+    def get_by_address(self, address: str, zip_code: str | None = None,
+                       state: str | None = None) -> dict | None:
         ...
 
-    def get_by_address_result(self, address: str,
-                              zip_code: str | None = None) -> tuple[dict | None, bool]:
+    def get_by_address_result(self, address: str, zip_code: str | None = None,
+                              state: str | None = None) -> tuple[dict | None, bool]:
         """As get_by_address, plus whether the vendor actually answered.
 
         Returns ``(record, answered)``. `answered` is False only when the lookup
@@ -49,11 +50,15 @@ class PropertyDataProvider(ABC):
         "no record for this address". Callers that stamp a row so it is not
         re-billed need the difference; see pipeline/backfill.py.
 
+        `state` is part of the address, not an optional filter: RentCast 404s a
+        lookup that omits it even for an address it holds (see RentCastProvider).
+        Pass the row's state whenever there is one.
+
         The default is the conservative one: providers that cannot tell the two
         apart report every completed call as answered, which is the behaviour
         this interface had before the distinction existed.
         """
-        return self.get_by_address(address, zip_code), True
+        return self.get_by_address(address, zip_code, state), True
 
 
 class RentCastProvider(PropertyDataProvider):
@@ -102,15 +107,34 @@ class RentCastProvider(PropertyDataProvider):
             offset += page
         return records[:max_records], requests_made
 
-    def get_by_address(self, address, zip_code=None):
-        return self.get_by_address_result(address, zip_code)[0]
+    def get_by_address(self, address, zip_code=None, state=None):
+        return self.get_by_address_result(address, zip_code, state)[0]
 
-    def get_by_address_result(self, address, zip_code=None):
+    def get_by_address_result(self, address, zip_code=None, state=None):
         if not RENTCAST_API_KEY:
             return None, False   # never asked — nothing to record as checked
         params = {"address": address, "limit": 1}
         if zip_code:
             params["zipCode"] = zip_code
+        # `state` is required, not decorative. Measured against the live API on
+        # one address RentCast demonstrably holds:
+        #     address + zipCode                 -> 404
+        #     address + city + zipCode          -> 404
+        #     address + state + zipCode         -> 200
+        #     address + state (no zip, no city) -> 200
+        #     address + WRONG city + state      -> 200
+        # Every 200 carries state; every 404 omits it. Without it this endpoint
+        # 404s on addresses the vendor returns from its own ZIP scan, which is
+        # why a 500-property run of ZIP 77007 reported 0 matches on all 181
+        # lookups and left property_type and garage_spaces at 0% everywhere.
+        #
+        # City is deliberately NOT sent. It is not required, and a wrong one is
+        # tolerated — while the value we hold is often wrong, since HCAD-seeded
+        # rows take `city` from the owner's MAILING city (seed._normalize_hcad),
+        # which names another town for exactly the absentee owners worth the
+        # most. Sending nothing beats sending that.
+        if state:
+            params["state"] = state
         data, answered = get_json_result(
             f"{RENTCAST_BASE_URL}/properties",
             headers=self._headers(),

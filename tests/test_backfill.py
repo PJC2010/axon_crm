@@ -96,13 +96,13 @@ class _StubProvider:
     def __init__(self, record: dict | None, answered: bool = True):
         self.record = record
         self.answered = answered
-        self.calls: list[tuple[str, str]] = []
+        self.calls: list[tuple[str, str, str | None]] = []
 
-    def get_by_address(self, address, zip_code=None):
-        return self.get_by_address_result(address, zip_code)[0]
+    def get_by_address(self, address, zip_code=None, state=None):
+        return self.get_by_address_result(address, zip_code, state)[0]
 
-    def get_by_address_result(self, address, zip_code=None):
-        self.calls.append((address, zip_code))
+    def get_by_address_result(self, address, zip_code=None, state=None):
+        self.calls.append((address, zip_code, state))
         return self.record, self.answered
 
 
@@ -438,3 +438,16 @@ def test_a_differently_formatted_same_address_is_accepted(stub_sweep):
     assert r.counter["address_mismatch"] == 0
     assert r.counter["matched"] == 1
     assert r.writes[0]["year_built"] == 1998
+
+
+def test_sweep_sends_the_row_state_to_the_vendor(stub_sweep):
+    """Regression: the sweep omitted `state`, and RentCast 404s a lookup
+    without it — even for an address it returns from its own ZIP scan. That
+    is why a 181-row sweep reported 0 matches and stamped every row as
+    'checked, nothing there'."""
+    r = stub_sweep([_row(year_built=None, state="TX")], RECORD)
+    assert r.provider.calls, "no lookup was made"
+    address, zip_code, state = r.provider.calls[0]
+    assert address == "123 Main St"
+    assert zip_code == "77396"
+    assert state == "TX", f"state not forwarded: {r.provider.calls[0]!r}"

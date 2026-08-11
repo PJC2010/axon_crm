@@ -88,7 +88,8 @@ def enrich_property(zip_code: str, account_id: int, selected_only: bool = False)
             updates = []
             findings: list[tuple[int, dict]] = []
             for row in rows:
-                data, answered = fetchers[source](row["address"], row.get("zip", ""))
+                data, answered = fetchers[source](row["address"], row.get("zip", ""),
+                                                  row.get("state"))
                 if not answered:
                     # The lookup never got through (timeout, outage). Leave the
                     # row unstamped so it stays eligible — stamping here would
@@ -139,7 +140,8 @@ def enrich_property(zip_code: str, account_id: int, selected_only: bool = False)
     return counters
 
 
-def _rentcast_detail(address: str, zip_code: str) -> tuple[dict | None, bool]:
+def _rentcast_detail(address: str, zip_code: str,
+                     state: str | None = None) -> tuple[dict | None, bool]:
     """Fetch one property and map it to the columns this step writes.
 
     Returns ``(data, answered)``. `answered` is False only when the lookup never
@@ -156,10 +158,16 @@ def _rentcast_detail(address: str, zip_code: str) -> tuple[dict | None, bool]:
     but deliberately excludes coordinates, which belong to the geocode step
     (see reconcile.DETAIL_FIELDS).
     """
+    # `state` is required by this endpoint, not decorative — omitting it 404s
+    # even for an address RentCast returns from its own ZIP scan. See the
+    # measurements in pipeline/property_provider.py::get_by_address_result.
+    params = {"address": address, "zipCode": zip_code, "limit": 1}
+    if state:
+        params["state"] = state
     data, answered = get_json_result(
         f"{RENTCAST_BASE_URL}/properties",
         headers={"X-Api-Key": RENTCAST_API_KEY},
-        params={"address": address, "zipCode": zip_code, "limit": 1},
+        params=params,
         timeout=15,
     )
     if not data:
