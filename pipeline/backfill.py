@@ -253,7 +253,8 @@ def sweep(conn, account_id: int, *, zip_code: str | None = None,
                 bucket["filled"] += 1
             continue
 
-        record, answered = provider.get_by_address_result(row["address"], row.get("zip"))
+        record, answered = provider.get_by_address_result(
+            row["address"], row.get("zip"), row.get("state"))
         if not answered:
             # The lookup never got through (timeout, outage). Leave the row
             # unstamped so it stays eligible — stamping here would let one bad

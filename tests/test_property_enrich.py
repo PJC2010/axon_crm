@@ -77,6 +77,64 @@ def run_enrich(monkeypatch):
     return factory
 
 
+# ── Request shape ─────────────────────────────────────────────────────────────
+# Measured against the live API, on one address RentCast demonstrably holds:
+#   address + zipCode          -> 404      address + state + zipCode -> 200
+#   address + city + zipCode   -> 404      address + state (no zip)  -> 200
+# Every 200 carries `state`; every 404 omits it. Sending the row's state is the
+# whole difference between this step working and returning 0 matches for a
+# whole ZIP, so it is asserted rather than left to inspection.
+
+def test_state_is_sent_to_the_vendor(monkeypatch):
+    """Regression: omitting `state` 404s even for addresses RentCast holds —
+    a 500-property run of ZIP 77007 reported 0 ok / 181 fail because of it."""
+    seen = {}
+
+    def _capture(url, **kwargs):
+        seen.update(kwargs.get("params") or {})
+        return None, True
+
+    monkeypatch.setattr(prop, "get_json_result", _capture)
+    prop._rentcast_detail("123 Main St", "77396", "TX")
+    assert seen["state"] == "TX"
+    assert seen["address"] == "123 Main St"
+    assert seen["zipCode"] == "77396"
+
+
+def test_missing_state_is_omitted_rather_than_sent_empty(monkeypatch):
+    """A row with no state still gets asked — an empty `state=` parameter
+    would be a different request than sending none at all."""
+    seen = {}
+
+    def _capture(url, **kwargs):
+        seen.update(kwargs.get("params") or {})
+        return None, True
+
+    monkeypatch.setattr(prop, "get_json_result", _capture)
+    prop._rentcast_detail("123 Main St", "77396", None)
+    assert "state" not in seen
+
+
+def test_enrich_passes_each_row_state_through(run_enrich, monkeypatch):
+    """The step must forward the row's own state, not a constant: an account
+    holding rows in two states would otherwise query them all as one."""
+    seen = []
+    monkeypatch.setattr(prop, "_rentcast_detail",
+                        lambda addr, zc, st=None: (seen.append(st), (None, True))[1])
+    monkeypatch.setattr(prop, "_SOURCE_CONFIG", {
+        "rentcast": {"key": "k", "flag": {}, "delay": 0, "cap": None}})
+    monkeypatch.setattr(prop, "PROPERTY_FIELD_SOURCES", ["rentcast"])
+    monkeypatch.setattr(prop, "get_conn",
+                        lambda: SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(prop, "fetch_missing_any", lambda *a, **k: [
+        {**_row(), "state": "TX"}, {**_row(id=102), "state": "FL"}])
+    monkeypatch.setattr(prop, "upsert_properties", lambda c, r, a: len(r))
+    monkeypatch.setattr(prop, "record_findings", lambda *a: None)
+
+    prop.enrich_property("77396", account_id=1)
+    assert seen == ["TX", "FL"]
+
+
 # ── Fill-only ─────────────────────────────────────────────────────────────────
 
 def test_fields_the_row_already_has_are_not_written(run_enrich):
