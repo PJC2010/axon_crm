@@ -112,6 +112,31 @@ def test_enrichment_flags_dict_is_json_wrapped_and_merged(monkeypatch):
     assert isinstance(flag_val, psycopg2.extras.Json)
 
 
+def test_fill_only_writes_into_nulls_not_over_values(monkeypatch):
+    """The seed paths re-run on every scheduled pipeline; fill_only keeps a
+    re-seed from replacing HCAD facts, refreshed values, or the row's
+    HCAD-sourced parcel identity with the seed source's copy."""
+    calls = _capture(monkeypatch)
+    db.upsert_properties(_FakeConn(), [{
+        "address": "1 A St", "zip": "77002", "year_built": 1998,
+        "parcel_apn": "0660640130020", "enrichment_flags": {"seed": "rentcast"},
+    }], account_id=1, fill_only=True)
+    sql = calls[0]["sql"]
+    assert "year_built = COALESCE(properties.year_built, EXCLUDED.year_built)" in sql
+    assert "parcel_apn = COALESCE(properties.parcel_apn, EXCLUDED.parcel_apn)" in sql
+    assert "year_built = EXCLUDED.year_built" not in sql
+    # Flags still merge — provenance from earlier steps survives a re-seed.
+    assert "enrichment_flags = properties.enrichment_flags || EXCLUDED.enrichment_flags" in sql
+
+
+def test_default_mode_still_overwrites(monkeypatch):
+    calls = _capture(monkeypatch)
+    db.upsert_properties(_FakeConn(), [{"address": "1 A St", "zip": "77002",
+                                        "lead_score": 88}], account_id=1)
+    assert "lead_score = EXCLUDED.lead_score" in calls[0]["sql"]
+    assert "COALESCE" not in calls[0]["sql"]
+
+
 def test_conflict_set_omits_key_columns(monkeypatch):
     calls = _capture(monkeypatch)
     conn = _FakeConn()

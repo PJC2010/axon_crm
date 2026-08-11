@@ -3,8 +3,14 @@ Step — Property detail enrichment via RentCast.
 
 Free HCAD runs upstream and fills what it can. This step then fills the
 remaining NULL holes from the paid source(s) in PROPERTY_FIELD_SOURCES.
-Because upsert_properties only writes non-NULL values, each source touches only
-the fields still missing, so paid calls are spent on genuine gaps.
+
+Fill-only, enforced here: fields the row already has are dropped from each
+update before it is written. upsert_properties skips None but *overwrites* any
+non-None value it is handed (SET col = EXCLUDED.col), so without this filter a
+row queued for one gap would get every other field it already held — including
+HCAD's assessor facts — replaced by the vendor's copy. Overwriting stays where
+it belongs: the opt-in refresh mode of the account-wide sweep
+(pipeline/backfill.py).
 """
 import logging
 import time
@@ -14,9 +20,12 @@ from config import (
     RENTCAST_API_KEY, RENTCAST_BASE_URL,
     PROPERTY_FIELD_SOURCES, SOURCE_FIELDS, PROPERTY_RECHECK_DAYS,
 )
+from pipeline.backfill import record_findings
 from pipeline.db import get_conn, fetch_missing_any, upsert_properties
 from pipeline.http import get_json_result
-from pipeline.reconcile import map_detail, verify_record
+from pipeline.reconcile import (
+    consistent_derived, map_detail, parcel_finding, verify_record,
+)
 
 log = logging.getLogger(__name__)
 
@@ -39,9 +48,12 @@ def enrich_property(zip_code: str, account_id: int, selected_only: bool = False)
     bounded to the chosen subset.
 
     Returns per-source counters: {source: {"ok", "fail", "unanswered",
-    "updated", "skipped_no_key"}}. `fail` is "the source answered but had no
-    record"; `unanswered` is "the lookup never got through" — those rows are left
-    unstamped so a vendor outage does not disqualify them from the next run.
+    "updated", "parcel_mismatch", "skipped_no_key"}}. `fail` is "the source
+    answered but had no record"; `unanswered` is "the lookup never got through"
+    — those rows are left unstamped so a vendor outage does not disqualify them
+    from the next run. `parcel_mismatch` counts accepted records whose
+    assessorID disagreed with the row's stored parcel number (shadow-recorded,
+    not rejected — see pipeline/reconcile.py::parcel_finding).
     """
     conn = get_conn()
     counters: dict[str, dict] = {}
@@ -51,7 +63,7 @@ def enrich_property(zip_code: str, account_id: int, selected_only: bool = False)
         for source in PROPERTY_FIELD_SOURCES:
             cfg = _SOURCE_CONFIG[source]
             counter = {"ok": 0, "fail": 0, "unanswered": 0, "updated": 0,
-                       "skipped_no_key": False}
+                       "parcel_mismatch": 0, "skipped_no_key": False}
             counters[source] = counter
 
             if not cfg["key"]:
@@ -74,6 +86,7 @@ def enrich_property(zip_code: str, account_id: int, selected_only: bool = False)
             log.info("%s enriching %d properties…", source, len(rows))
             today = date.today().isoformat()
             updates = []
+            findings: list[tuple[int, dict]] = []
             for row in rows:
                 data, answered = fetchers[source](row["address"], row.get("zip", ""))
                 if not answered:
@@ -93,12 +106,33 @@ def enrich_property(zip_code: str, account_id: int, selected_only: bool = False)
                           "enrichment_flags": flags}
                 if data:
                     counter["ok"] += 1
-                    update.update(data)
+                    # The address echo check passed, but does the vendor's
+                    # parcel number agree with the one HCAD gave this row?
+                    # Recorded, not enforced — measure the false-accept rate
+                    # before same_parcel becomes a gate.
+                    finding = parcel_finding(row.get("parcel_apn"),
+                                             data.get("parcel_apn"))
+                    if finding:
+                        counter["parcel_mismatch"] += 1
+                        log.warning("%s assessorID %r disagrees with stored "
+                                    "parcel %r for %r — recorded.",
+                                    source, finding["remote"], finding["stored"],
+                                    row["address"])
+                        findings.append((row["id"], finding))
+                    # Fill-only: drop what the row already has, so the paid
+                    # source only ever lands in genuine gaps. Derived fields
+                    # are then recomputed against the row's own retained basis
+                    # — vendor tenure next to a kept sale date would contradict
+                    # the row it lands on.
+                    fresh = {k: v for k, v in data.items()
+                             if row.get(k) is None}
+                    update.update(consistent_derived(row, fresh))
                 else:
                     counter["fail"] += 1
                 updates.append(update)
                 time.sleep(cfg["delay"])
             counter["updated"] = upsert_properties(conn, updates, account_id)
+            record_findings(conn, account_id, findings)
     finally:
         conn.close()
 
@@ -116,9 +150,11 @@ def _rentcast_detail(address: str, zip_code: str) -> tuple[dict | None, bool]:
 
     The mapping lives in pipeline/reconcile.py so this step and the account-wide
     backfill sweep read a RentCast record the same way. `map_detail` returns
-    slightly more than SOURCE_FIELDS["rentcast"] queues rows for — subdivision
-    rides along on a call already being paid for — but deliberately excludes
-    coordinates, which belong to the geocode step (see reconcile.DETAIL_FIELDS).
+    more than SOURCE_FIELDS["rentcast"] queues rows for — subdivision,
+    parcel_apn, roof/foundation/heating/cooling types, owner_type and the rest
+    ride along on a call already being paid for without ever *triggering* one —
+    but deliberately excludes coordinates, which belong to the geocode step
+    (see reconcile.DETAIL_FIELDS).
     """
     data, answered = get_json_result(
         f"{RENTCAST_BASE_URL}/properties",

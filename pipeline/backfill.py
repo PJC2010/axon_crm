@@ -332,18 +332,21 @@ def sweep(conn, account_id: int, *, zip_code: str | None = None,
 
 # ── Discrepancy trail ─────────────────────────────────────────────────────────
 
-def record_findings(conn, account_id: int, findings: list[tuple[int, dict]]) -> int:
+def record_findings(conn, account_id: int, findings: list[tuple[int, dict]],
+                    source: str = SOURCE) -> int:
     """Upsert per-field findings into property_field_audits. Returns rows written.
 
     Keyed on (property_id, field, source) so re-checking a field replaces its
     previous verdict rather than appending — the table stays a current-state
-    report, bounded by properties × fields, not an ever-growing log.
+    report, bounded by properties × fields, not an ever-growing log. `source`
+    names who disagreed with the stored value (default RentCast; the HCAD
+    enrichment step records its parcel disagreements under "hcad").
     """
     reportable = [(pid, f) for pid, f in findings if f["field"] in AUDITED_FIELDS]
     if not reportable:
         return 0
     values = [
-        (account_id, property_id, f["field"], SOURCE,
+        (account_id, property_id, f["field"], source,
          f["stored"], f["remote"], f["verdict"], f["resolution"])
         for property_id, f in reportable
     ]

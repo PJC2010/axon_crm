@@ -24,12 +24,23 @@ def _record(**overrides) -> dict:
         "squareFootage": 2100,
         "lotSize": 7200,
         "subdivision": "Summerwood",
+        "assessorID": "066-064-013-0020",
         "price": 340_000,
+        "taxAssessments": {
+            "2023": {"year": 2023, "value": 310_000, "land": 60_000,
+                     "improvements": 250_000},
+            "2024": {"year": 2024, "value": 320_000, "land": 62_000,
+                     "improvements": 258_000},
+        },
         "lastSalePrice": 250_000,
         "lastSaleDate": "2015-06-01",
         "ownerOccupied": True,
-        "owner": {"names": ["JANE DOE"]},
-        "features": {"garageSpaces": 2, "garageType": "Attached"},
+        "owner": {"names": ["JANE DOE"], "type": "Individual",
+                  "mailingAddress": {
+                      "formattedAddress": "123 Main St, Houston, TX 77396"}},
+        "features": {"garageSpaces": 2, "garageType": "Attached", "pool": True,
+                     "roofType": "Asphalt", "foundationType": "Slab",
+                     "heatingType": "Forced Air", "coolingType": "Central"},
     }
     record.update(overrides)
     return record
@@ -71,6 +82,72 @@ def test_map_record_derives_equity_from_sale():
     # Amortized against the 2015 sale — strictly between "no equity" and the
     # full value, which is what makes it more useful than the flat proxy.
     assert 0 < mapped["estimated_equity"] < mapped["estimated_value"]
+
+
+def test_map_record_reads_ride_along_features():
+    """The migration-068 set: free facts on a response already paid for."""
+    mapped = map_record(_record())
+    assert mapped["roof_type"] == "Asphalt"
+    assert mapped["foundation_type"] == "Slab"
+    assert mapped["heating_type"] == "Forced Air"
+    assert mapped["cooling_type"] == "Central"
+    assert mapped["has_pool"] is True
+    assert mapped["owner_type"] == "Individual"
+    assert mapped["mailing_address"] == "123 Main St, Houston, TX 77396"
+
+
+def test_map_record_normalizes_the_assessor_id():
+    # Stored form: punctuation stripped, leading zeros kept (display fidelity).
+    assert map_record(_record())["parcel_apn"] == "0660640130020"
+
+
+def test_estimated_value_comes_from_the_latest_tax_assessment():
+    """`price` does not exist on current /properties responses — the live value
+    source is taxAssessments, newest year first."""
+    mapped = map_record(_record(price=None))
+    assert mapped["estimated_value"] == 320_000          # 2024, not 2023
+    assert mapped["estimated_equity"] is not None        # equity chain revives
+
+
+def test_legacy_price_still_wins_over_an_assessment():
+    # Older cached payloads carried a flat price; keep honouring it first.
+    assert map_record(_record())["estimated_value"] == 340_000
+
+
+def test_malformed_assessment_entries_are_skipped_not_crashed():
+    mapped = map_record(_record(price=None, taxAssessments={
+        "2025": {"year": 2025, "value": 0},        # zero cannot win
+        "junk": "not-a-dict",                       # shape junk
+        "also-bad": {"year": "n/a", "value": 50},   # unparseable year
+        "2019": {"value": 90_000},                  # no year field → key wins
+    }))
+    assert mapped["estimated_value"] == 90_000
+
+
+def test_no_price_and_no_assessments_leaves_value_none():
+    mapped = map_record(_record(price=None, taxAssessments=None))
+    assert mapped["estimated_value"] is None
+    assert mapped["estimated_equity"] is None
+
+
+def test_non_numeric_assessment_value_cannot_reach_equity_math():
+    # A junk string here would crash estimate_equity's float() and take the
+    # whole enrichment batch down with it.
+    mapped = map_record(_record(price=None, taxAssessments={
+        "2024": {"year": 2024, "value": "$216,513"},
+    }))
+    assert mapped["estimated_value"] is None
+
+
+def test_pool_is_true_or_none_never_false():
+    """A county record listing no pool is absence of evidence. False would
+    hard-gate pool-vertical scoring (None = unknown, False = confirmed absent)
+    and seed that verdict into the shared parcels cache."""
+    assert map_record(_record())["has_pool"] is True
+    record = _record(features={"garageSpaces": 2, "pool": False})
+    assert map_record(record)["has_pool"] is None
+    record = _record(features={"garageSpaces": 2})
+    assert map_record(record)["has_pool"] is None
 
 
 def test_map_detail_excludes_coordinates_and_city_state():
@@ -253,15 +330,106 @@ def test_derived_fields_are_refreshed_but_never_reported():
     today, so both drift on their own — reporting them would bury real findings."""
     for field in ("estimated_equity", "ownership_years"):
         assert field not in REPORTED_FIELDS
-    result = reconcile.reconcile({"estimated_equity": 1}, _record(), mode="refresh",
+    result = reconcile.reconcile({"estimated_equity": 1, "estimated_value": 340_000},
+                                 _record(), mode="refresh",
                                  fields=["estimated_equity"])
     assert result["updates"]["estimated_equity"] > 1   # still kept consistent
+
+
+# ── Derived-field consistency ─────────────────────────────────────────────────
+# ownership_years and estimated_equity in a mapped record are derived from the
+# VENDOR's sale/value facts. Under per-field fill-only the basis fields may be
+# kept while the derived field fills, so derived values are recomputed against
+# the row as it will exist after the write.
+
+def test_filled_tenure_is_recomputed_from_the_rows_own_sale_date():
+    """A row holding a 2005 sale date must not gain tenure counted from the
+    vendor's different sale — that composite feeds scoring."""
+    stored = {"last_sale_date": "2005-03-01", "ownership_years": None}
+    result = reconcile.reconcile(stored, _record(), fields=["ownership_years"])
+    # RentCast's 2015 sale would say 11 years; the row's own date says more.
+    assert result["updates"]["ownership_years"] == date.today().year - 2005
+
+
+def test_filled_equity_is_recomputed_from_the_rows_own_value():
+    stored = {"estimated_value": 200_000, "estimated_equity": None}
+    result = reconcile.reconcile(stored, _record(),
+                                 fields=["estimated_equity"])
+    # Flat fallback of the ROW's value, not equity keyed to RentCast's 340k.
+    assert result["updates"]["estimated_equity"] == 120_000
+
+
+def test_derived_field_without_a_basis_is_dropped_not_written():
+    # The record carries tenure (from its sale date), but neither the row nor
+    # this write holds a sale date — asserting tenure would be baseless.
+    result = reconcile.reconcile({}, _record(), fields=["ownership_years"])
+    assert result["verdicts"]["ownership_years"] == FILL
+    assert result["updates"] == {}
 
 
 def test_empty_row_against_a_full_record_fills_everything():
     result = reconcile.reconcile({}, _record())
     assert set(result["updates"]) == set(RECONCILED_FIELDS)
     assert all(v == FILL for v in result["verdicts"].values())
+
+
+# ── Parcel identity ───────────────────────────────────────────────────────────
+# parcel_apn is the one field where a mismatch means "different property", not
+# "two sources disagree about this property" — it is the precision check layered
+# over the deliberately lenient address echo.
+
+def test_parcel_comparison_ignores_padding_and_punctuation():
+    stored = {"parcel_apn": "0660640130020"}          # HCAD's 13-digit form
+    result = reconcile.reconcile(stored, _record(assessorID="66-064-013-0020"),
+                                 fields=["parcel_apn"])
+    assert result["verdicts"]["parcel_apn"] == MATCH
+
+
+def test_parcel_mismatch_is_never_overwritten_even_in_refresh():
+    stored = {"parcel_apn": "9990001112223"}
+    result = reconcile.reconcile(stored, _record(), mode="refresh",
+                                 fields=["parcel_apn"])
+    assert result["verdicts"]["parcel_apn"] == MISMATCH
+    assert result["updates"] == {}
+    assert result["findings"][0]["resolution"] == "kept"
+
+
+def test_parcel_mismatch_is_operator_reportable():
+    assert "parcel_apn" in REPORTED_FIELDS
+
+
+def test_mailing_address_reconciles_but_is_not_reported():
+    """Two sources style the same mailbox differently on nearly every row —
+    reporting that would bury real findings. Filling a NULL still works."""
+    assert "mailing_address" not in REPORTED_FIELDS
+    assert "mailing_address" in DETAIL_FIELDS
+    result = reconcile.reconcile({"mailing_address": None}, _record(),
+                                 fields=["mailing_address"])
+    assert result["updates"]["mailing_address"] == "123 Main St, Houston, TX 77396"
+
+
+def test_parcel_finding_none_when_either_side_is_missing_or_agreeing():
+    assert reconcile.parcel_finding(None, "0660640130020") is None
+    assert reconcile.parcel_finding("0660640130020", None) is None
+    assert reconcile.parcel_finding("0660640130020", "066-064-013-0020") is None
+
+
+def test_junk_stored_parcel_is_unverifiable_not_a_mismatch():
+    """An all-zero placeholder cannot identify a parcel; counting it as a
+    mismatch would pollute the false-accept metric shadow mode exists to
+    collect. Applies to both the per-ZIP helper and the sweep's rule."""
+    assert reconcile.parcel_finding("0000000000000", "0660640130020") is None
+    result = reconcile.reconcile({"parcel_apn": "0000000000000"}, _record(),
+                                 fields=["parcel_apn"])
+    assert result["verdicts"]["parcel_apn"] == MATCH
+    assert result["findings"] == []
+
+
+def test_parcel_finding_records_a_shadow_mismatch():
+    finding = reconcile.parcel_finding("0660640130020", "9990001112223")
+    assert finding == {"field": "parcel_apn", "stored": "0660640130020",
+                       "remote": "9990001112223", "verdict": MISMATCH,
+                       "resolution": "kept"}
 
 
 # ── verify_record ─────────────────────────────────────────────────────────────

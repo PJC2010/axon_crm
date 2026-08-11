@@ -39,6 +39,7 @@ from config import PROPERTY_VALUE_TOLERANCE_PCT
 from pipeline.addr import same_address
 from pipeline.equity import estimate_equity
 from pipeline.owner import clean_owner_name
+from pipeline.parcel_id import normalize_apn, same_parcel
 
 # ── Verdicts ──────────────────────────────────────────────────────────────────
 FILL = "fill"           # we have nothing, RentCast does — free win
@@ -52,10 +53,14 @@ REFRESHED = "refreshed"
 KEPT = "kept"
 
 # ── Field policy ──────────────────────────────────────────────────────────────
-# kind      how to compare: "number" | "text" | "date" | "bool"
+# kind      how to compare: "number" | "text" | "date" | "bool" | "parcel"
 # policy    "fill_only" (never overwrite) | "refreshable" (overwrite in refresh mode)
 # tol       fractional tolerance for numeric comparison; 0.0 means exact.
 # derived   computed by us from other fields rather than reported by the vendor
+# reported  False keeps a field out of the operator-facing discrepancy report
+#           without exempting it from reconciliation (mailing_address: the two
+#           sources format the same mailbox differently on nearly every row, so
+#           its mismatches are noise that would bury real findings)
 #
 # Money and square footage get a tolerance because two sources rounding a
 # genuinely-equal value differently is noise, not a discrepancy worth a row in
@@ -76,6 +81,24 @@ FIELD_RULES: dict[str, dict] = {
     "garage_type":      {"kind": "text",   "policy": "fill_only"},
     "subdivision":      {"kind": "text",   "policy": "fill_only"},
     "owner_name":       {"kind": "text",   "policy": "fill_only"},
+    # Parcel identity. fill_only and compared with same_parcel (padding- and
+    # punctuation-blind): a mismatch here means the vendor answered about a
+    # DIFFERENT PROPERTY even though the address echo looked right, which is
+    # the single most valuable finding the audit trail can carry.
+    "parcel_apn":       {"kind": "parcel", "policy": "fill_only"},
+    # County-record structure facts RentCast returns under `features` — free
+    # ride-alongs on calls already paid for. Fill-only like every other
+    # structural fact; only RentCast supplies them today, so mismatches are
+    # effectively impossible until a second source starts writing them.
+    "roof_type":        {"kind": "text",   "policy": "fill_only"},
+    "foundation_type":  {"kind": "text",   "policy": "fill_only"},
+    "heating_type":     {"kind": "text",   "policy": "fill_only"},
+    "cooling_type":     {"kind": "text",   "policy": "fill_only"},
+    "has_pool":         {"kind": "bool",   "policy": "fill_only"},
+    # "Individual" | "Organization" — an absentee/investor signal, and the
+    # basis for a future skip-trace cost gate (an LLC cannot be skip-traced).
+    "owner_type":       {"kind": "text",   "policy": "fill_only"},
+    "mailing_address":  {"kind": "text",   "policy": "fill_only", "reported": False},
     # Market/ownership state — these move, so RentCast wins in refresh mode.
     "estimated_value":  {"kind": "number", "policy": "refreshable",
                          "tol": PROPERTY_VALUE_TOLERANCE_PCT},
@@ -104,19 +127,21 @@ _LOCATION_FIELDS = ("latitude", "longitude", "city", "state")
 
 # Fields whose disagreement is worth surfacing to an operator. Location is
 # excluded — a 0.0001° drift or "HOUSTON" vs "Houston" is noise that would bury
-# real findings — and so are derived fields, which drift on their own.
+# real findings — as are derived fields (they drift on their own) and fields
+# whose rule opts out with reported: False.
 REPORTED_FIELDS = [
     f for f, rule in FIELD_RULES.items()
     if f not in _LOCATION_FIELDS and not rule.get("derived")
+    and rule.get("reported", True)
 ]
 
 # Columns the per-ZIP detail step (pipeline/property.py) writes back.
 #
-# Narrower than the full mapping on purpose. That step overwrites every column
-# it returns, so handing it coordinates would let RentCast move a pin the
-# geocode step had already placed — and leave geocode_source describing a
-# provider that no longer set the value. The backfill sweep fills those columns
-# safely instead, because it only ever writes into a NULL.
+# Narrower than the full mapping on purpose. Coordinates belong to the geocode
+# step: even though the per-ZIP step is fill-only per field, filling latitude/
+# longitude here would leave geocode_source/geocode_confidence describing a
+# provider that never set the value. The backfill sweep fills those columns
+# instead, accepting the same provenance gap knowingly.
 DETAIL_FIELDS = [f for f in RECONCILED_FIELDS if f not in _LOCATION_FIELDS]
 
 
@@ -142,7 +167,12 @@ def map_record(record: dict) -> dict:
     owner_name = clean_owner_name(names[0] if isinstance(names, list) and names
                                   else record.get("ownerName"))
 
-    value = record.get("price")
+    # `price` does not exist on current /properties records (the schema carries
+    # no value estimate at all) — it is kept as a first choice only for older
+    # cached payloads. The live source of a value is `taxAssessments`: the
+    # latest year's assessed total, the same figure HCAD's tot_appr_val gives
+    # for Harris County but available in every US county.
+    value = record.get("price") or _latest_assessment(record)
     sale_price = record.get("lastSalePrice")
     sale_date = record.get("lastSaleDate")
 
@@ -155,6 +185,19 @@ def map_record(record: dict) -> dict:
         "garage_type":      features.get("garageType"),
         "subdivision":      record.get("subdivision"),
         "owner_name":       owner_name,
+        "parcel_apn":       normalize_apn(record.get("assessorID")),
+        "roof_type":        features.get("roofType"),
+        "foundation_type":  features.get("foundationType"),
+        "heating_type":     features.get("heatingType"),
+        "cooling_type":     features.get("coolingType"),
+        # True-or-None, never False: a county record listing no pool feature is
+        # absence of evidence, and every writer keeps that convention (HCAD only
+        # ever writes True). A stored False would hard-gate pool-vertical
+        # scoring (VERTICAL_GATES treats None as unknown but False as confirmed
+        # absence) and, via SHARED_COLS, seed that verdict to every tenant.
+        "has_pool":         True if features.get("pool") else None,
+        "owner_type":       owner.get("type"),
+        "mailing_address":  (owner.get("mailingAddress") or {}).get("formattedAddress"),
         "estimated_value":  value,
         "estimated_equity": estimate_equity(value, sale_price, sale_date),
         "last_sale_date":   sale_date,
@@ -166,6 +209,35 @@ def map_record(record: dict) -> dict:
         "city":             record.get("city"),
         "state":            record.get("state"),
     }
+
+
+def _latest_assessment(record: dict) -> float | None:
+    """The most recent year's total assessed value from `taxAssessments`.
+
+    The object is keyed by tax year ({"2024": {"year": 2024, "value": …}}); the
+    entry's own `year` field is trusted over the key, with the key as fallback.
+    Zero and unparseable entries are skipped rather than allowed to win — the
+    value must already be a JSON number, because it flows straight into
+    estimate_equity's float() and a junk string here would crash the whole
+    enrichment batch.
+    """
+    entries = record.get("taxAssessments")
+    if not isinstance(entries, dict):
+        return None
+    best_year, best_value = None, None
+    for key, entry in entries.items():
+        if not isinstance(entry, dict):
+            continue
+        value = entry.get("value")
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or not value:
+            continue
+        try:
+            year = int(entry.get("year") or key)
+        except (TypeError, ValueError):
+            continue
+        if best_year is None or year > best_year:
+            best_year, best_value = year, value
+    return best_value
 
 
 def record_address(record: dict) -> str | None:
@@ -206,6 +278,61 @@ def map_detail(record: dict) -> dict:
     """`map_record` narrowed to DETAIL_FIELDS — what the per-ZIP step writes."""
     mapped = map_record(record)
     return {f: mapped[f] for f in DETAIL_FIELDS}
+
+
+def parcel_finding(stored_apn, remote_apn) -> dict | None:
+    """A shadow-mode finding when two APNs disagree, else None.
+
+    Used by the enrichment steps, which accept matches on the address rule
+    alone: when the row's stored parcel number and the source's identifier name
+    different parcels, the match is *still applied* — this change observes
+    before it enforces — but the disagreement is recorded so the real-world
+    rate of address-match false accepts can be measured in
+    property_field_audits before same_parcel is promoted to a gate. The
+    account-wide sweep needs no equivalent: reconcile() reaches the same
+    verdict through the parcel_apn FIELD_RULES entry.
+
+    A side that fails normalize_apn (junk, all-zero placeholder) is treated as
+    missing, not mismatching — an unverifiable identity is no evidence of a
+    wrong parcel, and counting it would pollute the very metric this collects.
+    """
+    if not normalize_apn(stored_apn) or not normalize_apn(remote_apn) \
+            or same_parcel(stored_apn, remote_apn):
+        return None
+    return _finding("parcel_apn", stored_apn, remote_apn, MISMATCH, KEPT)
+
+
+def consistent_derived(stored: dict, updates: dict) -> dict:
+    """Recompute derived fields in `updates` against the row as it will exist
+    AFTER the write, returning a corrected copy.
+
+    ownership_years and estimated_equity arrive in a mapped record derived from
+    the *vendor's* sale/value facts. Under per-field fill-only, those basis
+    facts may be dropped (the row already holds its own), and writing the
+    vendor-derived number beside a retained basis produces a self-contradictory
+    row — a 2005 sale date with tenure counted from the vendor's 2019 sale,
+    feeding scoring. So each derived field is recomputed from the effective
+    post-write basis (the update where one is being written, the stored value
+    otherwise) and dropped entirely when that basis cannot support it.
+    """
+    def eff(field):
+        return updates[field] if field in updates else stored.get(field)
+
+    out = dict(updates)
+    if "ownership_years" in out:
+        years = years_owned(eff("last_sale_date"))
+        if years is None:
+            del out["ownership_years"]
+        else:
+            out["ownership_years"] = years
+    if "estimated_equity" in out:
+        equity = estimate_equity(eff("estimated_value"), eff("last_sale_price"),
+                                 eff("last_sale_date"))
+        if equity is None:
+            del out["estimated_equity"]
+        else:
+            out["estimated_equity"] = equity
+    return out
 
 
 def years_owned(sale_date) -> int | None:
@@ -275,7 +402,9 @@ def reconcile(stored: dict, record: dict, *, mode: str = "fill",
         findings.append(_finding(field, mine, theirs, MISMATCH,
                                  REFRESHED if refresh else KEPT))
 
-    return {"verdicts": verdicts, "updates": updates, "findings": findings}
+    return {"verdicts": verdicts,
+            "updates": consistent_derived(stored, updates),
+            "findings": findings}
 
 
 def _finding(field, stored, remote, verdict, resolution) -> dict:
@@ -298,6 +427,12 @@ def _equal(mine, theirs, rule: dict) -> bool:
         return _as_date(mine) == _as_date(theirs)
     if kind == "bool":
         return _as_bool(mine) == _as_bool(theirs)
+    if kind == "parcel":
+        # A side that fails normalize_apn is unverifiable, not different —
+        # the same junk-tolerance convention as _numbers_equal below.
+        if normalize_apn(mine) is None or normalize_apn(theirs) is None:
+            return True
+        return same_parcel(mine, theirs)
     return _norm_text(mine) == _norm_text(theirs)
 
 

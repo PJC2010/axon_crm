@@ -14,8 +14,11 @@ Fields backfilled from extra_features (always latest HCAD truth):
 import logging
 from datetime import date
 
+from pipeline.backfill import record_findings
 from pipeline.db import get_conn, fetch_by_zip, upsert_properties
 from pipeline.equity import estimate_equity
+from pipeline.parcel_id import normalize_apn
+from pipeline.reconcile import parcel_finding
 from pipeline import hcad_store
 
 log = logging.getLogger(__name__)
@@ -32,6 +35,7 @@ def enrich_hcad(zip_code: str, account_id: int) -> int:
     conn = get_conn()
     rows = fetch_by_zip(conn, zip_code, account_id)
     updates = []
+    findings: list[tuple[int, dict]] = []
 
     for row in rows:
         addr_norm = hcad_store.normalize(row["address"])
@@ -40,6 +44,20 @@ def enrich_hcad(zip_code: str, account_id: int) -> int:
 
         if not hcad and not ef:
             continue
+
+        if hcad:
+            # The HCAD-direction half of shadow parcel verification: a row that
+            # already carries a parcel number (e.g. RentCast's assessorID from
+            # seeding) but address-matches an HCAD parcel with a different acct
+            # is the same wrong-parcel signal the RentCast step measures, seen
+            # from the other side. Recorded under source "hcad", never enforced.
+            finding = parcel_finding(row.get("parcel_apn"),
+                                     normalize_apn(hcad.get("parcel_apn")))
+            if finding:
+                log.warning("[4b] HCAD acct %r disagrees with stored parcel %r "
+                            "for %r — recorded.", finding["remote"],
+                            finding["stored"], row["address"])
+                findings.append((row["id"], finding))
 
         update: dict = {"address": row["address"], "zip": zip_code}
         changed = False
@@ -51,6 +69,9 @@ def enrich_hcad(zip_code: str, account_id: int) -> int:
                 changed = True
 
         if hcad:
+            # The parcel number this address matched to — the identity the
+            # RentCast step later verifies its assessorID against.
+            _backfill("parcel_apn",              normalize_apn(hcad.get("parcel_apn")))
             _backfill("year_built",              hcad.get("year_built"))
             _backfill("square_footage",          hcad.get("square_footage"))
             _backfill("lot_size",                hcad.get("lot_size"))
@@ -100,6 +121,7 @@ def enrich_hcad(zip_code: str, account_id: int) -> int:
             updates.append(update)
 
     n = upsert_properties(conn, updates, account_id)
+    record_findings(conn, account_id, findings, source="hcad")
     conn.close()
     log.info("[4b] HCAD: backfilled %d properties in ZIP %s", n, zip_code)
     return n
