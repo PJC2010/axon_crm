@@ -89,6 +89,99 @@ def _pick_address(account_id: int, zip_code: str) -> tuple[str, str, str]:
     return row
 
 
+def _fetch_zip_page(zip_code: str, limit: int = 500) -> list[dict]:
+    """One page of the ZIP scan — the same call pipeline/seed.py already makes."""
+    r = requests.get(f"{RENTCAST_BASE_URL}/properties",
+                     headers={"X-Api-Key": RENTCAST_API_KEY,
+                              "Accept": "application/json"},
+                     params={"zipCode": zip_code, "limit": limit}, timeout=60)
+    if r.status_code != 200:
+        print(f"  ZIP scan failed: HTTP {r.status_code} {(r.text or '')[:200]}")
+        return []
+    data = r.json()
+    return data if isinstance(data, list) else [data]
+
+
+def match_test(account_id: int, zip_code: str, limit: int) -> None:
+    """Does a bulk ZIP scan cover the rows the per-address lookup 404s on?
+
+    The per-address endpoint answering 404 does not mean RentCast holds nothing
+    for the ZIP — the scan may still carry the same parcels under its own
+    address strings. This measures the overlap against what we actually store,
+    using the one normalization rule (pipeline/addr.py), and so answers whether
+    switching the detail step to scan-and-match would fill anything.
+
+    One scan request per `limit` records, versus one request per property for
+    the per-address lookup.
+    """
+    from pipeline.addr import normalize
+    from pipeline.db import get_conn
+
+    print(f"\n{'=' * 70}\nMATCH TEST — bulk ZIP scan vs. stored rows\n{'=' * 70}")
+    records = _fetch_zip_page(zip_code, limit)
+    print(f"\nZIP scan returned {len(records)} record(s) in 1 request.")
+    if not records:
+        return
+
+    # Does a RentCast-supplied address resolve through the per-address endpoint?
+    # If even its own string 404s, the endpoint is not an address lookup we can
+    # use at all; if it resolves, the gap is purely one of address vocabulary.
+    own = (records[0].get("addressLine1") or "").strip()
+    if own:
+        _show("[5] Per-address lookup using RENTCAST'S OWN address string",
+              {"address": own, "zipCode": zip_code, "limit": 1})
+
+    remote = {}
+    for rec in records:
+        line = (rec.get("addressLine1") or "").strip()
+        if line:
+            remote.setdefault(normalize(line), rec)
+
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT address,
+                       (year_built IS NULL) AS needs_year,
+                       (property_type IS NULL) AS needs_type,
+                       (garage_spaces IS NULL) AS needs_garage
+                FROM properties
+                WHERE account_id = %s AND zip = %s AND address !~ '^0+(\\s|$)'
+                """,
+                (account_id, zip_code),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    if not rows:
+        print(f"\nNo stored rows with a real address for account {account_id} "
+              f"in ZIP {zip_code} — nothing to match against.")
+        return
+
+    hits = [r for r in rows if normalize(r[0]) in remote]
+    print(f"\nStored rows with a real address: {len(rows)}")
+    print(f"Matched by the scan:             {len(hits)} "
+          f"({100 * len(hits) / len(rows):.1f}%)")
+    if hits:
+        fillable = sum(1 for r in hits if r[1] or r[2] or r[3])
+        print(f"…of those, still missing year/type/garage: {fillable}")
+        print("\nSample matches:")
+        for r in hits[:5]:
+            rec = remote[normalize(r[0])]
+            print(f"  {r[0]:<34} -> {rec.get('addressLine1')} "
+                  f"(yearBuilt={rec.get('yearBuilt')}, "
+                  f"type={rec.get('propertyType')})")
+    else:
+        print("\nNo overlap. Sample of each side, to compare vocabulary:")
+        for r in rows[:5]:
+            print(f"  ours:      {r[0]!r}  -> norm {normalize(r[0])!r}")
+        for rec in records[:5]:
+            line = rec.get("addressLine1")
+            print(f"  rentcast:  {line!r}  -> norm {normalize(line or '')!r}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--address", help="Street line to test, e.g. '1234 YALE ST'")
@@ -97,7 +190,17 @@ def main() -> None:
     ap.add_argument("--state", default="TX")
     ap.add_argument("--account-id", type=int, default=None, dest="account_id",
                     help="Pick a real seeded address from this account instead")
+    ap.add_argument("--match-test", action="store_true", dest="match_test",
+                    help="Compare a bulk ZIP scan against stored rows "
+                         "(requires --account-id)")
+    ap.add_argument("--scan-limit", type=int, default=500, dest="scan_limit")
     args = ap.parse_args()
+
+    if args.match_test:
+        if args.account_id is None:
+            raise SystemExit("--match-test requires --account-id.")
+        match_test(args.account_id, args.zip_code, args.scan_limit)
+        return
 
     address, city, state = args.address, args.city, args.state
     if not address:
