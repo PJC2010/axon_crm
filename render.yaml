@@ -36,6 +36,13 @@ services:
       # log.info() in api/ and pipeline/ is dropped. Set WARNING to quiet down.
       - key: LOG_LEVEL
         value: INFO
+      # The nightly ML retrain (ml_retrain_nightly, ML_RETRAIN_HOUR:00 UTC) is
+      # OFF by default in config.py and is deliberately NOT declared here: set
+      # ML_RETRAIN_ENABLED=true in the Render dashboard when you want it, so a
+      # blueprint sync can't quietly turn it back off. It runs inside this web
+      # service, so re-enable it only with the ML_MAX_* caps in place — see
+      # docs/DATA_PIPELINE.md.
+      #
       # HCAD-first, paid sources off. The DuckDB never ships to Render, so leave
       # PERMIT_DB_PATH empty to force the durable Postgres mirror path.
       - key: SEED_SOURCE

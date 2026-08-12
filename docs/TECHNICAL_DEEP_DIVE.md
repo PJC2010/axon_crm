@@ -255,7 +255,8 @@ missing key means that step no-ops or the endpoint returns 503). Notable groups:
   (`AGE_SWEET_SPOT_MIN/MAX`, `EQUITY_TARGET`, `NEIGHBORHOOD_RATIO_TARGET`, …),
   `GRADE_BANDS`.
 - **ML:** `SCORER_MODE` (`rules`/`shadow`/`learned`), `ML_MIN_TRAINING_LABELS`,
-  `ML_STALE_OPEN_DAYS`, `ML_L2/LR/EPOCHS`, `ML_RETRAIN_HOUR`.
+  `ML_STALE_OPEN_DAYS`, `ML_L2/LR/EPOCHS`, `ML_RETRAIN_HOUR`, and the retrain
+  resource caps `ML_MAX_TRAINING_ROWS` / `ML_MAX_FIT_ROWS` / `ML_STREAM_BATCH`.
 - **Geo:** road-circuity factor, proximity decay, density radius/cap, neighbor
   freshness windows, territory gate penalty, blast radius, cluster eps/min-points,
   H3 resolution, prospecting caps, event bonuses.
@@ -749,7 +750,7 @@ running jobs in a thread pool inside the FastAPI process. Registered jobs:
 | Job | Schedule | Purpose |
 |---|---|---|
 | `pipeline_schedule_{id}` | per-schedule cron (day/hour) | Recurring data-acquisition run |
-| `ml_retrain_nightly` | `ML_RETRAIN_HOUR`:00 UTC | Label backfill + model retrain |
+| `ml_retrain_nightly` | `ML_RETRAIN_HOUR`:00 UTC — **off unless `ML_RETRAIN_ENABLED`** | Label backfill + model retrain |
 | `workflow_daily_tick` | `WORKFLOW_TICK_HOUR`:15 UTC | Evaluate date_offset/inactivity rules |
 | `recurring_invoices_daily` | :30 UTC | Generate due recurring invoices |
 | `account_rescore_daily` | :45 UTC | Rescore non-property accounts (renewal proximity, RFM) |
@@ -758,6 +759,14 @@ running jobs in a thread pool inside the FastAPI process. Registered jobs:
 The **:15 → :30 → :45 → :50 ordering is deliberate**: renewal-proximity scores
 are fresh before date rules read them; property scores are fresh before the geo
 blend reads them.
+
+Because the pool lives **in the web process**, a batch job that sizes itself off
+the data is an outage, not a slow job: it competes for the same RAM and CPU that
+serve HTTP, and an OOM kill takes the API down with it. Anything registered here
+must bound what it loads — stream with a server-side cursor (psycopg2 buffers a
+whole result set client-side otherwise), project the columns you actually read,
+and cap retained rows. See the `ML_MAX_*` caps for the pattern. Moving the
+scheduler to a dedicated Render worker would lift that constraint.
 
 ### Multi-worker safety via advisory locks
 

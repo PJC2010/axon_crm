@@ -33,6 +33,25 @@ def _to_date(v) -> date | None:
     return None
 
 
+def outcome_sort_key(value) -> datetime:
+    """Sortable timestamp for an `outcome_at`; undated/unparseable sorts last.
+
+    Single source of truth for outcome ordering: the time-based train/test split
+    and the "keep the most recently decided rows" training-set cap must agree, or
+    the cap would discard rows the split expects to be there.
+    """
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime(value.year, value.month, value.day)
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value[:19])
+        except ValueError:
+            return datetime.max
+    return datetime.max
+
+
 def derive_label(
     row: dict,
     *,

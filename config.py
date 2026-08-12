@@ -245,8 +245,39 @@ ML_MIN_OUTCOMES_TO_SURFACE = int(os.getenv("ML_MIN_OUTCOMES_TO_SURFACE", "150"))
 ML_L2 = float(os.getenv("ML_L2", "1.0"))
 ML_LR = float(os.getenv("ML_LR", "0.1"))
 ML_EPOCHS = int(os.getenv("ML_EPOCHS", "600"))
+# ── Retrain resource caps ────────────────────────────────────────────────────
+# The nightly retrain runs in-process on the API instance (api/scheduler.py starts
+# APScheduler inside the FastAPI lifespan), so an unbounded run is an OOM of the
+# whole service, not of a detached worker. One Harris County ZIP is ~20k
+# properties, so a few seeded ZIPs is six figures of rows. Two independent caps:
+#
+#   ML_MAX_TRAINING_ROWS — how many labeled examples are held in memory per scope.
+#       Bounds memory. The most *recently decided* outcomes win, so the cap trims
+#       stale history rather than recent signal.
+#   ML_MAX_FIT_ROWS      — how many of those rows reach the gradient loop.
+#       Bounds CPU: the pure-Python trainer costs epochs x rows x ~85 features,
+#       and it holds the GIL while the same process is serving HTTP. Full-batch
+#       gradient descent averages its gradient, so an evenly-spaced subsample
+#       moves the fitted coefficients very little. Evaluation still uses the
+#       whole holdout — only fitting is subsampled.
+#
+# Raise both if you move the scheduler to a dedicated worker (see render.yaml).
+ML_MAX_TRAINING_ROWS = int(os.getenv("ML_MAX_TRAINING_ROWS", "20000"))
+ML_MAX_FIT_ROWS = int(os.getenv("ML_MAX_FIT_ROWS", "4000"))
+# Rows per server-side fetch / per UPDATE flush in the label backfill. Bounds the
+# client-side buffer without changing how many rows are ultimately processed.
+ML_STREAM_BATCH = int(os.getenv("ML_STREAM_BATCH", "2000"))
 # Hour (UTC) of the nightly retrain job that refreshes labels and re-fits models.
 ML_RETRAIN_HOUR = int(os.getenv("ML_RETRAIN_HOUR", "3"))
+# Whether that nightly job is registered at all. Off by default: until an account
+# has ML_MIN_TRAINING_LABELS real labeled outcomes, the job falls back to deriving
+# approximate examples from every property row every night, which is a full-table
+# scan producing a model that SCORER_MODE=rules never surfaces. Turning it back on
+# is an env-var flip and a restart — nothing is lost while it is off, because
+# snapshot.backfill_outcomes derives labels from *current* lead state and catches
+# up in one pass whenever it next runs. POST /api/ml/retrain still works either
+# way, so a one-off retrain does not need the scheduled job.
+ML_RETRAIN_ENABLED = os.getenv("ML_RETRAIN_ENABLED", "false").lower() in ("1", "true", "yes")
 
 # ── Scheduled workflow rules (date_offset / inactivity triggers) ──────────────
 # Hour (UTC) of the daily tick that evaluates date-based and inactivity workflow
