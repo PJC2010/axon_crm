@@ -682,13 +682,32 @@ def retrain_models():
         conn.close()
 
 
+RETRAIN_JOB_ID = "ml_retrain_nightly"
+
+
 def schedule_retraining():
-    """Register the daily retrain cron (idempotent — replaces any existing job)."""
-    from config import ML_RETRAIN_HOUR
+    """Register the daily retrain cron (idempotent — replaces any existing job).
+
+    Gated on ML_RETRAIN_ENABLED, which is off by default. Below
+    ML_MIN_TRAINING_LABELS real labeled outcomes the job derives approximate
+    examples from every property row nightly — a full-table scan whose model
+    SCORER_MODE=rules never surfaces. Nothing accumulates while it is off:
+    outcome labels are derived from *current* lead state, so re-enabling it
+    catches up in a single pass. POST /api/ml/retrain stays available regardless.
+    """
+    from config import ML_RETRAIN_HOUR, ML_RETRAIN_ENABLED
+    if not ML_RETRAIN_ENABLED:
+        # Drop a job a previous call registered, so flipping the flag off and
+        # re-running this actually stops it rather than leaving it scheduled.
+        if scheduler.get_job(RETRAIN_JOB_ID):
+            scheduler.remove_job(RETRAIN_JOB_ID)
+        log.info("Nightly model retrain disabled (set ML_RETRAIN_ENABLED=true to "
+                 "schedule it at %02d:00 UTC)", ML_RETRAIN_HOUR)
+        return
     scheduler.add_job(
         retrain_models,
         trigger=CronTrigger(hour=ML_RETRAIN_HOUR, minute=0, timezone="UTC"),
-        id="ml_retrain_nightly",
+        id=RETRAIN_JOB_ID,
         replace_existing=True,
         misfire_grace_time=3600,
     )

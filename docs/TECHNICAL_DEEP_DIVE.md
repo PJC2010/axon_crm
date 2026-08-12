@@ -750,7 +750,7 @@ running jobs in a thread pool inside the FastAPI process. Registered jobs:
 | Job | Schedule | Purpose |
 |---|---|---|
 | `pipeline_schedule_{id}` | per-schedule cron (day/hour) | Recurring data-acquisition run |
-| `ml_retrain_nightly` | `ML_RETRAIN_HOUR`:00 UTC | Label backfill + model retrain |
+| `ml_retrain_nightly` | `ML_RETRAIN_HOUR`:00 UTC — **off unless `ML_RETRAIN_ENABLED`** | Label backfill + model retrain |
 | `workflow_daily_tick` | `WORKFLOW_TICK_HOUR`:15 UTC | Evaluate date_offset/inactivity rules |
 | `recurring_invoices_daily` | :30 UTC | Generate due recurring invoices |
 | `account_rescore_daily` | :45 UTC | Rescore non-property accounts (renewal proximity, RFM) |

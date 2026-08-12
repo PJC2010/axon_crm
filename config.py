@@ -269,6 +269,15 @@ ML_MAX_FIT_ROWS = int(os.getenv("ML_MAX_FIT_ROWS", "4000"))
 ML_STREAM_BATCH = int(os.getenv("ML_STREAM_BATCH", "2000"))
 # Hour (UTC) of the nightly retrain job that refreshes labels and re-fits models.
 ML_RETRAIN_HOUR = int(os.getenv("ML_RETRAIN_HOUR", "3"))
+# Whether that nightly job is registered at all. Off by default: until an account
+# has ML_MIN_TRAINING_LABELS real labeled outcomes, the job falls back to deriving
+# approximate examples from every property row every night, which is a full-table
+# scan producing a model that SCORER_MODE=rules never surfaces. Turning it back on
+# is an env-var flip and a restart — nothing is lost while it is off, because
+# snapshot.backfill_outcomes derives labels from *current* lead state and catches
+# up in one pass whenever it next runs. POST /api/ml/retrain still works either
+# way, so a one-off retrain does not need the scheduled job.
+ML_RETRAIN_ENABLED = os.getenv("ML_RETRAIN_ENABLED", "false").lower() in ("1", "true", "yes")
 
 # ── Scheduled workflow rules (date_offset / inactivity triggers) ──────────────
 # Hour (UTC) of the daily tick that evaluates date-based and inactivity workflow

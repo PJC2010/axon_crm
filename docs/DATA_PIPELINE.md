@@ -237,7 +237,13 @@ pipeline leans on:
   `ML_MIN_TRAINING_LABELS` = 40) → `registry.py` versions them →
   `predict.py` scores at pipeline time.
 - **Schedule:** nightly retrain at `ML_RETRAIN_HOUR` (03:00 UTC), registered by
-  `schedule_retraining()` in `api/main.py`.
+  `schedule_retraining()` in `api/main.py` — **gated on `ML_RETRAIN_ENABLED`,
+  which is off by default.** Below `ML_MIN_TRAINING_LABELS` real labeled outcomes
+  the job falls back to deriving approximate examples from every property row,
+  every night, for a model `SCORER_MODE=rules` never surfaces. Turning it on is
+  an env-var flip plus a restart; nothing accumulates while it is off, because
+  `snapshot.backfill_outcomes` derives labels from *current* lead state and
+  catches up in one pass. `POST /api/ml/retrain` is not gated.
 - **Resource caps:** the retrain runs *inside* the API process, so it is bounded
   rather than allowed to size itself off the table. `ML_MAX_TRAINING_ROWS` (20k)
   caps the labeled rows held in memory per scope, keeping the most recently
