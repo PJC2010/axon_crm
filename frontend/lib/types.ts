@@ -28,6 +28,9 @@ export interface Lead {
   mailing_address: string | null
   preferred_contact_method: string | null
   best_time_to_call: string | null
+  // Lead-level DNC flag: set by the dialer's do_not_call disposition, enforced
+  // by the dialer queue; clearable via the contact PATCH (owner undo path).
+  do_not_call?: boolean
   zip_median_income: number | null
   permit_count_24mo: number | null
   has_pool: boolean | null
@@ -540,6 +543,9 @@ export interface AutoReplySettings {
 
 export interface CallSettings {
   configured: boolean
+  // Browser calling (the power dialer) — needs the TWILIO_API_KEY_* / TwiML
+  // App env vars on top of `configured`; false = the dialer uses tel: links.
+  voice_dialing: boolean
   number: TrackingNumber | null
   auto_reply: AutoReplySettings
 }
@@ -559,16 +565,31 @@ export interface AvailableNumber {
   region: string | null
 }
 
-export type CallOutcome = 'answered' | 'missed' | 'busy'
+// Inbound calls resolve to answered/missed/busy; outbound (dialer) calls use
+// Twilio's finer DialCallStatus vocabulary. Mirrors the calls.outcome CHECK.
+export type CallOutcome = 'answered' | 'missed' | 'busy' | 'no_answer' | 'failed' | 'canceled'
+
+// The rep's verdict after a dialer call — separate from the mechanical outcome.
+export type CallDisposition =
+  | 'no_answer'
+  | 'voicemail'
+  | 'interested'
+  | 'not_interested'
+  | 'callback'
+  | 'wrong_number'
+  | 'do_not_call'
 
 export interface CallLogEntry {
   id: number
   property_id: number | null
+  direction: 'inbound' | 'outbound'
   from_number: string | null
   from_digits: string | null
+  to_number: string | null
   caller_name: string | null
   status: 'in-progress' | 'completed'
   outcome: CallOutcome | null
+  disposition: CallDisposition | null
   duration_seconds: number | null
   lead_created: boolean
   started_at: string
@@ -578,6 +599,57 @@ export interface CallLogEntry {
 export interface CallLogPage {
   items: CallLogEntry[]
   total: number
+}
+
+// ── Power dialer (the `calls` module's outbound half) ────────────────────────
+
+// One callable lead in the queue, A-grade first, best score first.
+export interface DialerQueueItem {
+  id: number
+  contact_name: string | null
+  owner_name: string | null
+  address: string | null
+  city: string | null
+  zip: string | null
+  contact_phone: string | null
+  contact_phone_alt: string | null
+  contact_email: string | null
+  best_time_to_call: string | null
+  preferred_contact_method: string | null
+  vertical: string | null
+  status: LeadStatus
+  lead_score: number | null
+  score_grade: ScoreGrade | null
+  estimated_job_value: number | null
+  last_call_at: string | null
+  last_disposition: CallDisposition | null
+  last_outcome: CallOutcome | null
+}
+
+export interface DialerQueueResponse {
+  items: DialerQueueItem[]
+  total: number
+  // Leads hidden behind the monthly scored-lead allowance — dropped from the
+  // queue (their phones are withheld), reported so the UI can say so.
+  masked_count: number
+  scoring_quota?: ScoringQuota | null
+  stats: { calls_today: number; connects_today: number }
+  voice_dialing: boolean
+}
+
+export interface DialerTokenResponse {
+  token: string
+  identity: string
+  ttl_seconds: number
+}
+
+export interface DispositionResult {
+  ok: boolean
+  call_id: number
+  disposition: CallDisposition
+  lead_status: LeadStatus
+  do_not_call: boolean
+  task_id: number | null
 }
 
 // A category option ("vertical" in home-services terms). Driven by business type.

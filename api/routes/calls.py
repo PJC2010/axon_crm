@@ -41,7 +41,7 @@ from config import TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN
 from api import call_setup_logic
 from api.deps import get_db, get_current_user, require_owner, dict_fetchall, dict_fetchone
 from api.routes.twilio_inbound import normalize_phone
-from api.routes.twilio_voice import voice_configured, _api_base_url
+from api.routes.twilio_voice import voice_configured, dialer_configured, _api_base_url
 
 log = logging.getLogger(__name__)
 
@@ -213,6 +213,9 @@ def get_call_settings(
 ):
     return {
         "configured": voice_configured(),
+        # Browser calling (the power dialer) needs the API-key/TwiML-App env
+        # vars on top; false = the dialer page falls back to tel: links.
+        "voice_dialing": dialer_configured(),
         "number": _active_number(db, current_user["account_id"]),
         "auto_reply": _auto_reply_state(db, current_user["account_id"]),
     }
@@ -503,7 +506,8 @@ def release_number(
 def list_calls(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    outcome: str | None = Query(None, pattern="^(answered|missed|busy)$"),
+    outcome: str | None = Query(None, pattern="^(answered|missed|busy|no_answer|failed|canceled)$"),
+    direction: str | None = Query(None, pattern="^(inbound|outbound)$"),
     current_user: dict = Depends(get_current_user),
     db: PGConn = Depends(get_db),
 ):
@@ -513,13 +517,17 @@ def list_calls(
     if outcome:
         where += " AND c.outcome = %(outcome)s"
         params["outcome"] = outcome
+    if direction:
+        where += " AND c.direction = %(direction)s"
+        params["direction"] = direction
 
     with db.cursor() as cur:
         cur.execute(f"SELECT COUNT(*) FROM calls c WHERE {where}", params)
         total = cur.fetchone()[0]
         cur.execute(
-            "SELECT c.id, c.property_id, c.from_number, c.from_digits, c.caller_name, "
-            "       c.status, c.outcome, c.duration_seconds, c.lead_created, c.started_at, "
+            "SELECT c.id, c.property_id, c.direction, c.from_number, c.from_digits, "
+            "       c.to_number, c.caller_name, c.status, c.outcome, c.disposition, "
+            "       c.duration_seconds, c.lead_created, c.started_at, "
             "       p.contact_name "
             "FROM calls c LEFT JOIN properties p ON p.id = c.property_id "
             f"WHERE {where} "

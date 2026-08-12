@@ -108,6 +108,7 @@ The platform is self-hosted, multi-tenant, and data-sovereign: every table is is
 - Every inbound call is logged with outcome and duration; the caller is matched to a record scoped to the account, and an unknown caller becomes a new lead (optionally address-appended from their number)
 - **Missed-call auto-text**, on by default at activation: a missed call texts the caller back from the tracking number, so their reply threads onto the same record. Toggleable and editable in Settings; it's a normal `call_event` workflow rule underneath, so it can grow into a multi-step follow-up
 - Missed calls also drop an urgent same-day call-back task on the owner (speed-to-lead)
+- **Power dialer** (`/dialer`): a stateless call queue of workable leads with a dialable phone — graded A→D, best score first, do-not-call and skip-trace-litigator rows excluded, just-dialed leads sitting out a cooldown. Calls go through the browser (Twilio Voice SDK, one-time TwiML App setup in `docs/TWILIO_SETUP.md` §5) with the account's tracking number as caller ID, degrading to `tel:` links when unconfigured. One-click dispositions write the call row + timeline line, advance `new` leads to `contacted`, schedule callback tasks, set a lead-level `do_not_call` flag, and feed the scoring loop (`contacted`/`contact_attempted` events); auto-advance dials the next lead after each verdict
 
 ### Marketing Insights
 - Connect Meta (Facebook/Instagram) via manual export upload (Business Suite CSV, Ads Manager CSV, "Download Your Information" JSON)
@@ -739,7 +740,10 @@ The FastAPI server exposes interactive docs at `http://localhost:8000/docs` (Swa
 | GET | `/api/calls/numbers/available` | Search purchasable local numbers (for picking your own digits) |
 | POST | `/api/calls/numbers` | Buy a specific number (owner, one per account) |
 | DELETE | `/api/calls/numbers/{id}` | Release the number (owner) |
-| GET | `/api/calls` | Account-wide call log (filter by outcome) |
+| GET | `/api/calls` | Account-wide call log (filter by outcome and direction) |
+| POST | `/api/dialer/token` | Twilio Voice access token for browser calling (503 until the dialer env vars are set) |
+| GET | `/api/dialer/queue` | The power-dialer queue: callable leads A-first by score, with last-call info + today's stats |
+| POST | `/api/dialer/dispositions` | Log the rep's verdict (browser call by CallSid, or a manual tel: call) |
 
 ### Messaging Webhooks & Public Intake
 | Method | Path | Description |
@@ -747,6 +751,8 @@ The FastAPI server exposes interactive docs at `http://localhost:8000/docs` (Swa
 | POST | `/api/public/twilio/sms` **(public)** | Inbound Twilio SMS webhook (two-way messaging; tracking-number texts resolve their tenant and auto-create leads) |
 | POST | `/api/public/twilio/voice` **(public)** | Inbound call webhook — logs the call and forwards it to the business line |
 | POST | `/api/public/twilio/voice/dial-status` **(public)** | Dial-outcome callback (answered/missed/busy + duration) |
+| POST | `/api/public/twilio/voice/outbound` **(public)** | Power-dialer TwiML webhook — resolves the lead's phone server-side and dials it with the tracking number as caller ID |
+| POST | `/api/public/twilio/voice/outbound-status` **(public)** | Outbound dial-outcome callback (mechanical outcome + duration only) |
 | POST | `/api/public/website-lead` **(public)** | Website lead intake (shared-secret authenticated) |
 
 ### HCAD **(prospecting)**

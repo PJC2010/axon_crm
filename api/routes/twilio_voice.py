@@ -18,10 +18,26 @@ Records the outcome, rewrites the timeline line, and on a missed call drops an
 urgent call-back task on the owner's plate (speed-to-lead, same play as
 api/routes/public_intake.py).
 
-Both routes are signature-verified against X-Twilio-Signature and must answer
-2xx TwiML for every business-level miss (unknown number, released number) —
-a non-2xx makes Twilio retry forever. Idempotency anchor: calls.call_sid is
-UNIQUE, so webhook retries skip all side effects and re-return the same TwiML.
+POST /api/public/twilio/voice/outbound — the power dialer's TwiML App Voice
+URL (the authenticated half lives in api/routes/dialer.py). The browser SDK
+connects with a lead_id, never a phone number: the identity in From
+(client:axon-<account>-<user>) is re-verified against the users table and the
+number is resolved server-side from that account's own lead — so a leaked
+Voice token can only dial phones this tenant already stores, and never a
+do-not-call lead. Caller ID is the account's tracking number (call-backs ring
+the tenant) with TWILIO_FROM_NUMBER as fallback.
+
+POST /api/public/twilio/voice/outbound-status — the outbound <Dial> action
+callback. Completes the mechanical outcome only; deliberately NO missed-call
+task and NO call_event workflow rules — those are inbound speed-to-lead plays,
+and firing the missed-call auto-text at a cold-called lead who never picked up
+would be an unsolicited SMS. Human semantics land via POST /api/dialer/dispositions.
+
+All routes are signature-verified against X-Twilio-Signature and must answer
+2xx TwiML for every business-level miss (unknown number, released number,
+unknown lead) — a non-2xx makes Twilio retry forever. Idempotency anchor:
+calls.call_sid is UNIQUE, so webhook retries skip all side effects and
+re-return the same TwiML.
 """
 import logging
 
@@ -34,7 +50,7 @@ from config import (
     PHONE_APPEND_API_KEY, PHONE_APPEND_PROVIDER,
     PUBLIC_API_BASE_URL, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN,
 )
-from api import call_logic
+from api import call_logic, dialer_logic, sms_logic
 from api.deps import get_db
 from api.lead_events_emit import emit_event
 from api.phone_append_logic import merge_append, merge_flags
@@ -49,6 +65,16 @@ def voice_configured() -> bool:
     """Unlike sms_configured(), no TWILIO_FROM_NUMBER needed — calls arrive on
     per-account tracking numbers, not the global platform number."""
     return bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN)
+
+
+def dialer_configured() -> bool:
+    """Browser calling needs an API Key pair + TwiML App on top of the base
+    credentials. Read from config at call time (not module import) so the
+    check tracks the live values."""
+    import config
+    return bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN
+                and config.TWILIO_API_KEY_SID and config.TWILIO_API_KEY_SECRET
+                and config.TWILIO_TWIML_APP_SID)
 
 
 def _twiml(xml: str) -> Response:
@@ -278,6 +304,177 @@ async def dial_status(
             db.rollback()
             log.exception("Missed-call event rules failed for lead %s", property_id)
 
+    return _twiml(call_logic.build_hangup_twiml())
+
+
+# ── Outbound (power dialer) ───────────────────────────────────────────────────
+
+def _outbound_caller_id(db: PGConn, account_id: int) -> tuple[str | None, int | None]:
+    """(caller_id, tracking_number_id) for an outbound dial. The account's own
+    tracking number first (call-backs then ring this tenant and thread here —
+    same reasoning as notifications.account_sms_from), else TWILIO_FROM_NUMBER
+    when it is a real number (a Messaging Service SID can't originate voice).
+    (None, None) = no legal caller ID; the dial is refused."""
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT id, phone_number FROM tracking_numbers "
+            "WHERE account_id = %s AND status = 'active' ORDER BY id LIMIT 1",
+            (account_id,),
+        )
+        row = cur.fetchone()
+    if row:
+        return row[1], row[0]
+    from config import TWILIO_FROM_NUMBER
+    sender = sms_logic.normalize_sender(TWILIO_FROM_NUMBER)
+    if sender and not sms_logic.is_messaging_service(sender) and sender.startswith("+"):
+        return sender, None
+    return None, None
+
+
+def _dialable_e164(raw: str | None) -> str | None:
+    """The lead's stored free-form phone as a dialable +1XXXXXXXXXX, or None."""
+    e164 = sms_logic.normalize_recipient(raw)
+    if len(e164) == 12 and e164.startswith("+1") and e164[1:].isdigit():
+        return e164
+    return None
+
+
+@public_router.post("/public/twilio/voice/outbound")
+async def outbound_call(
+    request: Request,
+    CallSid: str = Form(""),
+    From: str = Form(""),
+    lead_id: str = Form(""),          # device.connect custom params ride the
+    phone_choice: str = Form("primary"),  # same form body as Twilio's own fields
+    db: PGConn = Depends(get_db),
+):
+    if not dialer_configured():
+        return Response(status_code=403, content="Browser calling is not configured")
+    if not await _signature_valid(request):
+        log.warning("Outbound dial rejected: invalid Twilio signature (From=%s)", From)
+        return Response(status_code=403, content="Invalid signature")
+
+    def _reject(reason: str, say: str = "This lead cannot be dialed."):
+        # Business-level refusal: 2xx TwiML into the rep's headset, never a
+        # non-2xx (Twilio would retry forever). Nothing is logged to the CRM —
+        # no call happened.
+        log.warning("Outbound dial refused (%s): from=%s lead=%s", reason, From, lead_id)
+        return _twiml(call_logic.build_dialer_reject_twiml(say))
+
+    identity = dialer_logic.parse_client_identity(From)
+    if not identity or not lead_id.isdigit():
+        return _reject("bad identity or lead id")
+    account_id, user_id = identity
+
+    # The token's identity carries account/user, but the users table is
+    # authoritative — a stale or forged pairing dials nothing.
+    with db.cursor() as cur:
+        cur.execute("SELECT account_id, is_active FROM users WHERE id = %s", (user_id,))
+        user_row = cur.fetchone()
+    if not user_row or not user_row[1] or user_row[0] != account_id:
+        return _reject("identity/user mismatch")
+
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT contact_phone, contact_phone_alt, do_not_call "
+            "FROM properties WHERE id = %s AND account_id = %s AND archived_at IS NULL",
+            (int(lead_id), account_id),
+        )
+        lead = cur.fetchone()
+    if not lead:
+        return _reject("unknown lead")
+    if lead[2]:
+        return _reject("do-not-call lead", "This lead is flagged do not call.")
+
+    to_e164 = _dialable_e164(lead[1] if phone_choice == "alt" else lead[0])
+    if not to_e164:
+        return _reject("no dialable phone", "This lead has no dialable phone number.")
+
+    caller_id, tracking_number_id = _outbound_caller_id(db, account_id)
+    if not caller_id:
+        return _reject("no caller id", "No outbound caller I D is configured.")
+
+    dial_twiml = call_logic.build_outbound_dial_twiml(
+        to_e164, caller_id,
+        f"{_api_base_url(request)}/api/public/twilio/voice/outbound-status",
+    )
+    if not CallSid:
+        return _twiml(dial_twiml)  # can't log without an id; still place the call
+
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO calls (account_id, property_id, tracking_number_id, call_sid, "
+            "                   direction, from_number, from_digits, to_number, user_id) "
+            "VALUES (%s, %s, %s, %s, 'outbound', %s, %s, %s, %s) "
+            "ON CONFLICT (call_sid) DO NOTHING RETURNING id",
+            (account_id, int(lead_id), tracking_number_id, CallSid,
+             caller_id, normalize_phone(caller_id), to_e164, user_id),
+        )
+        if not cur.fetchone():
+            # Twilio retry: side effects already ran; same TwiML, rebuilt from
+            # the same lead + caller-id lookups above.
+            db.rollback()
+            return _twiml(dial_twiml)
+        # body stays NULL (plain action line, not a chat bubble); the status
+        # callback rewrites the action and the disposition endpoint owns the
+        # human outcome.
+        cur.execute(
+            "INSERT INTO contact_history (property_id, action, outcome, channel, "
+            "                             direction, body, external_id, created_by) "
+            "VALUES (%s, 'Outbound call', NULL, 'call', 'outbound', NULL, %s, %s) "
+            "ON CONFLICT (external_id) DO NOTHING",
+            (int(lead_id), CallSid, user_id),
+        )
+        db.commit()
+
+    log.info("Outbound dial: account=%s user=%s lead=%s sid=%s",
+             account_id, user_id, lead_id, CallSid)
+    return _twiml(dial_twiml)
+
+
+@public_router.post("/public/twilio/voice/outbound-status")
+async def outbound_dial_status(
+    request: Request,
+    CallSid: str = Form(""),
+    DialCallStatus: str = Form(""),
+    DialCallDuration: str = Form(""),
+    db: PGConn = Depends(get_db),
+):
+    if not dialer_configured():
+        return Response(status_code=403, content="Browser calling is not configured")
+    if not await _signature_valid(request):
+        log.warning("Outbound dial status rejected: invalid Twilio signature (sid=%s)", CallSid)
+        return Response(status_code=403, content="Invalid signature")
+
+    outcome = call_logic.map_outbound_dial_status(DialCallStatus)
+    duration = int(DialCallDuration) if DialCallDuration.isdigit() else None
+
+    with db.cursor() as cur:
+        cur.execute(
+            "UPDATE calls SET status = 'completed', outcome = %s, duration_seconds = %s, "
+            "completed_at = NOW() "
+            "WHERE call_sid = %s AND status <> 'completed' "
+            "RETURNING account_id, property_id",
+            (outcome, duration, CallSid),
+        )
+        if not cur.fetchone():
+            db.rollback()  # duplicate callback (or unknown sid) — nothing to do
+            return _twiml(call_logic.build_hangup_twiml())
+        # COALESCE keeps a human disposition that already landed via
+        # POST /api/dialer/dispositions; the mechanical verdict only fills gaps.
+        cur.execute(
+            "UPDATE contact_history SET action = %s, outcome = COALESCE(outcome, %s) "
+            "WHERE external_id = %s",
+            (call_logic.outbound_history_action_for(outcome, duration),
+             dialer_logic.history_outcome_for("no_answer") if outcome != "answered" else None,
+             CallSid),
+        )
+        db.commit()
+
+    # Deliberately nothing else: no missed-call task, no call_event workflow
+    # rules (the missed-call auto-text must never SMS a cold-called lead who
+    # didn't pick up), no lead_events — POST /api/dialer/dispositions owns the
+    # human semantics for calls the rep placed and watched.
     return _twiml(call_logic.build_hangup_twiml())
 
 

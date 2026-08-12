@@ -264,6 +264,15 @@ TWILIO_ACCOUNT_SID  = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN   = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_FROM_NUMBER  = os.getenv("TWILIO_FROM_NUMBER", "")
 
+# ── Browser calling (the power dialer, api/routes/dialer.py) ─────────────────
+# A Twilio API Key pair + TwiML App let the frontend place calls through the
+# browser (Twilio Voice JS SDK). All three empty = browser calling off: the
+# dialer page degrades to a click-through tel: queue and POST /api/dialer/token
+# returns 503. Setup steps: docs/TWILIO_SETUP.md "Browser calling".
+TWILIO_API_KEY_SID    = os.getenv("TWILIO_API_KEY_SID", "")     # SK…
+TWILIO_API_KEY_SECRET = os.getenv("TWILIO_API_KEY_SECRET", "")
+TWILIO_TWIML_APP_SID  = os.getenv("TWILIO_TWIML_APP_SID", "")   # AP…
+
 # Platform-owner address for internal alerts (new self-serve signups, prospect
 # email captures, unverified-signup digests). Empty = alerts disabled; sending
 # rides the RESEND_* config above and always fails soft.

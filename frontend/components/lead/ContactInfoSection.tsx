@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Phone, Mail, Pencil, Check, User, Sparkles, MapPin, Clock, Smartphone, AtSign, MessageCircle, UserCheck, Tag } from 'lucide-react'
+import { Phone, Mail, Pencil, Check, User, Sparkles, MapPin, Clock, Smartphone, AtSign, MessageCircle, UserCheck, Tag, Ban } from 'lucide-react'
 import type { Lead, TeamMember } from '@/lib/types'
 import { updateLeadContact, enrichLead, getTeam, type ContactUpdate } from '@/lib/api'
 
@@ -32,9 +32,10 @@ const TEXT_FIELDS: { label: string; key: DraftKey; placeholder: string; type: st
 
 const METHOD_OPTIONS = ['phone', 'text', 'email']
 
-// Inline-editable text fields only — assigned_to/lead_source are handled
-// separately (assignee dropdown / read-only source), not in the text draft.
-type DraftKey = Exclude<keyof ContactUpdate, 'assigned_to' | 'lead_source'>
+// Inline-editable text fields only — assigned_to/lead_source/do_not_call are
+// handled separately (assignee dropdown / read-only source / auto-saving
+// toggle), not in the text draft.
+type DraftKey = Exclude<keyof ContactUpdate, 'assigned_to' | 'lead_source' | 'do_not_call'>
 type Draft = Record<DraftKey, string>
 
 function draftFrom(lead: Lead): Draft {
@@ -84,6 +85,16 @@ export function ContactInfoSection({ lead, onSaved, onToast }: Props) {
     } catch (e) {
       onToast?.(e instanceof Error ? e.message : 'Failed to assign', 'error')
     } finally { setAssigning(false) }
+  }
+
+  async function toggleDoNotCall() {
+    try {
+      const updated = await updateLeadContact(lead.id, { do_not_call: !lead.do_not_call })
+      onSaved(updated)
+      onToast?.(updated.do_not_call ? 'Flagged do-not-call' : 'Do-not-call flag cleared', 'success')
+    } catch (e) {
+      onToast?.(e instanceof Error ? e.message : 'Failed to update', 'error')
+    }
   }
 
   async function save() {
@@ -206,6 +217,19 @@ export function ContactInfoSection({ lead, onSaved, onToast }: Props) {
             <span style={{ fontSize: 13, color: 'var(--color-ink-900)' }}>{lead.lead_source}</span>
           </div>
         )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ color: lead.do_not_call ? 'var(--color-danger)' : 'var(--color-ink-400)', display: 'flex' }}>
+            <Ban size={13} strokeWidth={1.5} />
+          </span>
+          <label className="t-eyebrow" style={{ width: 56, margin: 0 }}>Calls</label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--color-ink-900)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={!!lead.do_not_call} onChange={toggleDoNotCall} />
+            Do not call
+            {lead.do_not_call && (
+              <span style={{ fontSize: 11, color: 'var(--color-ink-400)' }}>— excluded from the dialer</span>
+            )}
+          </label>
+        </div>
       </div>
     </section>
   )
@@ -238,6 +262,16 @@ function ReadView({ lead }: { lead: Lead }) {
       </Row>
       <Row icon={<Phone size={13} strokeWidth={1.5} />}>
         <LinkOrDash href={`tel:${lead.contact_phone}`} text={lead.contact_phone} />
+        {lead.do_not_call && (
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 8px',
+            borderRadius: 'var(--radius-pill)', fontSize: 10.5, fontWeight: 600,
+            textTransform: 'uppercase', letterSpacing: '0.04em',
+            background: 'var(--color-danger-bg)', color: 'var(--color-danger)',
+          }}>
+            <Ban size={10} strokeWidth={2} /> Do not call
+          </span>
+        )}
       </Row>
       <Row icon={<Mail size={13} strokeWidth={1.5} />}>
         <LinkOrDash href={`mailto:${lead.contact_email}`} text={lead.contact_email} />
