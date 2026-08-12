@@ -1,7 +1,7 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Home, Phone, PhoneMissed, PhoneIncoming, Settings } from 'lucide-react'
+import { ArrowLeft, Home, Phone, PhoneMissed, PhoneIncoming, PhoneOutgoing, Settings } from 'lucide-react'
 import { getCalls, getCallSettings } from '@/lib/api'
 import { AuthGuard } from '@/components/AuthGuard'
 import { ModuleGate } from '@/components/ModuleGate'
@@ -13,11 +13,18 @@ const OUTCOME_LABEL: Record<CallOutcome, string> = {
   answered: 'Answered',
   missed: 'Missed',
   busy: 'Busy',
+  // Outbound (dialer) verdicts — Twilio's DialCallStatus vocabulary.
+  no_answer: 'No answer',
+  failed: 'Failed',
+  canceled: 'Canceled',
 }
 const OUTCOME_COLOR: Record<CallOutcome, string> = {
   answered: 'var(--color-moss)',
   missed: 'var(--color-danger)',
   busy: 'var(--color-warning, #B45309)',
+  no_answer: 'var(--color-ink-600)',
+  failed: 'var(--color-danger)',
+  canceled: 'var(--color-ink-400)',
 }
 
 function fmtWhen(iso: string): string {
@@ -80,6 +87,17 @@ function CallsPage() {
             Tracking number: {settings.number.friendly_name || settings.number.phone_number}
           </span>
         )}
+        <Link
+          href="/dialer"
+          style={{
+            marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '7px 14px', borderRadius: 'var(--radius-button)',
+            background: 'var(--color-accent)', color: 'var(--color-cream)',
+            textDecoration: 'none', fontSize: 13, fontWeight: 600,
+          }}
+        >
+          <PhoneOutgoing size={14} strokeWidth={2} /> Open dialer
+        </Link>
       </header>
 
       <div style={{ maxWidth: 860, margin: '0 auto', padding: '28px 20px' }}>
@@ -146,9 +164,11 @@ function CallsPage() {
                 {items.map(c => (
                   <tr key={c.id} style={{ borderBottom: '1px solid var(--color-ink-100, rgba(0,0,0,0.04))' }}>
                     <td style={{ padding: '8px', width: 24 }}>
-                      {c.outcome === 'answered'
-                        ? <PhoneIncoming size={14} strokeWidth={1.5} style={{ color: OUTCOME_COLOR.answered }} />
-                        : <PhoneMissed size={14} strokeWidth={1.5} style={{ color: c.outcome ? OUTCOME_COLOR[c.outcome] : 'var(--color-ink-400)' }} />}
+                      {c.direction === 'outbound'
+                        ? <PhoneOutgoing size={14} strokeWidth={1.5} style={{ color: c.outcome === 'answered' ? OUTCOME_COLOR.answered : 'var(--color-ink-400)' }} />
+                        : c.outcome === 'answered'
+                          ? <PhoneIncoming size={14} strokeWidth={1.5} style={{ color: OUTCOME_COLOR.answered }} />
+                          : <PhoneMissed size={14} strokeWidth={1.5} style={{ color: c.outcome ? OUTCOME_COLOR[c.outcome] : 'var(--color-ink-400)' }} />}
                     </td>
                     <td style={{ padding: '8px' }}>
                       {c.property_id ? (

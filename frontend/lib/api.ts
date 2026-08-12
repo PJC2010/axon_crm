@@ -1,5 +1,5 @@
 
-import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, StripeStatus, PublicPayInfo, BillingInfo, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, MessageTemplate, MessageTemplateCreate, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType, HeatmapMetric, HeatmapResponse, ClusterCollection, ProspectSeed, ProspectResult, BlastRadiusResult, ServiceArea, EventCollection, EventCreate, LeadEvent, LeadEventCreate, CallSettings, CallSettingsResponse, TrackingNumber, AvailableNumber, CallOutcome, CallLogPage } from './types'
+import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, StripeStatus, PublicPayInfo, BillingInfo, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, MessageTemplate, MessageTemplateCreate, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType, HeatmapMetric, HeatmapResponse, ClusterCollection, ProspectSeed, ProspectResult, BlastRadiusResult, ServiceArea, EventCollection, EventCreate, LeadEvent, LeadEventCreate, CallSettings, CallSettingsResponse, TrackingNumber, AvailableNumber, CallOutcome, CallLogPage, CallDisposition, DialerQueueResponse, DialerTokenResponse, DispositionResult, ScoreGrade } from './types'
 import { getToken, clearToken } from './auth'
 
 // Use 127.0.0.1 (not localhost): on macOS `localhost` resolves to IPv6 ::1
@@ -438,6 +438,8 @@ export interface ContactUpdate {
   mailing_address?: string
   preferred_contact_method?: string
   best_time_to_call?: string
+  // Clear (or re-set) the dialer's do-not-call flag.
+  do_not_call?: boolean
   assigned_to?: number | null
   lead_source?: string
 }
@@ -1132,12 +1134,48 @@ export function releaseCallNumber(numberId: number): Promise<{ ok: boolean }> {
   return req(`/calls/numbers/${numberId}`, { method: 'DELETE' })
 }
 
-export function getCalls(params: { limit?: number; offset?: number; outcome?: CallOutcome } = {}): Promise<CallLogPage> {
+export function getCalls(params: { limit?: number; offset?: number; outcome?: CallOutcome; direction?: 'inbound' | 'outbound' } = {}): Promise<CallLogPage> {
   const p = new URLSearchParams()
   if (params.limit) p.set('limit', String(params.limit))
   if (params.offset) p.set('offset', String(params.offset))
   if (params.outcome) p.set('outcome', params.outcome)
+  if (params.direction) p.set('direction', params.direction)
   return req<CallLogPage>(`/calls?${p}`)
+}
+
+// ── Power dialer ──────────────────────────────────────────────────────────────
+
+/** Short-lived Twilio Voice token for browser calling. 503 until the
+ *  TWILIO_API_KEY_* / TWIML_APP env vars are configured server-side. */
+export function getDialerToken(): Promise<DialerTokenResponse> {
+  return req('/dialer/token', { method: 'POST' })
+}
+
+/** The call queue: workable leads with a dialable phone, A-grade first, best
+ *  score first. Just-dialed leads sit out `cooldownHours`, so refetching
+ *  naturally resumes a session where it left off. */
+export function getDialerQueue(params: {
+  grade?: ScoreGrade; statuses?: string; cooldownHours?: number; limit?: number
+} = {}): Promise<DialerQueueResponse> {
+  const p = new URLSearchParams()
+  if (params.grade) p.set('grade', params.grade)
+  if (params.statuses) p.set('statuses', params.statuses)
+  if (params.cooldownHours !== undefined) p.set('cooldown_hours', String(params.cooldownHours))
+  if (params.limit) p.set('limit', String(params.limit))
+  return req<DialerQueueResponse>(`/dialer/queue?${p}`)
+}
+
+/** The rep's verdict after a call. With call_sid it annotates the browser
+ *  call's record; without it (tel: fallback) the server logs a manual call. */
+export function logDisposition(body: {
+  lead_id: number
+  disposition: CallDisposition
+  call_sid?: string
+  phone_choice?: 'primary' | 'alt'
+  notes?: string
+  callback_due_date?: string
+}): Promise<DispositionResult> {
+  return req('/dialer/dispositions', { method: 'POST', body: JSON.stringify(body) })
 }
 
 // ── Export ────────────────────────────────────────────────────────────────────

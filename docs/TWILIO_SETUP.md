@@ -1,4 +1,4 @@
-# Twilio setup (SMS + call tracking)
+# Twilio setup (SMS + call tracking + power dialer)
 
 Axon uses Twilio in two structurally different ways. They share one set of credentials but
 are configured in completely different places, and confusing them is the usual reason
@@ -9,8 +9,12 @@ are configured in completely different places, and confusing them is the usual r
 | How many | One, for the whole deployment | One per account |
 | Env var | `TWILIO_FROM_NUMBER` | none — stored in `tracking_numbers` |
 | Who configures the webhooks | **You, by hand, in the Twilio console** | **The app**, at purchase time |
-| Powers | All outbound SMS/MMS + inbound replies | Inbound call tracking + its SMS twin |
+| Powers | All outbound SMS/MMS + inbound replies | Inbound call tracking + its SMS twin, outbound dialer caller ID |
 | Module | `core` (always on) | `calls` (gated) |
+
+A third, optional layer sits on top: **browser calling for the power dialer** (§5) — one
+platform-wide API Key + TwiML App that lets reps call scored leads from `/dialer` through
+their computer's mic. Without it the dialer still works as a click-through `tel:` queue.
 
 ---
 
@@ -252,6 +256,58 @@ Without it, a lead created from a call arrives with just a phone number.
 
 ---
 
+## 5. Browser calling (the power dialer)
+
+The `/dialer` page queues scored leads A-grade-first and, with this section configured,
+places the calls **through the browser** (Twilio Voice JS SDK — mic/headset, no phone
+juggling). Three more env vars, all platform-wide like the base credentials:
+
+```bash
+TWILIO_API_KEY_SID=SK...       # a *standard* API key
+TWILIO_API_KEY_SECRET=...      # shown once at creation — save it then
+TWILIO_TWIML_APP_SID=AP...
+```
+
+**Degrades gracefully.** With any of the three empty, `GET /api/calls/settings` reports
+`voice_dialing: false`, `POST /api/dialer/token` returns 503, and the dialer page falls
+back to `tel:` links + manual outcome logging. The queue, dispositions, callback tasks,
+and do-not-call flag all work either way.
+
+### Create the API key
+
+Console → Account → API keys & tokens → **Create API key** (type: *Standard*). Copy the
+SK… SID and the secret — the secret is displayed exactly once. The key signs the short-lived
+Voice access tokens (`POST /api/dialer/token`, 1-hour TTL, outgoing-only grant); the master
+auth token is never handed to a browser.
+
+### Create the TwiML App
+
+Console → Voice → TwiML Apps → **Create new TwiML App**:
+
+- Friendly name: anything (`axon-dialer`)
+- **Voice Request URL**: `https://<your-api-host>/api/public/twilio/voice/outbound`, POST
+  (the same origin as `PUBLIC_API_BASE_URL`)
+
+Copy its AP… SID. When the rep clicks Call, the SDK hits this webhook; the app verifies the
+Twilio signature, re-checks the token's user against the database, resolves the lead's
+phone **server-side** (the browser only ever sends a `lead_id`, so a leaked token can't
+dial arbitrary numbers), refuses do-not-call leads, and returns `<Dial>` TwiML. The
+`<Dial action>` lands on `/api/public/twilio/voice/outbound-status` — no console setup
+needed for that one, it rides the TwiML in the response.
+
+### Caller ID
+
+Outbound dials present the account's own **tracking number** (call-backs then ring the
+tenant and thread into their timeline), falling back to `TWILIO_FROM_NUMBER` for accounts
+without one. An account with neither gets a spoken "no caller ID configured" instead of a
+dial — activate call tracking (§4) first for the best experience.
+
+### On Render
+
+Like the other `TWILIO_*` vars: dashboard only, not in the blueprint.
+
+---
+
 ## What you do *not* need
 
 - **Twilio SendGrid** — email goes through Resend (`RESEND_API_KEY` / `RESEND_FROM_EMAIL`).
@@ -280,6 +336,13 @@ Without it, a lead created from a call arrives with just a phone number.
   it goes out from the tracking number. Log lines to grep, in order:
   `Inbound call: account=…`, `Missed-call auto-text enabled…` (at activation),
   `send_template rule` failures if the text doesn't arrive.
+- **Power dialer:** `GET /api/calls/settings` → `voice_dialing: true`, then open `/dialer`,
+  allow the mic, and click Call — you should hear ringback and the outbound row should
+  appear on `/calls` with a duration once it ends. Logging an outcome writes the
+  "Outbound call" line on the lead's timeline; "Callback" creates a task; "Do not call"
+  drops the lead from the next queue fetch. On failure, check the Twilio debugger for the
+  two `/api/public/twilio/voice/outbound*` webhooks and grep the API logs for
+  `Outbound dial refused` / `invalid Twilio signature`.
 
 ## Known gaps
 
