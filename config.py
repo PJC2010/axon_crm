@@ -245,6 +245,28 @@ ML_MIN_OUTCOMES_TO_SURFACE = int(os.getenv("ML_MIN_OUTCOMES_TO_SURFACE", "150"))
 ML_L2 = float(os.getenv("ML_L2", "1.0"))
 ML_LR = float(os.getenv("ML_LR", "0.1"))
 ML_EPOCHS = int(os.getenv("ML_EPOCHS", "600"))
+# ── Retrain resource caps ────────────────────────────────────────────────────
+# The nightly retrain runs in-process on the API instance (api/scheduler.py starts
+# APScheduler inside the FastAPI lifespan), so an unbounded run is an OOM of the
+# whole service, not of a detached worker. One Harris County ZIP is ~20k
+# properties, so a few seeded ZIPs is six figures of rows. Two independent caps:
+#
+#   ML_MAX_TRAINING_ROWS — how many labeled examples are held in memory per scope.
+#       Bounds memory. The most *recently decided* outcomes win, so the cap trims
+#       stale history rather than recent signal.
+#   ML_MAX_FIT_ROWS      — how many of those rows reach the gradient loop.
+#       Bounds CPU: the pure-Python trainer costs epochs x rows x ~85 features,
+#       and it holds the GIL while the same process is serving HTTP. Full-batch
+#       gradient descent averages its gradient, so an evenly-spaced subsample
+#       moves the fitted coefficients very little. Evaluation still uses the
+#       whole holdout — only fitting is subsampled.
+#
+# Raise both if you move the scheduler to a dedicated worker (see render.yaml).
+ML_MAX_TRAINING_ROWS = int(os.getenv("ML_MAX_TRAINING_ROWS", "20000"))
+ML_MAX_FIT_ROWS = int(os.getenv("ML_MAX_FIT_ROWS", "4000"))
+# Rows per server-side fetch / per UPDATE flush in the label backfill. Bounds the
+# client-side buffer without changing how many rows are ultimately processed.
+ML_STREAM_BATCH = int(os.getenv("ML_STREAM_BATCH", "2000"))
 # Hour (UTC) of the nightly retrain job that refreshes labels and re-fits models.
 ML_RETRAIN_HOUR = int(os.getenv("ML_RETRAIN_HOUR", "3"))
 

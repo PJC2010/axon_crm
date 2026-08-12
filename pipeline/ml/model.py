@@ -20,6 +20,7 @@ standardized value), which map directly onto the existing score-explanation UI.
 from __future__ import annotations
 
 import math
+from operator import mul as _mul
 
 
 def _sigmoid(z: float) -> float:
@@ -86,16 +87,20 @@ class LogisticModel:
 
         coef = [0.0] * d
         intercept = 0.0
+        # This loop is the whole cost of a retrain (epochs x n x d) and it runs in
+        # the API process holding the GIL, so the hot path avoids rebuilding
+        # range() objects and double-indexing per feature. Both forms accumulate
+        # the same terms in the same order, so the fit is unchanged.
         for _ in range(epochs):
             grad_w = [0.0] * d
             grad_b = 0.0
             for i in range(n):
-                z = intercept + sum(coef[j] * Xs[i][j] for j in range(d))
+                xi = Xs[i]
+                z = intercept + sum(map(_mul, coef, xi))
                 err = _sigmoid(z) - y[i]
                 grad_b += err
-                xi = Xs[i]
-                for j in range(d):
-                    grad_w[j] += err * xi[j]
+                for j, x in enumerate(xi):
+                    grad_w[j] += err * x
             intercept -= lr * (grad_b / n)
             for j in range(d):
                 # L2 regularization on weights only (not the intercept).

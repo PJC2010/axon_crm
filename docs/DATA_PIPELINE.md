@@ -238,6 +238,16 @@ pipeline leans on:
   `predict.py` scores at pipeline time.
 - **Schedule:** nightly retrain at `ML_RETRAIN_HOUR` (03:00 UTC), registered by
   `schedule_retraining()` in `api/main.py`.
+- **Resource caps:** the retrain runs *inside* the API process, so it is bounded
+  rather than allowed to size itself off the table. `ML_MAX_TRAINING_ROWS` (20k)
+  caps the labeled rows held in memory per scope, keeping the most recently
+  decided outcomes; `ML_MAX_FIT_ROWS` (4k) caps what reaches the gradient loop,
+  whose cost is `epochs × rows × features` on one core; `ML_STREAM_BATCH` sizes
+  the server-side fetches. The bootstrap scan streams through a named cursor and
+  projects only the columns features/labels read — never `SELECT p.*`, which on a
+  ~68-column table with two JSONB columns is ~7 KB of Python heap per row. A
+  capped run logs what it dropped, and `train_scope` reports both `n_train` (what
+  the model saw) and `n_train_available`.
 - **Modes (`SCORER_MODE`):** `rules` (default — deterministic only) · `shadow`
   (store `ml_conversion_prob` alongside, keep rules grade user-facing) ·
   `learned` (surface the model probability).
