@@ -30,7 +30,7 @@ export function ProspectCaptureForm({ source, dark = false }: { source: 'landing
   if (status === 'done') {
     return (
       <p style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', fontWeight: 600, color: dark ? '#fff' : '#1a5a75', margin: 0 }}>
-        <Check size={18} strokeWidth={1.5} /> Thanks — we&apos;ll be in touch shortly.
+        <Check size={18} strokeWidth={1.5} /> Thanks — you&apos;ll hear back shortly.
       </p>
     )
   }
@@ -59,7 +59,7 @@ export function ProspectCaptureForm({ source, dark = false }: { source: 'landing
         }}
       >
         <Mail size={16} strokeWidth={1.5} />
-        {status === 'sending' ? 'Sending…' : 'Get a walkthrough'}
+        {status === 'sending' ? 'Sending…' : 'Get a Walkthrough'}
       </button>
       {status === 'error' && (
         <p style={{ flexBasis: '100%', margin: '4px 0 0', fontSize: 13, color: dark ? '#ffb4a8' : '#b3402e', textAlign: 'center' }}>
