@@ -66,8 +66,14 @@ optionally, **market value/sale price** when appraised value isn't good enough.
   (lower per-record price and far fewer round-trips).
 
 ### Phase 3 — Free substitutions for the remaining paid edges
-- **Geocoding:** replace Google with **HCAD GIS parcel centroids** or the **US Census
-  batch geocoder** (both free) for Harris County addresses.
+- **Geocoding:** ✅ DONE — both free sources are live. The shared `parcels` cache fills
+  coordinates from **HCAD GIS parcel centroids** (`hcad_parcel_centroids`, loaded by
+  `tools/load_parcel_centroids.py`; joined in by
+  `pipeline/parcels.py::fill_coords_from_centroids`), with the **US Census batch
+  geocoder** covering the remainder (`pipeline/county_build.py::census_fill_parcels`,
+  and the per-account geocode step which already defaults to Census batch). The
+  county-wide build (`tools/build_parcel_cache.py`) makes zero paid geocode calls by
+  construction — its import path cannot reach the Google fallback.
 - **Market value:** keep RentCast as an **explicit, opt-in** market-value
   enrichment used only when the HCAD appraised value isn't accurate enough for the equity
   signal — not a default step in Harris County runs.

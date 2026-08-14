@@ -56,6 +56,50 @@ per-ZIP `POST /api/hcad/upload` route (which only carries properties + permits).
 Alternatively, run the loader as a Render **one-off Job** in the same environment (then it
 can use the internal `DATABASE_URL` and you skip the External URL).
 
+## One-time: county-wide parcel cache with free centroid geocoding
+
+Three steps, all from your machine against the External URL (or as Render one-off Jobs) —
+**never from the web service** (a county-wide pass inside the API instance is the OOM
+`config.py` warns about). Each is idempotent and safe to rerun.
+
+0. **Check database headroom first.** County-wide adds ~1.5M rows to `parcels` plus the
+   ~1.5M-row centroid mirror — roughly 1–2.5 GB with indexes. On the target DB run
+   `SELECT pg_size_pretty(pg_database_size(current_database()));` and bump the Starter
+   Postgres plan if it leaves you tight.
+
+1. **Assessor mirror** — `tools/load_hcad_to_postgres.py` as above (if not already done).
+
+2. **Parcel centroids** (free coordinates for every parcel; no API key):
+
+```bash
+python tools/load_parcel_centroids.py --dsn "postgresql://USER:PASS@HOST:5432/DBNAME"
+```
+
+   Pages the county's public ArcGIS parcels layer (~1.53M features, ~770 requests,
+   15–45 min) into `hcad_parcel_centroids`. Ctrl-C is safe — rerunning resumes from the
+   checkpoint in `hcad_centroids_work/`; the DB load itself is an atomic
+   TRUNCATE + reload. Read the printed count-parity report before moving on.
+
+3. **Build the cache** (every ZIP in `hcad_properties`; zero geocode API calls —
+   coordinates come from the centroid mirror, with the free Census batch geocoder
+   covering the remainder):
+
+```bash
+python tools/build_parcel_cache.py --dsn "postgresql://USER:PASS@HOST:5432/DBNAME"
+# smoke one ZIP first if you like:  --zips 77396
+# faster first pass, centroids only: --no-census-fallback  (rerun later with it on)
+```
+
+   Commits per ZIP, so an interrupted run resumes by rerunning. Exits nonzero if the
+   county-wide APN→centroid match rate is under 90% (`--min-match-rate`), printing an
+   unmatched sample instead of quietly reporting success. Afterwards run
+   `VACUUM ANALYZE parcels;` once — the coordinate fill leaves dead tuples behind.
+
+Per-account materialization is unchanged: the cache build creates **no** `properties`
+rows; tenants still seed on demand, ZIP by ZIP, through `seed_account`. Refresh cadence:
+whenever you reload the HCAD mirror, rerun steps 2–3 (both gap-fill; nothing is
+overwritten).
+
 ## Deploy with the blueprint
 
 `render.yaml` defines the managed Postgres + the API service. Key settings:

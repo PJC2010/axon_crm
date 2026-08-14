@@ -254,6 +254,11 @@ def _seed_from_parcels(zip_code: str, account_id: int, limit: int | None = None)
             log.info("HCAD seed: no parcels for ZIP %s (is hcad_properties "
                      "loaded? see docs/RENDER_DEPLOYMENT.md)", zip_code)
             return 0
+        # Free coordinates from the county centroid mirror BEFORE materializing,
+        # so even a ZIP's first-ever seed copies coords into properties. A no-op
+        # (cheap, via idx_parcels_zip_ungeocoded) when the mirror is empty or
+        # the ZIP is already filled.
+        parcels.fill_coords_from_centroids(conn, zip_code)
         # Attach rows this account already had before the cache existed, BEFORE
         # seeding. seed_account gap-fills existing rows through sync(), which
         # joins on parcel_id — link afterwards and that join matches nothing, so
