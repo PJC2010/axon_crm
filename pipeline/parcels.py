@@ -31,6 +31,7 @@ import logging
 
 from pipeline.addr import sql_has_situs
 from pipeline.owner import sql_clean_owner_name
+from pipeline.parcel_id import sql_normalize_apn
 
 log = logging.getLogger(__name__)
 
@@ -68,6 +69,11 @@ _NEVER_SHARED = frozenset({
 
 assert not (set(SHARED_COLS) & _NEVER_SHARED), "shared/never-shared overlap"
 
+# Confidence stamped on centroid-sourced coordinates. A parcel centroid is the
+# actual parcel geometry, so it outranks the Census batch's street-interpolated
+# "Exact" match (0.9 — pipeline/geocode_batch.py) without claiming rooftop truth.
+CENTROID_CONFIDENCE = 0.95
+
 
 def ensure_from_hcad(conn, zip_code: str) -> int:
     """Populate `parcels` for a ZIP from the free HCAD mirror. Idempotent.
@@ -99,12 +105,12 @@ def ensure_from_hcad(conn, zip_code: str) -> int:
                 -- here would be copied to every tenant, then read as a real
                 -- identity: spurious parcel_mismatch findings on every RentCast
                 -- answer, and (being non-NULL) it would block the genuine
-                -- assessorID from ever filling. Byte-parity beyond that is not
-                -- required: APNs are never a SQL join key — every comparison
-                -- goes through same_parcel in Python.
-                CASE WHEN BTRIM(REGEXP_REPLACE(h.acct, '[^a-zA-Z0-9]', '', 'g'), '0') = ''
-                     THEN NULL
-                     ELSE UPPER(REGEXP_REPLACE(h.acct, '[^a-zA-Z0-9]', '', 'g')) END,
+                -- assessorID from ever filling. Cross-vendor comparisons still
+                -- go through same_parcel in Python, but this stored form IS a
+                -- join key within HCAD's own data: the same expression writes
+                -- hcad_parcel_centroids.acct, which is what lets
+                -- fill_coords_from_centroids join on plain equality.
+                {sql_normalize_apn("h.acct")},
                 NULLIF(h.year_built, '')::INTEGER,
                 h.building_sqft,
                 h.land_sqft,
@@ -162,7 +168,50 @@ def ensure_from_hcad(conn, zip_code: str) -> int:
     return n
 
 
-def seed_account(conn, zip_code: str, account_id: int, limit: int | None = None) -> int:
+def fill_coords_from_centroids(conn, zip_code: str) -> int:
+    """Fill missing coordinates for a ZIP's parcels from the county centroid
+    mirror (hcad_parcel_centroids, migration 0070). Free, idempotent, fill-only.
+
+    This is the "shared geocode pass" that idx_parcels_zip_ungeocoded
+    (migration 0065) was built for, and its first consumer. Both join sides are
+    stored pre-normalized by pipeline/parcel_id.py::sql_normalize_apn, so plain
+    equality is exact — no expression runs at join time. A row that already has
+    coordinates (promoted from a tenant's geocode) is never touched.
+
+    geohash/h3 stay NULL here deliberately: tenants backfill both from lat/lng
+    (pipeline/neighborhood.py::backfill_geohashes,
+    pipeline/geo_cluster_store.py::backfill_h3) and promote() carries them back
+    into the cache — the compounding path this module already runs on.
+
+    Returns the number of parcels that gained coordinates.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE parcels p SET
+                latitude           = c.latitude,
+                longitude          = c.longitude,
+                geocode_source     = 'hcad_centroid',
+                geocode_confidence = %s,
+                enrichment_flags   = p.enrichment_flags
+                                     || jsonb_build_object('geocode', 'hcad_centroid'),
+                enriched_at        = NOW()
+            FROM hcad_parcel_centroids c
+            WHERE p.zip = %s
+              AND p.latitude IS NULL
+              AND p.parcel_apn = c.acct
+            """,
+            (CENTROID_CONFIDENCE, zip_code),
+        )
+        n = cur.rowcount
+    conn.commit()
+    log.info("parcels: %d coords filled from centroids for ZIP %s", n, zip_code)
+    return n
+
+
+def seed_account(conn, zip_code: str, account_id: int, limit: int | None = None,
+                 owner_occupied_only: bool = False,
+                 built_only: bool = False) -> int:
     """Create this account's `properties` rows for a ZIP straight from `parcels`.
 
     The whole seed is one statement: no parcel data is read into Python. An
@@ -175,8 +224,25 @@ def seed_account(conn, zip_code: str, account_id: int, limit: int | None = None)
     a real street address first (see the ordering below); without that it took
     HCAD's no-situs parcels and nothing else.
 
+    `owner_occupied_only` / `built_only` narrow what this tenant materializes
+    (home-services accounts want owner-occupied homes with a structure) while
+    the full county cache stays available to others (tax-delinquent/investor
+    angles). Both default off — existing callers are unchanged.
+
     Returns rows inserted or updated.
     """
+    # Literal SQL, no bind params, so the parameter shape is identical when the
+    # filters are off.
+    filter_sql = ""
+    if owner_occupied_only:
+        filter_sql += "\n                  AND p.owner_occupied IS TRUE"
+    if built_only:
+        # HCAD writes vacant-lot building_sqft as 0, so > 0 rather than
+        # IS NOT NULL — the same confirmed-structure rule as pipeline/db.py's
+        # paid-candidate ordering.
+        filter_sql += ("\n                  AND (COALESCE(p.year_built, 0) > 0"
+                       " OR COALESCE(p.square_footage, 0) > 0)")
+
     shared = ", ".join(SHARED_COLS)
     params: list = [zip_code, account_id]
     limit_sql = ""
@@ -208,7 +274,7 @@ def seed_account(conn, zip_code: str, account_id: int, limit: int | None = None)
                   AND NOT EXISTS (
                       SELECT 1 FROM properties x
                       WHERE x.account_id = %s AND x.address = p.address AND x.zip = p.zip
-                  )
+                  ){filter_sql}
                 {order_sql}
                 {limit_sql}
             ),

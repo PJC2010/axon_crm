@@ -772,6 +772,19 @@ GEOCODE_FALLBACK_MAX     = int(os.getenv("GEOCODE_FALLBACK_MAX", "2000"))
 # than the old strictly-serial loop.
 GEOCODE_FALLBACK_WORKERS = int(os.getenv("GEOCODE_FALLBACK_WORKERS", "8"))
 
+# ── Harris County parcel centroids (free geocoding source) ───────────────────
+# The county's public ArcGIS parcels layer: polygon geometry keyed by the same
+# 13-digit HCAD account as hcad_properties.acct. No key, no quota.
+# tools/load_parcel_centroids.py pages it (returnCentroid, outSR=4326) into the
+# shared hcad_parcel_centroids mirror (migration 0070), and
+# pipeline/parcels.py::fill_coords_from_centroids joins those coordinates into
+# the parcels cache — so a county-wide cache build makes zero geocode API calls.
+HCAD_PARCELS_ARCGIS_URL = os.getenv(
+    "HCAD_PARCELS_ARCGIS_URL",
+    "https://services.arcgis.com/su8ic9KbA7PYVxPS/arcgis/rest/services/"
+    "Harris_County_Parcels/FeatureServer/1",
+)
+
 # ── Geo Phase 2: clustering + heatmap ─────────────────────────────────────────
 # Customer clustering (pure-Python DBSCAN over haversine distance — the
 # ST_ClusterDBSCAN stand-in while the layer stays PostGIS-free; see

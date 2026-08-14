@@ -221,6 +221,69 @@ def test_seed_account_refreshes_rows_the_account_already_had():
     assert "COALESCE(p.owner_name, pc.owner_name)" in cur.statements[1][0]
 
 
+def test_ensure_from_hcad_writes_apn_with_the_shared_expression():
+    """The stored parcel_apn must be produced by pipeline/parcel_id.py::
+    sql_normalize_apn — the same expression that writes
+    hcad_parcel_centroids.acct — because fill_coords_from_centroids joins the
+    two on plain equality. This pins the shipped SQL to the parity-tested
+    expression so the two cannot drift apart silently."""
+    from pipeline.parcel_id import sql_normalize_apn
+    cur = _FakeCursor(rowcount=0)
+    parcels.ensure_from_hcad(_FakeConn(cur), "77449")
+    assert sql_normalize_apn("h.acct") in cur.sql
+
+
+def test_fill_coords_from_centroids_is_fill_only_plain_equality():
+    cur = _FakeCursor(rowcount=7)
+    assert parcels.fill_coords_from_centroids(_FakeConn(cur), "77449") == 7
+    assert cur.params == (parcels.CENTROID_CONFIDENCE, "77449")
+    # Fill-only: a coordinate promoted from a tenant's geocode is never touched.
+    assert "p.latitude IS NULL" in cur.sql
+    # Plain equality between the two pre-normalized stored forms. Wrapping
+    # either side in a function would abandon the centroid PK at join time.
+    assert "p.parcel_apn = c.acct" in cur.sql
+    assert "'hcad_centroid'" in cur.sql
+    # Provenance merges into enrichment_flags, same convention as every writer.
+    assert "|| jsonb_build_object" in cur.sql
+
+
+def test_fill_coords_leaves_geohash_to_the_tenant_backfill():
+    """geohash/h3 are derived from lat/lng by the per-account backfills
+    (pipeline/neighborhood.py, pipeline/geo_cluster_store.py) and promoted
+    back into the cache — the SQL fill must not write placeholders into them."""
+    cur = _FakeCursor(rowcount=0)
+    parcels.fill_coords_from_centroids(_FakeConn(cur), "77449")
+    assert "geohash" not in cur.sql
+    assert "h3_r8" not in cur.sql
+
+
+def test_seed_account_materialization_filters_default_off():
+    cur = _FakeCursor(rowcount=1)
+    parcels.seed_account(_FakeConn(cur), "77449", 7)
+    assert "owner_occupied IS TRUE" not in cur.sql
+    assert "COALESCE(p.year_built, 0) > 0" not in cur.sql
+
+
+def test_seed_account_owner_occupied_filter_is_literal_sql():
+    """The predicates are literal SQL so the bind-parameter shape is identical
+    whether the filters are on or off."""
+    cur = _FakeCursor(rowcount=1)
+    parcels.seed_account(_FakeConn(cur), "77449", 7, owner_occupied_only=True)
+    assert "AND p.owner_occupied IS TRUE" in cur.sql
+    assert cur.params == ["77449", 7, 7, 7]
+
+
+def test_seed_account_built_only_uses_the_confirmed_structure_rule():
+    """HCAD writes vacant-lot building_sqft as 0, so the test is > 0 rather
+    than IS NOT NULL — the same rule as pipeline/db.py's paid-candidate
+    ordering."""
+    cur = _FakeCursor(rowcount=1)
+    parcels.seed_account(_FakeConn(cur), "77449", 7, built_only=True)
+    assert "COALESCE(p.year_built, 0) > 0" in cur.sql
+    assert "COALESCE(p.square_footage, 0) > 0" in cur.sql
+    assert cur.params == ["77449", 7, 7, 7]
+
+
 def test_ensure_from_hcad_collapses_duplicate_addresses():
     """Several HCAD accounts can share a site address; feeding both to
     ON CONFLICT DO UPDATE raises 'cannot affect row a second time'."""
@@ -260,6 +323,8 @@ def test_seed_links_pre_existing_rows_before_seeding_them(monkeypatch):
     monkeypatch.setattr(seed_mod, "get_conn", lambda: _FakeConn(_FakeCursor()))
     monkeypatch.setattr(parcels, "ensure_from_hcad",
                         lambda c, z: calls.append("ensure") or 10)
+    monkeypatch.setattr(parcels, "fill_coords_from_centroids",
+                        lambda c, z: calls.append("fill") or 0)
     monkeypatch.setattr(parcels, "link_existing",
                         lambda c, z, a: calls.append("link") or 0)
     monkeypatch.setattr(parcels, "seed_account",
@@ -268,11 +333,16 @@ def test_seed_links_pre_existing_rows_before_seeding_them(monkeypatch):
                         lambda c, z: {"parcels": 10, "geocoded": 0})
 
     seed_mod._seed_from_parcels("77449", 1)
-    assert calls.index("link") < calls.index("seed"), f"link must precede seed: {calls}"
+    # ensure → fill → link → seed: coordinates land in the cache before the
+    # tenant materializes, so even a ZIP's first seed copies them into
+    # properties; link precedes seed for the parcel_id join in sync().
+    assert calls.index("ensure") < calls.index("fill") < calls.index("link") \
+        < calls.index("seed"), f"wrong order: {calls}"
 
 
 @pytest.mark.parametrize("call,expected_commits", [
     (lambda c: parcels.ensure_from_hcad(c, "77449"), 1),
+    (lambda c: parcels.fill_coords_from_centroids(c, "77449"), 1),
     (lambda c: parcels.promote(c, "77449", 1), 1),
     (lambda c: parcels.sync(c, "77449", 1), 1),
     (lambda c: parcels.link_existing(c, "77449", 1), 1),
