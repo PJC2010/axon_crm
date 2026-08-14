@@ -42,26 +42,26 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   applicationName: "Axon",
   title: {
-    default: "Axon — Lead intelligence CRM for Houston contractors",
+    default: "Axon — Territory intelligence for Harris County contractors",
     template: "%s — Axon",
   },
   description:
-    "Axon scores every property in your Greater Houston service area and hands you an exclusive ranked call list — plus quotes, invoicing, and pipeline in one CRM built for local contractors.",
+    "Axon ranks every property in your Harris County service area from appraisal, permit, equity, and storm data — and shows the signals behind every score, plus quotes, invoicing, and pipeline to work the list.",
   alternates: { canonical: "/" },
   openGraph: {
     type: "website",
     siteName: "Axon",
     locale: "en_US",
     url: "/",
-    title: "Axon — Lead intelligence CRM for Houston contractors",
+    title: "Axon — Territory intelligence for Harris County contractors",
     description:
-      "Exclusive, data-scored leads for Greater Houston contractors — built from Harris County records, permits, equity, and storm data. No shared leads. No contracts.",
+      "Know which properties are worth calling first. Ranked from Harris County appraisal, permit, equity, and storm data. Every score explained. No shared leads. No contracts.",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Axon — Lead intelligence CRM for Houston contractors",
+    title: "Axon — Territory intelligence for Harris County contractors",
     description:
-      "Exclusive, data-scored leads for Houston contractors plus the CRM to run every job.",
+      "Know which properties are worth calling first — ranked from local records, with every score explained.",
   },
   robots: {
     index: true,

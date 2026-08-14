@@ -607,7 +607,7 @@ export default function PreviewPage() {
             This could be your Monday morning.
           </p>
           <p style={{ margin: '0 0 18px', fontSize: 14, color: 'rgba(255,255,255,0.75)' }}>
-            Start free — your first scored lead list is minutes away. No credit card.
+            Start free — your first ranked property list is minutes away. No credit card.
           </p>
           <Link href="/signup" style={{
             display: 'inline-flex', alignItems: 'center', gap: 8, background: 'white',

@@ -3,7 +3,7 @@ import { ImageResponse } from 'next/og'
 // Social share card (1200×630). Generated at request time and wired into
 // <meta property="og:image"> automatically by the App Router. Uses the brand
 // palette from the design system: paper canvas, ink text, deep-ocean mark.
-export const alt = 'Axon — exclusive, data-scored leads for Greater Houston contractors'
+export const alt = 'Axon — territory intelligence for Harris County service contractors'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
@@ -42,10 +42,10 @@ export default function OpengraphImage() {
         {/* Headline */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           <div style={{ fontSize: 58, fontWeight: 700, color: INK, lineHeight: 1.15, maxWidth: 980 }}>
-            Know which homeowners in your ZIP need you
+            Know which properties are worth calling first
           </div>
           <div style={{ fontSize: 30, color: OCEAN, fontWeight: 600 }}>
-            Exclusive leads for Greater Houston contractors — plus the CRM to run every job
+            Territory intelligence for Harris County service contractors
           </div>
         </div>
 
@@ -61,7 +61,7 @@ export default function OpengraphImage() {
           }}
         >
           <div style={{ width: 44, height: 4, background: OCEAN, borderRadius: 2 }} />
-          No shared leads · No contracts · Free 14-day trial
+          Every score explained · No shared leads · No contracts
         </div>
       </div>
     ),

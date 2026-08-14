@@ -31,7 +31,7 @@ const MAX_POLLS = 18 // ~3 minutes, then we stop hammering
 export const WAITLIST_MAILTO =
   'mailto:admin@axonhtx.com?subject=Axon%20waitlist%3A%20add%20my%20area&body=My%20city%20%2F%20county%3A%20'
 
-/** The landing page's "see your ZIP's top leads — free" teaser (audit P1's
+/** The landing page's "preview your ZIP free" teaser (audit P1's
  *  highest-leverage build). Talks to the public, unauthenticated sample
  *  endpoint; everything it renders is masked server-side. */
 export function ZipSampleWidget() {
@@ -109,7 +109,7 @@ export function ZipSampleWidget() {
         </select>
         <button type="submit" className="lp-btn lp-btn-accent" disabled={state === 'loading'}>
           {state === 'loading' ? <Loader2 size={15} className="lp-spin" /> : <MapPin size={15} />}
-          Show my leads
+          Show My Ranked List
         </button>
       </form>
 
@@ -118,7 +118,7 @@ export function ZipSampleWidget() {
       {state === 'queued' && (
         <p className="lp-zip-note">
           <Loader2 size={13} className="lp-spin" /> First time anyone&apos;s asked about this ZIP —
-          we&apos;re scoring it from county records right now. This takes a couple of minutes;
+          Axon is scoring it from county records right now. This takes a couple of minutes;
           the list will appear here.
         </p>
       )}
@@ -128,11 +128,11 @@ export function ZipSampleWidget() {
           {/* single span: .lp-zip-note is a flex row (for the icon states), and
               bare inline children would each become their own flex item */}
           <span>
-            We can&apos;t sample that ZIP yet — free county data covers Harris County, TX today,
-            and more markets are on the way.{' '}
-            <a href={WAITLIST_MAILTO}>Join the waitlist for your area</a>,{' '}
+            That ZIP isn&apos;t available to preview — Axon currently serves Harris County, TX,
+            where the appraisal, permit, and storm data behind every score is local.{' '}
+            <a href={WAITLIST_MAILTO}>Join the waitlist</a> to bring Axon to your area,{' '}
             <a href="/preview">explore the live demo</a>, or{' '}
-            <a href="/signup">start free</a> and run any territory.
+            <a href="/signup">start free</a> and run your own territory.
           </span>
         </p>
       )}
@@ -174,7 +174,7 @@ export function ZipSampleWidget() {
               phone numbers included where available.
             </p>
             <a className="lp-btn lp-btn-accent" href="/signup">
-              Start free — see the full list <ArrowRight size={15} />
+              Start Free — See the Full List <ArrowRight size={15} />
             </a>
           </div>
         </div>

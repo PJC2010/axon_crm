@@ -129,15 +129,15 @@ export default function HcadDataPage() {
         <P>
           Nothing above is secret — that&apos;s the point. The problem is scale: nobody running a
           crew has time to read a million parcel records, cross-reference them with permits, and
-          decide who to call Monday morning. That&apos;s the part Axon does. We combine HCAD
+          decide who to call Monday morning. That&apos;s the part Axon does. Axon combines HCAD
           records with US Census income data, building permit filings, and NOAA storm reports,
-          score every property in your service area from 0–100, and grade it A, B, or C. You get
-          a ranked call list for your ZIPs — and every lead shows the data behind its score.
+          scores every property in your service area from 0–100, and grades it A through D. You
+          get a ranked call list for your ZIPs — and every property shows the data behind its score.
         </P>
         <P>
-          Because these leads are generated from public data — not bought from a form-fill
-          marketplace — the list is yours alone. Nobody else gets the same lead for $80, and
-          neither do four of your competitors.
+          Because the list is built from public data — not bought from a form-fill marketplace —
+          it belongs to your account alone. No shared inquiry, sold to you and several
+          competitors at the same time.
         </P>
 
         <H2>Common questions</H2>
