@@ -16,6 +16,7 @@ import { CustomFieldsSettings } from '@/components/CustomFieldsSettings'
 import { MessageTemplatesSettings } from '@/components/MessageTemplatesSettings'
 import { ImportOrdersModal } from '@/components/ImportOrdersModal'
 import { RescoreSection } from '@/components/RescoreSection'
+import { NonResidentialSection } from '@/components/NonResidentialSection'
 import { DailyDigestSection } from '@/components/DailyDigestSection'
 import { SmsAlertsSection } from '@/components/SmsAlertsSection'
 import { useEntitlements } from '@/hooks/useEntitlements'
@@ -522,6 +523,8 @@ function SettingsPage() {
           )}
         </section>
         )}
+
+        {hasModule('prospecting') && <NonResidentialSection />}
 
         {/* Custom fields (generic record model) */}
         <CustomFieldsSettings />

@@ -1200,3 +1200,27 @@ export function qboExportUrl(kind: 'invoices' | 'expenses', start?: string, end?
   if (token) params.set('token', token)
   return `${BASE}/export/qbo/${kind}?${params}`
 }
+
+// ── Non-residential audit ───────────────────────────────────────────────────
+
+import type { NonResidentialAudit, NonResidentialArchiveResult } from './types'
+
+export function getNonResidentialAudit(
+  zip?: string,
+): Promise<NonResidentialAudit> {
+  const params = new URLSearchParams()
+  if (zip) params.set('zip', zip)
+  const qs = params.toString()
+  return req(`/property-data/non-residential${qs ? `?${qs}` : ''}`)
+}
+
+export function archiveNonResidential(body: {
+  zip?: string
+  reasons?: string[]
+  dry_run?: boolean
+}): Promise<NonResidentialArchiveResult> {
+  return req('/property-data/non-residential/archive', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
