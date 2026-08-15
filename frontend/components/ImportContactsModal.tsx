@@ -1,11 +1,20 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Upload, X, Download, FileText, CheckCircle } from 'lucide-react'
 import { previewContactImport, runContactImport, downloadContactTemplate } from '@/lib/api'
 import type { ImportPreview, ImportResult } from '@/lib/types'
 
 interface Props {
   onImported: () => void
+  /** Controlled mode. Pass `open` (and `onOpenChange`) to drive the dialog from
+   *  a parent and suppress the built-in trigger button.
+   *
+   *  The mobile nav needs this: its menu unmounts the moment you tap anything in
+   *  it, so a self-contained dialog rendered inside that menu was destroyed by
+   *  the same tap that opened it — the Import button appeared to do nothing.
+   *  The parent keeps the state and renders the dialog outside the menu. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
 // Friendly labels for the mapping dropdown. Includes the internal tokens the
@@ -29,10 +38,29 @@ const FIELD_LABELS: Record<string, string> = {
 
 const STATUSES = ['new', 'contacted', 'qualified', 'quote_sent', 'won', 'lost', 'not_interested']
 
+// iOS and Android file pickers grey out CSV files when the accept list is just
+// ".csv,text/csv" — the OS reports them under assorted other types (Files.app
+// maps .csv to public.comma-separated-values-text, and a Sheets or Drive export
+// on Android commonly arrives as application/vnd.ms-excel or text/plain). Widen
+// the list so the file can actually be picked; the server validates the bytes
+// regardless of what the picker claims the type is.
+const CSV_ACCEPT = [
+  '.csv', '.txt',
+  'text/csv', 'text/comma-separated-values', 'text/plain',
+  'application/csv', 'application/vnd.ms-excel',
+].join(',')
+
 type Step = 'select' | 'map' | 'done'
 
-export function ImportContactsModal({ onImported }: Props) {
-  const [open, setOpen] = useState(false)
+export function ImportContactsModal({ onImported, open: openProp, onOpenChange }: Props) {
+  const controlled = openProp !== undefined
+  const [openState, setOpenState] = useState(false)
+  const open = controlled ? openProp : openState
+  const setOpen = useCallback((v: boolean) => {
+    if (!controlled) setOpenState(v)
+    onOpenChange?.(v)
+  }, [controlled, onOpenChange])
+
   const [step, setStep] = useState<Step>('select')
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<ImportPreview | null>(null)
@@ -44,13 +72,9 @@ export function ImportContactsModal({ onImported }: Props) {
   const [error, setError] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') close() }
-    if (open) document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [open])
-
-  function close() {
+  // Stable so the Escape listener below always closes the current dialog rather
+  // than a snapshot of it from the render that registered the listener.
+  const close = useCallback(() => {
     setOpen(false)
     setStep('select')
     setFile(null)
@@ -60,7 +84,13 @@ export function ImportContactsModal({ onImported }: Props) {
     setError(null)
     setDefaultVertical('')
     setDefaultStatus('new')
-  }
+  }, [setOpen])
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') close() }
+    if (open) document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open, close])
 
   async function handleFile(f: File) {
     setFile(f)
@@ -129,10 +159,12 @@ export function ImportContactsModal({ onImported }: Props) {
 
   return (
     <>
-      <button onClick={() => setOpen(true)} className="btn-secondary" style={{ fontSize: 13, padding: '5px 12px' }}>
-        <Upload size={13} strokeWidth={1.5} />
-        Import
-      </button>
+      {!controlled && (
+        <button onClick={() => setOpen(true)} className="btn-secondary" style={{ fontSize: 13, padding: '5px 12px' }}>
+          <Upload size={13} strokeWidth={1.5} />
+          Import
+        </button>
+      )}
 
       {open && (
         <>
@@ -146,7 +178,10 @@ export function ImportContactsModal({ onImported }: Props) {
             aria-labelledby="import-title"
             style={{
               position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-              zIndex: 301, width: 'min(640px, calc(100vw - 32px))', maxHeight: 'calc(100vh - 64px)',
+              // dvh, not vh: on mobile Safari 100vh is the URL-bar-less height,
+              // so the dialog overflowed the screen and its footer buttons sat
+              // under the browser chrome.
+              zIndex: 301, width: 'min(640px, calc(100vw - 32px))', maxHeight: 'calc(100dvh - 64px)',
               display: 'flex', flexDirection: 'column',
               background: 'var(--color-surface)', borderRadius: 'var(--radius-modal)',
               boxShadow: 'var(--shadow-modal)',
@@ -178,7 +213,7 @@ export function ImportContactsModal({ onImported }: Props) {
                   <input
                     ref={fileInput}
                     type="file"
-                    accept=".csv,text/csv"
+                    accept={CSV_ACCEPT}
                     style={{ display: 'none' }}
                     onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }}
                   />

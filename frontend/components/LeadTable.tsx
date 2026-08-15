@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight, Search, Settings, Archive, MoreVertical } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Search, Settings, Archive, MoreVertical, Upload } from 'lucide-react'
 import Link from 'next/link'
 import type { Lead, LeadFilters, LeadStatus } from '@/lib/types'
 import { archiveBulk, archiveByFilter } from '@/lib/api'
@@ -18,6 +18,11 @@ interface Props {
   onFiltersChange: (f: LeadFilters) => void
   onStatusChange: (id: number, s: LeadStatus) => void
   onToast?: (msg: string, variant?: 'success' | 'error') => void
+  /** Opens the CSV import dialog from the empty state. The only CTA there used
+   *  to be "Run your first import", which goes to the prospecting pipeline — so
+   *  a new account, whose whole screen is that empty state, had no visible route
+   *  to a CSV import at all on mobile, where the toolbar is behind a menu. */
+  onImportCsv?: () => void
 }
 
 const PAGE_SIZE = 50
@@ -34,7 +39,7 @@ const TH_STYLE: React.CSSProperties = {
   borderBottom: '1px solid var(--color-ink-200)',
 }
 
-export function LeadTable({ leads, total, filters, loading, onRowClick, onFiltersChange, onStatusChange, onToast }: Props) {
+export function LeadTable({ leads, total, filters, loading, onRowClick, onFiltersChange, onStatusChange, onToast, onImportCsv }: Props) {
   const { t, listColumns, categories, propertyBased } = useTerminology()
   const columns = resolveLeadColumns(listColumns, { t, categories, propertyBased })
   const page      = filters.page ?? 1
@@ -187,6 +192,22 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
               }}>
                 <Settings size={15} strokeWidth={1.5} /> Run your first import
               </Link>
+              {onImportCsv && (
+                <p style={{ margin: '14px 0 0', fontSize: 13, color: 'var(--color-ink-400)' }}>
+                  Already have a list?{' '}
+                  <button
+                    onClick={onImportCsv}
+                    style={{
+                      background: 'none', border: 'none', padding: '4px 2px', minHeight: 32,
+                      color: 'var(--color-accent)', font: 'inherit', fontWeight: 500,
+                      textDecoration: 'underline', cursor: 'pointer',
+                    }}
+                  >
+                    <Upload size={13} strokeWidth={1.5} style={{ display: 'inline', verticalAlign: -2, marginRight: 4 }} />
+                    Import a CSV
+                  </button>
+                </p>
+              )}
             </div>
           )}
           {!loading && leads.length === 0 && total > 0 && (
@@ -253,6 +274,22 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
                   }}>
                     <Settings size={14} strokeWidth={1.5} /> Run your first import
                   </Link>
+                  {onImportCsv && (
+                    <p style={{ margin: '14px 0 0', fontSize: 13, color: 'var(--color-ink-400)' }}>
+                      Already have a list?{' '}
+                      <button
+                        onClick={onImportCsv}
+                        style={{
+                          background: 'none', border: 'none', padding: '4px 2px',
+                          color: 'var(--color-accent)', font: 'inherit', fontWeight: 500,
+                          textDecoration: 'underline', cursor: 'pointer',
+                        }}
+                      >
+                        <Upload size={13} strokeWidth={1.5} style={{ display: 'inline', verticalAlign: -2, marginRight: 4 }} />
+                        Import a CSV
+                      </button>
+                    </p>
+                  )}
                 </td>
               </tr>
             )}

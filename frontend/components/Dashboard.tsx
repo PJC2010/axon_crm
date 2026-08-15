@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { RefreshCw, AlertCircle, Settings, LogOut, Menu, X } from 'lucide-react'
+import { RefreshCw, AlertCircle, Settings, LogOut, Menu, X, Upload } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getLeads, getLead, getLeadByNumber } from '@/lib/api'
@@ -33,6 +33,9 @@ export function Dashboard() {
   const [selected, setSelected] = useState<Lead | null>(null)
   const [wide, setWide]         = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  // Owned here rather than inside the mobile menu: tapping the menu closes it,
+  // which unmounts everything in it — including a dialog it had just opened.
+  const [importOpen, setImportOpen] = useState(false)
   const { toasts, show: showToast, dismiss: dismissToast } = useToast()
 
   useEffect(() => {
@@ -229,9 +232,21 @@ export function Dashboard() {
             {/* Lead actions */}
             <div style={{ borderTop: '1px solid var(--color-ink-100)', margin: '6px 0', paddingTop: 10 }}>
               <p className="t-eyebrow" style={{ margin: '0 0 8px', padding: '0 14px' }}>Lead actions</p>
-              <div onClick={() => setMenuOpen(false)} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: '0 14px' }}>
-                <ImportContactsModal onImported={() => fetchLeads(filters)} />
-                <ExportButton filters={filters} />
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: '0 14px' }}>
+                {/* Opens the dialog that lives outside this menu, then closes
+                    the menu. Rendering the dialog here instead would unmount it
+                    on the same tap. */}
+                <button
+                  onClick={() => { setImportOpen(true); setMenuOpen(false) }}
+                  className="btn-secondary"
+                  style={{ fontSize: 13, padding: '5px 12px' }}
+                >
+                  <Upload size={13} strokeWidth={1.5} />
+                  Import
+                </button>
+                <div onClick={() => setMenuOpen(false)}>
+                  <ExportButton filters={filters} />
+                </div>
               </div>
             </div>
 
@@ -251,6 +266,14 @@ export function Dashboard() {
           </nav>
         </>
       )}
+
+      {/* Mobile import dialog. Deliberately a sibling of the nav, not a child:
+          the menu unmounts on tap and would take the dialog with it. */}
+      <ImportContactsModal
+        onImported={() => fetchLeads(filters)}
+        open={importOpen}
+        onOpenChange={setImportOpen}
+      />
 
       <TerritoryFilter filters={filters} onChange={f => setFilters({ ...f, page: 1 })} />
 
@@ -285,6 +308,7 @@ export function Dashboard() {
           onFiltersChange={setFilters}
           onStatusChange={handleStatusChange}
           onToast={showToast}
+          onImportCsv={() => setImportOpen(true)}
         />
       </main>
 
