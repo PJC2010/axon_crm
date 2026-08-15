@@ -65,6 +65,7 @@ _NEVER_SHARED = frozenset({
     "owner_age", "length_of_residence_years", "est_household_income", "life_stage",
     "status", "assigned_to", "lead_source", "vertical", "lead_score",
     "score_grade", "score_updated_at", "estimated_job_value", "archived_at",
+    "exclusion_reason",
 })
 
 assert not (set(SHARED_COLS) & _NEVER_SHARED), "shared/never-shared overlap"

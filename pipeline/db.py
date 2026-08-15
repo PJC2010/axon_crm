@@ -88,8 +88,10 @@ ALL_COLS = [
     # Parcel identity + RentCast ride-along features (migration 068)
     "parcel_apn", "roof_type", "foundation_type", "heating_type", "cooling_type",
     "owner_type",
-    # County land-use class + why a lead was auto-excluded (migration 072)
-    "state_class", "exclusion_reason",
+    # County land-use class (migration 072). `exclusion_reason` is deliberately
+    # absent: it is tenant CRM state written only by pipeline/property_audit.py,
+    # never by an enrichment upsert.
+    "state_class",
     # Lead attribution — rep ownership + acquisition source (migration 030)
     "assigned_to", "lead_source",
     # Storm/hail enrichment (migration 027)
