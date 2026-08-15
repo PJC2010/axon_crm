@@ -288,3 +288,48 @@ def test_archive_generated_sql_has_no_percent_metacharacter():
     archive(_FakeConn(cur), 7)
     sql = cur.all_sql()
     assert "%" not in sql.replace("%s", "")
+
+
+# ── CLI ──────────────────────────────────────────────────────────────────────
+
+def test_cli_report_renders_without_a_database(capsys):
+    """The report is what an operator reads before deciding to archive, so a
+    formatting error in it is a correctness bug, not cosmetics."""
+    from pipeline.property_audit import _print_audit
+
+    sample = {"id": 9, "account_number": "C-27334",
+              "address": "0 BARRYKNOLL LN 656", "zip": "77024",
+              "owner_name": "MEMORIAL CITY MALL LP", "property_type": None,
+              "state_class": None, "square_footage": 147089, "year_built": 2001,
+              "estimated_value": 13_465_295, "lead_score": 62.0,
+              "score_grade": "B", "status": "new", "reason_count": 3}
+    cur = _FakeCursor(_audit_results(
+        totals={"properties": 12_403, "flagged": 1_180, "excludable": 947,
+                "n_commercial_owner": 214, "n_no_situs": 806},
+        samples=[sample],
+        by_zip=[{"zip": "77024", "properties": 12_403, "excludable": 947}],
+        billable=641, protected=12,
+    ))
+    _print_audit(audit(_FakeConn(cur), 1), 1)
+    out = capsys.readouterr().out
+    assert "12,403 live leads checked" in out
+    assert "947 archivable" in out
+    assert "Safe to archive" in out
+    assert "MEMORIAL CITY MALL LP" in out
+    assert "commercial_owner" in out
+    # The counts deliberately do not sum; saying so stops the arithmetic
+    # looking broken.
+    assert "do not sum" in out
+    assert "would still be billed" in out
+
+
+def test_cli_report_handles_a_clean_account(capsys):
+    """No flagged rows must not mean a traceback or an empty screen."""
+    from pipeline.property_audit import _print_audit
+
+    cur = _FakeCursor(_audit_results(
+        totals={"properties": 500, "flagged": 0, "excludable": 0}))
+    _print_audit(audit(_FakeConn(cur), 1), 1)
+    out = capsys.readouterr().out
+    assert "500 live leads checked" in out
+    assert "0 archivable" in out

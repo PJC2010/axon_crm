@@ -366,3 +366,102 @@ def archive(conn, account_id: int, *, zip_code: str | None = None,
     return {"archived_count": count, "would_archive": count,
             "reasons": picked, "dry_run": False, "zip": zip_code,
             "ids": ids, "ids_truncated": count > len(ids)}
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+def _print_audit(report: dict, account_id: int) -> None:
+    scope = report["scope"]["zip"] or "all ZIPs"
+    print(f"\nNon-residential audit — account {account_id}, {scope}")
+    print(f"  {report['properties']:,} live leads checked, "
+          f"{report['flagged']:,} flagged, {report['excludable']:,} archivable\n")
+
+    for tier, heading in ((EXCLUDE, "Safe to archive — cannot be a dwelling"),
+                          ("review", "Worth a look — a real home can look like this")):
+        rows = [(k, v) for k, v in report["by_reason"].items()
+                if v["tier"] == tier and v["count"]]
+        if not rows:
+            continue
+        print(f"  {heading}")
+        for key, r in sorted(rows, key=lambda kv: -kv[1]["count"]):
+            print(f"    {r['count']:>8,}  {key:<26} {r['label']}")
+        print()
+    # Rows trip several reasons at once, so the counts above do not sum to the
+    # total — say so rather than letting the arithmetic look broken.
+    print("  (a row usually trips several reasons, so these do not sum)\n")
+
+    if report["protected"]:
+        print(f"  {report['protected']:,} archivable lead(s) skipped — a rep has "
+              f"already worked them\n")
+    if report["spend_at_risk"]["billable_rows"]:
+        print(f"  {report['spend_at_risk']['billable_rows']:,} flagged lead(s) "
+              f"would still be billed to a data provider on the next run\n")
+    if report["already_archived"]:
+        print(f"  {report['already_archived']:,} previously archived by this rule\n")
+
+    if report["by_zip"]:
+        print("  Worst ZIPs:")
+        for b in report["by_zip"][:10]:
+            print(f"    {b['zip']:>10}  {b['excludable']:>7,} / {b['properties']:,}")
+        print()
+
+    if report["samples"]:
+        print("  Examples:")
+        for s in report["samples"]:
+            print(f"    {s['address'] or '(no address)'}, {s['zip'] or '?'}")
+            bits = [s.get("owner_name")]
+            if s.get("square_footage"):
+                bits.append(f"{s['square_footage']:,} sqft")
+            if s.get("estimated_value"):
+                bits.append(f"${s['estimated_value']:,}")
+            if s.get("score_grade"):
+                bits.append(f"grade {s['score_grade']}")
+            print(f"      {' · '.join(b for b in bits if b)}")
+            print(f"      → {', '.join(s['reasons'])}")
+        print()
+
+
+def main() -> None:
+    import argparse
+
+    from pipeline.db import get_conn
+
+    ap = argparse.ArgumentParser(
+        description="Find and archive leads that are not homes")
+    ap.add_argument("--account-id", type=int, required=True, dest="account_id")
+    ap.add_argument("--zip", default=None,
+                    help="Restrict to one ZIP (default: every ZIP)")
+    ap.add_argument("--archive", action="store_true",
+                    help="Archive the EXCLUDE-tier rows. Without this the "
+                         "command only reports, and writes nothing.")
+    ap.add_argument("--reasons", default=None,
+                    help="Comma-separated reasons to act on (default: every "
+                         f"exclude-tier reason: {','.join(EXCLUDE_REASONS)})")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="With --archive: count what would be archived, write nothing")
+    args = ap.parse_args()
+
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s  %(levelname)-7s  %(message)s",
+                        datefmt="%H:%M:%S")
+    conn = get_conn()
+    try:
+        _print_audit(audit(conn, args.account_id, zip_code=args.zip),
+                     args.account_id)
+        if not args.archive:
+            return
+        reasons = ([r.strip() for r in args.reasons.split(",") if r.strip()]
+                   if args.reasons else None)
+        result = archive(conn, args.account_id, zip_code=args.zip,
+                         reasons=reasons, dry_run=args.dry_run)
+        if result["dry_run"]:
+            print(f"  Would archive {result['would_archive']:,} lead(s). "
+                  f"Nothing written.\n")
+        else:
+            print(f"  Archived {result['archived_count']:,} lead(s).\n")
+    finally:
+        conn.close()
+
+
+if __name__ == "__main__":
+    main()

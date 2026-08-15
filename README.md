@@ -512,6 +512,15 @@ and the number of flagged rows a data provider would still bill you for on the
 next run. `POST /api/property-data/non-residential/archive` acts on it, and the
 Settings → Pipeline tab wraps both.
 
+Run it from the command line against a real database:
+
+```bash
+python -m pipeline.property_audit --account-id 1                  # report only
+python -m pipeline.property_audit --account-id 1 --zip 77024
+python -m pipeline.property_audit --account-id 1 --archive --dry-run
+python -m pipeline.property_audit --account-id 1 --archive
+```
+
 Reasons come in **two tiers**, and only one is ever actioned automatically:
 
 | Tier | Reasons | Behaviour |
