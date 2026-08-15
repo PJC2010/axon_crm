@@ -88,6 +88,8 @@ REASON_TIERS: dict[str, str] = {
     "non_residential_type": EXCLUDE,
     "oversized_structure": EXCLUDE,
     "no_situs":            EXCLUDE,
+    "county_exempt":       REVIEW,
+    "possible_commercial_owner": REVIEW,
     "large_structure":     REVIEW,
     "no_structure":        REVIEW,
 }
@@ -95,6 +97,10 @@ REASON_TIERS: dict[str, str] = {
 REASON_LABELS: dict[str, str] = {
     "county_class":        "County classifies this parcel as non-residential",
     "commercial_owner":    "Owner name identifies a business or institution",
+    "county_exempt":       ("County records this parcel as tax-exempt — a "
+                            "church or school, or a disabled veteran's home"),
+    "possible_commercial_owner": ("Owner name may identify a business — or may "
+                                  "be a surname"),
     "non_residential_type": "Property type is not residential",
     "oversized_structure": f"Building is {NONRESIDENTIAL_MIN_SQFT:,}+ sqft — larger than any dwelling",
     "no_situs":            "No street address — parcel is numbered 0 on the county roll",
@@ -123,12 +129,23 @@ REVIEW_REASONS = [r for r, t in REASON_TIERS.items() if t == REVIEW]
 #   L  personal property, commercial/industrial
 #   M  mobile homes                        ← residential (Manufactured)
 #   S  special inventory (dealer stock)
-#   X  totally exempt (gov't, church, school)
+#   X  totally exempt  ← NOT a use category. See below.
 #
 # Residential is the allowlist; the rest of the alphabet is not automatically
 # commercial, so only these prefixes trigger the reason.
 RESIDENTIAL_STATE_CLASS_PREFIXES = ("A", "B", "E", "M")
-COMMERCIAL_STATE_CLASS_PREFIXES = ("F", "J", "L", "S", "X")
+COMMERCIAL_STATE_CLASS_PREFIXES = ("F", "J", "L", "S")
+
+# X is deliberately NOT in the list above. It is a *tax status* — "Totally
+# Exempt Property" — not a statement about what stands on the land, and it
+# covers 100%-disabled-veteran residence homesteads (Texas Tax Code 11.131),
+# church-owned parsonages and charitable housing. Every one of those is a house
+# with a roof, and Harris County has a large veteran population, so treating X
+# as commercial would archive those homeowners the moment the HCAD load lands —
+# and present it to the operator as county-verified. It carries real signal
+# (government, school and church parcels are also X), so it is reported at
+# REVIEW tier and never acted on automatically.
+EXEMPT_STATE_CLASS_PREFIXES = ("X",)
 
 
 # ── Signal 2: owner names that name a building, not a household ──────────────
@@ -141,24 +158,48 @@ COMMERCIAL_STATE_CLASS_PREFIXES = ("F", "J", "L", "S", "X")
 # a house we want to sell to — a rental held in an LLC, an estate in probate, a
 # builder's spec home. An entity suffix says how title is held, not what was
 # built on the land.
+# Split by one question only: could this word plausibly be a person's surname?
+#
+# HCAD writes owner names LAST-FIRST ("CAPUCHINA LIZETTE", "LANGLEY DONNA M" —
+# see pipeline/owner.py), so a surname is a whole-word token in exactly the
+# position this rule inspects. "CHURCH JOHN A", "PARISH MARY E", "PLAZA JOSE L",
+# "CHAPEL DIANE" and "INN SOO KIM" are homeowners, and an earlier version of
+# this list archived every one of them. Guarding against substring collisions
+# (MALLORY ≠ MALL) is not enough when the token IS the whole word.
+#
+# So: words that are essentially never American surnames are actionable, and
+# words that are also surnames are reported at REVIEW tier for a human. The
+# split costs some automation on genuine churches and hotels; it does not cost
+# anyone their customers.
 COMMERCIAL_OWNER_TOKENS = frozenset({
     # Retail / hospitality
-    "mall", "malls", "plaza", "shoppes", "outlets",
-    "hotel", "hotels", "motel", "inn", "restaurant", "cafeteria",
+    "mall", "malls", "shoppes", "outlets", "motel",
     # Industrial / logistics
     "warehouse", "warehouses", "refinery", "refining", "terminals",
-    "distribution", "logistics", "manufacturing", "foundry",
+    "distribution", "logistics", "manufacturing",
     # Worship
-    "church", "churches", "chapel", "ministries", "ministry", "parish",
-    "synagogue", "mosque", "congregation", "diocese", "archdiocese",
-    "tabernacle", "fellowship",
+    "ministries", "ministry", "synagogue", "mosque", "archdiocese",
+    "tabernacle", "iglesia", "templo",
     # Education / civic / medical
-    "isd", "hospital", "clinic", "university", "college", "seminary",
-    "academy", "cemetery", "crematory", "mortuary", "funeral",
+    "isd", "crematory", "mortuary",
     # Infrastructure / utility
-    "pipeline", "railroad", "railway", "telecom", "telephone", "electric",
-    "utilities", "waterworks", "aviation", "airport", "airlines",
+    "pipeline", "railroad", "railway", "telecom", "utilities", "waterworks",
+    "airlines",
 })
+
+# Real signal, but each is also a surname carried by real homeowners. Reported,
+# never archived automatically.
+AMBIGUOUS_OWNER_TOKENS = frozenset({
+    "plaza", "hotel", "hotels", "inn", "restaurant", "cafeteria", "foundry",
+    "church", "churches", "chapel", "parish", "congregation", "diocese",
+    "fellowship", "temple", "abbey", "bishop", "priest",
+    "hospital", "clinic", "university", "college", "seminary", "academy",
+    "cemetery", "funeral", "telephone", "electric", "aviation", "airport",
+    "towers", "storage", "school",
+})
+
+assert not (COMMERCIAL_OWNER_TOKENS & AMBIGUOUS_OWNER_TOKENS), \
+    "a token must be actionable or ambiguous, not both"
 
 # Multi-word phrases, matched on whole-word boundaries exactly like the single
 # tokens above. A phrase is specific enough to be worth having where a bare word
@@ -183,11 +224,11 @@ COMMERCIAL_OWNER_PHRASES = (
 
 
 def _owner_looks_commercial(owner_name) -> bool:
-    """True when an owner name identifies a building or institution, not a party.
+    """True when an owner name unambiguously identifies a business or institution.
 
-    Whole-word membership for single tokens, substring for the multi-word
-    phrases (which are specific enough not to collide). Both run against
-    `addr.normalize`'s output so punctuation and casing cannot defeat them.
+    Whole-word membership for single tokens and for the multi-word phrases
+    (padded on both sides), both against `addr.normalize`'s output so
+    punctuation and casing cannot defeat them.
     """
     key = normalize(str(owner_name or ""))
     if not key:
@@ -196,6 +237,14 @@ def _owner_looks_commercial(owner_name) -> bool:
     if any(f" {phrase} " in padded for phrase in COMMERCIAL_OWNER_PHRASES):
         return True
     return bool(set(key.split()) & COMMERCIAL_OWNER_TOKENS)
+
+
+def _owner_maybe_commercial(owner_name) -> bool:
+    """True for the words that are institutions *and* surnames — review only."""
+    key = normalize(str(owner_name or ""))
+    if not key:
+        return False
+    return bool(set(key.split()) & AMBIGUOUS_OWNER_TOKENS)
 
 
 # ── Signal 3: property_type is a known non-residential type ──────────────────
@@ -256,9 +305,13 @@ def classify(row: dict) -> list[str]:
     state_class = (row.get("state_class") or "").strip().upper()
     if state_class and state_class.startswith(COMMERCIAL_STATE_CLASS_PREFIXES):
         reasons.append("county_class")
+    elif state_class and state_class.startswith(EXEMPT_STATE_CLASS_PREFIXES):
+        reasons.append("county_exempt")
 
     if _owner_looks_commercial(row.get("owner_name")):
         reasons.append("commercial_owner")
+    elif _owner_maybe_commercial(row.get("owner_name")):
+        reasons.append("possible_commercial_owner")
 
     if _type_looks_non_residential(row.get("property_type")):
         reasons.append("non_residential_type")
@@ -273,13 +326,23 @@ def classify(row: dict) -> list[str]:
         # estate deletes the best lead in the book.
         reasons.append("large_structure")
 
-    if not has_situs(row.get("address")):
+    # An address is required before its shape can say anything. `properties` is
+    # not only the parcel table — it is also the contact book: address is
+    # nullable (migration 0018) and four production paths create leads with no
+    # address at all (inbound call, inbound SMS, public web intake, address-less
+    # CSV contact import). addr.has_situs(None) is False, so testing it directly
+    # flagged every one of those, and a single click on the archive endpoint
+    # would have wiped an account's entire inbound book. A missing address is
+    # unknown, not a zero house number.
+    address = (row.get("address") or "").strip()
+    if address and not has_situs(address):
         reasons.append("no_situs")
 
-    # Vacant: no year and no structure. HCAD writes a vacant lot's building_sqft
-    # as 0 rather than NULL, so both spellings of "nothing here" count — the
-    # same rule parcels.seed_account's `built_only` filter applies.
-    if not int(row.get("year_built") or 0) and not int(row.get("square_footage") or 0):
+    # Vacant: no year and no structure — but, for the same reason, only for rows
+    # that describe a parcel at all. An address-less contact has neither field
+    # and is not vacant land.
+    if address and not int(row.get("year_built") or 0) \
+            and not int(row.get("square_footage") or 0):
         reasons.append("no_structure")
 
     return [r for r in ALL_REASONS if r in reasons]
@@ -339,6 +402,10 @@ def sql_reason(reason: str, prefix: str = "") -> str:
         classes = ", ".join(f"'{c}'" for c in COMMERCIAL_STATE_CLASS_PREFIXES)
         return f"(LEFT(UPPER(TRIM(COALESCE({sclass}, ''))), 1) IN ({classes}))"
 
+    if reason == "county_exempt":
+        classes = ", ".join(f"'{c}'" for c in EXEMPT_STATE_CLASS_PREFIXES)
+        return f"(LEFT(UPPER(TRIM(COALESCE({sclass}, ''))), 1) IN ({classes}))"
+
     if reason == "commercial_owner":
         norm = sql_normalize(owner)
         # strpos rather than LIKE, deliberately. psycopg2 interpolates the query
@@ -361,6 +428,16 @@ def sql_reason(reason: str, prefix: str = "") -> str:
         )
         return f"(({phrases}) OR ({words}))"
 
+    if reason == "possible_commercial_owner":
+        norm = sql_normalize(owner)
+        maybe = " OR ".join(
+            f"strpos(' ' || {norm} || ' ', ' {t} ') > 0"
+            for t in sorted(AMBIGUOUS_OWNER_TOKENS)
+        )
+        # `elif` in classify(), so the two reasons stay mutually exclusive and
+        # the audit's per-reason counts do not double-count one owner name.
+        return f"(({maybe}) AND NOT {sql_reason('commercial_owner', prefix)})"
+
     if reason == "non_residential_type":
         if not SEED_PROPERTY_TYPES or "*" in SEED_PROPERTY_TYPES:
             return "(FALSE)"
@@ -374,11 +451,18 @@ def sql_reason(reason: str, prefix: str = "") -> str:
         return (f"(COALESCE({sqft}, 0) >= {int(NONRESIDENTIAL_REVIEW_SQFT)}"
                 f" AND COALESCE({sqft}, 0) < {int(NONRESIDENTIAL_MIN_SQFT)})")
 
+    # Both parcel-shape reasons require an address to exist. `properties` is
+    # also the contact book — address is nullable and inbound call/SMS/web-form
+    # leads carry none — and sql_has_situs is FALSE for NULL, so without this
+    # guard every address-less lead in the account was flagged EXCLUDE.
+    present = f"({address} IS NOT NULL AND TRIM({address}) <> '')"
+
     if reason == "no_situs":
-        return f"(NOT {sql_has_situs(address)})"
+        return f"({present} AND NOT {sql_has_situs(address)})"
 
     if reason == "no_structure":
-        return f"(COALESCE({year}, 0) = 0 AND COALESCE({sqft}, 0) = 0)"
+        return (f"({present} AND COALESCE({year}, 0) = 0"
+                f" AND COALESCE({sqft}, 0) = 0)")
 
     raise AssertionError(f"unhandled reason: {reason}")   # pragma: no cover
 

@@ -61,6 +61,15 @@ SAMPLE_LIMIT = 10
 # of rows. `ids_truncated` says when the list is partial.
 _MAX_RETURNED_IDS = 1000
 
+# A lead a human has already worked is never archived automatically, however the
+# rule reads it. A rep who moved a lead off `new`, or took ownership of it, has
+# made a judgment the classifier does not get to overrule in bulk — and the
+# classifier can be wrong about a real customer whose surname happens to be
+# Church, or whose address was typed without a house number. Those rows are
+# still reported by the audit (as `protected`), and can still be archived one at
+# a time through the existing per-lead endpoint.
+UNWORKED_ONLY_SQL = "status = 'new' AND assigned_to IS NULL"
+
 # Columns shown in a sample row — the ones an operator needs to recognise a
 # parcel, matching the property-signals panel on the lead page.
 #
@@ -212,6 +221,18 @@ def audit(conn, account_id: int, *, zip_code: str | None = None,
         )
         billable = (cur.fetchone() or {}).get("billable") or 0
 
+        # Excludable rows a human has already worked, which archive() will not
+        # touch. Reported so `excludable` and `archived_count` reconcile rather
+        # than looking like the cleanup silently under-ran.
+        cur.execute(
+            f"""
+            SELECT COUNT(*) AS n FROM properties
+            WHERE {scope_sql} AND {any_excl} AND NOT ({UNWORKED_ONLY_SQL})
+            """,
+            scope_params,
+        )
+        protected = (cur.fetchone() or {}).get("n") or 0
+
         # Rows a previous archive already dealt with, so a re-run shows the
         # cleanup held rather than silently reporting zero and looking like it
         # never ran.
@@ -255,6 +276,8 @@ def audit(conn, account_id: int, *, zip_code: str | None = None,
         # Excludable rows still in the paid candidate pool — vendor calls the
         # next run would spend on parcels nobody lives at.
         "spend_at_risk": {"billable_rows": int(billable)},
+        # Excludable, but a rep has worked it — archive() leaves these alone.
+        "protected": int(protected),
         "already_archived": int(already_archived),
         "scope": {"zip": zip_code},
     }
@@ -269,6 +292,10 @@ def archive(conn, account_id: int, *, zip_code: str | None = None,
     ignored — they exist precisely because a legitimate home can look like that,
     so acting on one has to be a deliberate, explicit request that this function
     does not currently accept.
+
+    Leads a human has already worked (`status` moved off `new`, or an owner
+    assigned) are never touched — see UNWORKED_ONLY_SQL. The audit reports those
+    separately as `protected`.
 
     `dry_run=True` counts what would be archived and writes nothing.
 
@@ -288,7 +315,8 @@ def archive(conn, account_id: int, *, zip_code: str | None = None,
         )
 
     scope_sql, scope_params = _scope(account_id, zip_code)
-    predicate = "(" + " OR ".join(sql_reason(r) for r in picked) + ")"
+    predicate = ("(" + " OR ".join(sql_reason(r) for r in picked) + ")"
+                 + f" AND {UNWORKED_ONLY_SQL}")
 
     if dry_run:
         with conn.cursor() as cur:

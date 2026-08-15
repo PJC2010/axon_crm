@@ -66,14 +66,15 @@ class _FakeConn:
         self.commits += 1
 
 
-def _audit_results(totals=None, samples=(), by_zip=(), billable=0, archived=0):
-    """The five result sets audit() consumes, in order."""
+def _audit_results(totals=None, samples=(), by_zip=(), billable=0, archived=0,
+                   protected=0):
+    """The six result sets audit() consumes, in order."""
     base = {"properties": 100, "flagged": 7, "excludable": 5}
     base.update({f"n_{r}": 0 for r in
                  list(EXCLUDE_REASONS) + list(REVIEW_REASONS)})
     base.update(totals or {})
     return [[base], list(samples), list(by_zip),
-            [{"billable": billable}], [{"n": archived}]]
+            [{"billable": billable}], [{"n": protected}], [{"n": archived}]]
 
 
 # ── Scoping ──────────────────────────────────────────────────────────────────
@@ -128,7 +129,7 @@ def test_audit_return_shape():
         totals={"properties": 12_403, "flagged": 900, "excludable": 812,
                 "n_commercial_owner": 300},
         by_zip=[{"zip": "77024", "properties": 12_403, "excludable": 812}],
-        billable=640, archived=3,
+        billable=640, archived=3, protected=11,
     ))
     out = audit(_FakeConn(cur), 1)
     assert out["properties"] == 12_403
@@ -139,6 +140,7 @@ def test_audit_return_shape():
     assert out["by_reason"]["no_structure"]["tier"] == "review"
     assert out["by_zip"][0]["zip"] == "77024"
     assert out["spend_at_risk"]["billable_rows"] == 640
+    assert out["protected"] == 11
     assert out["already_archived"] == 3
     assert out["scope"] == {"zip": None}
 
@@ -203,6 +205,26 @@ def test_archive_releases_the_paid_budget_slot():
     cur = _FakeCursor([[]], rowcount=0)
     archive(_FakeConn(cur), 7)
     assert "enrichment_selected = FALSE" in cur.all_sql()
+
+
+def test_archive_never_touches_a_worked_lead():
+    """A rep who moved a lead off `new`, or took ownership of it, has made a
+    judgment the classifier does not get to overrule in bulk. The classifier can
+    be wrong about a real customer named CHURCH or one whose address was typed
+    without a house number, and those are exactly the rows a rep has worked.
+    """
+    cur = _FakeCursor([[]], rowcount=0)
+    archive(_FakeConn(cur), 7)
+    sql = cur.all_sql()
+    assert "status = 'new'" in sql
+    assert "assigned_to IS NULL" in sql
+
+
+def test_dry_run_applies_the_same_worked_lead_guard():
+    """A dry run that counted rows the real call would skip would over-promise."""
+    cur = _FakeCursor([[(4,)]])
+    archive(_FakeConn(cur), 7, dry_run=True)
+    assert "status = 'new'" in cur.all_sql()
 
 
 def test_archive_is_account_scoped():

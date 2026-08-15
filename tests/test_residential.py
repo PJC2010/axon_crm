@@ -86,14 +86,16 @@ CASES: list[tuple[str, dict, set[str]]] = [
 
     # ── Parcels that must be flagged ─────────────────────────────────────────
     ("county class F1", _row(state_class="F1"), {"county_class"}),
-    ("county class X exempt", _row(state_class="X3"), {"county_class"}),
     ("county class A1 is residential", _row(state_class="A1"), set()),
     ("county class B multifamily kept", _row(state_class="B2"), set()),
     ("school district", _row(owner_name="HOUSTON ISD"), {"commercial_owner"}),
     ("municipality", _row(owner_name="CITY OF HOUSTON"), {"commercial_owner"}),
-    ("church", _row(owner_name="FIRST BAPTIST CHURCH"), {"commercial_owner"}),
     ("self storage", _row(owner_name="ACME SELF STORAGE LTD"),
      {"commercial_owner"}),
+    # Institution words that are ALSO surnames land in REVIEW, not EXCLUDE.
+    ("church", _row(owner_name="FIRST BAPTIST CHURCH"),
+     {"possible_commercial_owner"}),
+    ("county exempt", _row(state_class="X3"), {"county_exempt"}),
     # "Apartment" is deliberately NOT excludable: RentCast uses it for both a
     # unit and a building, and a duplex is a roof we sell to.
     ("apartment type", _row(property_type="Apartment"), set()),
@@ -115,6 +117,80 @@ IDS = [c[0] for c in CASES]
 @pytest.mark.parametrize("label,row,expected", CASES, ids=IDS)
 def test_classify(label, row, expected):
     assert set(classify(row)) == expected
+
+
+# ── Regressions: rows an earlier version of this rule would have archived ────
+# Each of these is a real, paying-customer-shaped row. They are kept as their own
+# named tests rather than fixtures so a failure says exactly who got deleted.
+
+ADDRESSLESS_LEADS = [
+    ("inbound call", {"address": None, "contact_name": "Maria Garcia"}),
+    ("inbound sms", {"address": None, "contact_phone": "7135551234"}),
+    ("web intake", {"address": "", "contact_email": "bob@example.com"}),
+    ("csv contact", {"address": None, "owner_name": "GARCIA MARIA"}),
+]
+
+
+@pytest.mark.parametrize("label,row", ADDRESSLESS_LEADS,
+                         ids=[c[0] for c in ADDRESSLESS_LEADS])
+def test_address_less_leads_are_never_flagged(label, row):
+    """`properties` is the contact book as well as the parcel table.
+
+    address is nullable (migration 0018) and four production paths create leads
+    with none: inbound call (twilio_voice), inbound SMS (twilio_inbound), the
+    public web form (public_intake) and address-less CSV contacts (imports).
+    addr.has_situs(None) is False, so testing it directly flagged every one of
+    them EXCLUDE — one click on the archive endpoint would have wiped an
+    account's entire inbound book.
+    """
+    assert classify(row) == []
+    assert is_non_residential(row) is False
+
+
+# HCAD writes owner names LAST-FIRST, so a surname is a whole-word token in
+# exactly the position the owner rule inspects.
+SURNAME_HOMEOWNERS = [
+    ("CHURCH JOHN A", "4102 INKER ST"),
+    ("PARISH MARY E", "11 W FRIAR TUCK"),
+    ("PLAZA JOSE L", "7710 ELMHURST"),
+    ("CHAPEL DIANE", "902 OAK ST"),
+    ("INN SOO KIM", "9 INWOOD DR"),
+    ("TEMPLE ROBERT", "44 PINE"),
+    ("BISHOP ANNE M", "8 CEDAR CT"),
+    ("HOSPITAL ANA", "17 ELM"),
+]
+
+
+@pytest.mark.parametrize("owner,address", SURNAME_HOMEOWNERS,
+                         ids=[o for o, _ in SURNAME_HOMEOWNERS])
+def test_homeowners_with_institutional_surnames_are_not_archived(owner, address):
+    """Guarding against substring collisions (MALLORY != MALL) is not enough
+    when the token IS the whole word. These are homeowners."""
+    row = _row(address=address, owner_name=owner,
+               square_footage=1800, year_built=1960)
+    assert is_non_residential(row) is False, owner
+    assert classify(row) == ["possible_commercial_owner"], owner
+
+
+def test_exempt_class_does_not_archive_a_disabled_veterans_home():
+    """Texas state class X is a TAX STATUS, not a use category. It covers
+    100%-disabled-veteran residence homesteads (Tax Code 11.131), parsonages and
+    charitable housing — all houses with roofs, in a county with a large veteran
+    population."""
+    vet = _row(address="5514 ARBOLES DR", owner_name="RAMIREZ LUIS",
+               square_footage=2050, year_built=1979, state_class="X")
+    assert classify(vet) == ["county_exempt"]
+    assert is_non_residential(vet) is False
+
+
+def test_owner_reasons_are_mutually_exclusive():
+    """`elif` in classify(), so the audit's per-reason counts cannot
+    double-count one owner name."""
+    for owner in ["MEMORIAL CITY MALL LP", "CHURCH JOHN A", "HOUSTON ISD",
+                  "FIRST BAPTIST CHURCH", "SMITH JOHN"]:
+        reasons = classify(_row(owner_name=owner))
+        assert not ({"commercial_owner", "possible_commercial_owner"}
+                    <= set(reasons)), owner
 
 
 def test_classify_orders_most_decisive_first():
