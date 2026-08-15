@@ -1,5 +1,10 @@
 """Unit tests for the contact/lead import logic (pure, no DB)."""
-from api.import_logic import detect_mapping, normalize_row, row_is_usable
+import pytest
+
+from api.import_logic import (
+    clean_value, detect_mapping, normalize_row, normalize_status, normalize_zip,
+    parse_amount, row_is_usable,
+)
 
 
 # ── detect_mapping ──────────────────────────────────────────────────────────────
@@ -96,3 +101,90 @@ def test_row_is_usable():
     assert row_is_usable({"contact_name": "Jane"})
     assert not row_is_usable({})
     assert not row_is_usable({"city": "Houston", "state": "TX"})
+
+
+# ── parse_amount ─────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("raw, expected", [
+    ("$15,000", 15000),
+    ("15000", 15000),
+    ("15,000.00", 15000),
+    # The regression this replaced: dropping every non-digit read this as
+    # 150050 — a 100x overstatement that then fed scoring.
+    ("1,500.50", 1500),
+    ("1500.50", 1500),
+    ("1500,50", 1500),          # comma as the decimal separator
+    ("1.500.000", 1500000),     # European thousands grouping
+    ("1.234,56", 1235),         # European decimal, rounded to whole units
+    ("$ 2,750 ", 2750),
+    ("15k", 15000),
+    ("1.2M", 1200000),
+    ("USD 900", 900),
+    ("0", 0),
+])
+def test_parse_amount_parses_real_spreadsheet_shapes(raw, expected):
+    assert parse_amount(raw) == expected
+
+
+@pytest.mark.parametrize("raw", [
+    "", "  ", "n/a", "TBD", "call for price", "-", "$", "12-34-56",
+    "-200", "(200)",            # negatives are bad data for a property value
+])
+def test_parse_amount_rejects_junk(raw):
+    assert parse_amount(raw) is None
+
+
+# ── normalize_status ─────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("raw, expected", [
+    ("new", "new"),
+    ("Won ", "won"),
+    ("Quote Sent", "quote_sent"),
+    ("quote-sent", "quote_sent"),
+    ("NOT INTERESTED", "not_interested"),
+    ("", ""),
+    ("   ", ""),
+    ("!!!", ""),
+])
+def test_normalize_status(raw, expected):
+    assert normalize_status(raw) == expected
+
+
+def test_normalize_row_folds_status_and_drops_empty_ones():
+    mapping = detect_mapping(["Name", "Status"])
+    assert normalize_row({"Name": "J", "Status": "Quote Sent"}, mapping)["status"] == "quote_sent"
+    # A status of pure punctuation normalizes to nothing and must not be stored
+    # as an empty string — the route fills in the import default instead.
+    assert "status" not in normalize_row({"Name": "J", "Status": "--"}, mapping)
+
+
+# ── normalize_zip ────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("raw, expected", [
+    ("77002", "77002"),
+    ("77002-1234", "77002"),    # ZIP+4 would fork the (address, zip) key
+    ("77002 1234", "77002"),
+    ("770021234", "77002"),
+    (" 77002 ", "77002"),
+    ("01234", "01234"),         # leading zero preserved
+    ("K1A 0B1", "K1A 0B1"),     # non-US: left alone
+    ("", ""),
+])
+def test_normalize_zip(raw, expected):
+    assert normalize_zip(raw) == expected
+
+
+# ── control characters ───────────────────────────────────────────────────────────
+
+def test_clean_value_strips_control_chars_but_keeps_text():
+    # Postgres text columns cannot hold a NUL at all, so a single stray byte
+    # would fail the whole row rather than the one cell.
+    assert clean_value("Ja\x00ne") == "Jane"
+    assert clean_value("  spaced\x07  ") == "spaced"
+    assert clean_value("José Núñez") == "José Núñez"
+
+
+def test_normalize_row_strips_control_chars():
+    mapping = detect_mapping(["Name", "Email"])
+    row = normalize_row({"Name": "Ja\x00ne", "Email": "A\x00@B.com"}, mapping)
+    assert row == {"contact_name": "Jane", "contact_email": "a@b.com"}

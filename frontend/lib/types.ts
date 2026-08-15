@@ -428,6 +428,8 @@ export interface ImportResult {
   imported: number
   updated: number
   skipped: number
+  coerced_statuses?: number   // rows whose status wasn't one of this account's stages
+  error_count?: number        // total failed rows; errors[] is capped server-side
   errors: string[]
 }
 

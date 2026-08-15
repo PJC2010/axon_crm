@@ -106,11 +106,26 @@ export function ImportContactsModal({ onImported }: Props) {
     }
   }
 
-  // Dropdown options: known target fields plus any token values present in the
-  // current mapping (so an auto-detected first/last/formatted column isn't lost).
+  // Dropdown options: known target fields plus the name-part and formatted-address
+  // tokens, so a column the auto-detector missed can still be mapped to one.
   const fieldOptions = preview
-    ? Array.from(new Set([...preview.target_fields, ...Object.values(mapping)]))
+    ? Array.from(new Set([
+        ...preview.target_fields, ...Object.values(mapping),
+        '__first__', '__last__', '__addr_formatted__',
+      ]))
     : []
+
+  // A row only imports if it carries one of these, so with none of them mapped
+  // every row would be skipped. The server's usable_rows count came from the
+  // auto-detected mapping and goes stale as soon as the user edits it, so gate
+  // on the live mapping rather than on that number.
+  const IDENTIFYING = ['address', '__addr_formatted__', 'contact_email',
+                       'contact_phone', 'contact_name', '__first__', '__last__', 'owner_name']
+  const mappedFields = Object.values(mapping)
+  const canImport = IDENTIFYING.some(f => mappedFields.includes(f))
+  const mappingEdited = preview
+    ? JSON.stringify(mapping) !== JSON.stringify(preview.mapping)
+    : false
 
   return (
     <>
@@ -199,10 +214,22 @@ export function ImportContactsModal({ onImported }: Props) {
                     {preview.skip_rows > 0 && ` (${preview.skip_rows} have no address or contact info and will be skipped)`}.
                     Match each column to a field:
                   </p>
+                  {mappingEdited && (
+                    <p style={{ margin: '-6px 0 0', fontSize: 12, color: 'var(--color-ink-400)' }}>
+                      Counts above reflect the auto-detected columns — the final tally comes from your mapping.
+                    </p>
+                  )}
+                  {!canImport && (
+                    <p style={{ margin: '-6px 0 0', fontSize: 12, color: 'var(--color-danger)' }}>
+                      Map at least one of address, email, phone, or name — every row is skipped without one.
+                    </p>
+                  )}
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 280, overflowY: 'auto' }}>
-                    {preview.headers.map(header => (
-                      <div key={header} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {/* Keyed by index: a CSV may repeat a header name, and a
+                        duplicated React key drops rows from the list. */}
+                    {preview.headers.map((header, i) => (
+                      <div key={`${header}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <span style={{ flex: 1, fontSize: 13, color: 'var(--color-ink-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {header}
                         </span>
@@ -251,7 +278,7 @@ export function ImportContactsModal({ onImported }: Props) {
                     <button onClick={() => setStep('select')} className="btn-secondary" disabled={loading}>Back</button>
                     <button
                       onClick={handleImport}
-                      disabled={loading || preview.usable_rows === 0}
+                      disabled={loading || preview.total_rows === 0 || !canImport}
                       style={{
                         display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 16px',
                         borderRadius: 'var(--radius-button)', border: '1px solid transparent',
@@ -259,7 +286,7 @@ export function ImportContactsModal({ onImported }: Props) {
                         cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.65 : 1,
                       }}
                     >
-                      {loading ? 'Importing…' : `Import ${preview.usable_rows} rows`}
+                      {loading ? 'Importing…' : mappingEdited ? 'Import' : `Import ${preview.usable_rows} rows`}
                     </button>
                   </div>
                 </div>
@@ -274,8 +301,15 @@ export function ImportContactsModal({ onImported }: Props) {
                   </div>
                   <p style={{ margin: 0, fontSize: 13, color: 'var(--color-ink-500)' }}>
                     {result.imported} added · {result.updated} updated · {result.skipped} skipped
-                    {result.errors.length > 0 && ` · ${result.errors.length} errors`}
+                    {(result.error_count ?? result.errors.length) > 0 &&
+                      ` · ${result.error_count ?? result.errors.length} errors`}
                   </p>
+                  {(result.coerced_statuses ?? 0) > 0 && (
+                    <p style={{ margin: 0, fontSize: 12, color: 'var(--color-ink-400)' }}>
+                      {result.coerced_statuses} row(s) had a status that isn&apos;t one of your pipeline
+                      stages — they were set to &ldquo;{defaultStatus}&rdquo; so they show up on the board.
+                    </p>
+                  )}
                   {result.errors.length > 0 && (
                     <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: 'var(--color-danger)', maxHeight: 120, overflowY: 'auto' }}>
                       {result.errors.slice(0, 10).map((er, i) => <li key={i}>{er}</li>)}

@@ -183,6 +183,11 @@ SEED_EXPAND_MAX_ZIPS  = int(os.getenv("SEED_EXPAND_MAX_ZIPS", "10"))
 
 # ── CSV import guardrails ────────────────────────────────────────────────────
 IMPORT_MAX_BYTES = int(os.getenv("IMPORT_MAX_BYTES", str(5 * 1024 * 1024)))  # 5 MB
+# An import runs inline in the web process — a row costs a savepoint, a lookup
+# and a write — so bound the row count too, not just the byte count. 5 MB of
+# narrow rows is ~250k of them, which would hold a worker for minutes and
+# materialize every parsed row in the same memory the API serves from.
+IMPORT_MAX_ROWS = int(os.getenv("IMPORT_MAX_ROWS", "25000"))
 
 # ── Connectors / Marketing insights ──────────────────────────────────────────
 # File uploads (Meta exports) reuse IMPORT_MAX_BYTES.

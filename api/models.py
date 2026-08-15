@@ -549,6 +549,8 @@ class ImportResult(BaseModel):
     imported: int = 0                # new rows inserted
     updated: int = 0                 # existing rows matched and updated
     skipped: int = 0                 # rows with no usable data
+    coerced_statuses: int = 0        # rows whose status wasn't a stage of this account
+    error_count: int = 0             # total failed rows (errors[] is capped)
     errors: list[str] = []
 
 
