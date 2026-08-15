@@ -80,6 +80,10 @@ def enrich_hcad(zip_code: str, account_id: int) -> int:
             _backfill("owner_name",              hcad.get("owner_name"))
             _backfill("owner_occupied",          hcad.get("owner_occupied"))
             _backfill("mailing_address",         hcad.get("mailing_address"))
+            # The county's own residential/commercial category. Fills onto rows
+            # that were seeded before migration 0072, so an existing book of
+            # leads gains the class without being re-seeded.
+            _backfill("state_class",             hcad.get("state_class"))
             _backfill("hcad_neighborhood_code",  hcad.get("neighborhood_code"))
             _backfill("hcad_neighborhood_name",  hcad.get("neighborhood_name"))
 

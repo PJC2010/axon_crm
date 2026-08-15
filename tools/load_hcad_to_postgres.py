@@ -52,12 +52,14 @@ def _table_specs(duckdb_tables: set[str]) -> list[tuple[str, str, str]]:
         "hcad_properties",
         "acct, site_address, site_zip, year_built, building_sqft, land_sqft, "
         "tot_appr_val, last_sale_date, owner_name, likely_owner_occupied, "
-        "mail_addr, mail_city, mail_state, mail_zip, neighborhood_code, neighborhood_name",
+        "mail_addr, mail_city, mail_state, mail_zip, neighborhood_code, neighborhood_name, "
+        "state_class",
         f"""
         SELECT ps.acct, ps.site_address, ps.site_zip, ps.year_built, ps.building_sqft,
                ps.land_sqft, ps.tot_appr_val, ps.last_sale_date, ps.owner_name,
                ps.likely_owner_occupied, ps.mail_addr, ps.mail_city, ps.mail_state,
-               ps.mail_zip, ps.neighborhood_code, {nbhd_name} AS neighborhood_name
+               ps.mail_zip, ps.neighborhood_code, {nbhd_name} AS neighborhood_name,
+               ps.state_class
         FROM property_summary ps
         {nbhd_join}
         WHERE ps.site_address IS NOT NULL

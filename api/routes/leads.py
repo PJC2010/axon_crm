@@ -480,10 +480,17 @@ def archive_lead(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depend
 
 @router.post("/leads/{lead_id}/unarchive", response_model=Lead)
 def unarchive_lead(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
-    """Restore archived lead"""
+    """Restore archived lead.
+
+    Clears `exclusion_reason` too (migration 0072): that column records why the
+    system archived a row, and restoring it is the operator overruling that
+    verdict. Leaving the reason behind would let a later audit re-report the row
+    as already-excluded while it sits live in the list.
+    """
     with db.cursor() as cur:
         cur.execute(
-            "UPDATE properties SET archived_at = NULL WHERE id = %s AND account_id = %s RETURNING *",
+            "UPDATE properties SET archived_at = NULL, exclusion_reason = NULL "
+            "WHERE id = %s AND account_id = %s RETURNING *",
             (lead_id, user["account_id"])
         )
         row = dict_fetchone(cur)
@@ -520,7 +527,8 @@ def unarchive_bulk(body: BulkIds, db: PGConn = Depends(get_db), user: dict = Dep
     placeholders = ",".join(["%s"] * len(ids))
     with db.cursor() as cur:
         cur.execute(
-            f"UPDATE properties SET archived_at = NULL WHERE id IN ({placeholders}) AND account_id = %s RETURNING id",
+            f"UPDATE properties SET archived_at = NULL, exclusion_reason = NULL "
+            f"WHERE id IN ({placeholders}) AND account_id = %s RETURNING id",
             ids + [user["account_id"]]
         )
         updated = cur.fetchall()

@@ -14,7 +14,7 @@ from pathlib import Path
 from config import (
     RENTCAST_API_KEY, RENTCAST_BASE_URL, SEED_PROPERTY_TYPES, SEED_SOURCE,
     SEED_EXPAND_ENABLED, SEED_EXPAND_THRESHOLD, SEED_EXPAND_TARGET,
-    SEED_EXPAND_RADIUS_MI, SEED_EXPAND_MAX_ZIPS,
+    SEED_EXPAND_RADIUS_MI, SEED_EXPAND_MAX_ZIPS, SEED_RESIDENTIAL_ONLY,
 )
 from pipeline.db import get_conn, upsert_properties
 from pipeline.http import get_json
@@ -265,7 +265,13 @@ def _seed_from_parcels(zip_code: str, account_id: int, limit: int | None = None)
         # a ZIP seeded by an older build would not pick up cached data until a
         # second run.
         parcels.link_existing(conn, zip_code, account_id)
-        n = parcels.seed_account(conn, zip_code, account_id, limit=limit)
+        # The county roll is every parcel, not every house. The RentCast seed has
+        # filtered on propertyType since day one (_wanted_type above); without
+        # this the cheaper HCAD path had no equivalent, and shopping centres,
+        # churches and school-district land seeded, scored and reached the lead
+        # list alongside the homes.
+        n = parcels.seed_account(conn, zip_code, account_id, limit=limit,
+                                 residential_only=SEED_RESIDENTIAL_ONLY)
         cov = parcels.coverage(conn, zip_code)
         log.info("HCAD seed: %d properties for ZIP %s (shared cache: %d parcels, "
                  "%d already geocoded)", n, zip_code, cov["parcels"], cov["geocoded"])
@@ -342,6 +348,7 @@ def _normalize_hcad(p: dict, region_id: str | None = None) -> dict:
         "owner_name":             clean_owner_name(p.get("owner_name")),
         "owner_occupied":         p.get("owner_occupied"),
         "mailing_address":        p.get("mailing_address"),
+        "state_class":            p.get("state_class"),
         "hcad_neighborhood_code": p.get("neighborhood_code"),
         "hcad_neighborhood_name": p.get("neighborhood_name"),
         "enrichment_flags":       flags,

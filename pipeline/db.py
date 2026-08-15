@@ -88,6 +88,8 @@ ALL_COLS = [
     # Parcel identity + RentCast ride-along features (migration 068)
     "parcel_apn", "roof_type", "foundation_type", "heating_type", "cooling_type",
     "owner_type",
+    # County land-use class + why a lead was auto-excluded (migration 072)
+    "state_class", "exclusion_reason",
     # Lead attribution — rep ownership + acquisition source (migration 030)
     "assigned_to", "lead_source",
     # Storm/hail enrichment (migration 027)
@@ -209,8 +211,13 @@ def upsert_properties(conn, rows: list[dict], account_id: int,
 
 def fetch_by_zip(conn, zip_code: str, account_id: int) -> list[dict]:
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        # Archived rows excluded: this feeds the selection step's Top-N paid
+        # budget (pipeline/select.py) as well as scoring, permits and HCAD
+        # enrichment, so a row an operator has thrown away must stop consuming
+        # a budget slot and stop being rescored.
         cur.execute(
-            "SELECT * FROM properties WHERE zip = %s AND account_id = %s",
+            "SELECT * FROM properties WHERE zip = %s AND account_id = %s"
+            " AND archived_at IS NULL",
             (zip_code, account_id),
         )
         return [dict(r) for r in cur.fetchall()]
@@ -229,7 +236,14 @@ def fetch_missing_field(conn, field: str, account_id: int, zip_code: str | None 
     # lookup (RentCast, skip-trace, demographics). A parcel with no situs
     # address — HCAD stamps those with a zero house number, "0 TRUXTON ST" —
     # can never be matched by any of them, so it never earns a call.
-    where = f"WHERE {field} IS NULL AND account_id = %s AND {sql_has_situs('address')}"
+    # Archived rows are out too. Archiving is how an operator says "this is not
+    # a lead" — a duplicate, a wrong number, or a shopping mall the county roll
+    # seeded (pipeline/property_audit.py). Without this the row stays in the
+    # paid candidate pool and is re-billed to RentCast, the skip-trace provider
+    # and the demographic append on every single run, so the one action offered
+    # for getting rid of a bad lead did not stop it costing money.
+    where = (f"WHERE {field} IS NULL AND account_id = %s"
+             f" AND {sql_has_situs('address')} AND archived_at IS NULL")
     params = [account_id]
     if zip_code:
         where += " AND zip = %s"
@@ -279,8 +293,9 @@ def fetch_missing_any(conn, fields: list[str], account_id: int, zip_code: str | 
     if not fields:
         return []
     clause = " OR ".join(f"{f} IS NULL" for f in fields)
-    # No-situs parcels never earn a paid call — see fetch_missing_field.
-    where = f"WHERE ({clause}) AND account_id = %s AND {sql_has_situs('address')}"
+    # No-situs and archived rows never earn a paid call — see fetch_missing_field.
+    where = (f"WHERE ({clause}) AND account_id = %s"
+             f" AND {sql_has_situs('address')} AND archived_at IS NULL")
     params: list = [account_id]
     if zip_code:
         where += " AND zip = %s"

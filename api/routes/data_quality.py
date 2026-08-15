@@ -1,7 +1,9 @@
 """
-GET  /api/property-data/audit          — per-field null report + what a sweep would cost
-POST /api/property-data/backfill       — run a RentCast gap-fill / verification sweep
-GET  /api/property-data/discrepancies  — stored values RentCast disagrees with
+GET  /api/property-data/audit             — per-field null report + what a sweep would cost
+POST /api/property-data/backfill          — run a RentCast gap-fill / verification sweep
+GET  /api/property-data/discrepancies     — stored values RentCast disagrees with
+GET  /api/property-data/non-residential   — leads that are not homes, with examples
+POST /api/property-data/non-residential/archive — archive them
 
 The audit is free (pure SQL, no vendor calls) and safe to hit on a page load.
 The backfill spends money per property, so it is owner-only, rate-limited, and
@@ -128,3 +130,75 @@ def property_data_discrepancies(
         raise HTTPException(status_code=422, detail=str(exc))
     return {"summary": discrepancy_summary(db, user["account_id"], zip_code=zip),
             "items": items}
+
+
+# ── Non-residential leads ────────────────────────────────────────────────────
+
+class NonResidentialArchiveRequest(BaseModel):
+    zip: Optional[str] = None
+    # Restrict the action to specific reasons. Default: every EXCLUDE-tier
+    # reason. Review-tier reasons are rejected — see pipeline/residential.py.
+    reasons: Optional[list[str]] = None
+    # Count what would be archived without writing. Costs nothing either way;
+    # this exists so the UI can confirm a number before acting.
+    dry_run: bool = False
+
+
+@router.get("/property-data/non-residential")
+def property_data_non_residential(
+    zip: Optional[str] = Query(None, description="Restrict to one ZIP"),
+    sample_limit: int = Query(10, ge=0, le=200,
+                              description="Example rows to return"),
+    user: dict = Depends(get_current_user),
+    db: PGConn = Depends(get_db),
+    _mod: dict = _prospecting,
+):
+    """Live leads that do not look like homes, counted by reason, with examples.
+
+    Free: pure SQL over columns already stored, no vendor calls, nothing
+    written — same contract as /property-data/audit, safe on a page load.
+
+    Axon targets residential homeowners, but the free HCAD seed takes a whole
+    ZIP off the county roll, and the county roll is every *parcel*: shopping
+    centres, churches, school-district land and vacant lots included. Reasons
+    come in two tiers. `exclude` reasons are structurally impossible for a house
+    and are what the archive endpoint acts on; `review` reasons are reported
+    only, because a legitimate home can look like that.
+
+    `excludable` is smaller than the sum of the per-reason counts — one bad row
+    usually trips several reasons at once.
+    """
+    from pipeline.property_audit import audit as non_residential_audit
+    return non_residential_audit(db, user["account_id"], zip_code=zip,
+                                 sample_limit=sample_limit)
+
+
+@router.post("/property-data/non-residential/archive")
+def property_data_non_residential_archive(
+    body: NonResidentialArchiveRequest,
+    current_user: dict = Depends(require_owner),
+    db: PGConn = Depends(get_db),
+    _mod: dict = _prospecting,
+):
+    """Archive the leads the audit flags as non-residential.
+
+    Soft-delete via `archived_at`, the same mechanism POST /leads/{id}/archive
+    uses, so the rows stay recoverable with /leads/{id}/unarchive and keep their
+    notes, history and appointments. `exclusion_reason` records which rule fired.
+
+    Archiving rather than deleting is also the only thing that *works*: the
+    shared parcel cache still holds the parcel, and the tenant-materialization
+    step skips addresses this account already has — so a deleted row is
+    re-created by the next scheduled run, while an archived one is not.
+
+    Owner-only and irreversible in bulk (though reversible per lead), so it is
+    not rate-limited like the paid sweep but is deliberately not a GET.
+    """
+    from pipeline.property_audit import archive as archive_non_residential
+    try:
+        return archive_non_residential(
+            db, current_user["account_id"], zip_code=body.zip,
+            reasons=body.reasons, dry_run=body.dry_run,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
