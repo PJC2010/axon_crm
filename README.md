@@ -395,6 +395,7 @@ Every table is isolated by `account_id` (`db/migrations/0017_org_isolation.sql`)
 | 6 | `pipeline/property.py` | RentCast paid enrichment — only fills fields still NULL after HCAD |
 | 7 | `pipeline/permits.py` | Pulls 24-month permit counts from HCAD DuckDB/Postgres |
 | 8 | `pipeline/storm.py` | Matches NOAA/IEM hail/wind/tornado history to geocoded properties |
+| 8.5 | `pipeline/neighborhood.py` | Refreshes the value-per-sqft benchmark for the geohash-6 cells this ZIP touches (cell medians still cover the whole cell, including its other ZIPs), so the scorer's neighborhood signal reads current ratios |
 | 9 | `pipeline/scorer.py` | Scores each property 0–100 and assigns a letter grade (A/B/C/D) per vertical weights |
 | 10 | `pipeline/select.py` (trim) | Optional precision cut back to the exact top-N using real scores, before paid skip-trace |
 | 11 | `pipeline/contact.py` | Skip-trace contact enrichment (BatchData/Versium), optionally grade-gated |

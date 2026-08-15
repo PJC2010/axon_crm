@@ -288,6 +288,16 @@ WORKFLOW_TICK_HOUR = int(os.getenv("WORKFLOW_TICK_HOUR", "7"))
 # (api/digest.py). 13:00 UTC ≈ 7–8am US Central, the contractor's coffee hour.
 USER_DIGEST_HOUR = int(os.getenv("USER_DIGEST_HOUR", "13"))
 
+# ── Pipeline run watchdog ─────────────────────────────────────────────────────
+# Wall-clock ceiling for a single pipeline run (api/scheduler.py::_run_pipeline).
+# The scheduler shares the web process's thread pool, so a run with no limit
+# doesn't just hang itself — it holds a worker and blocks everything queued
+# behind it (two runs had to be killed by hand at 19 hours and 7 days). On
+# expiry the run is cancelled and its row is marked `cancelled` with
+# error='timeout'; the same value bounds how long a `running` row may sit before
+# the stale-run sweep reconciles it. 0 disables the watchdog entirely.
+RUN_MAX_SECONDS = int(os.getenv("RUN_MAX_SECONDS", "3600"))
+
 # ── Invoice delivery (notifications) ─────────────────────────────────────────
 RESEND_API_KEY      = os.getenv("RESEND_API_KEY", "")
 RESEND_FROM_EMAIL   = os.getenv("RESEND_FROM_EMAIL", "")

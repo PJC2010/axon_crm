@@ -28,7 +28,7 @@ from config import (
 )
 from api.deps import get_db, dict_fetchall
 from api.ratelimit import RateLimiter, client_ip
-from api.zip_sample_logic import mask_address, value_label
+from api.zip_sample_logic import mask_address, teaser_rank_key, value_label
 from pipeline.scoring import explain_score
 
 log = logging.getLogger(__name__)
@@ -153,7 +153,11 @@ def zip_sample(zip: str, vertical: str | None = None, request: Request = None,
     for row in rows:
         e = explain_score(row, weights)
         explained.append((e["score"], e, row))
-    explained.sort(key=lambda t: t[0], reverse=True)
+    # Two-tier: benchmarked rows keep the honest vertical re-rank; rows the
+    # neighborhood benchmark hasn't reached fall back to their stored lead_score
+    # rather than being ranked as if they sat at their block median. See
+    # zip_sample_logic.teaser_rank_key.
+    explained.sort(key=lambda t: teaser_rank_key(t[2], t[0]), reverse=True)
 
     leads = [
         {
