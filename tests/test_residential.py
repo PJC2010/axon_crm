@@ -92,8 +92,15 @@ CASES: list[tuple[str, dict, set[str]]] = [
     ("municipality", _row(owner_name="CITY OF HOUSTON"), {"commercial_owner"}),
     ("self storage", _row(owner_name="ACME SELF STORAGE LTD"),
      {"commercial_owner"}),
-    # Institution words that are ALSO surnames land in REVIEW, not EXCLUDE.
-    ("church", _row(owner_name="FIRST BAPTIST CHURCH"),
+    # A denomination is never a surname, so this is actionable.
+    ("baptist church", _row(owner_name="FIRST BAPTIST CHURCH"),
+     {"commercial_owner"}),
+    ("spanish-language worship", _row(owner_name="IGLESIA NUEVA VIDA"),
+     {"commercial_owner"}),
+    ("professional practice", _row(owner_name="SMILE DENTAL PLLC"),
+     {"commercial_owner"}),
+    # "church" alone is a surname, so a bare one lands in REVIEW, not EXCLUDE.
+    ("bare church word", _row(owner_name="COMMUNITY CHURCH"),
      {"possible_commercial_owner"}),
     ("county exempt", _row(state_class="X3"), {"county_exempt"}),
     # "Apartment" is deliberately NOT excludable: RentCast uses it for both a
@@ -291,12 +298,21 @@ def test_no_house_sized_row_is_ever_auto_archived(monkeypatch):
         assert is_non_residential(row) is False, sqft
 
 
-def test_property_type_denylist_disabled_flags_nothing(monkeypatch):
-    """`SEED_PROPERTY_TYPES='*'` disables type filtering account-wide; this rule
-    must honour the same switch rather than quietly keeping its own opinion."""
-    monkeypatch.setattr(residential, "SEED_PROPERTY_TYPES", ["*"])
-    assert classify(_row(property_type="Apartment")) == []
-    assert sql_reason("non_residential_type") == "(FALSE)"
+def test_type_denylist_is_independent_of_the_seeding_knob():
+    """config.SEED_PROPERTY_TYPES widens *seeding*; it must not silently switch
+    off the cleanup's type rule as well.
+
+    An operator setting it to "*" (the documented way to seed everything) used
+    to disable this reason account-wide, with no warning anywhere.
+    """
+    import inspect
+
+    source = inspect.getsource(residential)
+    body = source.split("def _type_looks_non_residential")[1].split("\ndef ")[0]
+    assert "SEED_PROPERTY_TYPES" not in body.split('"""')[2], \
+        "the type rule reads the seeding knob again"
+    assert classify(_row(property_type="Land")) == ["non_residential_type"]
+    assert sql_reason("non_residential_type") != "(FALSE)"
 
 
 def test_residential_types_are_never_flagged():

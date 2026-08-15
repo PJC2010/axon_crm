@@ -62,12 +62,36 @@ A false negative just leaves a bad row on the list, where the operator can see
 it. So `EXCLUDE` reasons are the ones that are structurally impossible for a
 home, and everything else is `REVIEW` — surfaced, counted, but never acted on
 automatically.
+
+── What this will and will not catch ─────────────────────────────────────────
+
+Stated plainly, because an audit that reports a confident-looking zero is worse
+than one that admits its blind spots.
+
+  Caught today, without any re-ingest: malls, big-box and strip centres,
+  warehouses (size); school districts, municipalities, named denominations,
+  storage operators, utilities, professional practices (owner name); vacant and
+  no-situs parcels (address shape); anything RentCast typed as Land/Retail/
+  Office/Industrial.
+
+  NOT caught until the HCAD load carries `state_class`: small commercial. A
+  2,400 sqft strip retail unit, an 1,800 sqft gas station or a 3,200 sqft
+  dentist's office with a bland owner name produces no reason at all — it is
+  the same size as a house, owned by an ordinary-looking entity, at a real
+  address. Commercial building stock is dominated by small buildings, so this
+  is the largest remaining gap, and `county_class` (F*) is what closes it.
+
+  Structurally imprecise: `state_class` is per-address, not per-account.
+  `parcels.ensure_from_hcad` collapses several HCAD accounts sharing one site
+  address with DISTINCT ON … ORDER BY tot_appr_val DESC, so a commercial suite
+  sharing an address with a higher-valued residential account inherits the
+  residential class. It also never self-corrects: every path that writes it is
+  fill-only (COALESCE), so a parcel the county re-classes keeps its first-seen
+  value until someone clears the column.
 """
 import re
 
-from config import (
-    NONRESIDENTIAL_MIN_SQFT, NONRESIDENTIAL_REVIEW_SQFT, SEED_PROPERTY_TYPES,
-)
+from config import NONRESIDENTIAL_MIN_SQFT, NONRESIDENTIAL_REVIEW_SQFT
 from pipeline.addr import has_situs, normalize, sql_has_situs, sql_normalize
 
 # A table alias plus its dot ("p."), or empty. Mirrors addr._SQL_IDENT's posture:
@@ -178,13 +202,19 @@ COMMERCIAL_OWNER_TOKENS = frozenset({
     "warehouse", "warehouses", "refinery", "refining", "terminals",
     "distribution", "logistics", "manufacturing",
     # Worship
-    "ministries", "ministry", "synagogue", "mosque", "archdiocese",
-    "tabernacle", "iglesia", "templo",
+    "ministries", "ministry", "synagogue", "mosque", "masjid", "archdiocese",
+    "tabernacle", "iglesia", "templo", "baptist", "methodist", "lutheran",
+    "presbyterian", "episcopal", "pentecostal", "evangelical", "islamic",
     # Education / civic / medical
     "isd", "crematory", "mortuary",
     # Infrastructure / utility
     "pipeline", "railroad", "railway", "telecom", "utilities", "waterworks",
-    "airlines",
+    "airlines", "wireless", "communications",
+    # Professional-practice entity form. The rationale below refuses LLC/LP/INC
+    # because a house is routinely titled that way; PLLC titles a practice, and
+    # is the dentist/vet/law-office parcel class nothing else here catches.
+    # PC and PA are deliberately absent — both collide with ordinary initials.
+    "pllc",
 })
 
 # Real signal, but each is also a surname carried by real homeowners. Reported,
@@ -192,6 +222,7 @@ COMMERCIAL_OWNER_TOKENS = frozenset({
 AMBIGUOUS_OWNER_TOKENS = frozenset({
     "plaza", "hotel", "hotels", "inn", "restaurant", "cafeteria", "foundry",
     "church", "churches", "chapel", "parish", "congregation", "diocese",
+    "county", "municipal", "authority",
     "fellowship", "temple", "abbey", "bishop", "priest",
     "hospital", "clinic", "university", "college", "seminary", "academy",
     "cemetery", "funeral", "telephone", "electric", "aviation", "airport",
@@ -283,9 +314,12 @@ def _type_looks_non_residential(property_type) -> bool:
     A NULL type is not evidence of anything — on an HCAD-seeded account it is
     NULL on every row, since only RentCast ever writes this column, and treating
     that as commercial would archive the account's whole book.
+
+    Deliberately NOT gated on config.SEED_PROPERTY_TYPES. That knob is
+    documented as the way to widen *seeding* ("*" seeds everything), and reading
+    it here meant an operator who widened seeding silently switched off this
+    cleanup rule as well, with no warning anywhere.
     """
-    if not SEED_PROPERTY_TYPES or "*" in SEED_PROPERTY_TYPES:
-        return False                    # type filtering disabled account-wide
     key = normalize(str(property_type or ""))
     return bool(key) and key in NON_RESIDENTIAL_PROPERTY_TYPES
 
@@ -439,8 +473,6 @@ def sql_reason(reason: str, prefix: str = "") -> str:
         return f"(({maybe}) AND NOT {sql_reason('commercial_owner', prefix)})"
 
     if reason == "non_residential_type":
-        if not SEED_PROPERTY_TYPES or "*" in SEED_PROPERTY_TYPES:
-            return "(FALSE)"
         keys = ", ".join(f"'{k}'" for k in sorted(NON_RESIDENTIAL_PROPERTY_TYPES))
         return f"({sql_normalize(ptype)} IN ({keys}))"
 
