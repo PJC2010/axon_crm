@@ -68,8 +68,12 @@ async def lifespan(app: FastAPI):
         schedule_workflow_tick, schedule_account_rescore, schedule_recurring_invoices,
         schedule_geo_rescore, schedule_trial_expiry, schedule_unverified_digest,
         schedule_user_digest, schedule_phone_append_sweep,
+        schedule_stale_run_reconcile,
     )
     scheduler.start()
+    # Before any schedule fires: a previous instance that crashed mid-run leaves
+    # its pipeline_runs row at `running`, which the UI shows as active forever.
+    schedule_stale_run_reconcile()
     load_active_schedules()
     schedule_retraining()
     schedule_workflow_tick()

@@ -1,5 +1,6 @@
 """APScheduler singleton — runs pipeline jobs in a thread pool inside the FastAPI process."""
 import logging
+import threading
 from datetime import datetime, timezone
 
 import psycopg2
@@ -12,6 +13,14 @@ from config import DATABASE_URL
 log = logging.getLogger(__name__)
 
 scheduler = BackgroundScheduler(timezone="UTC")
+
+# Fixed advisory-lock key for pipeline run execution. The scheduler runs
+# in-process in every web instance (Render runs 2), so without this the same
+# scheduled job fires on both, and a wedged run lets the next ones pile up
+# behind it in a shared thread pool. Single-writer: one run executes at a time
+# and the loser fails fast rather than queueing. Numbered in the same
+# 7420260xx series as the tick locks further down.
+PIPELINE_RUN_LOCK_KEY = 742026009
 
 # ── Cancellation flags ────────────────────────────────────────────────────────
 # run_id → True means a cancel has been requested for that run
@@ -29,6 +38,60 @@ def is_cancelled(run_id: int) -> bool:
 
 def _clear_cancel(run_id: int) -> None:
     _cancel_flags.discard(run_id)
+
+
+# run_id → True means the watchdog, not a user, requested the cancel
+_timed_out: set[int] = set()
+
+
+def _start_run_watchdog(run_id: int, done: threading.Event) -> threading.Timer | None:
+    """Bound a run's wall-clock time at RUN_MAX_SECONDS.
+
+    Two runs had to be killed by hand (19 hours and 7 days) because nothing
+    imposed a limit. On expiry this both requests the cooperative cancel the
+    per-step `_check_cancel()` checks already honour *and* writes the terminal
+    status itself — the cooperative path alone cannot bound a run that wedges
+    inside a single step, and "no row stays `running` longer than the limit" is
+    the property the UI depends on. The DB write is conditional on the row still
+    being `running`, so a run that finished in the meantime is never clobbered.
+
+    Returns the timer (cancel it when the run ends) or None when disabled.
+    """
+    from config import RUN_MAX_SECONDS
+    if RUN_MAX_SECONDS <= 0:
+        return None
+
+    def _fire():
+        if done.is_set():
+            return
+        log.warning("Pipeline run %d exceeded RUN_MAX_SECONDS (%ds) — cancelling",
+                    run_id, RUN_MAX_SECONDS)
+        _timed_out.add(run_id)
+        request_cancel(run_id)
+        # Separate connection: the run owns its own and psycopg2 connections are
+        # not safe to share across threads.
+        try:
+            conn = psycopg2.connect(DATABASE_URL)
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE pipeline_runs SET status = 'cancelled', finished_at = NOW(), "
+                        "result_json = COALESCE(result_json, '{}'::jsonb) || %s::jsonb "
+                        "WHERE id = %s AND status = 'running'",
+                        (psycopg2.extras.Json({"error": "timeout", "reason": "timeout",
+                                               "timeout_seconds": RUN_MAX_SECONDS}), run_id),
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception:
+            log.exception("Watchdog could not mark run %d timed out", run_id)
+
+    timer = threading.Timer(RUN_MAX_SECONDS, _fire)
+    timer.daemon = True
+    timer.start()
+    return timer
+
 
 DAY_MAP = {
     "monday": "mon", "tuesday": "tue", "wednesday": "wed",
@@ -216,8 +279,14 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
 
     def _check_cancel() -> bool:
         if is_cancelled(run_id):
-            log.info("Pipeline run %d cancelled", run_id)
-            _set_status("cancelled", {"reason": "cancelled by user"})
+            timed_out = run_id in _timed_out
+            log.info("Pipeline run %d cancelled%s", run_id, " (timeout)" if timed_out else "")
+            if timed_out:
+                from config import RUN_MAX_SECONDS
+                _set_status("cancelled", {"error": "timeout", "reason": "timeout",
+                                          "timeout_seconds": RUN_MAX_SECONDS})
+            else:
+                _set_status("cancelled", {"reason": "cancelled by user"})
             _clear_cancel(run_id)
             return True
         return False
@@ -335,15 +404,20 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
         with timer.step("promote") as s:
             s.rows = parcel_cache.promote(conn, zip_code, account_id)
 
-        # Step 6.75 — Neighborhood value benchmark. Account-wide (geohash cells
-        # cross ZIP lines) and must precede scoring so the neighborhood signal
-        # reads fresh ratios that include this ZIP's just-enriched values.
-        # Timed separately because it scales with the whole account, not this
-        # ZIP — its cost grows with every ZIP ever seeded.
+        # Step 6.75 — Neighborhood value benchmark. Must precede scoring so the
+        # neighborhood signal reads fresh ratios that include this ZIP's
+        # just-enriched values.
+        #
+        # Scoped to the geohash cells this ZIP touches. Cells cross ZIP lines, so
+        # the cell medians are still measured over every member of those cells
+        # (including the neighbouring ZIP's rows) — what the scope drops is the
+        # rewrite of cells this run never touched, which is what made this step
+        # cost O(account) and grow with every ZIP ever seeded (983s of a 24-min
+        # run at 214k rows).
         if _check_cancel(): return None
         from pipeline.neighborhood import recompute_neighborhood_values
         with timer.step("neighborhood") as s:
-            s.rows = recompute_neighborhood_values(conn, account_id)
+            s.rows = recompute_neighborhood_values(conn, account_id, zips=[zip_code])
 
         # Step 7 — Score
         if _check_cancel(): return None
@@ -414,6 +488,34 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
         return {"zip": zip_code, "sources": sources, "coverage": coverage,
                 "summary": summary, "timings": timer.as_dict()}
 
+    # Single-writer: one pipeline run executes at a time across every instance.
+    # Without it the 2-instance deploy double-fires scheduled jobs and, worse,
+    # lets runs queue up behind a wedged one in a shared thread pool.
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_try_advisory_lock(%s)", (PIPELINE_RUN_LOCK_KEY,))
+            got_lock = cur.fetchone()[0]
+        conn.commit()
+        error = None if got_lock else "another_run_in_progress"
+    except Exception as exc:
+        log.exception("Pipeline run %d could not take the run lock", run_id)
+        conn.rollback()
+        got_lock, error = False, str(exc)
+    if not got_lock:
+        log.info("Pipeline run %d not started: %s", run_id, error)
+        try:
+            _set_status("failed", {"error": error})
+        except Exception:
+            log.exception("Pipeline run %d could not be marked failed", run_id)
+        finally:
+            _clear_cancel(run_id)
+            UpsertProbe.uninstall()
+            conn.close()
+        return
+
+    done = threading.Event()
+    watchdog = _start_run_watchdog(run_id, done)
+
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -476,10 +578,21 @@ def _run_pipeline(run_id: int, zip_code: str, vertical: str | None, account_id: 
         except Exception:
             pass
     finally:
+        done.set()
+        if watchdog is not None:
+            watchdog.cancel()
+        _timed_out.discard(run_id)
         _clear_cancel(run_id)
         # APScheduler reuses pool threads; drop the probe so it doesn't keep
         # counting against whatever job runs on this thread next.
         UpsertProbe.uninstall()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_unlock(%s)", (PIPELINE_RUN_LOCK_KEY,))
+            conn.commit()
+        except Exception:
+            # Closing the connection releases the session lock anyway.
+            log.warning("Could not release the pipeline run lock for run %d", run_id)
         conn.close()
 
 
@@ -631,13 +744,17 @@ def _run_backfill(run_id: int, account_id: int, zip_code: str | None,
 def _rescore_account(conn, account_id: int, zip_code: str | None) -> int:
     """Re-score the affected ZIPs after a backfill changed scoring inputs.
 
-    The neighborhood benchmark is refreshed first and account-wide: geohash cells
-    cross ZIP boundaries, so scoring one ZIP against a stale benchmark would read
-    ratios that ignore everything the sweep just filled.
+    The neighborhood benchmark is refreshed first: geohash cells cross ZIP
+    boundaries, so scoring one ZIP against a stale benchmark would read ratios
+    that ignore everything the sweep just filled. A ZIP-scoped sweep only changed
+    that ZIP's rows, so the refresh is bounded to the cells it touches; a
+    whole-account sweep genuinely changed rows everywhere and gets the
+    account-wide recompute.
     """
     from pipeline.neighborhood import recompute_neighborhood_values
     from pipeline.scorer import score_zip
-    recompute_neighborhood_values(conn, account_id)
+    recompute_neighborhood_values(conn, account_id,
+                                  zips=[zip_code] if zip_code else None)
     if zip_code:
         zips = [zip_code]
     else:
@@ -1136,6 +1253,69 @@ def schedule_geo_rescore():
         misfire_grace_time=3600,
     )
     log.info("Scheduled nightly geo rescore at %02d:50 UTC", WORKFLOW_TICK_HOUR)
+
+
+def reconcile_stale_runs() -> int:
+    """Mark runs `failed` that no process can still be executing.
+
+    A crashed or redeployed instance leaves its `pipeline_runs` row at `running`
+    forever, and the UI reads that as "still working". Two conditions gate the
+    sweep so it can never kill live work:
+
+      • We must be able to take the pipeline run lock. A live run holds it, so
+        acquiring it proves no pipeline run is executing in any instance.
+      • The row must be older than RUN_MAX_SECONDS. Backfill sweeps share this
+        table and do not take the run lock, so age is what protects one that is
+        still inside its budget.
+
+    Runs at startup and on an hourly tick — a row that goes stale while the
+    process is up needs the tick, since startup happens once.
+    """
+    from config import RUN_MAX_SECONDS
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_try_advisory_lock(%s)", (PIPELINE_RUN_LOCK_KEY,))
+            if not cur.fetchone()[0]:
+                log.debug("Stale-run reconcile skipped — a run is in progress")
+                return 0
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE pipeline_runs SET status = 'failed', finished_at = NOW(), "
+                    "result_json = COALESCE(result_json, '{}'::jsonb) || %s::jsonb "
+                    "WHERE status = 'running' "
+                    "  AND COALESCE(started_at, created_at) < NOW() - make_interval(secs => %s)",
+                    (psycopg2.extras.Json({"error": "stale (process restarted)"}),
+                     max(RUN_MAX_SECONDS, 1)),
+                )
+                n = cur.rowcount
+            conn.commit()
+            if n:
+                log.warning("Reconciled %d stale `running` pipeline run(s) to failed", n)
+            return n
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_unlock(%s)", (PIPELINE_RUN_LOCK_KEY,))
+            conn.commit()
+    except Exception:
+        log.exception("Stale-run reconciliation failed")
+        return 0
+    finally:
+        conn.close()
+
+
+def schedule_stale_run_reconcile():
+    """Register the hourly stale-run sweep (idempotent) and run it once now."""
+    scheduler.add_job(
+        reconcile_stale_runs,
+        trigger=CronTrigger(minute=5, timezone="UTC"),
+        id="stale_run_reconcile",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    reconcile_stale_runs()
+    log.info("Scheduled hourly stale-run reconciliation at :05")
 
 
 def load_active_schedules():

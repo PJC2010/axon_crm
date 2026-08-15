@@ -31,6 +31,36 @@ def mask_address(address: str | None) -> str:
     return re.sub(r"\d", "X", text)
 
 
+def teaser_rank_key(row: dict, score: float) -> tuple:
+    """Sort key for the masked teaser sample: benchmarked rows first.
+
+    The neighborhood benchmark is a weighted scoring signal, and an
+    unbenchmarked row scores 0 on it — so a freshly seeded ZIP whose rows have
+    no benchmark yet (no square footage, no value, not geocoded, or the
+    recompute hasn't reached them) ranks its whole sample as if every home were
+    at or below its block median, and the A/B leads it does have disappear from
+    the teaser.
+
+    Two tiers, highest first:
+      1. Rows WITH a benchmark, by their re-ranked score — the honest ranking,
+         unchanged from before.
+      2. Rows WITHOUT one, by the stored `lead_score` — a presentation fallback
+         so the widget shows this ZIP's best leads instead of looking empty.
+
+    Deliberately NOT a fix to the numbers: no benchmark is invented for an
+    unbenchmarked row, and it never outranks a benchmarked one. Sorting is
+    descending, so a missing `lead_score` sorts last within its tier.
+    """
+    benchmarked = row.get("neighborhood_value_pctile") is not None
+    if benchmarked:
+        return (1, float(score))
+    try:
+        fallback = float(row.get("lead_score") or 0.0)
+    except (TypeError, ValueError):
+        fallback = 0.0
+    return (0, fallback)
+
+
 def value_label(estimated_value) -> str:
     """Rounded, approximate home value for the teaser ('~$480K', '~$1.2M').
 

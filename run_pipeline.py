@@ -245,6 +245,26 @@ def _run_zip_steps(zip_code: str, args, timer) -> None:
         finally:
             conn.close()
 
+    # Neighborhood value benchmark, scoped to the geohash cells this ZIP touches
+    # — the same step (and the same bound) the scheduler runs at 6.75, so a
+    # Render Shell run and a UI-triggered run produce comparable tables and the
+    # scorer's neighborhood signal reads fresh ratios either way. Cells cross ZIP
+    # lines, so their medians still cover every member of the cell; what the
+    # scope drops is rewriting cells this run never touched.
+    if "neighborhood" not in skip:
+        from pipeline.db import get_conn
+        from pipeline.neighborhood import recompute_neighborhood_values
+        conn = get_conn()
+        try:
+            with timer.step("neighborhood") as s:
+                n = recompute_neighborhood_values(conn, account_id, zips=[zip_code])
+                s.rows = n
+        finally:
+            conn.close()
+        log.info("[6.9/8] Neighborhood: %d benchmarked", n)
+    else:
+        log.info("[6.9/8] Neighborhood: skipped")
+
     if "score" not in skip:
         from pipeline.scorer import score_zip
         with timer.step("score") as s:
@@ -335,7 +355,7 @@ def main():
     parser.add_argument("--permit-csv", default=None,
                         help="CSV file with permit counts (address, zip, permit_count)")
     parser.add_argument("--skip",       default="",
-                        help="Comma-separated steps to skip: seed,census,geocode,hcad,select,property,permits,storm,promote,score,contact,demographics,signals")
+                        help="Comma-separated steps to skip: seed,census,geocode,hcad,select,property,permits,storm,promote,neighborhood,score,contact,demographics,signals")
     parser.add_argument("--limit",      type=int, default=None,
                         help="Cap the number of seeded records (useful for testing)")
     parser.add_argument("--top-n",      type=int, default=None, dest="top_n",
