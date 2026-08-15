@@ -107,24 +107,106 @@ def detect_mapping(headers: list[str]) -> dict[str, str]:
     return mapping
 
 
-def _parse_int(value: str) -> int | None:
-    digits = re.sub(r"[^0-9]", "", value or "")
-    return int(digits) if digits else None
+# Control characters (including NUL) can't be stored in a Postgres text column
+# at all — psycopg2 raises before the INSERT is even sent — so a single stray
+# byte from a mangled export would fail the row outright. Strip them instead.
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+# Thousands-grouped integers: 1,234 / 1.234.567. Used to tell a grouping
+# separator from a decimal point when only one kind of separator is present.
+_GROUPED = re.compile(r"^\d{1,3}([,.]\d{3})+$")
+_NUMERIC = re.compile(r"^\d+(\.\d+)?$")
+# Spreadsheet shorthand: 15k, 1.2M.
+_SUFFIXES = {"k": 1_000, "m": 1_000_000}
+
+
+def clean_value(value: str) -> str:
+    """Strip control characters and surrounding whitespace from a CSV cell."""
+    return _CONTROL.sub("", value or "").strip()
+
+
+def parse_amount(value: str) -> int | None:
+    """Parse a spreadsheet money cell into whole currency units.
+
+    Handles the shapes a real export actually contains — "$15,000", "15000.00",
+    "1,500.50", "(200)" for a negative, "15k" — and returns None for anything
+    that isn't a number, so an unparseable cell is dropped rather than turned
+    into a bogus figure. The naive "keep the digits" approach this replaces read
+    "1,500.50" as 150050, a 100x overstatement that then fed scoring.
+
+    Negative amounts are rejected too: estimated_value is a property value / deal
+    size, so a negative is bad data, not a small number.
+    """
+    text = clean_value(value).lower()
+    if not text:
+        return None
+
+    negative = False
+    if text.startswith("(") and text.endswith(")"):
+        negative, text = True, text[1:-1].strip()
+    text = re.sub(r"^[^\d(.-]+", "", text).strip()      # currency symbol/prefix
+    if text.startswith("-"):
+        negative, text = True, text[1:].strip()
+
+    multiplier = 1
+    if text and text[-1] in _SUFFIXES:
+        multiplier, text = _SUFFIXES[text[-1]], text[:-1].strip()
+
+    text = re.sub(r"[\s ]", "", text)
+    if not text:
+        return None
+
+    if "," in text and "." in text:
+        # The rightmost separator is the decimal point; the other groups digits.
+        dec = "," if text.rfind(",") > text.rfind(".") else "."
+        text = text.replace("." if dec == "," else ",", "").replace(dec, ".")
+    elif _GROUPED.match(text):
+        text = text.replace(",", "").replace(".", "")
+    elif "," in text:
+        text = text.replace(",", ".")                    # 1500,50 -> 1500.50
+
+    if not _NUMERIC.match(text):
+        return None
+    amount = round(float(text) * multiplier)
+    return None if negative or amount < 0 else amount
+
+
+def normalize_status(value: str) -> str:
+    """Fold a status cell onto the key form the pipeline stores.
+
+    "Quote Sent" / "quote-sent" / " WON " all name real stages; without this
+    they land in properties.status verbatim and the lead then belongs to no
+    Kanban column at all. Validating the result against the account's stages is
+    the route's job — this only fixes the shape.
+    """
+    return re.sub(r"[^a-z0-9]+", "_", clean_value(value).lower()).strip("_")
+
+
+def normalize_zip(value: str) -> str:
+    """Reduce a US ZIP+4 to its 5-digit form, leaving anything else alone.
+
+    zip is part of the property uniqueness key and every ZIP-scoped query and
+    pipeline run matches on the 5-digit form, so "77002-1234" would both
+    duplicate the lead and hide it from its own ZIP.
+    """
+    text = clean_value(value)
+    m = re.match(r"^(\d{5})[-\s]?\d{4}$", text)
+    return m.group(1) if m else text
 
 
 def normalize_row(raw: dict, mapping: dict[str, str]) -> dict:
     """Apply a header->field mapping to one CSV row and clean the values.
 
     Combines first/last name into contact_name, falls back to a formatted
-    address when no street column is mapped, lowercases email, and parses
-    estimated_value. Empty values are dropped so they never clobber existing
-    data on upsert.
+    address when no street column is mapped, lowercases email, folds status and
+    zip onto their canonical forms, and parses estimated_value. Empty values are
+    dropped so they never clobber existing data on upsert.
     """
     out: dict = {}
     first = last = formatted = None
 
     for header, target in mapping.items():
-        val = (raw.get(header) or "").strip()
+        val = clean_value(raw.get(header) or "")
         if not val:
             continue
         if target == _FIRST:
@@ -147,8 +229,18 @@ def normalize_row(raw: dict, mapping: dict[str, str]) -> dict:
     if "contact_email" in out:
         out["contact_email"] = out["contact_email"].lower()
 
+    if "zip" in out:
+        out["zip"] = normalize_zip(out["zip"])
+
+    if "status" in out:
+        status = normalize_status(out["status"])
+        if status:
+            out["status"] = status
+        else:
+            del out["status"]
+
     if "estimated_value" in out:
-        parsed = _parse_int(out["estimated_value"])
+        parsed = parse_amount(out["estimated_value"])
         if parsed is None:
             del out["estimated_value"]
         else:
