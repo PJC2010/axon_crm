@@ -62,13 +62,28 @@ SAMPLE_LIMIT = 10
 _MAX_RETURNED_IDS = 1000
 
 # A lead a human has already worked is never archived automatically, however the
-# rule reads it. A rep who moved a lead off `new`, or took ownership of it, has
+# rule reads it. "Not worked" is the account's OWN first stage, looked up from
+# `pipeline_stages` — the key is not always "new": business-type presets ship
+# their own stage sets (an insurance account starts at "prospect",
+# api/business_types.py) and every account can rename or delete stages through
+# the custom-stages UI (migration 0011). Hardcoding "new" would make the archive
+# silently match nothing for those accounts while the audit still offered it. A rep who moved a lead off `new`, or took ownership of it, has
 # made a judgment the classifier does not get to overrule in bulk — and the
 # classifier can be wrong about a real customer whose surname happens to be
 # Church, or whose address was typed without a house number. Those rows are
 # still reported by the audit (as `protected`), and can still be archived one at
 # a time through the existing per-lead endpoint.
-UNWORKED_ONLY_SQL = "status = 'new' AND assigned_to IS NULL"
+# Correlated on properties.account_id rather than a bind parameter, because
+# these fragments are interpolated into statements whose %s ordering is fixed
+# (psycopg2 binds positionally by statement text) — see parcels.seed_account for
+# the same constraint.
+UNWORKED_ONLY_SQL = """(
+        status = COALESCE((SELECT s.key FROM pipeline_stages s
+                            WHERE s.account_id = properties.account_id
+                              AND s.is_default
+                            ORDER BY s.sort_order LIMIT 1), 'new')
+        AND assigned_to IS NULL
+    )"""
 
 # Columns shown in a sample row — the ones an operator needs to recognise a
 # parcel, matching the property-signals panel on the lead page.
@@ -121,7 +136,7 @@ def _scope(account_id: int, zip_code: str | None,
 
 
 def audit(conn, account_id: int, *, zip_code: str | None = None,
-          sample_limit: int = SAMPLE_LIMIT) -> dict:
+          sample_limit: int = SAMPLE_LIMIT, by_zip: bool = False) -> dict:
     """Free, read-only report on non-residential rows in this account's leads.
 
     No vendor calls and nothing written — safe to hit on a page load, the same
@@ -152,6 +167,14 @@ def audit(conn, account_id: int, *, zip_code: str | None = None,
     any_excl = sql_non_residential(tier=EXCLUDE)
     any_reason = sql_non_residential(tier=None)
 
+    # Every predicate here re-normalizes owner_name, so each extra pass over the
+    # account is expensive and this runs behind a page load. The spend-at-risk
+    # and protected counts are therefore FILTERs on the same scan rather than
+    # queries of their own. Neither fragment binds a parameter, so scope_params
+    # is unchanged — psycopg2 binds %s positionally by statement text, and a
+    # parameter in the SELECT list would bind ahead of the WHERE.
+    from pipeline.backfill import _gap_clause
+
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             f"""
@@ -159,6 +182,9 @@ def audit(conn, account_id: int, *, zip_code: str | None = None,
                 COUNT(*) AS properties,
                 COUNT(*) FILTER (WHERE {any_reason}) AS flagged,
                 COUNT(*) FILTER (WHERE {any_excl})   AS excludable,
+                COUNT(*) FILTER (WHERE {any_excl} AND {_gap_clause()}) AS billable,
+                COUNT(*) FILTER (WHERE {any_excl} AND NOT {UNWORKED_ONLY_SQL})
+                    AS protected,
                 {reason_counts}
             FROM properties
             WHERE {scope_sql}
@@ -187,51 +213,25 @@ def audit(conn, account_id: int, *, zip_code: str | None = None,
         )
         samples = [dict(r) for r in cur.fetchall()]
 
-        # Per-ZIP breakdown, so an operator can see whether one bad ZIP seed is
-        # responsible rather than the problem being spread evenly.
-        cur.execute(
-            f"""
-            SELECT zip,
-                   COUNT(*) AS properties,
-                   COUNT(*) FILTER (WHERE {any_excl}) AS excludable
-            FROM properties
-            WHERE {scope_sql}
-            GROUP BY zip
-            HAVING COUNT(*) FILTER (WHERE {any_excl}) > 0
-            ORDER BY excludable DESC, zip
-            """,
-            scope_params,
-        )
-        by_zip = [dict(r) for r in cur.fetchall()]
-
-        # What this is actually costing. `gap_clause` is the same predicate
-        # fetch_missing_any uses to build the paid candidate pool, so these are
-        # excludable rows a vendor would be asked about — and billed for — on
-        # the next run. Reported as a count rather than a currency amount
-        # because per-lookup pricing is a contract term, not something the code
-        # knows.
-        from pipeline.backfill import _gap_clause
-        cur.execute(
-            f"""
-            SELECT COUNT(*) AS billable
-            FROM properties
-            WHERE {scope_sql} AND {any_excl} AND {_gap_clause()}
-            """,
-            scope_params,
-        )
-        billable = (cur.fetchone() or {}).get("billable") or 0
-
-        # Excludable rows a human has already worked, which archive() will not
-        # touch. Reported so `excludable` and `archived_count` reconcile rather
-        # than looking like the cleanup silently under-ran.
-        cur.execute(
-            f"""
-            SELECT COUNT(*) AS n FROM properties
-            WHERE {scope_sql} AND {any_excl} AND NOT ({UNWORKED_ONLY_SQL})
-            """,
-            scope_params,
-        )
-        protected = (cur.fetchone() or {}).get("n") or 0
+        # Per-ZIP breakdown: another full pass with the same heavy predicate, and
+        # only the CLI report renders it — so it is opt-in rather than a cost
+        # every page load pays for a field it discards.
+        zip_rows: list[dict] = []
+        if by_zip:
+            cur.execute(
+                f"""
+                SELECT zip,
+                       COUNT(*) AS properties,
+                       COUNT(*) FILTER (WHERE {any_excl}) AS excludable
+                FROM properties
+                WHERE {scope_sql}
+                GROUP BY zip
+                HAVING COUNT(*) FILTER (WHERE {any_excl}) > 0
+                ORDER BY excludable DESC, zip
+                """,
+                scope_params,
+            )
+            zip_rows = [dict(r) for r in cur.fetchall()]
 
         # Rows a previous archive already dealt with, so a re-run shows the
         # cleanup held rather than silently reporting zero and looking like it
@@ -272,12 +272,12 @@ def audit(conn, account_id: int, *, zip_code: str | None = None,
             for r in ALL_REASONS
         },
         "samples": samples,
-        "by_zip": by_zip,
+        "by_zip": zip_rows,
         # Excludable rows still in the paid candidate pool — vendor calls the
         # next run would spend on parcels nobody lives at.
-        "spend_at_risk": {"billable_rows": int(billable)},
+        "spend_at_risk": {"billable_rows": int(totals.get("billable") or 0)},
         # Excludable, but a rep has worked it — archive() leaves these alone.
-        "protected": int(protected),
+        "protected": int(totals.get("protected") or 0),
         "already_archived": int(already_archived),
         "scope": {"zip": zip_code},
     }
@@ -303,7 +303,13 @@ def archive(conn, account_id: int, *, zip_code: str | None = None,
     verdict is explainable and reversible, and so a system archive can be told
     apart from one a rep performed — `archived_at` alone cannot say which.
     """
-    picked = list(reasons) if reasons else list(EXCLUDE_REASONS)
+    # `is None` rather than falsiness: [] is what a checkbox UI sends when the
+    # operator has deselected every reason, and on a destructive bulk endpoint
+    # that must mean "nothing", never "the default set".
+    picked = list(EXCLUDE_REASONS) if reasons is None else list(reasons)
+    if not picked:
+        return {"archived_count": 0, "would_archive": 0, "reasons": [],
+                "dry_run": dry_run, "zip": zip_code}
     bad = [r for r in picked if r not in REASON_TIERS]
     if bad:
         raise ValueError(f"unknown reason(s): {sorted(bad)}")
@@ -402,7 +408,10 @@ def _print_audit(report: dict, account_id: int) -> None:
     if report["by_zip"]:
         print("  Worst ZIPs:")
         for b in report["by_zip"][:10]:
-            print(f"    {b['zip']:>10}  {b['excludable']:>7,} / {b['properties']:,}")
+            # properties.zip is nullable, so GROUP BY emits a NULL bucket —
+            # f"{None:>10}" raises TypeError.
+            print(f"    {(b['zip'] or '(none)'):>10}  "
+                  f"{b['excludable']:>7,} / {b['properties']:,}")
         print()
 
     if report["samples"]:
@@ -446,7 +455,9 @@ def main() -> None:
                         datefmt="%H:%M:%S")
     conn = get_conn()
     try:
-        _print_audit(audit(conn, args.account_id, zip_code=args.zip),
+        # by_zip is opt-in (an extra full scan); the CLI report renders it.
+        _print_audit(audit(conn, args.account_id, zip_code=args.zip,
+                           by_zip=True),
                      args.account_id)
         if not args.archive:
             return

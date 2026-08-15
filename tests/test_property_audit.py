@@ -68,13 +68,20 @@ class _FakeConn:
 
 def _audit_results(totals=None, samples=(), by_zip=(), billable=0, archived=0,
                    protected=0):
-    """The six result sets audit() consumes, in order."""
-    base = {"properties": 100, "flagged": 7, "excludable": 5}
+    """The result sets audit() consumes, in order.
+
+    Three statements by default — totals, samples, already-archived — because
+    the spend-at-risk and protected counts are FILTERs on the totals scan. A
+    fourth (by_zip) is appended for the opt-in path.
+    """
+    base = {"properties": 100, "flagged": 7, "excludable": 5,
+            "billable": billable, "protected": protected}
     base.update({f"n_{r}": 0 for r in
                  list(EXCLUDE_REASONS) + list(REVIEW_REASONS)})
     base.update(totals or {})
-    return [[base], list(samples), list(by_zip),
-            [{"billable": billable}], [{"n": protected}], [{"n": archived}]]
+    if by_zip:
+        return [[base], list(samples), list(by_zip), [{"n": archived}]]
+    return [[base], list(samples), [{"n": archived}]]
 
 
 # ── Scoping ──────────────────────────────────────────────────────────────────
@@ -98,9 +105,37 @@ def test_account_id_is_never_interpolated():
 def test_live_leads_only_by_default():
     cur = _FakeCursor(_audit_results())
     audit(_FakeConn(cur), 1)
-    # The first three statements report on work still to do.
-    for sql, _ in cur.statements[:3]:
+    # The statements reporting work still to do; the last counts what a previous
+    # archive already handled and deliberately looks at archived rows.
+    for sql, _ in cur.statements[:-1]:
         assert "archived_at IS NULL" in sql
+
+
+def test_audit_uses_one_scan_for_the_headline_counts():
+    """Each predicate re-normalizes owner_name, so an extra pass over the
+    account is expensive and this runs behind a page load. spend-at-risk and
+    protected are FILTERs on the totals scan, and the per-ZIP breakdown — which
+    only the CLI renders — is opt-in."""
+    cur = _FakeCursor(_audit_results())
+    audit(_FakeConn(cur), 1)
+    assert len(cur.statements) == 3, [s[:60] for s, _ in cur.statements]
+    totals = cur.statements[0][0]
+    assert "AS billable" in totals and "AS protected" in totals
+    assert "GROUP BY zip" not in cur.all_sql()
+
+
+def test_by_zip_is_opt_in():
+    cur = _FakeCursor(_audit_results(
+        by_zip=[{"zip": "77024", "properties": 10, "excludable": 3}]))
+    out = audit(_FakeConn(cur), 1, by_zip=True)
+    assert len(cur.statements) == 4
+    assert "GROUP BY zip" in cur.all_sql()
+    assert out["by_zip"][0]["zip"] == "77024"
+
+
+def test_by_zip_defaults_to_empty():
+    cur = _FakeCursor(_audit_results())
+    assert audit(_FakeConn(cur), 1)["by_zip"] == []
 
 
 def test_zip_scope_is_bound_not_interpolated():
@@ -131,7 +166,7 @@ def test_audit_return_shape():
         by_zip=[{"zip": "77024", "properties": 12_403, "excludable": 812}],
         billable=640, archived=3, protected=11,
     ))
-    out = audit(_FakeConn(cur), 1)
+    out = audit(_FakeConn(cur), 1, by_zip=True)
     assert out["properties"] == 12_403
     assert out["flagged"] == 900
     assert out["excludable"] == 812
@@ -216,15 +251,19 @@ def test_archive_never_touches_a_worked_lead():
     cur = _FakeCursor([[]], rowcount=0)
     archive(_FakeConn(cur), 7)
     sql = cur.all_sql()
-    assert "status = 'new'" in sql
     assert "assigned_to IS NULL" in sql
+    # Derived from the account's own first stage, not hardcoded: an insurance
+    # account starts at "prospect", and any account can rename or delete stages.
+    assert "pipeline_stages" in sql
+    assert "s.account_id = properties.account_id" in sql
+    assert "is_default" in sql
 
 
 def test_dry_run_applies_the_same_worked_lead_guard():
     """A dry run that counted rows the real call would skip would over-promise."""
     cur = _FakeCursor([[(4,)]])
     archive(_FakeConn(cur), 7, dry_run=True)
-    assert "status = 'new'" in cur.all_sql()
+    assert "pipeline_stages" in cur.all_sql()
 
 
 def test_archive_is_account_scoped():
@@ -250,6 +289,39 @@ def test_unknown_reason_is_rejected():
     with pytest.raises(ValueError, match="unknown reason"):
         archive(_FakeConn(cur), 7, reasons=["made_up"])
     assert cur.statements == []
+
+
+def test_empty_reason_list_archives_nothing():
+    """[] is what a checkbox UI sends once every reason is deselected. On a
+    destructive bulk endpoint that must mean "nothing", never "the default
+    set" — falsiness would have archived the account's whole excludable book.
+    """
+    cur = _FakeCursor([[]], rowcount=0)
+    conn = _FakeConn(cur)
+    out = archive(conn, 7, reasons=[])
+    assert out["archived_count"] == 0
+    assert out["reasons"] == []
+    assert cur.statements == [], "must not touch the DB at all"
+    assert conn.commits == 0
+
+
+def test_none_reasons_still_means_the_default_set():
+    cur = _FakeCursor([[]], rowcount=0)
+    out = archive(_FakeConn(cur), 7, reasons=None)
+    assert out["reasons"] == list(EXCLUDE_REASONS)
+
+
+def test_cli_report_tolerates_a_null_zip_bucket(capsys):
+    """properties.zip is nullable, so GROUP BY zip emits a NULL bucket and
+    f"{None:>10}" raises TypeError — crashing the report for the operator who
+    most needs it."""
+    from pipeline.property_audit import _print_audit
+
+    cur = _FakeCursor(_audit_results(
+        totals={"properties": 10, "flagged": 1, "excludable": 1},
+        by_zip=[{"zip": None, "properties": 10, "excludable": 1}]))
+    _print_audit(audit(_FakeConn(cur), 1, by_zip=True), 1)
+    assert "(none)" in capsys.readouterr().out
 
 
 def test_default_reasons_are_exactly_the_exclude_tier():
@@ -310,7 +382,7 @@ def test_cli_report_renders_without_a_database(capsys):
         by_zip=[{"zip": "77024", "properties": 12_403, "excludable": 947}],
         billable=641, protected=12,
     ))
-    _print_audit(audit(_FakeConn(cur), 1), 1)
+    _print_audit(audit(_FakeConn(cur), 1, by_zip=True), 1)
     out = capsys.readouterr().out
     assert "12,403 live leads checked" in out
     assert "947 archivable" in out

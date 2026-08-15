@@ -55,8 +55,13 @@ async def upload_hcad(
                      mail_city = EXCLUDED.mail_city,
                      mail_state = EXCLUDED.mail_state,
                      mail_zip = EXCLUDED.mail_zip,
-                     -- Only ever fills: an older export without the column
-                     -- must not blank a class code a newer one already landed.
+                     -- Fill-only, for the one case that reaches this branch:
+                     -- an acct whose site_zip changed between exports, so the
+                     -- DELETE above (scoped to the uploaded ZIP) did not remove
+                     -- it. Within a ZIP the DELETE runs first, so re-uploading a
+                     -- pre-0072 CSV DOES clear state_class for that ZIP — rebuild
+                     -- the DuckDB before re-uploading, or reload via
+                     -- tools/load_hcad_to_postgres.py.
                      state_class = COALESCE(EXCLUDED.state_class, hcad_properties.state_class)
                 """,
                 (

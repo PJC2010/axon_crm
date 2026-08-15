@@ -201,7 +201,16 @@ NONRESIDENTIAL_REVIEW_SQFT = int(os.getenv("NONRESIDENTIAL_REVIEW_SQFT", "12000"
 
 # Apply the EXCLUDE-tier guard as a filter when materializing a tenant's rows
 # from the shared parcel cache (pipeline/parcels.py::seed_account). Off by
-# default so existing callers are unchanged; the prospecting UI turns it on.
+# default so existing seed counts are unchanged; the audit and archive work
+# either way.
+#
+# Process-global, which is a real limitation on a single deployment serving many
+# tenants: turning it on to protect a home-services account also stops a
+# tax-delinquent/investor account materializing the vacant and no-situs parcels
+# it legitimately wants — the very use case seed_account's docstring says the
+# shared cache exists to keep available. It belongs on `accounts` alongside
+# business_type, reached through PATCH /api/account/profile; until then, leave
+# it off on a shared deployment and clean up with the archive endpoint instead.
 SEED_RESIDENTIAL_ONLY = os.getenv("SEED_RESIDENTIAL_ONLY", "false").lower() == "true"
 
 # ── Search-area expansion (when a ZIP returns too few seed rows) ──────────────

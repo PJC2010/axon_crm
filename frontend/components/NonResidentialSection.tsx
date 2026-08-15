@@ -88,6 +88,11 @@ export function NonResidentialSection() {
     }
   }
 
+  // The server never archives leads a rep has already worked, so the button
+  // must promise what it will actually do — otherwise the label, the dry-run
+  // confirmation and the result line are three different numbers.
+  const archivable = Math.max(0, (audit?.excludable ?? 0) - (audit?.protected ?? 0))
+
   const exclude = Object.entries(audit?.by_reason ?? {})
     .filter(([, r]) => r.tier === 'exclude' && r.count > 0)
   const review = Object.entries(audit?.by_reason ?? {})
@@ -135,8 +140,12 @@ export function NonResidentialSection() {
             <Examples samples={audit.samples} labels={audit.by_reason} />
           )}
 
-          {audit.excludable > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16, flexWrap: 'wrap' }}>
+          {/* Recheck sits outside the archivable guard: it is non-destructive,
+              and it is most wanted exactly when there is nothing to archive —
+              right after a successful cleanup, or on a report that found only
+              review-tier rows. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16, flexWrap: 'wrap' }}>
+            {archivable > 0 && (
               <button
                 onClick={handleArchive}
                 disabled={busy}
@@ -146,18 +155,18 @@ export function NonResidentialSection() {
                 {busy
                   ? <Loader2 size={13} strokeWidth={1.5} className="animate-spin" />
                   : <Building2 size={13} strokeWidth={1.5} />}
-                {busy ? 'Working…' : `Archive ${audit.excludable.toLocaleString()} non-home lead${audit.excludable === 1 ? '' : 's'}`}
+                {busy ? 'Working…' : `Archive ${archivable.toLocaleString()} non-home lead${archivable === 1 ? '' : 's'}`}
               </button>
-              <button
-                onClick={() => void load()}
-                disabled={busy}
-                className="btn-secondary"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 36, padding: '0 14px', fontSize: 13 }}
-              >
-                <RefreshCw size={13} strokeWidth={1.5} /> Recheck
-              </button>
-            </div>
-          )}
+            )}
+            <button
+              onClick={() => void load()}
+              disabled={busy || loading}
+              className="btn-secondary"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 36, padding: '0 14px', fontSize: 13 }}
+            >
+              <RefreshCw size={13} strokeWidth={1.5} /> Recheck
+            </button>
+          </div>
         </>
       )}
 
@@ -190,7 +199,9 @@ function Summary({ audit }: { audit: NonResidentialAudit }) {
           emphasis
         />
       )}
-      {audit.protected > 0 && <Stat label="Skipped (already worked)" value={audit.protected} />}
+      {audit.protected > 0 && (
+        <Stat label="Skipped — already worked" value={audit.protected} />
+      )}
       {audit.already_archived > 0 && <Stat label="Archived earlier" value={audit.already_archived} />}
       {clean && (
         <p style={{ margin: 0, alignSelf: 'center', fontSize: 13, color: 'var(--color-ink-500)' }}>

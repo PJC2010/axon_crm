@@ -58,15 +58,12 @@ ALTER TABLE properties ADD COLUMN IF NOT EXISTS state_class TEXT;
 -- unarchive.
 ALTER TABLE properties ADD COLUMN IF NOT EXISTS exclusion_reason TEXT;
 
--- Seeds filter per ZIP, so the class code is only ever read alongside one.
--- Partial: the column is NULL until the next HCAD load, and indexing the NULLs
--- would be most of the table for no benefit.
-CREATE INDEX IF NOT EXISTS idx_parcels_zip_state_class
-    ON parcels(zip, state_class)
-    WHERE state_class IS NOT NULL;
-
--- The audit counts non-residential rows per account (pipeline/property_audit.py),
--- always scoped to one account and only over live leads.
-CREATE INDEX IF NOT EXISTS idx_properties_account_state_class
-    ON properties(account_id, state_class)
-    WHERE archived_at IS NULL AND state_class IS NOT NULL;
+-- No index on state_class, deliberately.
+--
+-- Every consumer wraps it — pipeline/residential.py emits
+-- `LEFT(UPPER(TRIM(COALESCE(state_class, ''))), 1) IN ('F','J','L','S')` so that
+-- one rule covers the whole prefix family. That expression is not sargable, so
+-- a plain btree on the column cannot be used for it and would only add write
+-- cost: `parcels` is county-sized and rewritten by every HCAD load. Add an
+-- expression index matching the generated predicate if the audit ever shows up
+-- in slow queries.
