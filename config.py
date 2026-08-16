@@ -174,6 +174,45 @@ SEED_PROPERTY_TYPES = [
     ).split(",") if t.strip()
 ]
 
+# ── Non-residential guard (pipeline/residential.py) ───────────────────────────
+# The RentCast seed has always filtered on propertyType; the free HCAD seed takes
+# a whole ZIP off the county roll, malls and all. `residential.py` re-derives the
+# same intent from columns `properties` already holds.
+#
+# Building area (NOT lot size — properties.square_footage is HCAD `bld_ar`, see
+# pipeline/hcad_store.py) at or above which a structure cannot be a dwelling.
+#
+# Sizing this is the highest-stakes number in the module, because crossing it
+# archives a lead. Harris County housing stock: Memorial/River Oaks luxury runs
+# 4,000–12,000 sqft; the county's trophy estates reach 25,000–35,000 (a few
+# dozen of them, and they are the most valuable roofing leads in any book);
+# the largest private residence in Texas is ~48,000. Commercial: strip centres
+# 20,000–80,000, and the shopping mall that prompted this module is 147,089.
+#
+# So the two populations OVERLAP between roughly 20,000 and 48,000, and an
+# auto-archive threshold set inside that band deletes trophy estates. 50,000
+# clears the largest dwelling in the state while still catching the mall three
+# times over. Raise it freely; lower it only with evidence from a real book.
+NONRESIDENTIAL_MIN_SQFT = int(os.getenv("NONRESIDENTIAL_MIN_SQFT", "50000"))
+
+# The overlap band itself — large enough to be worth a human look, not large
+# enough to act on. Reported by the audit, never archived automatically.
+NONRESIDENTIAL_REVIEW_SQFT = int(os.getenv("NONRESIDENTIAL_REVIEW_SQFT", "12000"))
+
+# Apply the EXCLUDE-tier guard as a filter when materializing a tenant's rows
+# from the shared parcel cache (pipeline/parcels.py::seed_account). Off by
+# default so existing seed counts are unchanged; the audit and archive work
+# either way.
+#
+# Process-global, which is a real limitation on a single deployment serving many
+# tenants: turning it on to protect a home-services account also stops a
+# tax-delinquent/investor account materializing the vacant and no-situs parcels
+# it legitimately wants — the very use case seed_account's docstring says the
+# shared cache exists to keep available. It belongs on `accounts` alongside
+# business_type, reached through PATCH /api/account/profile; until then, leave
+# it off on a shared deployment and clean up with the archive endpoint instead.
+SEED_RESIDENTIAL_ONLY = os.getenv("SEED_RESIDENTIAL_ONLY", "false").lower() == "true"
+
 # ── Search-area expansion (when a ZIP returns too few seed rows) ──────────────
 SEED_EXPAND_ENABLED   = os.getenv("SEED_EXPAND_ENABLED", "true").lower() == "true"
 SEED_EXPAND_THRESHOLD = int(os.getenv("SEED_EXPAND_THRESHOLD", "50"))   # expand below this

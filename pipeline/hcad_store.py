@@ -41,6 +41,35 @@ _ADDR_NORM = sql_normalize("site_address")
 # Same derive-don't-hand-copy discipline as the address keys above; the rule
 # lives in pipeline/owner.py.
 _OWNER_CLEAN_PS = sql_clean_owner_name("ps.owner_name")
+
+# ── state_class on an older DuckDB ───────────────────────────────────────────
+# `property_summary.state_class` (the county's residential/commercial category,
+# migration 0072) is projected by tools/build_hcad_duckdb.py — but a DuckDB file
+# built before that change does not have the column, and naming a missing column
+# raises duckdb.BinderException, which the CatalogException fallback below does
+# NOT catch. That would take down every HCAD enrichment query on a stale file:
+# a hard failure caused by a missing optional field, which is exactly what the
+# pipeline's degrade-gracefully rule forbids.
+#
+# So the projection is probed before it is used. The probe is a catalog lookup
+# (LIMIT 0, no rows read), negligible next to the per-ZIP query it guards, so it
+# is not worth a cache and the key-management that would come with one. The
+# Postgres path needs no equivalent — the migration guarantees the column there.
+
+def _state_class_expr(con, alias: str = "") -> str:
+    """`state_class` projection for a DuckDB query, or a typed NULL if absent."""
+    try:
+        cols = con.execute("SELECT * FROM property_summary LIMIT 0").description or []
+        if "state_class" in {str(c[0]).lower() for c in cols}:
+            return f"{alias}state_class"
+    except Exception as e:
+        log.debug("state_class probe failed: %s", e)
+    log.info("hcad_store: this DuckDB predates state_class — rebuild with "
+             "tools/build_hcad_duckdb.py to enable county-class filtering; "
+             "pipeline/residential.py's heuristics still apply")
+    return "NULL::VARCHAR AS state_class"
+
+
 _OWNER_CLEAN = sql_clean_owner_name("owner_name")
 
 
@@ -140,6 +169,7 @@ def query_properties(zip_code: str, db_path: str | None = None) -> dict[str, dic
     if db_exists(db_file):
         con = duckdb.connect(str(db_file), read_only=True)
         try:
+            _sc = _state_class_expr(con, "ps.")
             rows = con.execute(f"""
                 SELECT
                     {_ADDR_NORM_PS} AS address_norm,
@@ -156,6 +186,7 @@ def query_properties(zip_code: str, db_path: str | None = None) -> dict[str, dic
                         NULLIF(TRIM(CONCAT_WS(' ', NULLIF(TRIM(ps.mail_state), ''),
                                                    NULLIF(TRIM(ps.mail_zip), ''))), '')
                     ), '')                               AS mailing_address,
+                    {_sc},
                     ps.neighborhood_code,
                     nc.dscr                              AS neighborhood_name,
                     ps.acct                              AS parcel_apn
@@ -167,7 +198,7 @@ def query_properties(zip_code: str, db_path: str | None = None) -> dict[str, dic
 
             cols = ["address_norm", "year_built", "square_footage", "lot_size",
                     "estimated_value", "last_sale_date", "owner_name", "owner_occupied",
-                    "mailing_address", "neighborhood_code", "neighborhood_name",
+                    "mailing_address", "state_class", "neighborhood_code", "neighborhood_name",
                     "parcel_apn"]
             result = {}
             for row in rows:
@@ -188,6 +219,7 @@ def query_properties(zip_code: str, db_path: str | None = None) -> dict[str, dic
 
 
 def _duckdb_query_properties_no_nbhd(con, zip_code: str) -> dict[str, dict]:
+    _sc = _state_class_expr(con)
     rows = con.execute(f"""
         SELECT
             {_ADDR_NORM} AS address_norm,
@@ -204,6 +236,7 @@ def _duckdb_query_properties_no_nbhd(con, zip_code: str) -> dict[str, dict]:
                 NULLIF(TRIM(CONCAT_WS(' ', NULLIF(TRIM(mail_state), ''),
                                            NULLIF(TRIM(mail_zip), ''))), '')
             ), '')                            AS mailing_address,
+            {_sc},
             neighborhood_code,
             NULL::VARCHAR                     AS neighborhood_name,
             acct                              AS parcel_apn
@@ -214,7 +247,7 @@ def _duckdb_query_properties_no_nbhd(con, zip_code: str) -> dict[str, dict]:
 
     cols = ["address_norm", "year_built", "square_footage", "lot_size",
             "estimated_value", "last_sale_date", "owner_name", "owner_occupied",
-            "mailing_address", "neighborhood_code", "neighborhood_name",
+            "mailing_address", "state_class", "neighborhood_code", "neighborhood_name",
             "parcel_apn"]
     result = {}
     for row in rows:
@@ -366,6 +399,7 @@ def query_properties_for_region(region_id: str, zip_code: str,
 
 
 def _duckdb_query_region(con, region_id: str, zip_code: str, joined: bool) -> dict[str, dict]:
+    _sc = _state_class_expr(con, "ps.")
     name_expr = "nc.dscr" if joined else "NULL::VARCHAR"
     join_clause = "LEFT JOIN neighborhood_codes nc ON nc.cd = ps.neighborhood_code" if joined else ""
     rows = con.execute(f"""
@@ -387,6 +421,7 @@ def _duckdb_query_region(con, region_id: str, zip_code: str, joined: bool) -> di
                 NULLIF(TRIM(CONCAT_WS(' ', NULLIF(TRIM(ps.mail_state), ''),
                                            NULLIF(TRIM(ps.mail_zip), ''))), '')
             ), '')                               AS mailing_address,
+            {_sc},
             ps.neighborhood_code,
             {name_expr}                          AS neighborhood_name,
             ps.acct                              AS parcel_apn
@@ -400,7 +435,7 @@ def _duckdb_query_region(con, region_id: str, zip_code: str, joined: bool) -> di
     cols = ["address_norm", "site_address", "site_zip", "mail_city", "year_built",
             "square_footage", "lot_size", "estimated_value", "last_sale_date",
             "owner_name", "owner_occupied", "mailing_address",
-            "neighborhood_code", "neighborhood_name", "parcel_apn"]
+            "state_class", "neighborhood_code", "neighborhood_name", "parcel_apn"]
     result = {}
     for row in rows:
         d = dict(zip(cols, row))
@@ -431,6 +466,7 @@ def query_parcels_for_zip(zip_code: str, db_path: str | None = None) -> dict[str
 
 
 def _duckdb_query_zip(con, zip_code: str, joined: bool) -> dict[str, dict]:
+    _sc = _state_class_expr(con, "ps.")
     name_expr = "nc.dscr" if joined else "NULL::VARCHAR"
     join_clause = "LEFT JOIN neighborhood_codes nc ON nc.cd = ps.neighborhood_code" if joined else ""
     rows = con.execute(f"""
@@ -452,6 +488,7 @@ def _duckdb_query_zip(con, zip_code: str, joined: bool) -> dict[str, dict]:
                 NULLIF(TRIM(CONCAT_WS(' ', NULLIF(TRIM(ps.mail_state), ''),
                                            NULLIF(TRIM(ps.mail_zip), ''))), '')
             ), '')                               AS mailing_address,
+            {_sc},
             ps.neighborhood_code,
             {name_expr}                          AS neighborhood_name,
             ps.acct                              AS parcel_apn
@@ -464,7 +501,7 @@ def _duckdb_query_zip(con, zip_code: str, joined: bool) -> dict[str, dict]:
     cols = ["address_norm", "site_address", "site_zip", "mail_city", "year_built",
             "square_footage", "lot_size", "estimated_value", "last_sale_date",
             "owner_name", "owner_occupied", "mailing_address",
-            "neighborhood_code", "neighborhood_name", "parcel_apn"]
+            "state_class", "neighborhood_code", "neighborhood_name", "parcel_apn"]
     result = {}
     for row in rows:
         d = dict(zip(cols, row))
@@ -565,6 +602,7 @@ def _pg_query_properties(zip_code: str) -> dict[str, dict]:
                         NULLIF(TRIM(CONCAT_WS(' ', NULLIF(TRIM(mail_state), ''),
                                                    NULLIF(TRIM(mail_zip), ''))), '')
                     ), '') AS mailing_address,
+                    state_class,
                     neighborhood_code,
                     neighborhood_name,
                     acct AS parcel_apn
@@ -573,7 +611,7 @@ def _pg_query_properties(zip_code: str) -> dict[str, dict]:
             """, (zip_code,))
             cols = ["address_norm", "year_built", "square_footage", "lot_size",
                     "estimated_value", "last_sale_date", "owner_name", "owner_occupied",
-                    "mailing_address", "neighborhood_code", "neighborhood_name",
+                    "mailing_address", "state_class", "neighborhood_code", "neighborhood_name",
                     "parcel_apn"]
             result = {}
             for row in cur.fetchall():
@@ -666,6 +704,7 @@ def _pg_query_properties_for_region(region_id: str, zip_code: str) -> dict[str, 
                         NULLIF(TRIM(CONCAT_WS(' ', NULLIF(TRIM(mail_state), ''),
                                                    NULLIF(TRIM(mail_zip), ''))), '')
                     ), '') AS mailing_address,
+                    state_class,
                     neighborhood_code,
                     neighborhood_name,
                     acct AS parcel_apn
@@ -675,7 +714,7 @@ def _pg_query_properties_for_region(region_id: str, zip_code: str) -> dict[str, 
             cols = ["address_norm", "site_address", "site_zip", "mail_city", "year_built",
                     "square_footage", "lot_size", "estimated_value", "last_sale_date",
                     "owner_occupied", "owner_name", "mailing_address",
-                    "neighborhood_code", "neighborhood_name", "parcel_apn"]
+                    "state_class", "neighborhood_code", "neighborhood_name", "parcel_apn"]
             result = {}
             for row in cur.fetchall():
                 d = dict(zip(cols, row))
@@ -714,6 +753,7 @@ def _pg_query_parcels_for_zip(zip_code: str) -> dict[str, dict]:
                         NULLIF(TRIM(CONCAT_WS(' ', NULLIF(TRIM(mail_state), ''),
                                                    NULLIF(TRIM(mail_zip), ''))), '')
                     ), '') AS mailing_address,
+                    state_class,
                     neighborhood_code,
                     neighborhood_name,
                     acct AS parcel_apn
@@ -723,7 +763,7 @@ def _pg_query_parcels_for_zip(zip_code: str) -> dict[str, dict]:
             cols = ["address_norm", "site_address", "site_zip", "mail_city", "year_built",
                     "square_footage", "lot_size", "estimated_value", "last_sale_date",
                     "owner_name", "owner_occupied", "mailing_address",
-                    "neighborhood_code", "neighborhood_name", "parcel_apn"]
+                    "state_class", "neighborhood_code", "neighborhood_name", "parcel_apn"]
             result = {}
             for row in cur.fetchall():
                 d = dict(zip(cols, row))

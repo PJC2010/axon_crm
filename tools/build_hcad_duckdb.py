@@ -74,6 +74,22 @@ def _src(con: duckdb.DuckDBPyConnection, path: Path, encoding: str) -> str:
     )
 
 
+def _has_column(con: duckdb.DuckDBPyConnection, src: str, column: str) -> bool:
+    """True when the read_csv clause `src` exposes `column`.
+
+    HCAD's header row is the schema, and it varies between exports and between
+    the full download and the trimmed extracts used in testing. DuckDB
+    identifiers are case-insensitive, so the comparison is folded.
+    """
+    if not src:
+        return False
+    try:
+        names = con.execute(f"SELECT * FROM {src} LIMIT 0").description or []
+    except Exception:
+        return False
+    return column.lower() in {str(d[0]).lower() for d in names}
+
+
 def build(src_dir: Path, out_db: Path, encoding: str) -> None:
     f = {name: src_dir / f"{name}.txt" for name in
          ("real_acct", "owners", "deeds", "permits", "extra_features", "building_res",
@@ -112,6 +128,24 @@ def build(src_dir: Path, out_db: Path, encoding: str) -> None:
         f"FROM {bres_src} GROUP BY TRIM(acct))"
     ) if bres_src else "(SELECT NULL::VARCHAR AS acct, NULL::INTEGER AS year_built WHERE FALSE)"
 
+    # The Texas Comptroller State Category Code — A* single-family, B* multi-
+    # family, C* vacant, F1/F2 commercial/industrial, J* utility, X* exempt. The
+    # county's own answer to "is this a house?", which pipeline/residential.py
+    # uses as its strongest signal.
+    #
+    # Probed rather than assumed: `_src` reads every column of whatever header
+    # the export carries, and older HCAD exports (and the trimmed files people
+    # test with) do not all have this one. Naming a missing column would abort
+    # the whole build, so it degrades to NULL instead — the same
+    # degrade-gracefully rule the pipeline's optional steps follow.
+    has_state_class = _has_column(con, real_acct, "state_class")
+    state_class_expr = (
+        "NULLIF(TRIM(ra.state_class), '')" if has_state_class else "NULL::VARCHAR"
+    )
+    if not has_state_class:
+        print("  note: real_acct.txt has no state_class column — "
+              "non-residential filtering will fall back to heuristics")
+
     # ── property_summary ────────────────────────────────────────────────────
     # owner_occupied heuristic: the owner's mailing street line matches the
     # parcel's site street line (same normalization the pipeline uses for
@@ -139,6 +173,7 @@ def build(src_dir: Path, out_db: Path, encoding: str) -> None:
                 NULLIF(TRIM(ra.mail_city), '')                        AS mail_city,
                 NULLIF(TRIM(ra.mail_state), '')                       AS mail_state,
                 NULLIF(TRIM(ra.mail_zip), '')                         AS mail_zip,
+                {state_class_expr}                                     AS state_class,
                 NULLIF(TRIM(ra.Neighborhood_Code), '')                AS neighborhood_code,
                 NULLIF(TRIM(ra.Neighborhood_Grp), '')                 AS neighborhood_grp,
                 LOWER(REGEXP_REPLACE(COALESCE(ra.site_addr_1, ''), '[^a-z0-9 ]', '', 'g')) AS site_norm,
@@ -152,7 +187,7 @@ def build(src_dir: Path, out_db: Path, encoding: str) -> None:
             acct, site_address, site_zip, year_built, building_sqft, land_sqft,
             tot_appr_val, last_sale_date, owner_name,
             mail_addr, mail_city, mail_state, mail_zip,
-            neighborhood_code, neighborhood_grp,
+            state_class, neighborhood_code, neighborhood_grp,
             (site_norm <> '' AND TRIM(site_norm) = TRIM(mail_norm)) AS likely_owner_occupied
         FROM norm
     """)

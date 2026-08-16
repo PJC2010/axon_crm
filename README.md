@@ -497,6 +497,58 @@ Review what disagrees before deciding to refresh, via `GET /api/property-data/di
 
 Entries under the **`address`** field there are a different and more serious finding. RentCast lookups are by address string, resolved by RentCast's own parser with `limit=1`, so a lookup can quietly come back describing a neighbouring parcel. Every record is now checked against the address it was requested for; one that describes a different property is rejected rather than written, and logged here. Read those first — they mean a lead's data may otherwise have been a stranger's.
 
+### Leads that aren't homes
+
+Axon targets residential homeowners, but the free HCAD seed reads the county
+roll, and the county roll is every **parcel** — shopping centres, churches,
+school-district land, warehouses and vacant lots arrive with the houses, get
+scored, and sit in the pipeline as live leads. (The RentCast seed has always
+filtered on `propertyType`, but that column is written only by RentCast, so it
+is NULL on every HCAD-seeded row.)
+
+`GET /api/property-data/non-residential` is a free, SQL-only report: how many of
+your live leads don't look like homes, broken down by reason, with example rows
+and the number of flagged rows a data provider would still bill you for on the
+next run. `POST /api/property-data/non-residential/archive` acts on it, and the
+Settings → Pipeline tab wraps both.
+
+Run it from the command line against a real database:
+
+```bash
+python -m pipeline.property_audit --account-id 1                  # report only
+python -m pipeline.property_audit --account-id 1 --zip 77024
+python -m pipeline.property_audit --account-id 1 --archive --dry-run
+python -m pipeline.property_audit --account-id 1 --archive
+```
+
+Reasons come in **two tiers**, and only one is ever actioned automatically:
+
+| Tier | Reasons | Behaviour |
+|---|---|---|
+| `exclude` | county class F/J/L/S · owner names a business or institution · property type is Land/Retail/Office/… · building ≥ `NONRESIDENTIAL_MIN_SQFT` (50,000 sqft) · no street address (county numbers it `0`) | Structurally impossible for a dwelling — safe to bulk-archive |
+| `review` | county class X (tax-exempt) · owner word that is also a surname · building 12,000–50,000 sqft · vacant parcel | A real home can look like this — reported, never archived automatically |
+
+The split is the whole design, because the two errors are not symmetric: a false
+positive archives a paying customer, a false negative leaves one visible bad
+row. So nothing keys on value, owner-occupancy, lot size or an LLC/LP/TRUST
+suffix — each describes a River Oaks estate as well as it describes a strip
+mall — the 12,000–50,000 sqft band is review-only because Harris County trophy
+estates overlap small commercial there, and leads a rep has already worked are
+never touched in bulk.
+
+Leads are **archived, not deleted**. Archiving keeps notes, history and
+appointments, removes the row from the list, map, dialer and ML training, stops
+it consuming paid vendor lookups, and is reversible from the archived view.
+Deleting would also be ineffective: the shared parcel cache still holds the
+parcel, so the next scheduled run re-creates the row. `SEED_RESIDENTIAL_ONLY=true`
+applies the same rule at seed time so new ones stop arriving.
+
+The county's own classification (`state_class`, migration 0072) is the strongest
+signal and is what catches *small* commercial — a house-sized dentist's office
+with a bland owner name trips nothing else. It is populated by the next HCAD
+load and reaches existing tenants through the shared parcel cache with no
+re-seed.
+
 Cost controls match the rest of the pipeline: every run is capped (`PROPERTY_BACKFILL_MAX`, default 500), rows are queued only when they have a genuine gap, and each row is stamped with the date it was last asked about so a field RentCast structurally cannot supply (sale price in non-disclosure states like Texas) is not re-billed on every run — see `PROPERTY_RECHECK_DAYS`. The same sweep is available from the UI as `POST /api/property-data/backfill`, which runs it in the background, re-scores the affected ZIPs afterwards, and reports into the normal run history.
 
 ### Harris County (HCAD) data
@@ -642,6 +694,8 @@ The FastAPI server exposes interactive docs at `http://localhost:8000/docs` (Swa
 | GET | `/api/property-data/audit` **(prospecting)** | Per-field NULL report for the whole account + what a sweep would cost (free — no vendor calls) |
 | POST | `/api/property-data/backfill` **(prospecting)** | Queue an account-wide RentCast gap-fill / verification sweep (owner, rate-limited) |
 | GET | `/api/property-data/discrepancies` **(prospecting)** | Stored values RentCast disagrees with |
+| GET | `/api/property-data/non-residential` **(prospecting)** | Leads that aren't homes, counted by reason, with example rows (free — no vendor calls) |
+| POST | `/api/property-data/non-residential/archive` **(prospecting)** | Archive them (owner; `dry_run` counts without writing) |
 
 ### Expenses **(bookkeeping)**
 | Method | Path | Description |

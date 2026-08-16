@@ -262,6 +262,7 @@ def test_seed_account_materialization_filters_default_off():
     parcels.seed_account(_FakeConn(cur), "77449", 7)
     assert "owner_occupied IS TRUE" not in cur.sql
     assert "COALESCE(p.year_built, 0) > 0" not in cur.sql
+    assert "strpos" not in cur.sql        # the residential guard is off too
 
 
 def test_seed_account_owner_occupied_filter_is_literal_sql():
@@ -282,6 +283,46 @@ def test_seed_account_built_only_uses_the_confirmed_structure_rule():
     assert "COALESCE(p.year_built, 0) > 0" in cur.sql
     assert "COALESCE(p.square_footage, 0) > 0" in cur.sql
     assert cur.params == ["77449", 7, 7, 7]
+
+
+def test_seed_account_residential_only_filters_and_adds_no_params():
+    """The non-residential guard, applied at materialization.
+
+    Like the other two it must be literal SQL: psycopg2 binds %s positionally by
+    statement-text order and filter_sql is interpolated ahead of the claim/INSERT
+    params, so a bind param added here would silently shift every later one.
+    """
+    cur = _FakeCursor(rowcount=1)
+    parcels.seed_account(_FakeConn(cur), "77449", 7, residential_only=True)
+    assert "AND NOT" in cur.sql
+    # Reads the parcels alias, never properties.
+    assert "p.owner_name" in cur.sql and "p.square_footage" in cur.sql
+    # A literal '%' would be read as a placeholder once params are bound.
+    assert "%s" in cur.sql and "%" not in cur.sql.replace("%s", "")
+    assert cur.params == ["77449", 7, 7, 7]
+
+
+def test_seed_from_parcels_actually_passes_residential_only(monkeypatch):
+    """Regression guard: owner_occupied_only and built_only were added as
+    kwargs and never wired to a caller, so they have never once run in
+    production. This filter must not join them."""
+    from pipeline import seed as seed_mod
+
+    seen = {}
+    monkeypatch.setattr(seed_mod, "get_conn", lambda: _FakeConn(_FakeCursor()))
+    monkeypatch.setattr(seed_mod, "SEED_RESIDENTIAL_ONLY", True)
+    monkeypatch.setattr(parcels, "ensure_from_hcad", lambda c, z: 10)
+    monkeypatch.setattr(parcels, "fill_coords_from_centroids", lambda c, z: 0)
+    monkeypatch.setattr(parcels, "link_existing", lambda c, z, a: 0)
+    monkeypatch.setattr(parcels, "coverage",
+                        lambda c, z: {"parcels": 10, "geocoded": 0})
+    monkeypatch.setattr(
+        parcels, "seed_account",
+        lambda c, z, a, limit=None, residential_only=False:
+            seen.update(residential_only=residential_only) or 10)
+
+    seed_mod._seed_from_parcels("77449", 1)
+    assert seen["residential_only"] is True
 
 
 def test_ensure_from_hcad_collapses_duplicate_addresses():
@@ -328,7 +369,8 @@ def test_seed_links_pre_existing_rows_before_seeding_them(monkeypatch):
     monkeypatch.setattr(parcels, "link_existing",
                         lambda c, z, a: calls.append("link") or 0)
     monkeypatch.setattr(parcels, "seed_account",
-                        lambda c, z, a, limit=None: calls.append("seed") or 10)
+                        lambda c, z, a, limit=None, residential_only=False:
+                            calls.append("seed") or 10)
     monkeypatch.setattr(parcels, "coverage",
                         lambda c, z: {"parcels": 10, "geocoded": 0})
 

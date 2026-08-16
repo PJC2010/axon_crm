@@ -39,8 +39,8 @@ async def upload_hcad(
                 """INSERT INTO hcad_properties
                    (acct, site_address, site_zip, year_built, building_sqft, land_sqft,
                     tot_appr_val, last_sale_date, owner_name, likely_owner_occupied,
-                    mail_addr, mail_city, mail_state, mail_zip)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    mail_addr, mail_city, mail_state, mail_zip, state_class)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT (acct) DO UPDATE SET
                      site_address = EXCLUDED.site_address,
                      site_zip = EXCLUDED.site_zip,
@@ -54,7 +54,15 @@ async def upload_hcad(
                      mail_addr = EXCLUDED.mail_addr,
                      mail_city = EXCLUDED.mail_city,
                      mail_state = EXCLUDED.mail_state,
-                     mail_zip = EXCLUDED.mail_zip
+                     mail_zip = EXCLUDED.mail_zip,
+                     -- Fill-only, for the one case that reaches this branch:
+                     -- an acct whose site_zip changed between exports, so the
+                     -- DELETE above (scoped to the uploaded ZIP) did not remove
+                     -- it. Within a ZIP the DELETE runs first, so re-uploading a
+                     -- pre-0072 CSV DOES clear state_class for that ZIP — rebuild
+                     -- the DuckDB before re-uploading, or reload via
+                     -- tools/load_hcad_to_postgres.py.
+                     state_class = COALESCE(EXCLUDED.state_class, hcad_properties.state_class)
                 """,
                 (
                     row["acct"],
@@ -71,6 +79,7 @@ async def upload_hcad(
                     row.get("mail_city"),
                     row.get("mail_state"),
                     row.get("mail_zip"),
+                    row.get("state_class") or None,
                 ),
             )
             props_count += 1

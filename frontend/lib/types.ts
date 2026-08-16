@@ -1396,3 +1396,59 @@ export interface JobCostRow {
   profit: number
   margin_pct: number
 }
+
+// ── Non-residential audit (pipeline/residential.py) ─────────────────────────
+// Reasons come in two tiers: `exclude` is structurally impossible for a home
+// and is what the archive acts on; `review` is reported only, because a
+// legitimate home can look like that.
+export type ExclusionTier = 'exclude' | 'review'
+
+export interface NonResidentialReason {
+  count: number
+  tier: ExclusionTier
+  label: string
+}
+
+export interface NonResidentialSample {
+  id: number
+  account_number: string | null
+  address: string | null
+  zip: string | null
+  owner_name: string | null
+  property_type: string | null
+  state_class: string | null
+  square_footage: number | null
+  year_built: number | null
+  estimated_value: number | null
+  lead_score: number | null
+  score_grade: string | null
+  status: string
+  reasons: string[]
+}
+
+export interface NonResidentialAudit {
+  properties: number
+  flagged: number
+  /** Carries at least one `exclude` reason — what the archive would act on.
+   *  Smaller than the sum of by_reason counts: one bad row trips several. */
+  excludable: number
+  /** Excludable, but a rep has already worked it, so the archive skips it. */
+  protected: number
+  by_reason: Record<string, NonResidentialReason>
+  samples: NonResidentialSample[]
+  by_zip: { zip: string; properties: number; excludable: number }[]
+  /** Flagged rows a vendor would still be billed for on the next run. */
+  spend_at_risk: { billable_rows: number }
+  already_archived: number
+  scope: { zip: string | null }
+}
+
+export interface NonResidentialArchiveResult {
+  archived_count: number
+  would_archive: number
+  reasons: string[]
+  dry_run: boolean
+  zip: string | null
+  ids?: number[]
+  ids_truncated?: boolean
+}

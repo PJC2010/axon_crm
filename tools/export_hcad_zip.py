@@ -18,6 +18,22 @@ import duckdb
 
 from config import PERMIT_DB_PATH
 
+def _state_class_expr(con, alias: str = "") -> str:
+    """`state_class` projection, or a typed NULL when the DuckDB predates it.
+
+    A file built before migration 0072 has no such column, and naming a missing
+    column raises duckdb.BinderException — which would abort the export/load for
+    every ZIP. Same degrade-gracefully posture, and same probe, as
+    pipeline/hcad_store.py::_state_class_expr.
+    """
+    try:
+        cols = con.execute("SELECT * FROM property_summary LIMIT 0").description or []
+        if "state_class" in {str(c[0]).lower() for c in cols}:
+            return f"{alias}state_class"
+    except Exception:
+        pass
+    return "NULL AS state_class"
+
 EXPORT_DIR = Path(__file__).parent / "hcad_export"
 
 
@@ -25,12 +41,13 @@ def export_zip(con, zip_code: str) -> tuple[int, int]:
     EXPORT_DIR.mkdir(exist_ok=True)
 
     # Properties
+    _sc = _state_class_expr(con)
     props_path = EXPORT_DIR / f"properties_{zip_code}.csv"
     con.execute(f"""
         COPY (
             SELECT acct, site_address, site_zip, year_built, building_sqft, land_sqft,
                    tot_appr_val, last_sale_date, owner_name, likely_owner_occupied,
-                   mail_addr, mail_city, mail_state, mail_zip
+                   mail_addr, mail_city, mail_state, mail_zip, {_sc}
             FROM property_summary
             WHERE site_zip = '{zip_code}' AND site_address IS NOT NULL
         ) TO '{props_path}' (FORMAT CSV, HEADER TRUE)

@@ -44,7 +44,7 @@ SHARED_COLS = [
     "latitude", "longitude", "geohash", "h3_r8",
     "geocode_source", "geocode_confidence",
     "parcel_apn",
-    "year_built", "square_footage", "lot_size", "property_type",
+    "year_built", "square_footage", "lot_size", "property_type", "state_class",
     "garage_spaces", "garage_type", "has_pool", "has_cracked_slab",
     "roof_type", "foundation_type", "heating_type", "cooling_type",
     "estimated_value", "estimated_equity",
@@ -65,6 +65,7 @@ _NEVER_SHARED = frozenset({
     "owner_age", "length_of_residence_years", "est_household_income", "life_stage",
     "status", "assigned_to", "lead_source", "vertical", "lead_score",
     "score_grade", "score_updated_at", "estimated_job_value", "archived_at",
+    "exclusion_reason",
 })
 
 assert not (set(SHARED_COLS) & _NEVER_SHARED), "shared/never-shared overlap"
@@ -91,6 +92,7 @@ def ensure_from_hcad(conn, zip_code: str) -> int:
                 address, zip, city, state, parcel_apn,
                 year_built, square_footage, lot_size, estimated_value,
                 last_sale_date, owner_name, owner_occupied, mailing_address,
+                state_class,
                 hcad_neighborhood_code, hcad_neighborhood_name,
                 enrichment_flags, enriched_at
             )
@@ -124,6 +126,7 @@ def ensure_from_hcad(conn, zip_code: str) -> int:
                     NULLIF(TRIM(CONCAT_WS(' ', NULLIF(TRIM(h.mail_state), ''),
                                                NULLIF(TRIM(h.mail_zip), ''))), '')
                 ), ''),
+                h.state_class,
                 h.neighborhood_code,
                 h.neighborhood_name,
                 jsonb_build_object('seed', 'hcad'),
@@ -155,6 +158,7 @@ def ensure_from_hcad(conn, zip_code: str) -> int:
                 owner_name             = COALESCE(parcels.owner_name, EXCLUDED.owner_name),
                 owner_occupied         = COALESCE(parcels.owner_occupied, EXCLUDED.owner_occupied),
                 mailing_address        = COALESCE(parcels.mailing_address, EXCLUDED.mailing_address),
+                state_class            = COALESCE(parcels.state_class, EXCLUDED.state_class),
                 hcad_neighborhood_code = COALESCE(parcels.hcad_neighborhood_code, EXCLUDED.hcad_neighborhood_code),
                 hcad_neighborhood_name = COALESCE(parcels.hcad_neighborhood_name, EXCLUDED.hcad_neighborhood_name),
                 enrichment_flags       = parcels.enrichment_flags || EXCLUDED.enrichment_flags,
@@ -211,7 +215,8 @@ def fill_coords_from_centroids(conn, zip_code: str) -> int:
 
 def seed_account(conn, zip_code: str, account_id: int, limit: int | None = None,
                  owner_occupied_only: bool = False,
-                 built_only: bool = False) -> int:
+                 built_only: bool = False,
+                 residential_only: bool = False) -> int:
     """Create this account's `properties` rows for a ZIP straight from `parcels`.
 
     The whole seed is one statement: no parcel data is read into Python. An
@@ -224,15 +229,22 @@ def seed_account(conn, zip_code: str, account_id: int, limit: int | None = None,
     a real street address first (see the ordering below); without that it took
     HCAD's no-situs parcels and nothing else.
 
-    `owner_occupied_only` / `built_only` narrow what this tenant materializes
-    (home-services accounts want owner-occupied homes with a structure) while
-    the full county cache stays available to others (tax-delinquent/investor
-    angles). Both default off — existing callers are unchanged.
+    `owner_occupied_only` / `built_only` / `residential_only` narrow what this
+    tenant materializes (home-services accounts want owner-occupied homes with a
+    structure) while the full county cache stays available to others
+    (tax-delinquent/investor angles). All default off — existing callers are
+    unchanged.
+
+    `residential_only` is the one wired to a caller: the county roll is every
+    parcel, not every house, so an unfiltered ZIP seed takes the shopping
+    centres and school-district land with it. See pipeline/residential.py.
 
     Returns rows inserted or updated.
     """
     # Literal SQL, no bind params, so the parameter shape is identical when the
-    # filters are off.
+    # filters are off. This matters: psycopg2 binds %s positionally by statement
+    # text order, and filter_sql is interpolated ahead of the claim/INSERT
+    # params — a bind param added here would silently shift all of them.
     filter_sql = ""
     if owner_occupied_only:
         filter_sql += "\n                  AND p.owner_occupied IS TRUE"
@@ -242,6 +254,15 @@ def seed_account(conn, zip_code: str, account_id: int, limit: int | None = None,
         # paid-candidate ordering.
         filter_sql += ("\n                  AND (COALESCE(p.year_built, 0) > 0"
                        " OR COALESCE(p.square_footage, 0) > 0)")
+    if residential_only:
+        # Same rule the audit and the bulk archive apply to rows already
+        # materialized, so what a seed refuses and what a cleanup removes can
+        # never drift apart. Imported here rather than at module scope because
+        # residential imports config, and parcels is imported during startup
+        # checks before the environment is necessarily complete.
+        from pipeline.residential import sql_non_residential
+        filter_sql += (f"\n                  AND NOT "
+                       f"{sql_non_residential('p.')}")
 
     shared = ", ".join(SHARED_COLS)
     params: list = [zip_code, account_id]

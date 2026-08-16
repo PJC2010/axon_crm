@@ -425,7 +425,9 @@ def _gap_clause() -> str:
     """SQL for "this row has at least one field RentCast could fill".
 
     A parcel with no situs address (zero house number) is not a gap however
-    many NULLs it carries — no address-keyed vendor can be asked about it.
+    many NULLs it carries — no address-keyed vendor can be asked about it. Nor
+    is an archived row: archiving is how a bad lead is thrown away, and it has
+    to stop the vendor bill as well as hiding the row.
     Excluding those here keeps the audit's gap_rows/eligible equal to the
     candidate pool fetch_missing_any hands the sweep, so the audit never
     promises lookups the sweep will not make.
@@ -435,7 +437,8 @@ def _gap_clause() -> str:
     quoted — the same guard fetch_missing_any uses.
     """
     gaps = " OR ".join(f"{f} IS NULL" for f in CANDIDATE_FIELDS)
-    return f"(({gaps}) AND {sql_has_situs('address')})"
+    return (f"(({gaps}) AND {sql_has_situs('address')}"
+            f" AND archived_at IS NULL)")
 
 
 def _due_clause(recheck_days: int) -> tuple[str, list]:
