@@ -702,6 +702,9 @@ export interface User {
   email: string
   role: string
   is_active: boolean
+  // The org this user belongs to. /auth/me has always returned it (UserOut);
+  // the admin danger zone is the first caller that needs to read it.
+  account_id: number
   onboarding_complete: boolean
   // Whether the login email has been confirmed (self-serve signups verify via
   // an emailed link; admin-created and OAuth users arrive verified).
@@ -1571,6 +1574,21 @@ export interface AdminResetLinkResult {
   reset_url: string
   emailed: boolean
   expires_in_hours: number
+}
+
+export interface AdminDeleteUserResult {
+  deleted: boolean
+  user_id: number
+  username: string
+  account_id: number
+}
+
+export interface AdminDeleteAccountResult {
+  deleted: boolean
+  account_id: number
+  name: string
+  // What the cascade destroyed, counted before the delete.
+  counts: Record<string, number>
 }
 
 export interface AuthEventRow {

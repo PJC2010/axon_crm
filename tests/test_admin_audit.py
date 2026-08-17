@@ -37,27 +37,39 @@ class _Conn:
         self.rollbacks += 1
 
 
+ADMIN = {"id": 7, "username": "pete"}
+
+
 class TestRecordAdminAction:
     def test_single_insert_no_commit(self):
         # No commit: the caller runs it in the mutation's transaction and
         # commits both together, so the trail can't drift from the data.
         conn = _Conn()
-        record_admin_action(conn, 7, "user.update", "user", 42,
+        record_admin_action(conn, ADMIN, "user.update", "user", 42,
                             {"role": {"old": "owner", "new": "sales_rep"}})
         assert len(conn.executed) == 1
         sql, params = conn.executed[0]
         assert "INSERT INTO admin_audit_log" in sql
-        assert params[0] == 7 and params[1] == "user.update"
-        assert params[2] == "user" and params[3] == "42"
-        assert params[4].adapted == {"role": {"old": "owner", "new": "sales_rep"}}
+        assert params[0] == 7 and params[1] == "pete"
+        assert params[2] == "user.update"
+        assert params[3] == "user" and params[4] == "42"
+        assert params[5].adapted == {"role": {"old": "owner", "new": "sales_rep"}}
         assert conn.commits == 0
+
+    def test_actor_username_is_denormalized(self):
+        # migration 0074: admin_user_id goes NULL when the admin is deleted, so
+        # the row only keeps saying who did it because of this copy.
+        conn = _Conn()
+        record_admin_action(conn, ADMIN, "account.delete", "account", 3)
+        _, params = conn.executed[0]
+        assert params[1] == "pete"
 
     def test_defaults(self):
         conn = _Conn()
-        record_admin_action(conn, 1, "user.set_password")
+        record_admin_action(conn, {"id": 1, "username": "a"}, "user.set_password")
         _, params = conn.executed[0]
-        assert params[2] is None and params[3] is None
-        assert params[4].adapted == {}
+        assert params[3] is None and params[4] is None
+        assert params[5].adapted == {}
 
 
 class TestRecordAuthEvent:

@@ -3,8 +3,9 @@ plan-change resolver (api/entitlements.py::resolve_plan_modules). No DB."""
 import pytest
 
 from api.admin_logic import (
-    build_reset_url, clamp_page, classify_login_failure, evaluate_config_checks,
-    parse_forwarded_for, validate_admin_user_update,
+    build_leftover_probe_sql, build_reset_url, clamp_page, classify_login_failure,
+    evaluate_config_checks, parse_forwarded_for, validate_account_delete,
+    validate_admin_user_update, validate_user_delete,
 )
 from api.entitlements import MODULE_KEYS, PLAN_CATALOG, resolve_plan_modules
 
@@ -115,6 +116,99 @@ class TestValidateAdminUserUpdate:
         # Setting truthy values on yourself is harmless.
         assert validate_admin_user_update(
             {"is_active": True, "is_platform_admin": True}, is_self=True) == []
+
+
+class TestValidateUserDelete:
+    REP = {"id": 5, "role": "sales_rep", "is_platform_admin": False}
+    OWNER = {"id": 5, "role": "owner", "is_platform_admin": False}
+
+    def test_plain_rep_with_colleagues(self):
+        assert validate_user_delete(self.REP, admin_id=1, siblings=3, other_owners=1) == []
+
+    def test_self_delete_blocked(self):
+        problems = validate_user_delete(
+            {**self.REP, "id": 1}, admin_id=1, siblings=3, other_owners=1)
+        assert any("your own account" in p for p in problems)
+
+    def test_platform_admin_blocked(self):
+        problems = validate_user_delete(
+            {**self.REP, "is_platform_admin": True}, admin_id=1, siblings=3, other_owners=1)
+        assert any("platform-admin" in p for p in problems)
+
+    def test_last_user_in_org_blocked(self):
+        problems = validate_user_delete(self.OWNER, admin_id=1, siblings=0, other_owners=0)
+        assert any("delete the organization instead" in p for p in problems)
+
+    def test_only_owner_blocked(self):
+        problems = validate_user_delete(self.OWNER, admin_id=1, siblings=2, other_owners=0)
+        assert any("only owner" in p for p in problems)
+
+    def test_owner_with_a_co_owner_allowed(self):
+        assert validate_user_delete(self.OWNER, admin_id=1, siblings=2, other_owners=1) == []
+
+    def test_last_user_message_wins_over_only_owner(self):
+        # Both are true of a solo owner; reporting only the actionable one keeps
+        # the error from suggesting you promote a colleague who doesn't exist.
+        problems = validate_user_delete(self.OWNER, admin_id=1, siblings=0, other_owners=0)
+        assert len(problems) == 1
+
+
+class TestValidateAccountDelete:
+    ACCOUNT = {"id": 9, "name": "Blue Sky Roofing"}
+    OK = {"admin_account_id": 1, "confirm_name": "Blue Sky Roofing",
+          "has_subscription": False, "platform_admins": []}
+
+    def test_valid(self):
+        assert validate_account_delete(self.ACCOUNT, **self.OK) == []
+
+    def test_own_org_blocked(self):
+        problems = validate_account_delete(self.ACCOUNT, **{**self.OK, "admin_account_id": 9})
+        assert any("organization you belong to" in p for p in problems)
+
+    def test_live_subscription_blocked(self):
+        problems = validate_account_delete(self.ACCOUNT, **{**self.OK, "has_subscription": True})
+        assert any("Stripe" in p for p in problems)
+
+    def test_platform_admin_inside_org_blocked(self):
+        problems = validate_account_delete(
+            self.ACCOUNT, **{**self.OK, "platform_admins": ["pete", "dana"]})
+        assert any("pete, dana" in p for p in problems)
+
+    def test_name_must_match_exactly(self):
+        for typed in ("blue sky roofing", "Blue Sky", "", "Blue  Sky Roofing"):
+            problems = validate_account_delete(self.ACCOUNT, **{**self.OK, "confirm_name": typed})
+            assert any("exactly" in p for p in problems), typed
+
+    def test_surrounding_whitespace_forgiven(self):
+        # A pasted name picks up spaces; the characters that matter still match.
+        assert validate_account_delete(
+            self.ACCOUNT, **{**self.OK, "confirm_name": "  Blue Sky Roofing "}) == []
+
+    def test_admin_without_an_org_is_not_blocked_by_the_self_guard(self):
+        assert validate_account_delete(self.ACCOUNT, **{**self.OK, "admin_account_id": None}) == []
+
+
+class TestBuildLeftoverProbeSql:
+    def test_probes_every_table(self):
+        sql = build_leftover_probe_sql(["properties", "tasks"])
+        assert sql.count("UNION ALL") == 1
+        assert "FROM properties WHERE account_id = %(id)s" in sql
+        assert "FROM tasks WHERE account_id = %(id)s" in sql
+
+    def test_binds_the_id_by_name_only(self):
+        # Named param throughout: psycopg2 binds positional %s in text order,
+        # and this statement repeats one value once per table.
+        sql = build_leftover_probe_sql(["properties", "tasks", "invoices"])
+        assert "%s" not in sql.replace("%(id)s", "")
+        assert sql.count("%(id)s") == 3
+
+    def test_empty_list_yields_a_query_with_no_rows(self):
+        assert "WHERE FALSE" in build_leftover_probe_sql([])
+
+    def test_rejects_anything_that_is_not_a_bare_identifier(self):
+        for bad in ["users; DROP TABLE accounts", "public.users", 'u"x', "Users", ""]:
+            with pytest.raises(ValueError, match="Refusing to interpolate"):
+                build_leftover_probe_sql(["properties", bad])
 
 
 class TestEvaluateConfigChecks:
