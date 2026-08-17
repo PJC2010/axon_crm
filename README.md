@@ -1,6 +1,6 @@
 # Axon CRM
 
-A full-stack, multi-tenant business intelligence and CRM platform, originally built for home-service contractors and generalized to serve other verticals (insurance, retail, appointment-based businesses) from the same codebase. Axon pulls property data from public sources, scores leads using configurable per-vertical signals, and surfaces the highest-opportunity prospects in a mobile-first dashboard — alongside task management, a Kanban pipeline, quotes, invoicing with accounts receivable reporting, online payments, expense tracking, marketing insights, and workflow automation.
+A full-stack, multi-tenant business intelligence and CRM platform, originally built for home-service contractors and generalized to serve other verticals (insurance, retail, appointment-based businesses) from the same codebase. Axon pulls property data from public sources, scores leads using configurable per-vertical signals, and surfaces the highest-opportunity prospects in a mobile-first dashboard — alongside task management, a Kanban pipeline, quotes, invoicing with accounts receivable reporting, online payments, expense tracking, and workflow automation.
 
 ---
 
@@ -110,10 +110,6 @@ The platform is self-hosted, multi-tenant, and data-sovereign: every table is is
 - Missed calls also drop an urgent same-day call-back task on the owner (speed-to-lead)
 - **Power dialer** (`/dialer`): a stateless call queue of workable leads with a dialable phone — graded A→D, best score first, do-not-call and skip-trace-litigator rows excluded, just-dialed leads sitting out a cooldown. Calls go through the browser (Twilio Voice SDK, one-time TwiML App setup in `docs/TWILIO_SETUP.md` §5) with the account's tracking number as caller ID, degrading to `tel:` links when unconfigured. One-click dispositions write the call row + timeline line, advance `new` leads to `contacted`, schedule callback tasks, set a lead-level `do_not_call` flag, and feed the scoring loop (`contacted`/`contact_attempted` events); auto-advance dials the next lead after each verdict
 
-### Marketing Insights
-- Connect Meta (Facebook/Instagram) via manual export upload (Business Suite CSV, Ads Manager CSV, "Download Your Information" JSON)
-- Rule-based recommendations (engagement, posting cadence, ROAS, CPA, CTR benchmarks — all tunable) surfaced as a Marketing Insights panel
-
 ### Geo Prospecting
 See [Geo Scoring & Prospecting](#geo-scoring--prospecting) below. (A predictive-scoring subsystem also runs quietly behind the deterministic scorer — an internal accuracy layer, not a marketed feature; see [Predictive Lead Scoring (ML)](#predictive-lead-scoring-ml).)
 
@@ -178,10 +174,8 @@ axon-crm/
 │   ├── import_logic.py          # Pure helpers for contact/lead CSV import
 │   ├── order_import_logic.py    # Pure helpers for retail order CSV import
 │   ├── recurring_invoices.py    # Recurring invoice generation
-│   ├── marketing_insights.py    # Rule-based marketing insights engine
 │   ├── receipt_extract.py       # Claude-vision receipt OCR
 │   ├── neighbors.py             # Neighbor-of-customer targeting
-│   ├── connectors/              # Pure parsers for social/ads export uploads (Meta, base)
 │   ├── integrations/stripe/     # Stripe Connect Express client helpers
 │   └── routes/                  # ~26 route modules — see API Reference for the full endpoint list
 │       ├── auth.py, oauth.py                        # Login, session, account features, team, OAuth
@@ -193,7 +187,6 @@ axon-crm/
 │       ├── bookkeeping.py                             # P&L, job costing
 │       ├── policies.py, orders.py, order_imports.py,
 │       │   appointments.py, objects.py                # Vertical child objects + roll-up KPIs
-│       ├── connections.py, insights.py                # Social connectors + marketing insights
 │       ├── ml.py                                       # Predictive lead scoring
 │       ├── map.py, geo.py                              # Service-area map + geo scoring/prospecting
 │       ├── stripe_payments.py                          # Online payments (Connect + public pay page)
@@ -227,7 +220,7 @@ axon-crm/
 │   │   ├── login/                         # Sign in (password + Google/Apple)
 │   │   ├── home/, dashboard/, pipeline/,
 │   │   │   tasks/, expenses/, bookkeeping/,
-│   │   │   map/, marketing/, settings/    # Authenticated app sections
+│   │   │   map/, settings/                # Authenticated app sections
 │   │   ├── leads/[id]/                    # Lead detail (dynamic route)
 │   │   ├── pay/[token]/, q/[token]/       # Public, token-addressed pay page + quote page
 │   │   └── preview/                       # Public mock-data demo dashboard
@@ -242,9 +235,9 @@ axon-crm/
 │   │   ├── InvoiceList.tsx, QuoteList.tsx, ARDashboard.tsx,
 │   │   │   BookkeepingDashboard.tsx, JobCostingTable.tsx,
 │   │   │   StripeConnectSection.tsx              # Invoicing/quotes/bookkeeping/payments
-│   │   ├── MarketingInsightsPanel.tsx, AIInsightsPanel.tsx
+│   │   ├── AIInsightsPanel.tsx                   # Predictive-scoring insights
 │   │   ├── PropertyMap.tsx                       # Map
-│   │   └── ConnectionsSection.tsx, WorkflowRuleForm.tsx,
+│   │   └── WorkflowRuleForm.tsx,
 │   │       CustomFieldsSettings.tsx, MessageTemplatesSettings.tsx  # Settings
 │   ├── hooks/
 │   │   ├── useEntitlements.ts   # Cached module/plan lookup + hasModule()
@@ -282,7 +275,7 @@ axon-crm/
 
 ### Environment Variables
 
-Copy `.env.example` to `.env` in the project root — it documents every variable (grouped: core, social login, map basemap, connectors/marketing insights, predictive ML scoring, property data sources, contact/demographics enrichment, storm events, cost/tuning knobs, invoice/quote delivery, website lead intake, Stripe, seed source). The minimum to run locally:
+Copy `.env.example` to `.env` in the project root — it documents every variable (grouped: core, social login, map basemap, predictive ML scoring, property data sources, contact/demographics enrichment, storm events, cost/tuning knobs, invoice/quote delivery, website lead intake, Stripe, seed source). The minimum to run locally:
 
 ```env
 DATABASE_URL=postgresql://localhost/axon_crm
@@ -306,11 +299,6 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 # Page views (including client-side navigation) are tracked automatically;
 # conversion events (sign_up, login, begin_checkout) fire via lib/analytics.ts.
 NEXT_PUBLIC_GA_MEASUREMENT_ID=G-XXXXXXXXXX
-
-# Optional: Meta (Facebook) pixel. Leave unset to skip loading the pixel.
-# Mounted by components/MetaPixel; the same lib/analytics.ts helpers fan the
-# conversion events out to Meta (CompleteRegistration, InitiateCheckout).
-NEXT_PUBLIC_META_PIXEL_ID=1234567890123456
 ```
 
 ### Database Setup
@@ -381,7 +369,7 @@ The suite (`tests/`, configured via `pytest.ini` and `conftest.py`) covers pipel
 
 Every table is isolated by `account_id` (`db/migrations/0017_org_isolation.sql`), so one deployment can safely host multiple organizations.
 
-- **Plans** (`api/entitlements.py`): `starter` (core features + metered prospecting), `growth` (adds invoicing, bookkeeping, quotes, automation, appointments), `pro` (every module except marketing, which no named plan grants). Core features — leads, the Kanban board, tasks, notes, history, export, custom fields, segments, and messaging — are always on and aren't gated behind any plan. Every tier includes the scoring engine: starter/growth meter it via a monthly scored-lead reveal allowance (`PLAN_SCORING_LIMITS`, enforced by `api/scoring_quota.py` — rows past the allowance render masked with an upgrade prompt), while `pro` is unlimited.
+- **Plans** (`api/entitlements.py`): `starter` (core features + metered prospecting), `growth` (adds invoicing, bookkeeping, quotes, automation, appointments), `pro` (every module). Core features — leads, the Kanban board, tasks, notes, history, export, custom fields, segments, and messaging — are always on and aren't gated behind any plan. Every tier includes the scoring engine: starter/growth meter it via a monthly scored-lead reveal allowance (`PLAN_SCORING_LIMITS`, enforced by `api/scoring_quota.py` — rows past the allowance render masked with an upgrade prompt), while `pro` is unlimited.
 - **Modules** are enforced server-side via a `require_module(key)` FastAPI dependency (403s with an `upgrade: true` hint when missing) and mirrored client-side by `useEntitlements`/`hasModule()` for UI visibility only.
 - **Business types** (`api/business_types.py`, `docs/GENERALIZATION_ROADMAP.md`) let one codebase serve different verticals: each business type provides default terminology (e.g. "lead" vs. "policy" vs. "customer"), a default category picklist, which KPI tiles to show, and which lead-table columns to show. The frontend's `useTerminology` hook resolves this per account.
 
@@ -778,13 +766,6 @@ Cross-tenant operator surface, guarded by `users.is_platform_admin` (grant via `
 | GET | `/api/objects/kpis` | Dashboard aggregates over enabled child-object modules |
 | POST | `/api/objects/rescore` | Owner-triggered rescore from child-object roll-ups (owner) |
 
-### Marketing: Connections & Insights
-| Method | Path | Description |
-|---|---|---|
-| GET/POST/DELETE | `/api/connections[/{id}]` | List / register / disconnect a social connection (owner) |
-| POST | `/api/connections/{id}/preview` / `/import` | Parse / commit a Meta export upload |
-| GET | `/api/insights/marketing` **(marketing)** | Rule-based (or LLM) acquisition recommendations |
-
 ### Predictive Scoring (ML) **(prospecting)**
 | Method | Path | Description |
 |---|---|---|
@@ -879,8 +860,7 @@ Cross-tenant operator surface, guarded by `users.is_platform_admin` (grant via `
 | `/expenses` | Expense tracker | Yes |
 | `/bookkeeping` | Quotes + Invoices + P&L + AR + job costing (tabbed) | Yes |
 | `/map` | Service-area property map | Yes, and gated on the `map` module |
-| `/marketing` | Marketing insights panel | Yes |
-| `/settings` | Pipeline schedules/runs, workflows, custom fields, message templates, order import, rescoring, Stripe Connect, connections | Yes |
+| `/settings` | Pipeline schedules/runs, workflows, custom fields, message templates, order import, rescoring, Stripe Connect | Yes |
 
 Authentication is handled client-side: the JWT token is stored in `localStorage` under the key `axon_token`. Protected pages are wrapped in `<AuthGuard>` which redirects to `/login` if no token is present. A 401 response from any API call also clears the token and redirects.
 

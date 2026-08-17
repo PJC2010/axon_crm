@@ -291,6 +291,5 @@ class TestModuleCoverage:
     def test_new_modules_in_plan_catalog(self):
         from api.entitlements import PLAN_CATALOG, MODULE_KEYS
         assert {"policies", "orders", "appointments"} <= set(MODULE_KEYS)
-        # pro grants everything except marketing (positioning plan Phase 4).
-        assert PLAN_CATALOG["pro"] == set(MODULE_KEYS) - {"marketing"}
+        assert PLAN_CATALOG["pro"] == set(MODULE_KEYS)
         assert "appointments" in PLAN_CATALOG["growth"]

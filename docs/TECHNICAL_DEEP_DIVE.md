@@ -25,14 +25,13 @@
 12. [Money: Quotes, Invoices, Payments, Bookkeeping](#12-money-quotes-invoices-payments-bookkeeping)
 13. [Vertical Child Objects](#13-vertical-child-objects)
 14. [Messaging, Notifications & Two-Way SMS](#14-messaging-notifications--two-way-sms)
-15. [Marketing Connectors & Insights](#15-marketing-connectors--insights)
-16. [Import / Export](#16-import--export)
-17. [The Frontend](#17-the-frontend)
-18. [The HTTP API Surface](#18-the-http-api-surface)
-19. [Cross-Cutting Concerns](#19-cross-cutting-concerns)
-20. [Deployment & Operations](#20-deployment--operations)
-21. [Testing](#21-testing)
-22. [Glossary of Non-Obvious Design Decisions](#22-glossary-of-non-obvious-design-decisions)
+15. [Import / Export](#15-import--export)
+16. [The Frontend](#16-the-frontend)
+17. [The HTTP API Surface](#17-the-http-api-surface)
+18. [Cross-Cutting Concerns](#18-cross-cutting-concerns)
+19. [Deployment & Operations](#19-deployment--operations)
+20. [Testing](#20-testing)
+21. [Glossary of Non-Obvious Design Decisions](#21-glossary-of-non-obvious-design-decisions)
 
 ---
 
@@ -118,7 +117,7 @@ list — it is intentionally *not* env-configurable.
   time: `expenses`/`bookkeeping` → `bookkeeping`, `invoices` → `invoicing`,
   `quotes` → `quotes`, `stripe_payments` → `invoicing`, `policies`/`orders`/
   `appointments` → their own module, `hcad`/`imports`/`ml` → `prospecting`,
-  `workflows` → `automation`, `insights` → `marketing`, `map` → `map`.
+  `workflows` → `automation`, `map` → `map`.
 - **Public routers** (`invoices.public_router`, `quotes.public_router`,
   `stripe_payments.public_router`, `twilio_inbound.public_router`,
   `public_intake.public_router`) are always ungated — they serve customers,
@@ -127,8 +126,8 @@ list — it is intentionally *not* env-configurable.
   `get_current_user`'s query-param fallback.
 - `pipeline.py` is **mixed-concern**: the Kanban read endpoints are core, but
   its data-acquisition endpoints gate per-endpoint on `prospecting`.
-- `objects.py` and `connections.py` are ungated at the router but check
-  `account_has_module` internally per aggregate block.
+- `objects.py` is ungated at the router but checks `account_has_module`
+  internally per aggregate block.
 
 ---
 
@@ -219,7 +218,6 @@ selection step flagged `enrichment_selected = TRUE`.
 | `stripe_accounts`, `stripe_webhook_events` | Connect accounts + webhook idempotency | 047 |
 | `policies`, `orders`, `appointments` | Vertical child objects | 043 (031 created & 037 dropped an earlier appointments table) |
 | `account_plans` | Plan name + per-module override map (JSONB) | 039 |
-| `connections`, `social_imports`, `social_metrics`, `social_posts` | Marketing connectors | 032, 033 |
 | `lead_feature_snapshots`, `model_versions` | ML training data + model registry | 034 |
 | `vertical_geo_config`, `lead_geo_scores`, `service_areas`, `geocode_queue` | Geo layer | 049 |
 | `customer_clusters` | DBSCAN cluster output | 050 |
@@ -319,7 +317,7 @@ set. `oauth_identities` records the provider linkage.
 ### Entitlements (`api/entitlements.py`)
 
 Optional features are grouped into **modules** (`MODULE_KEYS`): `prospecting`,
-`map`, `invoicing`, `bookkeeping`, `quotes`, `marketing`, `automation`,
+`map`, `invoicing`, `bookkeeping`, `quotes`, `automation`,
 `policies`, `orders`, `appointments`. **Core features are deliberately not
 modules** — leads, Kanban, tasks, notes, history, export, custom fields,
 segments, and messaging are always on.
@@ -903,28 +901,7 @@ history + notes + tasks + signal events into one chronological feed.
 
 ---
 
-## 15. Marketing Connectors & Insights
-
-### Connectors (`api/connectors/`, `routes/connections.py`)
-
-Pure parsers for **manual Meta exports** — Business Suite CSV, Ads Manager CSV,
-and "Download Your Information" JSON. There's no live OAuth yet (the `META_*`
-env vars are documented placeholder seams). `connections.py` registers a
-connection; `/preview` parses an upload into `social_metrics`/`social_posts`
-without committing; `/import` commits it.
-
-### Insights (`api/marketing_insights.py`, `routes/insights.py`, module `marketing`)
-
-A **rule-based engine** (`INSIGHTS_GENERATOR=rules`, with a documented future
-`claude` seam) that turns imported metrics into recommendations against tunable
-benchmarks: engagement vs. `INSIGHTS_ENGAGEMENT_BENCHMARK` (3% of reach), posting
-cadence vs. `INSIGHTS_MIN_POSTS_PER_WEEK`, ROAS vs. `INSIGHTS_TARGET_ROAS`, CPA vs.
-`INSIGHTS_MAX_CPA`, CTR vs. `INSIGHTS_MIN_CTR`, and staleness vs.
-`INSIGHTS_STALE_DAYS`. Surfaced by `GET /api/insights/marketing`.
-
----
-
-## 16. Import / Export
+## 15. Import / Export
 
 - **Contact CSV import** (`import_logic.py`, `routes/imports.py`, module
   `prospecting`): `/preview` (with column-mapping) → `/commit`, capped at
@@ -938,7 +915,7 @@ cadence vs. `INSIGHTS_MIN_POSTS_PER_WEEK`, ROAS vs. `INSIGHTS_TARGET_ROAS`, CPA 
 
 ---
 
-## 17. The Frontend
+## 16. The Frontend
 
 Next.js (a **modified, breaking-change build** — the repo's `AGENTS.md` warns that
 conventions differ from stock Next.js and to consult `node_modules/next/dist/docs`
@@ -949,7 +926,7 @@ before writing frontend code), React 19, TypeScript, Tailwind v4.
 - **`app/`** — routes. Public: `/` (landing), `/login`, `/preview` (mock-data
   demo), `/pay/[token]`, `/q/[token]`. Authenticated (wrapped in `<AuthGuard>`):
   `/home`, `/dashboard`, `/leads/[id]`, `/pipeline`, `/tasks`, `/expenses`,
-  `/bookkeeping`, `/map` (also module-gated), `/marketing`, `/settings`.
+  `/bookkeeping`, `/map` (also module-gated), `/settings`.
   `middleware.ts` redirects `/ → /home` at the root.
 - **`components/`** — feature components plus a **design system** in
   `components/ds/` (Button, Card, Input, KpiCard, ScoreBadge, StatusPill, Tag,
@@ -984,7 +961,7 @@ request still hits the 403.
 
 ---
 
-## 18. The HTTP API Surface
+## 17. The HTTP API Surface
 
 Interactive docs at `/docs` (Swagger) and `/redoc`. All protected endpoints take
 `Authorization: Bearer <token>`. `(module)` = gated; `(public)` =
@@ -995,7 +972,7 @@ token/signature-authenticated, no login. The full endpoint catalog lives in the
 `auth`, `oauth` · `leads`, `notes`, `history`, `export` · `record_fields`,
 `segments`, `messaging` · `tasks`, `pipeline` · `expenses`, `invoices`, `quotes`,
 `bookkeeping` · `policies`, `orders`, `order_imports`, `appointments`, `objects` ·
-`connections`, `insights`, `ml` · `map`, `geo` · `stripe_payments`,
+`ml` · `map`, `geo` · `stripe_payments`,
 `twilio_inbound`, `public_intake` · `hcad`, `workflows`, `imports`.
 
 Handlers are intentionally thin: parse/validate (Pydantic models in
@@ -1007,7 +984,7 @@ take the *same* path (e.g. both move a lead's status through
 
 ---
 
-## 19. Cross-Cutting Concerns
+## 18. Cross-Cutting Concerns
 
 - **Tenancy** — `account_id` on every table and in every query; the conflict key
   on `properties` includes it. There is no Postgres RLS; isolation is
@@ -1029,7 +1006,7 @@ take the *same* path (e.g. both move a lead's status through
 
 ---
 
-## 20. Deployment & Operations
+## 19. Deployment & Operations
 
 - **Frontend → Vercel**: root dir `frontend`, `NEXT_PUBLIC_API_URL` pointing at
   the API; every push to `master` deploys.
@@ -1049,7 +1026,7 @@ take the *same* path (e.g. both move a lead's status through
 
 ---
 
-## 21. Testing
+## 20. Testing
 
 `pytest` (config in `pytest.ini` + `conftest.py`), ~45 test modules under
 `tests/`. Coverage centers on the **pure cores** (fast, deterministic, no DB):
@@ -1062,13 +1039,13 @@ take the *same* path (e.g. both move a lead's status through
 `test_business_types`, `test_provisioning`, `test_segments`, `test_child_objects`,
 `test_recurring_invoices`, `test_invoice_pdf`/`test_invoice_send`,
 `test_stripe_client`/`test_stripe_webhook`, `test_twilio_inbound`,
-`test_oauth_verify`, `test_import`/`test_order_import`, `test_marketing_insights`,
+`test_oauth_verify`, `test_import`/`test_order_import`,
 `test_workflow_engine_daily`, `test_account_rescore`, `test_map`,
-`test_connectors_meta`, `test_coverage`, `test_select`.
+`test_coverage`, `test_select`.
 
 ---
 
-## 22. Glossary of Non-Obvious Design Decisions
+## 21. Glossary of Non-Obvious Design Decisions
 
 - **`properties` is the universal record table.** "Lead," "policyholder,"
   "customer," and "deal" are all the same row shape; business type changes only

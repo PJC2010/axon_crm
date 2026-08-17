@@ -1,5 +1,5 @@
 
-import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, StripeStatus, PublicPayInfo, BillingInfo, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, MessageTemplate, MessageTemplateCreate, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType, HeatmapMetric, HeatmapResponse, ClusterCollection, ProspectSeed, ProspectResult, BlastRadiusResult, ServiceArea, EventCollection, EventCreate, LeadEvent, LeadEventCreate, CallSettings, CallSettingsResponse, TrackingNumber, AvailableNumber, CallOutcome, CallLogPage, CallDisposition, DialerQueueResponse, DialerTokenResponse, DispositionResult, ScoreGrade } from './types'
+import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, StripeStatus, PublicPayInfo, BillingInfo, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, MessageTemplate, MessageTemplateCreate, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType, HeatmapMetric, HeatmapResponse, ClusterCollection, ProspectSeed, ProspectResult, BlastRadiusResult, ServiceArea, EventCollection, EventCreate, LeadEvent, LeadEventCreate, CallSettings, CallSettingsResponse, TrackingNumber, AvailableNumber, CallOutcome, CallLogPage, CallDisposition, DialerQueueResponse, DialerTokenResponse, DispositionResult, ScoreGrade } from './types'
 import type { AdminSummary, AdminPage, AdminAccountRow, AdminAccountDetail, AdminOrgActivityRow, AdminMember, AdminUserRow, AdminUserCreate, AdminUserUpdate, AdminResetLinkResult, AdminDeleteUserResult, AdminDeleteAccountResult, AdminBillingState, AdminSecurityReport, AuthEventRow, AuthEventFilters, AdminAuditRow, AdminProspectRow } from './types'
 import { getToken, clearToken } from './auth'
 
@@ -83,15 +83,11 @@ export function getMe(): Promise<User> {
 // same shape as login(), so the caller stores access_token the same way.
 // smsConsent is the optional A2P opt-in from the form's checkbox — the server
 // stamps it on the user row with timestamp + source 'signup' (migration 064).
-// `meta` carries the Meta CAPI dedup id + the pixel's _fbp/_fbc cookies so the
-// server can fire a matching, high-EMQ StartTrial (see lib/analytics.ts). All
-// optional — omit for a plain signup.
 export function signup(
   companyName: string,
   email: string,
   password: string,
   smsConsent = false,
-  meta?: { event_id?: string; fbp?: string; fbc?: string },
 ): Promise<{ access_token: string }> {
   return req('/auth/signup', {
     method: 'POST',
@@ -100,9 +96,6 @@ export function signup(
       email,
       password,
       sms_consent: smsConsent,
-      meta_event_id: meta?.event_id,
-      fbp: meta?.fbp,
-      fbc: meta?.fbc,
     }),
   })
 }
@@ -1058,40 +1051,6 @@ async function _downloadCsv(path: string, filename: string): Promise<void> {
   a.download = filename
   a.click()
   URL.revokeObjectURL(url)
-}
-
-// ── Connectors / connections ─────────────────────────────────────────────────
-
-export function getConnections(): Promise<Connection[]> {
-  return req<Connection[]>('/connections')
-}
-
-export function createConnection(body: { provider: string; display_name?: string }): Promise<Connection> {
-  return req<Connection>('/connections', { method: 'POST', body: JSON.stringify(body) })
-}
-
-export function deleteConnection(id: number): Promise<void> {
-  return req<void>(`/connections/${id}`, { method: 'DELETE' })
-}
-
-export function previewSocialImport(connId: number, file: File): Promise<SocialImportPreview> {
-  const form = new FormData()
-  form.append('file', file)
-  return multipart<SocialImportPreview>(`/connections/${connId}/preview`, form)
-}
-
-export function runSocialImport(connId: number, file: File): Promise<SocialImportResult> {
-  const form = new FormData()
-  form.append('file', file)
-  return multipart<SocialImportResult>(`/connections/${connId}/import`, form)
-}
-
-// ── Marketing insights ───────────────────────────────────────────────────────
-
-export function getMarketingInsights(days = 90, provider?: string): Promise<MarketingInsightsResponse> {
-  const p = new URLSearchParams({ days: String(days) })
-  if (provider) p.set('provider', provider)
-  return req<MarketingInsightsResponse>(`/insights/marketing?${p}`)
 }
 
 // ── Call tracking ────────────────────────────────────────────────────────────

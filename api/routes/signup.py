@@ -52,14 +52,6 @@ class SignupRequest(BaseModel):
     # Optional A2P 10DLC opt-in from the signup form's consent checkbox.
     # Stamped on the user row with timestamp + source 'signup' (migration 064).
     sms_consent: bool = False
-    # Meta CAPI dedup: the browser generates one event id and fires the browser
-    # StartTrial with it, then sends it (plus the _fbp/_fbc pixel cookies, which
-    # are first-party to the site and never reach this cross-origin API on their
-    # own) so the server StartTrial can share the id and the match keys. All
-    # optional — an older client or a curl signup just omits them.
-    meta_event_id: str | None = None
-    fbp: str | None = None
-    fbc: str | None = None
 
 
 class VerifyEmailRequest(BaseModel):
@@ -228,26 +220,6 @@ def signup(body: SignupRequest, request: Request, db: PGConn = Depends(get_db)):
                                     username=created["username"])
         except Exception:
             log.warning("Failed sending admin signup alert for %s", email, exc_info=True)
-
-    # Server-side StartTrial (Meta CAPI). Best-effort — a tracking failure must
-    # never fail a signup that already committed. external_id is the account id so
-    # this trial links to its later paid Subscribe (api/routes/billing.py). The
-    # event_id mirrors the browser StartTrial for dedup; if the client didn't send
-    # one, fall back to a deterministic id so the server event still lands cleanly.
-    try:
-        from api.connectors import meta_capi
-        meta_capi.track_start_trial(
-            email=email,
-            external_id=str(created["account_id"]),
-            event_id=body.meta_event_id or f"trial_{created['account_id']}",
-            fbp=body.fbp,
-            fbc=body.fbc,
-            client_ip=client_ip(request),
-            client_ua=request.headers.get("user-agent"),
-            event_source_url=request.headers.get("referer") or f"{APP_BASE_URL}/signup",
-        )
-    except Exception:
-        log.warning("Meta CAPI StartTrial emit failed for %s", email, exc_info=True)
 
     token = create_access_token(created["user_id"], created["username"], "owner")
     return TokenResponse(access_token=token)
