@@ -1,12 +1,12 @@
 'use client'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { KeyRound, Pencil, Plus, Search, ShieldCheck } from 'lucide-react'
+import { KeyRound, Pencil, Plus, Search, ShieldCheck, Trash2 } from 'lucide-react'
 import { adminAccounts, adminUsers } from '@/lib/api'
 import type { AdminUserRow } from '@/lib/types'
 import { ToastStack, useToast } from '@/components/Toast'
 import { usePlatformAdmin } from '@/hooks/usePlatformAdmin'
 import { TH_STYLE, TD_STYLE, zebra, fmtDate, fmtDateTime, Pagination } from './AdminTable'
-import { CreateUserModal, EditUserModal, ResetLinkModal, SetPasswordModal } from './UserModals'
+import { CreateUserModal, DeleteUserModal, EditUserModal, ResetLinkModal, SetPasswordModal } from './UserModals'
 
 export function AdminUsers() {
   const { me } = usePlatformAdmin()
@@ -29,6 +29,7 @@ export function AdminUsers() {
   const [editUser, setEditUser] = useState<AdminUserRow | null>(null)
   const [resetUser, setResetUser] = useState<AdminUserRow | null>(null)
   const [pwUser, setPwUser] = useState<AdminUserRow | null>(null)
+  const [deleteUser, setDeleteUser] = useState<AdminUserRow | null>(null)
 
   useEffect(() => {
     adminAccounts({ page_size: 100, sort: 'name' })
@@ -155,6 +156,18 @@ export function AdminUsers() {
                   <button className="dash-icon-btn borderless" title="Edit user" onClick={() => setEditUser(u)}><Pencil size={13} strokeWidth={1.5} /></button>
                   <button className="dash-icon-btn borderless" title="Password reset link" onClick={() => setResetUser(u)}><KeyRound size={13} strokeWidth={1.5} /></button>
                   <button className="dash-icon-btn borderless" title="Set temporary password" style={{ fontSize: 11.5 }} onClick={() => setPwUser(u)}>set pw</button>
+                  {/* Deleting yourself is refused server-side; hiding the button
+                      keeps the dead end out of the row entirely. */}
+                  {u.id !== me?.id && (
+                    <button
+                      className="dash-icon-btn borderless"
+                      title="Delete user"
+                      style={{ color: 'var(--color-danger)' }}
+                      onClick={() => setDeleteUser(u)}
+                    >
+                      <Trash2 size={13} strokeWidth={1.5} />
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -167,6 +180,7 @@ export function AdminUsers() {
       {editUser && <EditUserModal user={editUser} selfId={me?.id ?? null} onClose={() => setEditUser(null)} onSaved={load} onToast={show} />}
       {resetUser && <ResetLinkModal user={resetUser} onClose={() => setResetUser(null)} onToast={show} />}
       {pwUser && <SetPasswordModal user={pwUser} onClose={() => setPwUser(null)} onToast={show} />}
+      {deleteUser && <DeleteUserModal user={deleteUser} onClose={() => setDeleteUser(null)} onDeleted={load} onToast={show} />}
       <ToastStack toasts={toasts} onDismiss={dismiss} />
     </div>
   )

@@ -2,8 +2,8 @@
 import { useEffect, useState } from 'react'
 import { Copy, X } from 'lucide-react'
 import {
-  adminCreateUser, adminResetPassword, adminSetPassword, adminUpdateUser,
-  adminAccounts, getBusinessTypes,
+  adminCreateUser, adminDeleteUser, adminResetPassword, adminSetPassword,
+  adminUpdateUser, adminAccounts, getBusinessTypes,
 } from '@/lib/api'
 import type {
   AdminMember, AdminResetLinkResult, AdminUserCreate, AdminUserUpdate,
@@ -23,7 +23,7 @@ export function apiErr(err: unknown, fallback: string): string {
   return msg || fallback
 }
 
-function Modal({ title, onClose, children, width = 400 }: {
+export function Modal({ title, onClose, children, width = 400 }: {
   title: string
   onClose: () => void
   children: React.ReactNode
@@ -55,8 +55,78 @@ function Modal({ title, onClose, children, width = 400 }: {
   )
 }
 
-const LABEL: React.CSSProperties = { fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-ink-500)', marginBottom: 4, display: 'block' }
-const ERR: React.CSSProperties = { margin: '10px 0 0', fontSize: 12.5, color: 'var(--color-danger)' }
+export const LABEL: React.CSSProperties = { fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-ink-500)', marginBottom: 4, display: 'block' }
+export const ERR: React.CSSProperties = { margin: '10px 0 0', fontSize: 12.5, color: 'var(--color-danger)' }
+
+/** Shared by both delete modals: the button that actually destroys something. */
+export function DangerButton({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      {...props}
+      style={{
+        padding: '6px 16px', borderRadius: 'var(--radius-button)',
+        border: '1px solid transparent', background: 'var(--color-danger)', color: 'white',
+        fontSize: 13, fontWeight: 500,
+        cursor: props.disabled ? 'not-allowed' : 'pointer',
+        opacity: props.disabled ? 0.5 : 1, transition: 'opacity 160ms',
+        ...props.style,
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+/* ── Delete a user ───────────────────────────────────────────────────────────── */
+
+export function DeleteUserModal({ user, onClose, onDeleted, onToast }: {
+  user: Pick<AdminMember, 'id' | 'username' | 'email' | 'role'>
+  onClose: () => void
+  onDeleted: () => void
+  onToast: (msg: string, variant?: 'success' | 'error') => void
+}) {
+  const [working, setWorking] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function remove() {
+    setWorking(true)
+    setError(null)
+    try {
+      await adminDeleteUser(user.id)
+      onToast(`Deleted ${user.username}`)
+      onDeleted()
+      onClose()
+    } catch (e: unknown) {
+      // The server's guards (last owner, platform admin, yourself) come back as
+      // 409s worth reading in full, so they're shown rather than toasted away.
+      setError(apiErr(e, 'Failed to delete user'))
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  return (
+    <Modal title={`Delete ${user.username}?`} onClose={onClose} width={440}>
+      <p style={{ margin: '0 0 10px', fontSize: 13, color: 'var(--color-ink-600)', lineHeight: 1.55 }}>
+        The login for <strong>{user.email}</strong> is removed permanently, along with any
+        outstanding password-reset links and linked Google/Apple sign-in.
+      </p>
+      <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--color-ink-500)', lineHeight: 1.55 }}>
+        Their org keeps all of its data. Leads assigned to them become unassigned, and the
+        notes, invoices and calls they created stay put but stop showing an author.
+        To keep the history intact and just block access, use{' '}
+        <strong>Edit user → Active</strong> instead.
+      </p>
+      {error && <p style={ERR}>{error}</p>}
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+        <button className="btn-secondary" onClick={onClose} disabled={working}>Cancel</button>
+        <DangerButton onClick={remove} disabled={working}>
+          {working ? 'Deleting…' : 'Delete user'}
+        </DangerButton>
+      </div>
+    </Modal>
+  )
+}
 
 /* ── Reset-password link ─────────────────────────────────────────────────────── */
 

@@ -1,6 +1,6 @@
 
 import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, StripeStatus, PublicPayInfo, BillingInfo, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, MessageTemplate, MessageTemplateCreate, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType, HeatmapMetric, HeatmapResponse, ClusterCollection, ProspectSeed, ProspectResult, BlastRadiusResult, ServiceArea, EventCollection, EventCreate, LeadEvent, LeadEventCreate, CallSettings, CallSettingsResponse, TrackingNumber, AvailableNumber, CallOutcome, CallLogPage, CallDisposition, DialerQueueResponse, DialerTokenResponse, DispositionResult, ScoreGrade } from './types'
-import type { AdminSummary, AdminPage, AdminAccountRow, AdminAccountDetail, AdminOrgActivityRow, AdminMember, AdminUserRow, AdminUserCreate, AdminUserUpdate, AdminResetLinkResult, AdminBillingState, AdminSecurityReport, AuthEventRow, AuthEventFilters, AdminAuditRow, AdminProspectRow } from './types'
+import type { AdminSummary, AdminPage, AdminAccountRow, AdminAccountDetail, AdminOrgActivityRow, AdminMember, AdminUserRow, AdminUserCreate, AdminUserUpdate, AdminResetLinkResult, AdminDeleteUserResult, AdminDeleteAccountResult, AdminBillingState, AdminSecurityReport, AuthEventRow, AuthEventFilters, AdminAuditRow, AdminProspectRow } from './types'
 import { getToken, clearToken } from './auth'
 
 // Use 127.0.0.1 (not localhost): on macOS `localhost` resolves to IPv6 ::1
@@ -1276,6 +1276,15 @@ export function adminSetTrial(accountId: number, action: 'extend' | 'expire', tr
   })
 }
 
+/** Permanently deletes the org and every row it owns. `confirmName` must equal
+ *  the org's name exactly — it rides in the query string because DELETE request
+ *  bodies are unreliable through proxies (see the endpoint's docstring). */
+export function adminDeleteAccount(accountId: number, confirmName: string): Promise<AdminDeleteAccountResult> {
+  return req(`/admin/accounts/${accountId}?confirm_name=${encodeURIComponent(confirmName)}`, {
+    method: 'DELETE',
+  })
+}
+
 export interface AdminUserFilters {
   q?: string
   account_id?: number
@@ -1296,6 +1305,12 @@ export function adminCreateUser(body: AdminUserCreate): Promise<AdminMember> {
 
 export function adminUpdateUser(userId: number, body: AdminUserUpdate): Promise<AdminMember> {
   return req(`/admin/users/${userId}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+/** Deletes the login. The org's data stays — the user's leads become
+ *  unassigned and their notes lose their author (migration 0074). */
+export function adminDeleteUser(userId: number): Promise<AdminDeleteUserResult> {
+  return req(`/admin/users/${userId}`, { method: 'DELETE' })
 }
 
 export function adminResetPassword(userId: number, sendEmail = false): Promise<AdminResetLinkResult> {

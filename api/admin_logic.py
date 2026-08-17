@@ -4,10 +4,16 @@ Split out from the routes (api/routes/admin.py) so it unit-tests without a DB
 or network, following the same pattern as api/signup_logic.py and
 api/import_logic.py (see tests/test_admin_logic.py).
 """
+import re
 
 ADMIN_ROLES = ("owner", "sales_rep")
 
 MAX_PAGE_SIZE = 100
+
+# Unquoted lower-case identifier — every table in this schema. Names reaching
+# build_leftover_probe_sql come from information_schema, but they are still
+# interpolated into SQL, so they are validated rather than trusted.
+TABLE_IDENT_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
 
 
 def clamp_page(page: int, page_size: int, max_page_size: int = MAX_PAGE_SIZE) -> tuple[int, int]:
@@ -65,6 +71,104 @@ def validate_admin_user_update(body: dict, *, is_self: bool) -> list[str]:
     if is_self and body.get("is_platform_admin") is False:
         problems.append("You cannot revoke your own platform-admin access.")
     return problems
+
+
+def validate_user_delete(user: dict, *, admin_id: int, siblings: int,
+                         other_owners: int) -> list[str]:
+    """Problems with hard-deleting a user (empty list = deletable).
+
+    Deleting is not deactivating. ``is_active = FALSE`` keeps the row, so their
+    leads stay assigned and their notes stay signed; a delete drops the row and
+    every attribution FK pointing at it goes NULL (migration 0074). These guards
+    are about the states you cannot climb back out of afterwards:
+
+    ``siblings`` — other users in the same account. The last one going means an
+    org that exists but nobody can sign into, and the admin surface has no
+    "adopt an orphan org" flow. Deleting the org is the honest operation.
+
+    ``other_owners`` — users in the account with role 'owner', excluding this
+    one. An org with no owner still logs in but fails every require_owner
+    endpoint, which reads as a broken product rather than a deleted user.
+
+    Platform admins are refused outright: revoking the flag is a PATCH away and
+    forces the "am I removing platform access?" decision to be made on its own,
+    rather than as a side effect of tidying up a user list.
+    """
+    problems: list[str] = []
+    if user["id"] == admin_id:
+        problems.append("You cannot delete your own account.")
+    if user.get("is_platform_admin"):
+        problems.append("Revoke this user's platform-admin access before deleting them.")
+    if siblings == 0:
+        problems.append(
+            "This is the last user in the organization — delete the organization instead.")
+    elif user.get("role") == "owner" and other_owners == 0:
+        problems.append(
+            "This is the organization's only owner — promote another member to owner first.")
+    return problems
+
+
+def validate_account_delete(account: dict, *, admin_account_id: int | None,
+                            confirm_name: str, has_subscription: bool,
+                            platform_admins: list[str]) -> list[str]:
+    """Problems with hard-deleting an organization (empty list = deletable).
+
+    This one is unrecoverable — the cascade takes every lead, invoice, quote,
+    call and note the org ever had — so the guards are deliberately blunt:
+
+    * you cannot delete the org you belong to (it would delete you mid-request,
+      and cascade away the audit row recording that you did it);
+    * a live Stripe subscription blocks it, matching the plan and trial
+      endpoints: Stripe owns that state and would keep billing a dead org;
+    * a platform admin living inside the org blocks it, so cross-tenant access
+      is never revoked as a side effect of deleting a customer;
+    * the org's exact name must be typed back. Deletes here are addressed by
+      integer id, and ids are one keystroke apart.
+    """
+    problems: list[str] = []
+    if admin_account_id is not None and admin_account_id == account["id"]:
+        problems.append("You cannot delete the organization you belong to.")
+    if has_subscription:
+        problems.append(
+            "This organization has a live Stripe subscription — cancel it in Stripe first.")
+    if platform_admins:
+        problems.append(
+            "Platform admin(s) belong to this organization ("
+            + ", ".join(platform_admins)
+            + ") — revoke their platform-admin access first.")
+    if (confirm_name or "").strip() != account["name"]:
+        problems.append("Type the organization's name exactly as shown to confirm.")
+    return problems
+
+
+def build_leftover_probe_sql(tables: list[str]) -> str:
+    """One query asking "did anything survive?" of every account-scoped table.
+
+    Built from the live catalog (information_schema) rather than a hand-kept
+    list, so a table added later is probed without anyone remembering to add it
+    — which is the point, since the failure being guarded against is exactly
+    "somebody added a table and forgot". Table names are interpolated, so every
+    one is re-checked against ``TABLE_IDENT_RE`` here rather than at the call
+    site: the check **is** the injection guard (same rule as pipeline/db.py's
+    column allowlist) and putting it next to the interpolation is what stops it
+    from being skipped.
+
+    EXISTS rather than COUNT: the expected answer is "no rows", and EXISTS stops
+    at the first one instead of counting a table that should be empty. The
+    account id is bound once as the named param ``%(id)s`` — psycopg2 binds
+    positional ``%s`` in text order, and this statement repeats the same value
+    forty-odd times, which is precisely where that goes wrong.
+    """
+    bad = [t for t in tables if not TABLE_IDENT_RE.match(t)]
+    if bad:
+        raise ValueError(f"Refusing to interpolate table name(s): {', '.join(bad)}")
+    if not tables:
+        return "SELECT NULL::text AS table_name WHERE FALSE"
+    return "\nUNION ALL\n".join(
+        f"SELECT '{t}' AS table_name WHERE EXISTS "
+        f"(SELECT 1 FROM {t} WHERE account_id = %(id)s)"
+        for t in tables
+    )
 
 
 def evaluate_config_checks(env: dict) -> list[dict]:

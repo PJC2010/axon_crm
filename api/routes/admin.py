@@ -11,17 +11,19 @@ Every mutation records an admin_audit_log row (api/admin_audit.py) in the same
 transaction as the change. No endpoint here may declare a query param named
 ``token`` — it would collide with get_current_user's ?token= CSV-export fallback.
 
-GET   /admin/summary                      — platform KPI tiles
-GET   /admin/accounts                     — org list w/ plan, billing, usage aggregates
-GET   /admin/accounts/{id}                — org drill-down (members, counts, recent activity)
-GET   /admin/accounts/{id}/activity       — per-user activity inside one org
-POST  /admin/accounts/{id}/plan           — assign plan + module overrides
-POST  /admin/accounts/{id}/trial          — extend or expire a trial
-GET   /admin/users                        — cross-tenant user list
-POST  /admin/users                        — create user (existing org or fresh org)
-PATCH /admin/users/{id}                   — role / active / verified / platform-admin
-POST  /admin/users/{id}/reset-password    — mint a reset link (optionally email it)
-POST  /admin/users/{id}/set-password      — directly set a temporary password
+GET    /admin/summary                     — platform KPI tiles
+GET    /admin/accounts                    — org list w/ plan, billing, usage aggregates
+GET    /admin/accounts/{id}               — org drill-down (members, counts, recent activity)
+GET    /admin/accounts/{id}/activity      — per-user activity inside one org
+POST   /admin/accounts/{id}/plan          — assign plan + module overrides
+POST   /admin/accounts/{id}/trial         — extend or expire a trial
+DELETE /admin/accounts/{id}               — purge the org and every row it owns
+GET    /admin/users                       — cross-tenant user list
+POST   /admin/users                       — create user (existing org or fresh org)
+PATCH  /admin/users/{id}                  — role / active / verified / platform-admin
+DELETE /admin/users/{id}                  — delete the login, keep the org's data
+POST   /admin/users/{id}/reset-password   — mint a reset link (optionally email it)
+POST   /admin/users/{id}/set-password     — directly set a temporary password
 GET   /admin/security                     — security panel (failed logins, config checks, …)
 GET   /admin/auth-events                  — login/auth event feed
 GET   /admin/audit-log                    — admin-action audit feed
@@ -45,8 +47,9 @@ from config import (
 from api.accounts import provision_owner
 from api.admin_audit import record_admin_action
 from api.admin_logic import (
-    ADMIN_ROLES, build_reset_url, clamp_page, evaluate_config_checks,
-    validate_admin_user_update,
+    ADMIN_ROLES, build_leftover_probe_sql, build_reset_url, clamp_page,
+    evaluate_config_checks, validate_account_delete, validate_admin_user_update,
+    validate_user_delete,
 )
 from api.billing import apply_plan, billing_configured
 from api.business_types import BUSINESS_TYPES, DEFAULT_BUSINESS_TYPE
@@ -132,6 +135,67 @@ def _require_account(db: PGConn, account_id: int) -> dict:
     if not row:
         raise HTTPException(status_code=404, detail="Account not found")
     return row
+
+
+# Per-table row counts for one org. Heavy enough that it is deliberately absent
+# from the list endpoint; shared by the drill-down and by DELETE, which reports
+# what it destroyed and so must count before the cascade, not after.
+_ACCOUNT_COUNTS_SQL = """
+    SELECT
+      (SELECT COUNT(*) FROM properties
+        WHERE account_id = %(id)s AND archived_at IS NULL)              AS leads,
+      (SELECT COUNT(*) FROM tasks WHERE account_id = %(id)s)            AS tasks,
+      (SELECT COUNT(*) FROM invoices WHERE account_id = %(id)s)         AS invoices,
+      (SELECT COUNT(*) FROM quotes WHERE account_id = %(id)s)           AS quotes,
+      (SELECT COUNT(*) FROM expenses WHERE account_id = %(id)s)         AS expenses,
+      (SELECT COUNT(*) FROM calls WHERE account_id = %(id)s)            AS calls,
+      (SELECT COUNT(*) FROM contact_history ch
+        JOIN properties p ON p.id = ch.property_id
+        WHERE p.account_id = %(id)s)                                    AS messages,
+      (SELECT COUNT(*) FROM pipeline_runs WHERE account_id = %(id)s)    AS pipeline_runs,
+      (SELECT COUNT(*) FROM workflow_rules WHERE account_id = %(id)s)   AS workflow_rules,
+      (SELECT COUNT(*) FROM scoring_reveals
+        WHERE account_id = %(id)s
+          AND month = date_trunc('month', CURRENT_DATE)::date)          AS scoring_reveals_month
+"""
+
+
+def _account_counts(db: PGConn, account_id: int) -> dict:
+    with db.cursor() as cur:
+        cur.execute(_ACCOUNT_COUNTS_SQL, {"id": account_id})
+        return dict_fetchone(cur)
+
+
+def _assert_account_purged(db: PGConn, account_id: int) -> None:
+    """Fail the delete if any account-scoped row outlived the cascade.
+
+    Migration 0074 hands the teardown to Postgres, which is right but silent:
+    ON DELETE CASCADE reaches every table that declares the FK, and says nothing
+    about a table that carries ``account_id`` with no FK at all. That is not
+    hypothetical — ``auth_events`` is exactly such a table (0073, deliberately),
+    which is why the endpoint deletes it by hand first. This runs inside the
+    same transaction and re-derives the table list from the catalog, so the next
+    table someone adds that way trips a rollback instead of quietly leaving a
+    deleted customer's rows in the database.
+    """
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT table_name FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND column_name = 'account_id' "
+            "  AND table_name IN (SELECT table_name FROM information_schema.tables "
+            "                     WHERE table_schema = 'public' AND table_type = 'BASE TABLE') "
+            "ORDER BY table_name"
+        )
+        tables = [r[0] for r in cur.fetchall()]
+        cur.execute(build_leftover_probe_sql(tables), {"id": account_id})
+        leftovers = [r[0] for r in cur.fetchall()]
+    if leftovers:
+        db.rollback()
+        log.error("account %s purge left rows in: %s", account_id, ", ".join(leftovers))
+        raise HTTPException(
+            status_code=500,
+            detail="Delete aborted — rows survived in: " + ", ".join(leftovers),
+        )
 
 
 def _finish_page(cur, rows: list[dict], page: int, page_size: int,
@@ -313,27 +377,7 @@ def admin_account_detail(account_id: int, db: PGConn = Depends(get_db)):
         )
         members = dict_fetchall(cur)
         # Heavy per-table counts live here (one org), never on the list endpoint.
-        cur.execute(
-            """
-            SELECT
-              (SELECT COUNT(*) FROM properties
-                WHERE account_id = %(id)s AND archived_at IS NULL)              AS leads,
-              (SELECT COUNT(*) FROM tasks WHERE account_id = %(id)s)            AS tasks,
-              (SELECT COUNT(*) FROM invoices WHERE account_id = %(id)s)         AS invoices,
-              (SELECT COUNT(*) FROM quotes WHERE account_id = %(id)s)           AS quotes,
-              (SELECT COUNT(*) FROM expenses WHERE account_id = %(id)s)         AS expenses,
-              (SELECT COUNT(*) FROM calls WHERE account_id = %(id)s)            AS calls,
-              (SELECT COUNT(*) FROM contact_history ch
-                JOIN properties p ON p.id = ch.property_id
-                WHERE p.account_id = %(id)s)                                    AS messages,
-              (SELECT COUNT(*) FROM pipeline_runs WHERE account_id = %(id)s)    AS pipeline_runs,
-              (SELECT COUNT(*) FROM workflow_rules WHERE account_id = %(id)s)   AS workflow_rules,
-              (SELECT COUNT(*) FROM scoring_reveals
-                WHERE account_id = %(id)s
-                  AND month = date_trunc('month', CURRENT_DATE)::date)          AS scoring_reveals_month
-            """,
-            {"id": account_id},
-        )
+        cur.execute(_ACCOUNT_COUNTS_SQL, {"id": account_id})
         counts = dict_fetchone(cur)
         cur.execute(
             "SELECT id, zip, status, triggered_by, created_at, started_at, finished_at "
@@ -430,7 +474,7 @@ def admin_set_plan(
             (account_id, body.plan, Json(modules), body.plan, Json(modules)),
         )
     record_admin_action(
-        db, admin["id"], "account.plan_set", "account", account_id,
+        db, admin, "account.plan_set", "account", account_id,
         {"old_plan": old[0] if old else None, "new_plan": body.plan,
          "enable": body.enable, "disable": body.disable},
     )
@@ -482,7 +526,7 @@ def admin_set_trial(
         if billing and billing["status"] == "trial_expired":
             apply_plan(db, account_id, "pro")
         record_admin_action(
-            db, admin["id"], "account.trial_extend", "account", account_id,
+            db, admin, "account.trial_extend", "account", account_id,
             {"old_status": billing["status"] if billing else None,
              "trial_ends_at": ends.isoformat()},
         )
@@ -497,7 +541,7 @@ def admin_set_trial(
             )
         apply_plan(db, account_id, "starter")
         record_admin_action(
-            db, admin["id"], "account.trial_expire", "account", account_id,
+            db, admin, "account.trial_expire", "account", account_id,
             {"old_status": billing["status"]},
         )
     else:
@@ -510,6 +554,89 @@ def admin_set_trial(
             "FROM account_billing WHERE account_id = %s", (account_id,),
         )
         return dict_fetchone(cur)
+
+
+@router.delete("/admin/accounts/{account_id}")
+def admin_delete_account(
+    account_id: int,
+    confirm_name: str = Query(..., description="Must equal the org's name exactly"),
+    admin: dict = Depends(require_platform_admin),
+    db: PGConn = Depends(get_db),
+):
+    """Permanently delete an organization and everything it owns.
+
+    The typed confirmation is a query param, not a JSON body: a request body on
+    DELETE is legal but widely mishandled — httpx's own ``.delete()`` refuses to
+    send one, and intermediaries have been known to strip it, which would turn
+    this endpoint into a permanent 422 behind a proxy. The org's name is not a
+    secret, so there is nothing lost by putting it in the URL. (It must not be
+    called ``token`` — that name collides with get_current_user's ?token=
+    CSV-export fallback.)
+
+    The teardown itself is one statement. Migration 0074 made every FK into
+    ``accounts(id)`` ON DELETE CASCADE precisely so this endpoint does not carry
+    a hand-ordered list of forty DELETEs that goes stale the first time someone
+    adds a table — Postgres owns the ordering, and the tenant-parent FKs beneath
+    it (contact_history → properties, invoice_line_items → invoices, …) carry
+    the sweep down to the leaves.
+
+    Two things sit outside the cascade and are handled here. ``auth_events``
+    carries ``account_id`` with no FK by design (0073), so it is deleted
+    explicitly — leaving it would strand the org's login history, including the
+    email addresses that were typed at the login form. And the shared
+    ``parcels`` cache is untouched on purpose: it holds free, tenant-independent
+    county facts that other orgs are still using, so an org's ``properties``
+    rows die while the parcels they pointed at stay.
+
+    ``_assert_account_purged`` then re-reads the catalog and refuses to commit
+    if anything survived. Counts are taken **before** the delete so the audit
+    row (which outlives the org — ``admin_audit_log`` has no ``account_id``)
+    records what was actually destroyed.
+    """
+    account = _require_account(db, account_id)
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT stripe_subscription_id FROM account_billing WHERE account_id = %s",
+            (account_id,),
+        )
+        sub = cur.fetchone()
+        cur.execute(
+            "SELECT username FROM users WHERE account_id = %s AND is_platform_admin "
+            "ORDER BY id", (account_id,),
+        )
+        platform_admins = [r[0] for r in cur.fetchall()]
+
+    problems = validate_account_delete(
+        account,
+        admin_account_id=admin.get("account_id"),
+        confirm_name=confirm_name,
+        has_subscription=bool(sub and sub[0]),
+        platform_admins=platform_admins,
+    )
+    if problems:
+        # 409, not 400: every one of these describes the org's current state,
+        # and each is fixable — cancel in Stripe, revoke the flag, retype the name.
+        raise HTTPException(status_code=409, detail=" ".join(problems))
+
+    counts = _account_counts(db, account_id)
+    with db.cursor() as cur:
+        cur.execute("SELECT COUNT(*) FROM users WHERE account_id = %s", (account_id,))
+        counts["users"] = cur.fetchone()[0]
+        cur.execute("DELETE FROM auth_events WHERE account_id = %s", (account_id,))
+        counts["auth_events"] = cur.rowcount
+        cur.execute("DELETE FROM accounts WHERE id = %s", (account_id,))
+
+    record_admin_action(
+        db, admin, "account.delete", "account", account_id,
+        {"name": account["name"], "business_type": account["business_type"],
+         "counts": counts},
+    )
+    _assert_account_purged(db, account_id)
+    db.commit()
+    log.warning("platform admin %s deleted account %s (%s)",
+                admin.get("username"), account_id, account["name"])
+    return {"deleted": True, "account_id": account_id, "name": account["name"],
+            "counts": counts}
 
 
 # ── Users ─────────────────────────────────────────────────────────────────────
@@ -610,7 +737,7 @@ def admin_create_user(
             )
             user_id, new_account_id = created["user_id"], created["account_id"]
             record_admin_action(
-                db, admin["id"], "account.create", "account", new_account_id,
+                db, admin, "account.create", "account", new_account_id,
                 {"name": body.new_account.name.strip(),
                  "business_type": body.new_account.business_type},
             )
@@ -638,7 +765,7 @@ def admin_create_user(
         raise HTTPException(status_code=409, detail="A user with that email already exists.")
 
     record_admin_action(
-        db, admin["id"], "user.create", "user", user_id,
+        db, admin, "user.create", "user", user_id,
         {"email": email, "role": "owner" if body.new_account else body.role,
          "account_id": new_account_id, "new_account": bool(body.new_account)},
     )
@@ -670,11 +797,62 @@ def admin_update_user(
                 (*changed.values(), user_id),
             )
         record_admin_action(
-            db, admin["id"], "user.update", "user", user_id,
+            db, admin, "user.update", "user", user_id,
             {field: {"old": old[field], "new": value} for field, value in changed.items()},
         )
         db.commit()
     return _get_user(db, user_id)
+
+
+@router.delete("/admin/users/{user_id}")
+def admin_delete_user(
+    user_id: int,
+    admin: dict = Depends(require_platform_admin),
+    db: PGConn = Depends(get_db),
+):
+    """Delete a login. The org's data stays; their name comes off it.
+
+    A user owns nothing in this schema, so migration 0074 made every FK into
+    ``users(id)`` ON DELETE SET NULL: leads they were assigned become
+    unassigned, invoices they raised keep their totals and lose their author,
+    notes keep their text. The two genuinely user-owned tables — ``user_tokens``
+    and ``oauth_identities`` — cascade, which is also what revokes any
+    outstanding password-reset link and unlinks their Google/Apple identity.
+
+    ``auth_events`` keeps their login history with a NULL ``user_id`` and the
+    typed identifier intact, so the security panel still shows what happened
+    before the delete. Deactivating (PATCH ``is_active``) remains the reversible
+    option and the right one for most cases; this is for a login that should
+    stop existing.
+    """
+    user = _get_user(db, user_id)
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FILTER (WHERE id <> %(uid)s) AS siblings, "
+            "       COUNT(*) FILTER (WHERE id <> %(uid)s AND role = 'owner') AS other_owners "
+            "FROM users WHERE account_id = %(aid)s",
+            {"uid": user_id, "aid": user["account_id"]},
+        )
+        siblings, other_owners = cur.fetchone()
+
+    problems = validate_user_delete(
+        user, admin_id=admin["id"], siblings=siblings, other_owners=other_owners,
+    )
+    if problems:
+        raise HTTPException(status_code=409, detail=" ".join(problems))
+
+    with db.cursor() as cur:
+        cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+    record_admin_action(
+        db, admin, "user.delete", "user", user_id,
+        {"username": user["username"], "email": user["email"], "role": user["role"],
+         "account_id": user["account_id"]},
+    )
+    db.commit()
+    log.warning("platform admin %s deleted user %s (%s)",
+                admin.get("username"), user_id, user["username"])
+    return {"deleted": True, "user_id": user_id, "username": user["username"],
+            "account_id": user["account_id"]}
 
 
 @router.post("/admin/users/{user_id}/reset-password")
@@ -691,7 +869,7 @@ def admin_reset_password(
     user = _get_user(db, user_id)
     raw = _issue_token(db, user_id, "reset_password")
     record_admin_action(
-        db, admin["id"], "user.reset_link", "user", user_id,
+        db, admin, "user.reset_link", "user", user_id,
         {"emailed": body.send_email},
     )
     db.commit()
@@ -727,7 +905,7 @@ def admin_set_password(
             "WHERE user_id = %s AND purpose = 'reset_password' AND used_at IS NULL",
             (user_id,),
         )
-    record_admin_action(db, admin["id"], "user.set_password", "user", user_id, {})
+    record_admin_action(db, admin, "user.set_password", "user", user_id, {})
     db.commit()
     return {"ok": True}
 

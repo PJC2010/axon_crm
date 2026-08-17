@@ -124,8 +124,10 @@ See [Geo Scoring & Prospecting](#geo-scoring--prospecting) below. (A predictive-
 ### Platform Admin Dashboard
 - Cross-tenant operator console at `/admin` (users flagged `is_platform_admin` only): org list with plan/billing/usage, per-org drill-down, cross-tenant user management (create users or whole orgs, edit roles, password-reset links, temporary passwords)
 - Plan & trial management from the UI (assign plans and module overrides, extend/expire trials) — refused when Stripe owns the subscription
+- **Delete a user**: removes the login, their reset links and their linked Google/Apple sign-in; the org keeps its data, with the deleted user's leads unassigned and their notes/invoices/calls kept but unattributed. Refused for yourself, for a platform admin, for an org's last user, and for its only owner
+- **Delete an organization**: purges the org and everything it owns (leads, invoices, quotes, calls, notes, logins, login history) via `ON DELETE CASCADE`, then verifies nothing survived before committing. The shared parcel cache and the audit trail are kept. Requires typing the org's name back, and is refused for your own org, an org with a live Stripe subscription, or an org containing a platform admin
 - Security panel: login/failed-login monitoring (`auth_events`, written by password + OAuth logins), unverified/disabled users, Stripe webhook and pipeline failures, deployment config checks
-- Every admin mutation lands in `admin_audit_log` (same transaction as the change), browsable from the Audit tab
+- Every admin mutation lands in `admin_audit_log` (same transaction as the change), browsable from the Audit tab — and outlives both the org and the admin it describes
 
 ---
 
@@ -644,8 +646,10 @@ Cross-tenant operator surface, guarded by `users.is_platform_admin` (grant via `
 | GET | `/api/admin/accounts/{id}/activity` | Per-user activity inside one org |
 | POST | `/api/admin/accounts/{id}/plan` | Assign plan + module overrides (409 with a live Stripe subscription) |
 | POST | `/api/admin/accounts/{id}/trial` | Extend or expire a trial (409 with a live Stripe subscription) |
+| DELETE | `/api/admin/accounts/{id}` | Purge the org and every row it owns. Requires `?confirm_name=<exact org name>`; 409 for your own org, a live Stripe subscription, or an org holding a platform admin |
 | GET/POST | `/api/admin/users` | Cross-tenant user list / create user (existing org or fresh org) |
 | PATCH | `/api/admin/users/{id}` | Role / active / verified / platform-admin (self-lockout guarded) |
+| DELETE | `/api/admin/users/{id}` | Delete the login; the org's data stays, unattributed. 409 for yourself, a platform admin, an org's last user, or its only owner |
 | POST | `/api/admin/users/{id}/reset-password` | Mint a one-time reset link (optionally email it) |
 | POST | `/api/admin/users/{id}/set-password` | Directly set a temporary password |
 | GET | `/api/admin/security` | Failed logins, unverified/disabled users, webhook + pipeline failures, config checks |
