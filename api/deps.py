@@ -57,7 +57,8 @@ def get_current_user(
     user_id = int(payload["sub"])
     with db.cursor() as cur:
         cur.execute(
-            "SELECT id, username, email, role, is_active, account_id FROM users WHERE id = %s",
+            "SELECT id, username, email, role, is_active, account_id, is_platform_admin "
+            "FROM users WHERE id = %s",
             (user_id,),
         )
         cols = [d[0] for d in cur.description]
@@ -74,4 +75,17 @@ def get_current_user(
 def require_owner(current_user: dict = Depends(get_current_user)) -> dict:
     if current_user["role"] not in ("owner", "admin"):
         raise HTTPException(status_code=403, detail="Owner access required")
+    return current_user
+
+
+def require_platform_admin(current_user: dict = Depends(get_current_user)) -> dict:
+    """Gate for the cross-tenant /api/admin surface (api/routes/admin.py).
+
+    Orthogonal to ``require_owner``: ``role`` governs power inside one org,
+    ``users.is_platform_admin`` (migration 0073) governs the whole platform.
+    The flag is read from the DB on every request, never from the JWT, so
+    revocation takes effect immediately.
+    """
+    if not current_user.get("is_platform_admin"):
+        raise HTTPException(status_code=403, detail="Platform admin access required")
     return current_user

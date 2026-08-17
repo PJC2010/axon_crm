@@ -12,6 +12,8 @@ from psycopg2.extras import Json
 from pydantic import BaseModel
 from typing import Optional
 
+from api.admin_logic import classify_login_failure
+from api.auth_events import record_auth_event
 from api.deps import get_db, dict_fetchone, dict_fetchall
 from api.ratelimit import client_ip, login_limiter
 from api.security import hash_password, verify_password, create_access_token
@@ -74,6 +76,10 @@ class UserOut(BaseModel):
     # Whether the user consented to receive SMS from Axon (account + Storm Mode
     # alerts). Recorded with timestamp + source for A2P 10DLC (migration 064).
     sms_consent: bool = False
+    # Cross-tenant /api/admin access (migration 0073). Populated by /auth/me so
+    # the frontend can show the Admin nav link; defaults False on the
+    # team-management endpoints that don't select it.
+    is_platform_admin: bool = False
     # Enabled feature modules for this user's account. Populated by /auth/me so the
     # frontend can gate nav/UI on first load; empty on the team-management endpoints
     # that don't need it.
@@ -119,18 +125,32 @@ def login(body: LoginRequest, request: Request, db: PGConn = Depends(get_db)):
     # so the identifier field accepts either.
     with db.cursor() as cur:
         cur.execute(
-            "SELECT id, username, hashed_pw, role, is_active FROM users "
+            "SELECT id, username, hashed_pw, role, is_active, account_id FROM users "
             "WHERE username = %s OR lower(email) = lower(%s)",
             (body.username, body.username),
         )
         row = dict_fetchone(cur)
 
-    if not row or not verify_password(body.password, row["hashed_pw"]):
+    # Outcomes are recorded (api/auth_events.py) but the responses stay generic —
+    # the failure classification must never leak into the client-facing error.
+    ip, ua = client_ip(request), request.headers.get("user-agent")
+    password_ok = bool(row) and verify_password(body.password, row["hashed_pw"])
+    if not row or not password_ok:
+        record_auth_event(db, success=False, identifier=body.username,
+                          failure_reason=classify_login_failure(row, password_ok),
+                          user_id=row["id"] if row else None,
+                          account_id=row["account_id"] if row else None,
+                          ip=ip, user_agent=ua)
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not row["is_active"]:
+        record_auth_event(db, success=False, identifier=body.username,
+                          failure_reason="inactive", user_id=row["id"],
+                          account_id=row["account_id"], ip=ip, user_agent=ua)
         raise HTTPException(status_code=403, detail="Account disabled")
 
     token = create_access_token(row["id"], row["username"], row["role"])
+    record_auth_event(db, success=True, identifier=row["username"], user_id=row["id"],
+                      account_id=row["account_id"], ip=ip, user_agent=ua)
     return TokenResponse(access_token=token)
 
 
@@ -139,7 +159,7 @@ def me(current_user: dict = Depends(get_current_user), db: PGConn = Depends(get_
     with db.cursor() as cur:
         cur.execute(
             "SELECT id, username, email, role, is_active, account_id, onboarding_complete, "
-            "email_verified, sms_consent FROM users WHERE id = %s",
+            "email_verified, sms_consent, is_platform_admin FROM users WHERE id = %s",
             (current_user["id"],),
         )
         row = dict_fetchone(cur)
@@ -498,6 +518,20 @@ def update_user(
         raise HTTPException(status_code=400, detail="Nothing to update")
     params.extend([user_id, current_user["account_id"]])
     with db.cursor() as cur:
+        # A platform admin who happens to sit in this org is managed only from
+        # the /api/admin surface — otherwise a tenant owner could deactivate or
+        # demote them and lock the whole platform out (the admin surface's
+        # self-lockout guards would be bypassable through this door).
+        cur.execute(
+            "SELECT is_platform_admin FROM users WHERE id = %s AND account_id = %s",
+            (user_id, current_user["account_id"]),
+        )
+        target = cur.fetchone()
+        if target and target[0]:
+            raise HTTPException(
+                status_code=403,
+                detail="This user is a platform admin and is managed from the admin surface.",
+            )
         cur.execute(
             f"UPDATE users SET {', '.join(sets)} WHERE id = %s AND account_id = %s "
             "RETURNING id, username, email, role, is_active, account_id",

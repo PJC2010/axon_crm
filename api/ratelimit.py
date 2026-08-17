@@ -11,6 +11,8 @@ import time
 
 from fastapi import HTTPException, Request
 
+from api.admin_logic import parse_forwarded_for
+
 
 class RateLimiter:
     def __init__(self, max_calls: int, per_seconds: float, name: str):
@@ -39,7 +41,16 @@ class RateLimiter:
 
 
 def client_ip(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
+    """Caller IP, proxy-aware.
+
+    Behind Render's proxy every socket peer is the proxy itself, which used to
+    collapse all IP-keyed limiters (and auth_events.ip) onto one address. The
+    proxy appends the real client to X-Forwarded-For, so the LAST entry is the
+    one hop we trust — earlier entries are client-suppliable. Without a proxy
+    the header is absent and the socket address wins.
+    """
+    fallback = request.client.host if request.client else "unknown"
+    return parse_forwarded_for(request.headers.get("x-forwarded-for"), fallback)
 
 
 # Shared limiter instances (per-process).

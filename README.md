@@ -121,6 +121,12 @@ See [Geo Scoring & Prospecting](#geo-scoring--prospecting) below. (A predictive-
 - Schedule pipeline runs by zip code, vertical, day of week, and hour; active/inactive toggle per schedule
 - Run history with status tracking; background execution via APScheduler (also drives nightly ML retraining, the workflow automation tick, account rescoring, recurring-invoice generation, geo rescoring, and the missed-call phone-append backfill)
 
+### Platform Admin Dashboard
+- Cross-tenant operator console at `/admin` (users flagged `is_platform_admin` only): org list with plan/billing/usage, per-org drill-down, cross-tenant user management (create users or whole orgs, edit roles, password-reset links, temporary passwords)
+- Plan & trial management from the UI (assign plans and module overrides, extend/expire trials) — refused when Stripe owns the subscription
+- Security panel: login/failed-login monitoring (`auth_events`, written by password + OAuth logins), unverified/disabled users, Stripe webhook and pipeline failures, deployment config checks
+- Every admin mutation lands in `admin_audit_log` (same transaction as the change), browsable from the Audit tab
+
 ---
 
 ## Tech Stack
@@ -626,6 +632,26 @@ The FastAPI server exposes interactive docs at `http://localhost:8000/docs` (Swa
 | POST | `/api/public/stripe/billing-webhook` | Subscription lifecycle sink (platform webhook, signature-verified) |
 | GET/PATCH | `/api/account/profile` | Business name + review link (powers `{{review_link}}`; write = owner) |
 | GET | `/api/public/zip-sample` **(public)** | Landing-page ZIP teaser: masked top leads from the demo org (rate-limited) |
+
+### Platform Admin
+Cross-tenant operator surface, guarded by `users.is_platform_admin` (grant via `scripts/set_platform_admin.py`); every mutation is recorded in `admin_audit_log`. Frontend at `/admin`.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/admin/summary` | Platform KPIs (orgs, users, trials, logins, failures) |
+| GET | `/api/admin/accounts` | Org list with plan, billing, and usage aggregates |
+| GET | `/api/admin/accounts/{id}` | Org drill-down: members, counts, recent runs/events |
+| GET | `/api/admin/accounts/{id}/activity` | Per-user activity inside one org |
+| POST | `/api/admin/accounts/{id}/plan` | Assign plan + module overrides (409 with a live Stripe subscription) |
+| POST | `/api/admin/accounts/{id}/trial` | Extend or expire a trial (409 with a live Stripe subscription) |
+| GET/POST | `/api/admin/users` | Cross-tenant user list / create user (existing org or fresh org) |
+| PATCH | `/api/admin/users/{id}` | Role / active / verified / platform-admin (self-lockout guarded) |
+| POST | `/api/admin/users/{id}/reset-password` | Mint a one-time reset link (optionally email it) |
+| POST | `/api/admin/users/{id}/set-password` | Directly set a temporary password |
+| GET | `/api/admin/security` | Failed logins, unverified/disabled users, webhook + pipeline failures, config checks |
+| GET | `/api/admin/auth-events` | Login/auth event feed (success + failure, password + OAuth) |
+| GET | `/api/admin/audit-log` | Admin-action audit feed |
+| GET | `/api/admin/prospects` | Landing-page prospect signups |
 
 ### Leads
 | Method | Path | Description |
