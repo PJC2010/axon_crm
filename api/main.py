@@ -29,7 +29,9 @@ for _noisy in ("apscheduler.executors.default", "apscheduler.scheduler",
 
 # Imports below the logging setup on purpose, so anything these modules log at
 # import time lands in the configured handler.
+from api.deps import require_platform_admin  # noqa: E402
 from api.entitlements import require_module  # noqa: E402
+from api.routes import admin
 from api.routes import leads, notes, history, export, record_fields, segments, messaging
 from api.routes import lead_events
 from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, hcad, workflows, imports, quotes
@@ -112,6 +114,12 @@ app.add_middleware(
 
 app.include_router(auth.router,     prefix="/api", tags=["Auth"])
 app.include_router(oauth.router,    prefix="/api", tags=["Auth"])
+# Platform super-admin surface — deliberately CROSS-TENANT and deliberately NOT
+# module-gated (it is not a tenant feature). Guarded router-wide so nothing in
+# it can ever ship unguarded; mutating endpoints re-declare the dependency to
+# get the actor for admin_audit_log (FastAPI caches it per-request).
+app.include_router(admin.router,    prefix="/api", tags=["Admin"],
+                   dependencies=[Depends(require_platform_admin)])
 # Self-serve signup + email verification + password reset. Ungated by design —
 # these are how a stranger becomes a customer.
 app.include_router(signup.router,   prefix="/api", tags=["Auth"])

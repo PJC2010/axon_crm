@@ -33,7 +33,7 @@ from psycopg2.extras import Json
 # Make the repo root importable so the entitlements catalog stays the single source.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from api.entitlements import MODULE_KEYS, PLAN_CATALOG, _plan_defaults  # noqa: E402
+from api.entitlements import PLAN_CATALOG, resolve_plan_modules  # noqa: E402
 from api.business_types import BUSINESS_TYPES  # noqa: E402
 
 
@@ -67,17 +67,10 @@ def set_business_type(conn, account_id: int, business_type: str) -> None:
 
 
 def set_plan(conn, account_id: int, plan: str, enable: list[str], disable: list[str]) -> dict:
-    if plan not in PLAN_CATALOG:
-        raise SystemExit(f"Unknown plan '{plan}'. Choose from: {', '.join(PLAN_CATALOG)}")
-    for key in (*enable, *disable):
-        if key not in MODULE_KEYS:
-            raise SystemExit(f"Unknown module '{key}'. Choose from: {', '.join(MODULE_KEYS)}")
-
-    modules = _plan_defaults(plan)
-    for key in enable:
-        modules[key] = True
-    for key in disable:
-        modules[key] = False
+    try:
+        modules = resolve_plan_modules(plan, enable, disable)
+    except ValueError as exc:
+        raise SystemExit(str(exc))
 
     with conn.cursor() as cur:
         cur.execute("SELECT 1 FROM accounts WHERE id = %s", (account_id,))

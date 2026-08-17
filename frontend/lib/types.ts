@@ -712,6 +712,9 @@ export interface User {
   // Populated by GET /auth/me; enabled feature modules for this user's account.
   modules?: Partial<ModuleMap>
   business_type?: string
+  // Cross-tenant /api/admin access (platform operator, not a tenant role).
+  // Populated by GET /auth/me; drives the Admin nav link and AdminGuard.
+  is_platform_admin?: boolean
 }
 
 export interface ChecklistStatus {
@@ -1451,4 +1454,184 @@ export interface NonResidentialArchiveResult {
   zip: string | null
   ids?: number[]
   ids_truncated?: boolean
+}
+
+// ── Platform admin (cross-tenant /api/admin surface) ─────────────────────────
+
+export interface AdminPage<T> {
+  items: T[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface AdminSummary {
+  accounts: number
+  accounts_new_30d: number
+  users_total: number
+  users_active: number
+  users_verified: number
+  active_users_7d: number
+  trials_active: number
+  trials_expired: number
+  paying: number
+  logins_24h: number
+  failed_logins_24h: number
+  pipeline_runs_24h: number
+  pipeline_failures_7d: number
+  webhook_errors_7d: number
+  prospect_signups_7d: number
+}
+
+export interface AdminAccountRow {
+  id: number
+  name: string
+  business_type: string
+  created_at: string
+  plan_name: string | null
+  billing_status: string | null
+  trial_ends_at: string | null
+  current_period_end: string | null
+  users_total: number
+  users_active: number
+  lead_count: number
+  last_activity_at: string | null
+}
+
+export interface AdminMember {
+  id: number
+  username: string
+  email: string
+  role: string
+  is_active: boolean
+  email_verified: boolean
+  is_platform_admin: boolean
+  account_id: number
+  created_at: string
+  last_login_at: string | null
+}
+
+export interface AdminUserRow extends AdminMember {
+  account_name: string
+}
+
+export interface AdminBillingState {
+  plan_name: string | null
+  status: string | null
+  trial_ends_at: string | null
+  current_period_end: string | null
+  cancel_at_period_end?: boolean | null
+  has_stripe_customer?: boolean
+  has_subscription?: boolean
+  updated_at: string | null
+}
+
+export interface AdminAccountDetail {
+  id: number
+  name: string
+  business_type: string
+  created_at: string
+  review_link: string | null
+  plan: { plan_name: string; modules: Record<string, boolean>; scoring_monthly_limit: number | null; updated_at: string } | null
+  modules: Record<string, boolean>
+  billing: AdminBillingState | null
+  members: AdminMember[]
+  counts: Record<string, number>
+  recent_runs: { id: number; zip: string; status: string; triggered_by: string; created_at: string; started_at: string | null; finished_at: string | null }[]
+  recent_events: { id: number; event_type: string; channel: string | null; occurred_at: string; actor: string | null }[]
+}
+
+export interface AdminOrgActivityRow {
+  user_id: number
+  username: string
+  is_active: boolean
+  last_login_at: string | null
+  lead_events: number
+  calls: number
+  logins: number
+}
+
+export interface AdminUserCreate {
+  email: string
+  password: string
+  username?: string
+  role?: string
+  account_id?: number
+  new_account?: { name: string; business_type?: string }
+}
+
+export interface AdminUserUpdate {
+  role?: string
+  is_active?: boolean
+  email_verified?: boolean
+  is_platform_admin?: boolean
+}
+
+export interface AdminResetLinkResult {
+  reset_url: string
+  emailed: boolean
+  expires_in_hours: number
+}
+
+export interface AuthEventRow {
+  id: number
+  user_id: number | null
+  account_id: number | null
+  attempted_identifier: string | null
+  method: string
+  success: boolean
+  failure_reason: string | null
+  ip: string | null
+  user_agent: string | null
+  created_at: string
+  username: string | null
+  account_name: string | null
+}
+
+export interface AuthEventFilters {
+  user_id?: number
+  account_id?: number
+  success?: boolean
+  ip?: string
+  method?: string
+  page?: number
+  page_size?: number
+}
+
+export interface ConfigCheck {
+  key: string
+  label: string
+  status: 'ok' | 'warn' | 'error' | 'info'
+  detail: string
+}
+
+export interface AdminSecurityReport {
+  failed_by_ip: { ip: string | null; attempts: number; identifiers: number; last_at: string }[]
+  failed_by_identifier: { attempted_identifier: string | null; attempts: number; ips: number; last_at: string }[]
+  unverified_users: { id: number; username: string; email: string; created_at: string; account_name: string }[]
+  disabled_users: { id: number; username: string; email: string; created_at: string; account_name: string }[]
+  reset_tokens: { live: number; stale_unused: number }
+  webhook_errors: { id: number; event_type: string; error: string | null; received_at: string }[]
+  pipeline_failures: { id: number; zip: string; status: string; created_at: string; account_id: number | null; account_name: string | null; error: string | null }[]
+  config_checks: ConfigCheck[]
+}
+
+export interface AdminAuditRow {
+  id: number
+  admin_user_id: number
+  admin_username: string | null
+  action: string
+  target_type: string | null
+  target_id: string | null
+  detail: Record<string, unknown>
+  created_at: string
+}
+
+export interface AdminProspectRow {
+  id: number
+  email: string
+  name: string | null
+  source: string | null
+  created_at: string
+  updated_at: string
 }

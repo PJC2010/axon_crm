@@ -18,6 +18,7 @@ import { StatusPill } from './ds'
 import { TaskBell } from './TaskBell'
 import { NavLinks } from './NavLinks'
 import { useEntitlements, clearEntitlementsCache } from '@/hooks/useEntitlements'
+import { clearPlatformAdminCache } from '@/hooks/usePlatformAdmin'
 import { useTerminology } from '@/hooks/useTerminology'
 import type { ModuleKey } from '@/lib/types'
 import { OnboardingWizard } from './OnboardingWizard'
@@ -170,6 +171,7 @@ export function HomeDashboard() {
   function handleSignOut() {
     clearToken()
     clearEntitlementsCache()
+    clearPlatformAdminCache()
     router.push('/login')
   }
 

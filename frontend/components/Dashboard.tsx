@@ -18,6 +18,7 @@ import { ToastStack, useToast } from './Toast'
 import { QuickAddFAB } from './QuickAddFAB'
 import { NavLinks } from './NavLinks'
 import { clearEntitlementsCache } from '@/hooks/useEntitlements'
+import { clearPlatformAdminCache } from '@/hooks/usePlatformAdmin'
 
 const DEFAULT_FILTERS: LeadFilters = { sort: 'score', page: 1, page_size: 50 }
 
@@ -49,6 +50,7 @@ export function Dashboard() {
   function handleSignOut() {
     clearToken()
     clearEntitlementsCache()
+    clearPlatformAdminCache()
     router.push('/login')
   }
 

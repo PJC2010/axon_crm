@@ -38,6 +38,7 @@ python db/migrate.py create <name>        # scaffold next numbered .sql
 # Users / plans (CLI)
 python scripts/create_user.py --username admin --email you@x.com --role owner
 python scripts/set_account_plan.py --help
+python scripts/set_platform_admin.py --email you@x.com --grant   # flag the first platform admin
 
 # Data pipeline (standalone from the API)
 python run_pipeline.py --zip 77396 --vertical roofing
@@ -61,6 +62,8 @@ An **account** is an organization/tenant (`db/migrations/0017_org_isolation.sql`
 **Coordinates come free from `hcad_parcel_centroids`** (migration 0070) — a shared mirror of the county's public ArcGIS parcel layer (`tools/load_parcel_centroids.py`), joined into the cache by `parcels.fill_coords_from_centroids` (runs inside every production seed and in the county build). The county-wide build is `tools/build_parcel_cache.py` → `pipeline/county_build.py`: every ZIP cached + coordinate-filled (Census batch covers what centroids miss), **zero paid geocode calls by construction** — the build path never imports `pipeline.geocode`, enforced by `tests/test_county_build.py`. It runs OUTSIDE the web process (external runner or Render one-off job; see the OOM note in `config.py`) and creates no `properties` rows — per-tenant materialization stays on-demand.
 
 **When writing any query that touches tenant data, scope it by `account_id`.** The current user (with `account_id`) comes from `Depends(get_current_user)` in `api/deps.py`. Forgetting the scope leaks data across tenants — this is the single most important correctness rule in the codebase.
+
+**The one sanctioned exemption is the platform-admin surface** (`api/routes/admin.py`, migration 0073): deliberately cross-tenant queries for the platform operator, guarded router-wide by `require_platform_admin` (`api/deps.py`), which checks `users.is_platform_admin` — a boolean orthogonal to the tenant `role` column (the string `'admin'` in `require_owner`'s tuple is *tenant*-owner power; never reuse it for platform access). The flag is never carried in the JWT, so revocation is immediate. Rules for that surface: every mutation records an `admin_audit_log` row (`api/admin_audit.py`) in the same transaction as the change; no endpoint may declare a query param named `token` (collides with `get_current_user`'s `?token=` CSV-export fallback); pure logic lives in `api/admin_logic.py`. Login outcomes (password + OAuth) are recorded to `auth_events` best-effort via `api/auth_events.py` — responses stay generic, the failure classification is server-side only. Flag the first admin with `scripts/set_platform_admin.py`; the frontend lives under `frontend/app/admin/` behind `AdminGuard`, and the tenant `PATCH /api/users/{id}` refuses to touch platform admins so a tenant owner can't lock the platform out.
 
 ### Feature gating via modules & plans
 Optional features are grouped into **modules** (`prospecting`, `map`, `invoicing`, `bookkeeping`, `quotes`, `marketing`, `automation`, `policies`, `orders`, `appointments`, `calls`). `core` features (leads, Kanban board, tasks, notes, history, export) are always on and are deliberately *not* modules.
@@ -116,7 +119,7 @@ Where SQL is built by interpolating column names (`pipeline/db.py::fetch_missing
 - Design-system primitives in `frontend/components/ds/`.
 
 ## Database migrations
-Sequential numbered SQL files in `db/migrations/` (currently 70, `0000`–`0071` with two historical gaps, 4-digit zero-padded so filename order matches numeric order), tracked in a `schema_migrations` table. **Always create new migrations with `python db/migrate.py create <name>`** — never hand-edit an already-applied migration; add a new one. Render runs `python db/migrate.py` as its pre-deploy command.
+Sequential numbered SQL files in `db/migrations/` (currently 71, `0000`–`0073` with two historical gaps, 4-digit zero-padded so filename order matches numeric order), tracked in a `schema_migrations` table. **Always create new migrations with `python db/migrate.py create <name>`** — never hand-edit an already-applied migration; add a new one. Render runs `python db/migrate.py` as its pre-deploy command.
 
 ## Git workflow for this task
 - Work on branch `claude/claude-md-docs-hg7dzp`. Create it from latest `master` if needed.

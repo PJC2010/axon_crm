@@ -1,5 +1,6 @@
 
 import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, StripeStatus, PublicPayInfo, BillingInfo, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, MessageTemplate, MessageTemplateCreate, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, Connection, SocialImportPreview, SocialImportResult, MarketingInsightsResponse, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType, HeatmapMetric, HeatmapResponse, ClusterCollection, ProspectSeed, ProspectResult, BlastRadiusResult, ServiceArea, EventCollection, EventCreate, LeadEvent, LeadEventCreate, CallSettings, CallSettingsResponse, TrackingNumber, AvailableNumber, CallOutcome, CallLogPage, CallDisposition, DialerQueueResponse, DialerTokenResponse, DispositionResult, ScoreGrade } from './types'
+import type { AdminSummary, AdminPage, AdminAccountRow, AdminAccountDetail, AdminOrgActivityRow, AdminMember, AdminUserRow, AdminUserCreate, AdminUserUpdate, AdminResetLinkResult, AdminBillingState, AdminSecurityReport, AuthEventRow, AuthEventFilters, AdminAuditRow, AdminProspectRow } from './types'
 import { getToken, clearToken } from './auth'
 
 // Use 127.0.0.1 (not localhost): on macOS `localhost` resolves to IPv6 ::1
@@ -1223,4 +1224,106 @@ export function archiveNonResidential(body: {
     method: 'POST',
     body: JSON.stringify(body),
   })
+}
+
+// ── Platform admin (cross-tenant /api/admin; requires users.is_platform_admin) ──
+
+export function adminSummary(): Promise<AdminSummary> {
+  return req('/admin/summary')
+}
+
+export interface AdminAccountFilters {
+  q?: string
+  plan?: string
+  billing_status?: string
+  sort?: string
+  page?: number
+  page_size?: number
+}
+
+function adminQuery(filters: Record<string, unknown>): string {
+  const params = new URLSearchParams()
+  Object.entries(filters).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') params.set(k, String(v))
+  })
+  const qs = params.toString()
+  return qs ? `?${qs}` : ''
+}
+
+export function adminAccounts(filters: AdminAccountFilters = {}): Promise<AdminPage<AdminAccountRow>> {
+  return req(`/admin/accounts${adminQuery(filters as Record<string, unknown>)}`)
+}
+
+export function adminAccount(accountId: number): Promise<AdminAccountDetail> {
+  return req(`/admin/accounts/${accountId}`)
+}
+
+export function adminAccountActivity(accountId: number, days = 30): Promise<{ days: number; items: AdminOrgActivityRow[] }> {
+  return req(`/admin/accounts/${accountId}/activity?days=${days}`)
+}
+
+export function adminSetPlan(accountId: number, plan: string, enable: string[] = [], disable: string[] = []): Promise<{ plan_name: string; modules: Record<string, boolean> }> {
+  return req(`/admin/accounts/${accountId}/plan`, {
+    method: 'POST',
+    body: JSON.stringify({ plan, enable, disable }),
+  })
+}
+
+export function adminSetTrial(accountId: number, action: 'extend' | 'expire', trialEndsAt?: string): Promise<AdminBillingState> {
+  return req(`/admin/accounts/${accountId}/trial`, {
+    method: 'POST',
+    body: JSON.stringify({ action, trial_ends_at: trialEndsAt }),
+  })
+}
+
+export interface AdminUserFilters {
+  q?: string
+  account_id?: number
+  role?: string
+  is_active?: boolean
+  email_verified?: boolean
+  page?: number
+  page_size?: number
+}
+
+export function adminUsers(filters: AdminUserFilters = {}): Promise<AdminPage<AdminUserRow>> {
+  return req(`/admin/users${adminQuery(filters as Record<string, unknown>)}`)
+}
+
+export function adminCreateUser(body: AdminUserCreate): Promise<AdminMember> {
+  return req('/admin/users', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function adminUpdateUser(userId: number, body: AdminUserUpdate): Promise<AdminMember> {
+  return req(`/admin/users/${userId}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export function adminResetPassword(userId: number, sendEmail = false): Promise<AdminResetLinkResult> {
+  return req(`/admin/users/${userId}/reset-password`, {
+    method: 'POST',
+    body: JSON.stringify({ send_email: sendEmail }),
+  })
+}
+
+export function adminSetPassword(userId: number, password: string): Promise<{ ok: boolean }> {
+  return req(`/admin/users/${userId}/set-password`, {
+    method: 'POST',
+    body: JSON.stringify({ password }),
+  })
+}
+
+export function adminSecurity(): Promise<AdminSecurityReport> {
+  return req('/admin/security')
+}
+
+export function adminAuthEvents(filters: AuthEventFilters = {}): Promise<AdminPage<AuthEventRow>> {
+  return req(`/admin/auth-events${adminQuery(filters as Record<string, unknown>)}`)
+}
+
+export function adminAuditLog(filters: { admin_user_id?: number; action?: string; page?: number; page_size?: number } = {}): Promise<AdminPage<AdminAuditRow>> {
+  return req(`/admin/audit-log${adminQuery(filters)}`)
+}
+
+export function adminProspects(page = 1, pageSize = 50): Promise<AdminPage<AdminProspectRow>> {
+  return req(`/admin/prospects?page=${page}&page_size=${pageSize}`)
 }

@@ -29,7 +29,12 @@ services:
         fromDatabase:
           name: axon-crm-db
           property: connectionString
-      - key: JWT_SECRET
+      # NOTE: this was historically declared as JWT_SECRET, which the code never
+      # reads (api/security.py reads JWT_SECRET_KEY) — prod worked only via a
+      # dashboard-set JWT_SECRET_KEY. Before syncing this blueprint, confirm the
+      # dashboard value exists; a freshly generated value here would rotate the
+      # signing key and log every session out.
+      - key: JWT_SECRET_KEY
         generateValue: true        # required; the app hard-fails if unset.
       # Application log level. INFO surfaces the per-step pipeline progress and
       # timing tables; without it uvicorn leaves root at WARNING and every
@@ -49,9 +54,12 @@ services:
         value: hcad
       - key: PERMIT_DB_PATH
         value: ""
-      # Public links (set to your deployed frontend origin).
+      # Public links in emails (password reset, verification) and admin reset
+      # URLs. This must be the deployed FRONTEND origin — it used to point at
+      # this API's own onrender.com host, which sent reset links to the wrong
+      # place. The admin security panel warns when it looks wrong.
       - key: APP_BASE_URL
-        value: https://axon-crm-api.onrender.com
+        value: https://axonhtx.com
       # This API's own public origin — used to build the Twilio voice webhook
       # URLs configured on purchased call-tracking numbers (calls module).
       - key: PUBLIC_API_BASE_URL

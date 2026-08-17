@@ -23,6 +23,7 @@ from psycopg2.extensions import connection as PGConn
 
 from config import SELF_SERVE_SIGNUP
 from api.accounts import provision_owner
+from api.auth_events import record_auth_event
 from api.deps import dict_fetchone, get_db
 from api.oauth_verify import (
     OAuthConfigError,
@@ -69,23 +70,33 @@ def _provision_from_identity(identity: OAuthIdentity, db: PGConn) -> dict:
     log.info("Provisioned account %d via %s signup for %s",
              created["account_id"], identity.provider, identity.email)
     return {"id": created["user_id"], "username": created["username"],
-            "role": "owner", "is_active": True}
+            "role": "owner", "is_active": True, "account_id": created["account_id"]}
 
 
-def _login_with_identity(identity: OAuthIdentity, db: PGConn) -> TokenResponse:
+def _login_with_identity(identity: OAuthIdentity, db: PGConn, request: Request) -> TokenResponse:
     """Resolve a verified social identity to a user (provisioning one on first
     use when self-serve signup is enabled) and mint a JWT.
 
     Matching order: (1) a previously-linked (provider, sub); (2) on first use,
     an existing user by verified email — which then records the link;
     (3) nobody → provision a fresh org + owner (or 403 in invite-only mode).
+    Outcomes are recorded to auth_events (api/auth_events.py); error responses
+    stay as they were.
     """
     label = _PROVIDER_LABEL.get(identity.provider, identity.provider)
+    ip, ua = client_ip(request), request.headers.get("user-agent")
+
+    def _record_failure(reason: str, user_row: dict | None = None) -> None:
+        record_auth_event(db, success=False, method=identity.provider,
+                          identifier=identity.email or None, failure_reason=reason,
+                          user_id=user_row["id"] if user_row else None,
+                          account_id=(user_row or {}).get("account_id"),
+                          ip=ip, user_agent=ua)
 
     with db.cursor() as cur:
         # 1. Already linked? Match on the provider's stable subject id.
         cur.execute(
-            "SELECT u.id, u.username, u.role, u.is_active "
+            "SELECT u.id, u.username, u.role, u.is_active, u.account_id "
             "FROM oauth_identities oi JOIN users u ON u.id = oi.user_id "
             "WHERE oi.provider = %s AND oi.provider_sub = %s",
             (identity.provider, identity.sub),
@@ -95,18 +106,20 @@ def _login_with_identity(identity: OAuthIdentity, db: PGConn) -> TokenResponse:
         # 2. First use: match an existing user by verified email, then link.
         if user is None:
             if not identity.email or not identity.email_verified:
+                _record_failure("oauth_unlinked")
                 raise HTTPException(
                     status_code=403,
                     detail=f"Your {label} account did not provide a verified email.",
                 )
             cur.execute(
-                "SELECT id, username, role, is_active FROM users "
+                "SELECT id, username, role, is_active, account_id FROM users "
                 "WHERE lower(email) = lower(%s)",
                 (identity.email,),
             )
             user = dict_fetchone(cur)
             if user is not None:
                 if not user["is_active"]:
+                    _record_failure("inactive", user)
                     raise HTTPException(status_code=403, detail="Account disabled")
                 cur.execute(
                     "INSERT INTO oauth_identities (user_id, provider, provider_sub, email) "
@@ -118,6 +131,7 @@ def _login_with_identity(identity: OAuthIdentity, db: PGConn) -> TokenResponse:
     # 3. Genuinely new: self-serve provisioning (or invite-only rejection).
     if user is None:
         if not SELF_SERVE_SIGNUP:
+            _record_failure("oauth_unlinked")
             raise HTTPException(
                 status_code=403,
                 detail=(
@@ -135,9 +149,14 @@ def _login_with_identity(identity: OAuthIdentity, db: PGConn) -> TokenResponse:
                                 detail="Could not create your account — try again.")
 
     if not user["is_active"]:
+        _record_failure("inactive", user)
         raise HTTPException(status_code=403, detail="Account disabled")
 
     token = create_access_token(user["id"], user["username"], user["role"])
+    record_auth_event(db, success=True, method=identity.provider,
+                      identifier=identity.email or user["username"],
+                      user_id=user["id"], account_id=user.get("account_id"),
+                      ip=ip, user_agent=ua)
     return TokenResponse(access_token=token)
 
 
@@ -149,8 +168,11 @@ def login_google(body: IdTokenRequest, request: Request, db: PGConn = Depends(ge
     except OAuthConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except OAuthVerifyError as exc:
+        record_auth_event(db, success=False, method="google",
+                          failure_reason="oauth_invalid", ip=client_ip(request),
+                          user_agent=request.headers.get("user-agent"))
         raise HTTPException(status_code=401, detail=f"Invalid Google token: {exc}")
-    return _login_with_identity(identity, db)
+    return _login_with_identity(identity, db, request)
 
 
 @router.post("/auth/oauth/apple", response_model=TokenResponse)
@@ -161,5 +183,8 @@ def login_apple(body: IdTokenRequest, request: Request, db: PGConn = Depends(get
     except OAuthConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except OAuthVerifyError as exc:
+        record_auth_event(db, success=False, method="apple",
+                          failure_reason="oauth_invalid", ip=client_ip(request),
+                          user_agent=request.headers.get("user-agent"))
         raise HTTPException(status_code=401, detail=f"Invalid Apple token: {exc}")
-    return _login_with_identity(identity, db)
+    return _login_with_identity(identity, db, request)

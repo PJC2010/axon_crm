@@ -70,6 +70,29 @@ def _plan_defaults(plan_name: str) -> dict[str, bool]:
     return {key: key in granted for key in MODULE_KEYS}
 
 
+def resolve_plan_modules(plan_name: str, enable: list[str] = (),
+                         disable: list[str] = ()) -> dict[str, bool]:
+    """Validate a plan change and return the module map it should store.
+
+    The one rule for what an ``account_plans`` row gets when a platform admin
+    assigns a plan: the plan's defaults with explicit per-module overrides
+    applied on top. Shared by scripts/set_account_plan.py and the admin API
+    (api/routes/admin.py) so the two paths can't drift. Raises ``ValueError``
+    on an unknown plan or module key.
+    """
+    if plan_name not in PLAN_CATALOG:
+        raise ValueError(f"Unknown plan '{plan_name}'. Choose from: {', '.join(PLAN_CATALOG)}")
+    for key in (*enable, *disable):
+        if key not in MODULE_KEYS:
+            raise ValueError(f"Unknown module '{key}'. Choose from: {', '.join(MODULE_KEYS)}")
+    modules = _plan_defaults(plan_name)
+    for key in enable:
+        modules[key] = True
+    for key in disable:
+        modules[key] = False
+    return modules
+
+
 def get_account_modules(account_id: int, db: PGConn) -> dict[str, bool]:
     """Resolve the enabled-module map for an account.
 
