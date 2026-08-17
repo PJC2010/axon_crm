@@ -13,8 +13,7 @@ create_access_token used by password login.
 An identity that matches no user PROVISIONS a fresh org + owner (same defaults
 as POST /auth/signup, via api.accounts.provision_owner) when SELF_SERVE_SIGNUP
 is on; with it off the old invite-only 403 applies. Data sync
-(contacts/documents/calendars) is a separate, later phase that reuses the
-connections framework (migration 032), not this route.
+(contacts/documents/calendars) would be a separate, later phase, not this route.
 """
 import logging
 

@@ -228,23 +228,6 @@ IMPORT_MAX_BYTES = int(os.getenv("IMPORT_MAX_BYTES", str(5 * 1024 * 1024)))  # 5
 # materialize every parsed row in the same memory the API serves from.
 IMPORT_MAX_ROWS = int(os.getenv("IMPORT_MAX_ROWS", "25000"))
 
-# ── Connectors / Marketing insights ──────────────────────────────────────────
-# File uploads (Meta exports) reuse IMPORT_MAX_BYTES.
-# Insight generator: "rules" (deterministic, default) | future "claude" (LLM).
-INSIGHTS_GENERATOR = os.getenv("INSIGHTS_GENERATOR", "rules")
-# Rule benchmarks — tunable without code changes.
-INSIGHTS_ENGAGEMENT_BENCHMARK = float(os.getenv("INSIGHTS_ENGAGEMENT_BENCHMARK", "0.03"))  # 3% of reach
-INSIGHTS_MIN_POSTS_PER_WEEK   = int(os.getenv("INSIGHTS_MIN_POSTS_PER_WEEK", "3"))
-INSIGHTS_TARGET_ROAS          = float(os.getenv("INSIGHTS_TARGET_ROAS", "2.0"))
-INSIGHTS_MAX_CPA              = float(os.getenv("INSIGHTS_MAX_CPA", "50"))
-INSIGHTS_MIN_CTR              = float(os.getenv("INSIGHTS_MIN_CTR", "0.01"))   # 1% of impressions
-INSIGHTS_STALE_DAYS           = int(os.getenv("INSIGHTS_STALE_DAYS", "30"))
-
-# FUTURE OAuth (unused now — placeholders so the seam is documented).
-META_APP_ID             = os.getenv("META_APP_ID", "")
-META_APP_SECRET         = os.getenv("META_APP_SECRET", "")
-META_OAUTH_REDIRECT_URI = os.getenv("META_OAUTH_REDIRECT_URI", "")
-
 # ── Social login (Sign in with Google / Apple) ───────────────────────────────
 # Used by api/oauth_verify.py to validate the OIDC ID token's audience. The app
 # boots with these empty — the /api/auth/oauth/* endpoints return 503 until set.
@@ -252,9 +235,8 @@ META_OAUTH_REDIRECT_URI = os.getenv("META_OAUTH_REDIRECT_URI", "")
 #   APPLE_CLIENT_ID        — the Apple "Services ID" used for Sign in with Apple.
 GOOGLE_OAUTH_CLIENT_ID  = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
 APPLE_CLIENT_ID         = os.getenv("APPLE_CLIENT_ID", "")
-# LLM / vision (Anthropic). Used by api/receipt_extract.py for receipt OCR; the
-# marketing-insights "claude" generator is still a future seam. The app boots
-# with no key — only the receipt-scan endpoint requires one.
+# LLM / vision (Anthropic). Used by api/receipt_extract.py for receipt OCR. The
+# app boots with no key — only the receipt-scan endpoint requires one.
 ANTHROPIC_API_KEY       = os.getenv("ANTHROPIC_API_KEY", "")
 
 # ── Receipt OCR ──────────────────────────────────────────────────────────────
@@ -414,21 +396,6 @@ STRIPE_BILLING_WEBHOOK_SECRET = os.getenv("STRIPE_BILLING_WEBHOOK_SECRET", "")
 STRIPE_PRICE_STARTER = os.getenv("STRIPE_PRICE_STARTER", "")
 STRIPE_PRICE_GROWTH  = os.getenv("STRIPE_PRICE_GROWTH", "")
 STRIPE_PRICE_PRO     = os.getenv("STRIPE_PRICE_PRO", "")
-
-# ── Meta Conversions API (server-side conversion tracking) ────────────────────
-# The server half of Meta ad measurement (api/connectors/meta_capi.py): sends
-# conversions Meta can't see from the browser — notably the trial→paid Subscribe
-# that fires on the Stripe billing webhook, with plan value, so ad optimization
-# learns on *paying* subscribers. The browser Pixel is gated separately on the
-# frontend's NEXT_PUBLIC_META_PIXEL_ID; the two share an event_id for dedup.
-# Empty token/pixel = CAPI disabled (emits are best-effort no-ops). Generate the
-# token in Events Manager → your dataset → Settings → Conversions API. The
-# TEST_EVENT_CODE (Events Manager → Test Events) routes emits to the test stream
-# only — leave it empty in production.
-META_PIXEL_ID         = os.getenv("META_PIXEL_ID", "")
-META_CAPI_TOKEN       = os.getenv("META_CAPI_TOKEN", "")
-META_CAPI_API_VERSION = os.getenv("META_CAPI_API_VERSION", "v20.0")
-META_TEST_EVENT_CODE  = os.getenv("META_TEST_EVENT_CODE", "")
 
 # ── Public ZIP-sample widget (landing-page growth loop) ───────────────────────
 # "Enter your ZIP, see your best leads free": the landing page serves a masked

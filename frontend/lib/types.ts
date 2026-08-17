@@ -433,56 +433,6 @@ export interface ImportResult {
   errors: string[]
 }
 
-// ── Connectors / connections ────────────────────────────────────────────────────
-
-export interface Connection {
-  id: number
-  provider: string                 // 'meta_facebook' | 'meta_instagram'
-  display_name: string | null
-  status: string                   // connected | disconnected | error
-  auth_type: string                // file | oauth
-  last_synced_at: string | null
-  created_at: string
-}
-
-export interface SocialImportPreview {
-  export_kind: string | null
-  metric_rows: number
-  post_rows: number
-  period_start: string | null
-  period_end: string | null
-  sample_metrics: Record<string, unknown>[]
-  sample_posts: Record<string, unknown>[]
-  errors: string[]
-}
-
-export interface SocialImportResult {
-  import_id: number
-  metrics_imported: number
-  posts_imported: number
-  skipped: number
-  errors: string[]
-}
-
-// ── Marketing insights ──────────────────────────────────────────────────────────
-
-export interface MarketingInsight {
-  id: string
-  severity: 'positive' | 'warning' | 'action'
-  category: 'content' | 'audience' | 'paid' | 'cadence' | 'conversion'
-  title: string
-  message: string
-  recommended_action: string
-  supporting_metric: { label?: string; value?: string | number; comparison?: string }
-}
-
-export interface MarketingInsightsResponse {
-  insights: MarketingInsight[]
-  period_days: number
-  has_data: boolean
-  last_synced_at: string | null
-}
-
 export interface PipelineCardLead {
   id: number
   address: string | null
@@ -513,7 +463,6 @@ export type ModuleKey =
   | 'invoicing'
   | 'bookkeeping'
   | 'quotes'
-  | 'marketing'
   | 'automation'
   | 'policies'
   | 'orders'

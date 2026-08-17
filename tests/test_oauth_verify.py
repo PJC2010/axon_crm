@@ -3,7 +3,7 @@
 Pure/no-network: we generate a throwaway RSA key, expose its public half as a
 JWKS (monkeypatched in place of the real Google/Apple fetch), and sign tokens
 with the private half — exercising the real signature/issuer/audience checks
-without touching the network. Same no-DB style as test_connectors_meta.py.
+without touching the network. Same no-DB style as test_import.py.
 """
 import time
 

@@ -31,7 +31,6 @@ MODULE_KEYS: tuple[str, ...] = (
     "invoicing",     # invoices + accounts-receivable
     "bookkeeping",   # expenses, P&L, job costing
     "quotes",        # quote builder + convert-to-invoice
-    "marketing",     # Meta/ad insights
     "automation",    # workflow rules engine
     # Associated child objects (Phase 5 of the generalization roadmap). Existing
     # accounts were backfilled OFF in migration 043; business-type presets opt in.
@@ -44,14 +43,11 @@ MODULE_KEYS: tuple[str, ...] = (
 # Named plans bundle modules. The exact tiers/prices are a product decision; this
 # is the resolved module set each tier grants. Every tier gets `prospecting` —
 # scoring is the moat and nobody should experience Axon without it; lower tiers
-# meter it via PLAN_SCORING_LIMITS instead of withholding the module. `marketing`
-# (Meta CSV insights) is granted by no named plan — the module key and routes
-# stay, so it remains re-grantable per-account via overrides
-# (scripts/set_account_plan.py) if a fit ever appears.
+# meter it via PLAN_SCORING_LIMITS instead of withholding the module.
 PLAN_CATALOG: dict[str, set[str]] = {
     "starter": {"prospecting"},
     "growth": {"prospecting", "invoicing", "bookkeeping", "quotes", "automation", "appointments"},
-    "pro": set(MODULE_KEYS) - {"marketing"},
+    "pro": set(MODULE_KEYS),
 }
 
 # Monthly scored-lead reveal allowance per plan (None = unlimited). Enforced at

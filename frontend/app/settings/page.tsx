@@ -6,7 +6,6 @@ import { getSchedules, createSchedule, updateSchedule, deleteSchedule, triggerRu
 import { AuthGuard } from '@/components/AuthGuard'
 import { AutomationTemplates } from '@/components/AutomationTemplates'
 import { WorkflowRuleForm, describeTrigger } from '@/components/WorkflowRuleForm'
-import { ConnectionsSection } from '@/components/ConnectionsSection'
 import { StripeConnectSection } from '@/components/StripeConnectSection'
 import { CallTrackingSection } from '@/components/CallTrackingSection'
 import { BillingSection } from '@/components/BillingSection'
@@ -183,7 +182,7 @@ function SettingsPage() {
   // Tabs with nothing to show for this account's modules disappear entirely.
   const visibleTabs = TABS.filter(t =>
     t.key === 'money' ? (hasModule('invoicing') || hasModule('bookkeeping'))
-    : t.key === 'integrations' ? (hasModule('orders') || hasModule('calls') || hasModule('marketing'))
+    : t.key === 'integrations' ? (hasModule('orders') || hasModule('calls'))
     : true)
   const activeTab = visibleTabs.some(t => t.key === tab) ? tab : 'business'
 
@@ -554,10 +553,6 @@ function SettingsPage() {
 
         {/* One-way QuickBooks-format exports (bookkeeper escape hatch). */}
         {activeTab === 'money' && (hasModule('invoicing') || hasModule('bookkeeping')) && <QuickBooksExportSection />}
-
-        {/* Connected accounts / integrations (Meta CSV insights) — granted by no
-            named plan; only per-account overrides re-enable it. */}
-        {activeTab === 'integrations' && hasModule('marketing') && <ConnectionsSection />}
 
         {/* Run log */}
         {activeTab === 'pipeline' && hasModule('prospecting') && (

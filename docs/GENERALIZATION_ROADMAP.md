@@ -17,7 +17,7 @@ this roadmap builds on them rather than inventing new mechanisms.
 
 | Phase | What it added | Key files |
 |---|---|---|
-| 1 — Feature modules & plans | Per-account module gating (prospecting, map, invoicing, bookkeeping, quotes, marketing, automation) behind starter/growth/pro plans; `require_module()` dependency; module overrides per account | `api/entitlements.py`, `db/migrations/0039_account_plans.sql`, `frontend/hooks/useEntitlements.ts`, `frontend/components/ModuleGate.tsx`, `frontend/lib/nav.ts` |
+| 1 — Feature modules & plans | Per-account module gating (prospecting, map, invoicing, bookkeeping, quotes, automation) behind starter/growth/pro plans; `require_module()` dependency; module overrides per account | `api/entitlements.py`, `db/migrations/0039_account_plans.sql`, `frontend/hooks/useEntitlements.ts`, `frontend/components/ModuleGate.tsx`, `frontend/lib/nav.ts` |
 | 2 — Business types & terminology | Account-level `business_type` presets (`home_services`, `general_sales`, `professional_services`) bundling terminology overrides (lead↔deal↔client, property↔account), category picklists, `property_based` flag, default modules | `api/business_types.py`, `db/migrations/0040_account_business_type.sql`, `frontend/lib/terminology.ts`, `frontend/hooks/useTerminology.ts` |
 | 3 — Custom fields | Account-defined field schema (text/number/date/boolean/select) + JSONB value bag on the core record | `api/routes/record_fields.py`, `db/migrations/0041_custom_fields.sql`, `properties.custom_fields` |
 
@@ -126,7 +126,7 @@ The three platform gaps that block *every* new vertical, fixed once:
    (`frontend/components/lead/WhyThisScore.tsx`) works unchanged.
 3. **Saved segments.** Named, shareable filter sets over records + custom fields (e.g.
    "A-grade, no policy, added <30d"). Feeds list views, CSV export, and later
-   workflow/marketing targeting. Reuse the shared WHERE-builder consolidation already
+   workflow targeting. Reuse the shared WHERE-builder consolidation already
    recommended in `CODEBASE_REVIEW.md` §2.3.
 
 ### Phase 5 — Associated objects: policies, orders, appointments
@@ -167,17 +167,15 @@ categories.
 
 - Generalize invoice email/SMS (`api/notifications.py`) into contact-level messaging:
   template library with merge fields, per-record send log in `contact_history`, simple
-  sequences (workflow action `send_template`). This is also the delivery mechanism the
-  marketing module's insights currently lack.
+  sequences (workflow action `send_template`).
 - Recurring invoices: `recurrence` on invoices + scheduler tick that clones and sends —
   memberships (fitness/salon), retainers (professional services), maintenance contracts
   (home services). Builds directly on the complete invoice→payment→AR loop.
 
 ### Phase 8 — Integrations layer
 
-- The connector framework exists (`api/connectors/base.py`, Meta connector,
-  `connections.py` routes). Priority order: **Square/Shopify** (retail orders sync —
-  replaces Phase-6 CSV import), **Google Calendar** (appointments), **QuickBooks export**
+- Priority order: **Square/Shopify** (retail orders sync — replaces Phase-6 CSV
+  import), **Google Calendar** (appointments), **QuickBooks export**
   (all verticals), and eventually **carrier/IVANS-AL3 download parsing** (the long-term
   insurance moat — what separates an AMS from a generic CRM).
 

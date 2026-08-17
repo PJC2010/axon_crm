@@ -267,18 +267,6 @@ pipeline leans on:
   rate-limited, per-row savepoints. Writes `properties` rows (source: user CSV).
   Import can auto-create follow-up tasks (import auto-follow-ups feature).
 
-### Marketing / social connections — `api/routes/connections.py` + `api/connectors/`
-- **Source today:** file exports from **Meta Business Suite / Ads Manager**
-  (CSV) and "Download Your Information" (JSON). The `auth_type` seam leaves room
-  for live Meta OAuth later (`META_APP_ID`/`META_APP_SECRET` placeholders in config).
-- **Flow:** register connection → `POST /{id}/preview` parses the upload →
-  `POST /{id}/import` commits. Writes `social_metrics` (reach, impressions,
-  followers, engagements, ad_spend, ad_cpc/cpa/roas, campaign_name, …) and
-  `social_posts` (posted_at, caption, likes, comments, shares, saves, …).
-- **Downstream:** `api/marketing_insights.py` generates insights from these
-  tables — deterministic rules by default (`INSIGHTS_GENERATOR=rules`, with
-  benchmark thresholds in config); a Claude LLM generator is a future seam.
-
 ### Receipt OCR — `api/receipt_extract.py` (expenses module)
 - **Source:** user-uploaded receipt photos (≤ `RECEIPT_MAX_BYTES`, 10 MB).
 - **Mechanism:** Anthropic API (`ANTHROPIC_API_KEY`), model `RECEIPT_SCAN_MODEL`
@@ -311,5 +299,4 @@ pipeline leans on:
 | Versium | Contact append, demographic append | `CONTACT_*` / `DEMO_*` (provider `versium`) | Paid (highest/record) |
 | BatchData | Contact append, demographic append | `CONTACT_*` / `DEMO_*` (provider `batchdata`) | Paid |
 | Anthropic | Receipt OCR (expenses) | `ANTHROPIC_API_KEY`, `RECEIPT_SCAN_MODEL` | Paid |
-| Meta (file export, not API) | Social/ads metrics import | — (OAuth is a future seam) | Free |
 | Resend / Twilio | Outbound email / SMS | `RESEND_*` / `TWILIO_*` | Paid |

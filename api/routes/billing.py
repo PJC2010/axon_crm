@@ -193,25 +193,6 @@ def _handle_checkout_completed(db: PGConn, event) -> str:
     billing.apply_plan(db, account_id, plan)
     db.commit()
     log.info("Account %d subscribed to %s", account_id, plan)
-
-    # Feed the paid conversion back to Meta so ad optimization learns on paying
-    # subscribers, not just leads — the number the whole ad strategy is judged on
-    # (cost per paying subscriber). Best-effort: a tracking failure must never
-    # unwind a committed subscription. The event_id is deterministic on the
-    # subscription id, so it dedups against any browser-side Subscribe and is
-    # idempotent across webhook retries.
-    try:
-        from api.connectors import meta_capi
-        details = obj.get("customer_details") or {}
-        meta_capi.track_subscribe(
-            email=details.get("email"),
-            value=billing.PLAN_PRICING.get(plan, {}).get("monthly_usd"),
-            event_id=f"sub_{obj.get('subscription') or obj.get('id')}",
-            external_id=str(account_id),
-        )
-    except Exception:
-        log.warning("Meta CAPI Subscribe emit failed for account %d", account_id,
-                    exc_info=True)
     return "processed"
 
 

@@ -36,7 +36,7 @@ from api.routes import leads, notes, history, export, record_fields, segments, m
 from api.routes import lead_events
 from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, hcad, workflows, imports, quotes
 from api.routes import policies, orders, appointments, objects, order_imports
-from api.routes import connections, insights, ml, oauth, map as map_routes, geo
+from api.routes import ml, oauth, map as map_routes, geo
 from api.routes import stripe_payments, twilio_inbound, public_intake, prospects, signup, billing
 from api.routes import zip_sample, calls, twilio_voice, dialer, data_quality
 
@@ -149,9 +149,7 @@ app.include_router(pipeline.router,  prefix="/api", tags=["Pipeline"])
 # for the same reason pipeline.py is: it is data-acquisition, not board state.
 app.include_router(data_quality.router, prefix="/api", tags=["Pipeline"])
 # Single-concern feature routers are gated as whole modules here. Mixed-concern
-# routers (pipeline.py) gate per-endpoint instead. connections.py stays ungated:
-# it is generic integration infra (Meta + Stripe OAuth); only the marketing
-# *analytics* (insights.py) is gated on the `marketing` module.
+# routers (pipeline.py) gate per-endpoint instead.
 app.include_router(expenses.router,    prefix="/api", tags=["Expenses"],
                    dependencies=[Depends(require_module("bookkeeping"))])
 app.include_router(invoices.router,    prefix="/api", tags=["Invoices"],
@@ -208,9 +206,6 @@ app.include_router(workflows.router,   prefix="/api", tags=["Workflows"],
                    dependencies=[Depends(require_module("automation"))])
 app.include_router(imports.router,     prefix="/api", tags=["Import"],
                    dependencies=[Depends(require_module("prospecting"))])
-app.include_router(connections.router, prefix="/api", tags=["Connections"])
-app.include_router(insights.router,    prefix="/api", tags=["Insights"],
-                   dependencies=[Depends(require_module("marketing"))])
 app.include_router(ml.router,          prefix="/api", tags=["ML"],
                    dependencies=[Depends(require_module("prospecting"))])
 app.include_router(map_routes.router,  prefix="/api", tags=["Map"],

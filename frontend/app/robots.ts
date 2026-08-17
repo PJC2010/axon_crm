@@ -21,7 +21,6 @@ export default function robots(): MetadataRoute.Robots {
           '/calls',
           '/expenses',
           '/bookkeeping',
-          '/marketing',
           '/settings',
           '/preview',
           '/design-system',
