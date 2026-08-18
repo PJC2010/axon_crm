@@ -22,8 +22,28 @@ from api.entitlements import (
     MODULE_KEYS, PLAN_CATALOG, get_account_modules, get_scoring_limit, _plan_defaults,
 )
 from api.business_types import BUSINESS_TYPES, business_type_profile
+from api.signup_logic import EMAIL_RE, USERNAME_RE, normalize_email, password_problem
 
 router = APIRouter()
+
+# Cross-instance failed-login lockout, counted per identifier in auth_events.
+# The in-memory IP limiter (api/ratelimit.py) is per-process and resets on
+# every deploy, so on the 2-instance deployment it alone can't stop a
+# credential-stuffing run grinding one account. Blocked attempts are recorded
+# too, so hammering a locked identifier extends the window.
+LOCKOUT_MAX_FAILURES = 8
+LOCKOUT_WINDOW_MINUTES = 15
+
+
+def _identifier_locked_out(db: PGConn, identifier: str) -> bool:
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM auth_events "
+            "WHERE attempted_identifier = %s AND success = FALSE "
+            "  AND created_at > NOW() - make_interval(mins => %s)",
+            (identifier, LOCKOUT_WINDOW_MINUTES),
+        )
+        return cur.fetchone()[0] >= LOCKOUT_MAX_FAILURES
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
@@ -121,6 +141,12 @@ def _account_business_type(account_id: int, db: PGConn) -> str:
 @router.post("/auth/login", response_model=TokenResponse)
 def login(body: LoginRequest, request: Request, db: PGConn = Depends(get_db)):
     login_limiter.check(client_ip(request))
+    ip, ua = client_ip(request), request.headers.get("user-agent")
+    if _identifier_locked_out(db, body.username):
+        record_auth_event(db, success=False, identifier=body.username,
+                          failure_reason="locked_out", ip=ip, user_agent=ua)
+        raise HTTPException(status_code=429,
+                            detail="Too many failed attempts — try again in a few minutes.")
     # Self-serve signups know their email better than their derived username,
     # so the identifier field accepts either.
     with db.cursor() as cur:
@@ -133,7 +159,6 @@ def login(body: LoginRequest, request: Request, db: PGConn = Depends(get_db)):
 
     # Outcomes are recorded (api/auth_events.py) but the responses stay generic —
     # the failure classification must never leak into the client-facing error.
-    ip, ua = client_ip(request), request.headers.get("user-agent")
     password_ok = bool(row) and verify_password(body.password, row["hashed_pw"])
     if not row or not password_ok:
         record_auth_event(db, success=False, identifier=body.username,
@@ -457,6 +482,30 @@ def create_user(
 ):
     if body.role not in ("owner", "sales_rep"):
         raise HTTPException(status_code=400, detail="role must be owner or sales_rep")
+    # Same rules as self-serve signup (api/signup_logic.py) — without them this
+    # path accepted 1-character passwords and mixed-case emails that collide
+    # with the case-insensitive login lookup.
+    email = normalize_email(body.email)
+    problems = []
+    if not USERNAME_RE.match(body.username or ""):
+        problems.append(
+            "Username must be 3–32 characters — lowercase letters, numbers, "
+            "dots, dashes or underscores, starting with a letter or number."
+        )
+    if not EMAIL_RE.match(email):
+        problems.append("A valid email address is required.")
+    pw_problem = password_problem(body.password)
+    if pw_problem:
+        problems.append(pw_problem)
+    if problems:
+        raise HTTPException(status_code=400, detail=" ".join(problems))
+    # users.email UNIQUE is on the raw string, so Foo@x.com and foo@x.com could
+    # coexist and make the login lookup ambiguous — pre-check case-insensitively.
+    with db.cursor() as cur:
+        cur.execute("SELECT 1 FROM users WHERE lower(email) = %s OR username = %s",
+                    (email, body.username))
+        if cur.fetchone():
+            raise HTTPException(status_code=409, detail="Username or email already exists")
     hashed = hash_password(body.password)
     # New team members join the creator's org so they share the same leads.
     try:
@@ -464,7 +513,7 @@ def create_user(
             cur.execute(
                 "INSERT INTO users (username, email, hashed_pw, role, account_id) "
                 "VALUES (%s, %s, %s, %s, %s) RETURNING id, username, email, role, is_active, account_id",
-                (body.username, body.email, hashed, body.role, current_user["account_id"]),
+                (body.username, email, hashed, body.role, current_user["account_id"]),
             )
             row = dict_fetchone(cur)
             db.commit()

@@ -17,6 +17,7 @@ generic 200 — configure RESEND_API_KEY / RESEND_FROM_EMAIL to activate both.
 """
 import logging
 
+import psycopg2.errors
 from fastapi import APIRouter, Depends, HTTPException, Request
 from psycopg2.extensions import connection as PGConn
 from pydantic import BaseModel
@@ -33,8 +34,8 @@ from api.ratelimit import client_ip, signup_limiter, password_reset_limiter
 from api.routes.auth import TokenResponse
 from api.security import create_access_token, hash_password
 from api.signup_logic import (
-    derive_username, hash_token, new_token, normalize_email, token_expiry,
-    token_is_live, validate_signup,
+    derive_username, hash_token, new_token, normalize_email, password_problem,
+    token_expiry, validate_signup,
 )
 
 log = logging.getLogger(__name__)
@@ -141,18 +142,24 @@ def _issue_token(db: PGConn, user_id: int, purpose: str) -> str:
 
 
 def _consume_token(db: PGConn, raw_token: str, purpose: str) -> int:
-    """Validate + burn a one-time token; return its user_id or raise 400."""
+    """Validate + burn a one-time token; return its user_id or raise 400.
+
+    A single conditional UPDATE — the SQL predicates are `token_is_live`
+    (api/signup_logic.py) expressed in-row — so two concurrent requests with
+    the same token can't both pass a check-then-set race; only one wins.
+    """
     with db.cursor() as cur:
         cur.execute(
-            "SELECT id, user_id, expires_at, used_at FROM user_tokens "
-            "WHERE token_hash = %s AND purpose = %s",
+            "UPDATE user_tokens SET used_at = NOW() "
+            "WHERE token_hash = %s AND purpose = %s "
+            "  AND used_at IS NULL AND expires_at > NOW() "
+            "RETURNING user_id",
             (hash_token(raw_token), purpose),
         )
-        row = dict_fetchone(cur)
-        if not row or not token_is_live(row["expires_at"], row["used_at"]):
+        row = cur.fetchone()
+        if not row:
             raise HTTPException(status_code=400, detail="This link is invalid or has expired.")
-        cur.execute("UPDATE user_tokens SET used_at = NOW() WHERE id = %s", (row["id"],))
-    return row["user_id"]
+    return row[0]
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -200,6 +207,14 @@ def signup(body: SignupRequest, request: Request, db: PGConn = Depends(get_db)):
         db.commit()
     except HTTPException:
         raise
+    except psycopg2.errors.UniqueViolation:
+        # Two concurrent signups for the same email both passed the pre-check;
+        # the UNIQUE constraint caught the loser — a 409, not a server error.
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="An account with this email already exists. Try signing in instead.",
+        )
     except Exception:
         db.rollback()
         log.exception("Signup provisioning failed for %s", email)
@@ -272,13 +287,18 @@ def request_password_reset(body: PasswordResetRequest, request: Request,
 
 @router.post("/auth/reset-password")
 def reset_password(body: PasswordResetConfirm, db: PGConn = Depends(get_db)):
-    if len(body.new_password or "") < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
+    problem = password_problem(body.new_password)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
     user_id = _consume_token(db, body.token, "reset_password")
     with db.cursor() as cur:
-        # Coming from an emailed link, so the address is confirmed as a side effect.
+        # Coming from an emailed link, so the address is confirmed as a side
+        # effect. password_changed_at invalidates every JWT issued before this
+        # moment (api/deps.py) — resetting is what a compromised user does, so
+        # a stolen session must not outlive it.
         cur.execute(
-            "UPDATE users SET hashed_pw = %s, email_verified = TRUE WHERE id = %s",
+            "UPDATE users SET hashed_pw = %s, email_verified = TRUE, "
+            "password_changed_at = NOW() WHERE id = %s",
             (hash_password(body.new_password), user_id),
         )
         db.commit()

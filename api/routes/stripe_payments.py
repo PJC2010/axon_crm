@@ -72,6 +72,21 @@ def _checkout_url_for_invoice(db: PGConn, inv: dict) -> str:
     amount_cents = round(balance * 100)
     fee_cents = stripe_client.platform_fee_cents(amount_cents)
     pay_url = f"{APP_BASE_URL}/pay/{inv['pay_token']}"
+
+    # Kill the previous still-open session first so at most ONE payable link
+    # exists per invoice. Checkout Sessions stay payable ~24h; an emailed link
+    # plus a fresh pay-page session were two live charges for the same balance
+    # — the double-payment path. Best-effort: an already completed/expired
+    # session raises, and that's fine.
+    if inv.get("stripe_checkout_session_id"):
+        try:
+            stripe_client.expire_checkout_session(
+                sa["stripe_account_id"], inv["stripe_checkout_session_id"])
+        except Exception:
+            log.info("Previous checkout session %s for invoice %d not expirable "
+                     "(already completed or expired)",
+                     inv["stripe_checkout_session_id"], inv["id"])
+
     try:
         session = stripe_client.create_checkout_session(
             stripe_account_id=sa["stripe_account_id"],
@@ -310,6 +325,72 @@ def _handle_payment_event(db: PGConn, event) -> str:
     return "processed"
 
 
+def _handle_charge_refunded(db: PGConn, event) -> str:
+    """Mirror a Stripe refund into the books as a negative payment row.
+
+    Without this, an owner refunding a customer in the Stripe dashboard leaves
+    the invoice `paid` forever and AR/aging overstates collections. The charge
+    is resolved through the PaymentIntent we recorded at payment time (charge
+    metadata isn't stamped; invoice_payments.stripe_payment_intent_id is).
+    `amount_refunded` is cumulative across partial refunds, so only the delta
+    beyond already-recorded refund rows is inserted — redeliveries and repeat
+    events net to zero.
+    """
+    obj = event["data"]["object"]  # the charge, with cumulative amount_refunded
+    payment_intent_id = obj.get("payment_intent")
+    if not payment_intent_id:
+        return "ignored"
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT invoice_id FROM invoice_payments "
+            "WHERE stripe_payment_intent_id = %s AND amount > 0",
+            (payment_intent_id,),
+        )
+        row = cur.fetchone()
+    if not row:
+        return "ignored"  # not a payment this app recorded
+    invoice_id = row[0]
+
+    with db.cursor() as cur:
+        cur.execute("SELECT account_id FROM invoices WHERE id = %s", (invoice_id,))
+        inv_row = cur.fetchone()
+    if not inv_row:
+        return "ignored"
+    account_id = inv_row[0]
+    # Same forged-account guard as _handle_payment_event.
+    sa = _stripe_account_row(db, account_id)
+    if not sa or sa["stripe_account_id"] != event.get("account"):
+        raise ValueError(
+            f"event account {event.get('account')!r} does not match "
+            f"the connected account on file for account {account_id}"
+        )
+
+    refunded_total = (obj.get("amount_refunded") or 0) / 100
+    charge_id = obj.get("id")
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT COALESCE(SUM(-amount), 0) FROM invoice_payments "
+            "WHERE invoice_id = %s AND stripe_charge_id = %s AND amount < 0",
+            (invoice_id, charge_id),
+        )
+        already_recorded = float(cur.fetchone()[0])
+    delta = round(refunded_total - already_recorded, 2)
+    if delta <= 0:
+        return "ignored"
+
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO invoice_payments (invoice_id, amount, payment_date, "
+            "payment_method, notes, stripe_charge_id) "
+            "VALUES (%s, %s, %s, 'stripe', %s, %s)",
+            (invoice_id, -delta, datetime.date.today(),
+             "Refunded via Stripe", charge_id),
+        )
+    _update_invoice_payment_state(db, invoice_id)
+    db.commit()
+    return "processed"
+
+
 def _handle_account_updated(db: PGConn, event) -> str:
     obj = event["data"]["object"]
     with db.cursor() as cur:
@@ -351,6 +432,8 @@ def _handle_event(db: PGConn, event) -> str:
     try:
         if event_type in ("checkout.session.completed", "payment_intent.succeeded"):
             outcome = _handle_payment_event(db, event)
+        elif event_type == "charge.refunded":
+            outcome = _handle_charge_refunded(db, event)
         elif event_type == "account.updated":
             outcome = _handle_account_updated(db, event)
         else:

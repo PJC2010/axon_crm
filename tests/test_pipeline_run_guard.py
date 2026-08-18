@@ -181,15 +181,24 @@ class TestReconcileStaleRuns:
     def test_marks_old_running_rows_failed(self, fake_db, monkeypatch):
         monkeypatch.setattr(config, "RUN_MAX_SECONDS", 3600)
         fake_db.configure(rowcount=2)
-        assert sched.reconcile_stale_runs() == 2
+        # The fake returns rowcount=2 for each of the two sweeps (running +
+        # orphaned queued), so the total is 4.
+        assert sched.reconcile_stale_runs() == 4
         conn = fake_db.conns[0]
-        sql, params = _sql(conn, "UPDATE pipeline_runs SET status = 'failed'")[0]
+        updates = _sql(conn, "UPDATE pipeline_runs SET status = 'failed'")
+        sql, params = updates[0]
         assert "WHERE status = 'running'" in sql
         # Age gate: backfill sweeps share this table and do not take the run
         # lock, so a sweep still inside its budget must not be killed.
         assert "make_interval(secs => %s)" in sql
         assert params[1] == 3600
         assert params[0].adapted == {"error": "stale (process restarted)"}
+        # Second sweep: rows orphaned at `queued` by a restart between the
+        # INSERT and the in-memory APScheduler job starting.
+        queued_sql, queued_params = updates[1]
+        assert "WHERE status = 'queued'" in queued_sql
+        assert "make_interval(hours => 1)" in queued_sql
+        assert queued_params[0].adapted == {"error": "stale (never started — process restarted)"}
         assert _sql(conn, "pg_advisory_unlock")
         assert conn.closed
 

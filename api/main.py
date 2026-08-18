@@ -2,7 +2,7 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import LOG_LEVEL
@@ -215,4 +215,21 @@ app.include_router(geo.router,         prefix="/api", tags=["Geo"])
 
 @app.get("/api/health")
 def health():
+    """Render's deploy health gate (render.yaml healthCheckPath). Touches the
+    database so a deploy that can't reach Postgres — or an instance whose
+    connections are exhausted — reads unhealthy instead of green-while-500ing.
+    """
+    from api.deps import get_db
+    try:
+        gen = get_db()
+        conn = next(gen)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+        finally:
+            gen.close()
+    except Exception:
+        log.exception("Health check failed")
+        raise HTTPException(status_code=503, detail="database unreachable")
     return {"status": "ok"}

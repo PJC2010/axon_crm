@@ -18,7 +18,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from psycopg2.extensions import connection as PGConn
 
-from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user, require_owner
+from api.deps import (
+    get_db, dict_fetchall, dict_fetchone, get_current_user, require_owner,
+    require_verified_sender,
+)
+from api.ratelimit import message_send_limiter
 from api.invoice_logic import (
     _calc_totals, _recalc_paid, _update_invoice_payment_state, _load_invoice,
 )
@@ -436,7 +440,9 @@ def record_payment(
 def delete_payment(
     invoice_id: int,
     payment_id: int,
-    user: dict = Depends(get_current_user),
+    # Owner-gated like invoice deletion: removing a recorded payment rewrites
+    # the books (AR/aging, QBO export), so reps must not be able to do it.
+    user: dict = Depends(require_owner),
     db: PGConn = Depends(get_db),
 ):
     _assert_invoice_account(db, invoice_id, user["account_id"])
@@ -471,7 +477,7 @@ def send_invoice(
     invoice_id: int,
     body: SendInvoiceRequest,
     request: Request,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_verified_sender),
     db: PGConn = Depends(get_db),
 ):
     """Deliver the invoice to the client by email and/or SMS.
@@ -480,6 +486,7 @@ def send_invoice(
     because a text can't hold a file, the SMS links to (and MMS-attaches) the
     public PDF link served at /api/public/invoices/{token}/pdf.
     """
+    message_send_limiter.check(f"acct:{current_user['account_id']}")
     _assert_invoice_account(db, invoice_id, current_user["account_id"])
     inv = _load_invoice(db, invoice_id)
     if not inv:

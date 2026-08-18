@@ -266,7 +266,7 @@ def update_expense(
 
 
 @router.delete("/expenses/{expense_id}", status_code=204)
-def delete_expense(expense_id: int, user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+def delete_expense(expense_id: int, user: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
     with db.cursor() as cur:
         cur.execute("DELETE FROM expenses WHERE id = %s AND account_id = %s RETURNING id", (expense_id, user["account_id"]))
         deleted = cur.fetchone()

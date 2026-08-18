@@ -26,10 +26,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from psycopg2.extensions import connection as PGConn
 
 from config import APP_BASE_URL
-from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user, require_owner
+from api.deps import (
+    get_db, dict_fetchall, dict_fetchone, get_current_user, require_owner,
+    require_verified_sender,
+)
 from api.invoice_logic import _calc_totals, _load_invoice
 from api.notifications import account_sms_from, send_quote_email, send_quote_sms
-from api.ratelimit import client_ip, public_quote_limiter
+from api.ratelimit import client_ip, message_send_limiter, public_quote_limiter
 from api.models import (
     Quote, QuoteCreate, QuoteUpdate, ConvertQuoteRequest, PublicDeclineRequest,
     Invoice, SendInvoiceRequest,
@@ -249,10 +252,11 @@ def delete_quote(quote_id: int, current_user: dict = Depends(require_owner), db:
 def send_quote(
     quote_id: int,
     body: SendInvoiceRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_verified_sender),
     db: PGConn = Depends(get_db),
 ):
     """Deliver a quote summary to the client by email and/or SMS."""
+    message_send_limiter.check(f"acct:{current_user['account_id']}")
     quote = _get_quote_or_404(db, quote_id, current_user["account_id"])
     if quote["status"] in ("declined", "expired"):
         raise HTTPException(status_code=400, detail=f"Cannot send a {quote['status']} quote")

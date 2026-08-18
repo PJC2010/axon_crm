@@ -17,7 +17,11 @@ import psycopg2
 from fastapi import APIRouter, Depends, HTTPException
 from psycopg2.extensions import connection as PGConn
 
-from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user, require_owner
+from api.deps import (
+    get_db, dict_fetchall, dict_fetchone, get_current_user, require_owner,
+    require_verified_sender,
+)
+from api.ratelimit import message_send_limiter
 from api import messaging, notifications
 from api.models import (
     MessageTemplate, MessageTemplateCreate, MessageTemplateUpdate,
@@ -106,8 +110,11 @@ def delete_template(template_id: int, current_user: dict = Depends(require_owner
 # ── Send to a record's contact ──────────────────────────────────────────────────
 
 @router.post("/leads/{lead_id}/message")
-def send_lead_message(lead_id: int, body: SendMessageRequest, user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+def send_lead_message(lead_id: int, body: SendMessageRequest,
+                      user: dict = Depends(require_verified_sender),
+                      db: PGConn = Depends(get_db)):
     account_id = user["account_id"]
+    message_send_limiter.check(f"acct:{account_id}")
 
     with db.cursor() as cur:
         cur.execute(

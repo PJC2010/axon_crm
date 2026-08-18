@@ -80,8 +80,16 @@ def plan_for_price(price_id: str | None) -> str | None:
 
 
 def billing_configured() -> bool:
-    """True when self-serve subscriptions can actually be sold."""
-    return bool(STRIPE_SECRET_KEY) and bool(_price_map())
+    """True when self-serve subscriptions can actually be sold.
+
+    The webhook secret is part of "configured" on purpose: without it, Checkout
+    would happily collect money while every entitlement-granting delivery 503s —
+    the account stays `trialing` with no subscription id, which is exactly the
+    state the daily trial-expiry tick downgrades to starter. A paying customer
+    silently losing their plan is far worse than checkout refusing to open.
+    """
+    return (bool(STRIPE_SECRET_KEY) and bool(_price_map())
+            and bool(STRIPE_BILLING_WEBHOOK_SECRET))
 
 
 def _stripe():

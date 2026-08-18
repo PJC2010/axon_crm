@@ -17,6 +17,9 @@ USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{2,31}$")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 MIN_PASSWORD_LEN = 8
+# bcrypt silently truncates at 72 bytes, making longer passphrases that differ
+# only after byte 72 interchangeable — reject rather than truncate.
+MAX_PASSWORD_BYTES = 72
 MAX_COMPANY_LEN = 80
 
 VERIFY_EMAIL_TTL = timedelta(days=3)
@@ -26,6 +29,16 @@ TOKEN_PURPOSES = ("verify_email", "reset_password")
 
 def normalize_email(email: str) -> str:
     return (email or "").strip().lower()
+
+
+def password_problem(password: str) -> str | None:
+    """One shared rule for every path that sets a password (signup, team-member
+    creation, reset). Returns a human-readable problem or None."""
+    if len(password or "") < MIN_PASSWORD_LEN:
+        return f"Password must be at least {MIN_PASSWORD_LEN} characters."
+    if len((password or "").encode("utf-8")) > MAX_PASSWORD_BYTES:
+        return f"Password must be {MAX_PASSWORD_BYTES} bytes or fewer."
+    return None
 
 
 def validate_signup(*, company: str, email: str, password: str,
@@ -38,8 +51,9 @@ def validate_signup(*, company: str, email: str, password: str,
         problems.append(f"Company name must be {MAX_COMPANY_LEN} characters or fewer.")
     if not EMAIL_RE.match(normalize_email(email)):
         problems.append("A valid email address is required.")
-    if len(password or "") < MIN_PASSWORD_LEN:
-        problems.append(f"Password must be at least {MIN_PASSWORD_LEN} characters.")
+    pw_problem = password_problem(password)
+    if pw_problem:
+        problems.append(pw_problem)
     if username is not None and not USERNAME_RE.match(username):
         problems.append(
             "Username must be 3–32 characters — lowercase letters, numbers, "

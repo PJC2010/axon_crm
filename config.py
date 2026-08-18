@@ -11,7 +11,19 @@ load_dotenv()
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").strip().upper()
 
 # ── Database ──────────────────────────────────────────────────────────────────
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost/smart_crm")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost/axon_crm")
+
+# Per-instance connection pool for API requests (api/deps.py). Bounded so the
+# 2-instance deploy plus the in-process scheduler can't exhaust the Postgres
+# connection cap under a traffic burst. Scheduler jobs open their own direct
+# connections and are not pooled.
+DB_POOL_MIN = int(os.getenv("DB_POOL_MIN", "1"))
+DB_POOL_MAX = int(os.getenv("DB_POOL_MAX", "10"))
+# Fail fast instead of hanging a worker thread when Postgres is unreachable.
+DB_CONNECT_TIMEOUT_SECONDS = int(os.getenv("DB_CONNECT_TIMEOUT_SECONDS", "5"))
+# Server-side cap per statement on API-request connections; one pathological
+# query must not hold a worker + connection forever. 0 disables.
+DB_STATEMENT_TIMEOUT_MS = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "30000"))
 
 # ── Harris County Appraisal District DuckDB ───────────────────────────────────
 PERMIT_DB_PATH = os.getenv("PERMIT_DB_PATH", "/Users/petecastillo/property_data/harris_county.duckdb")

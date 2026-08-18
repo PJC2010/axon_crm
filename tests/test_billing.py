@@ -62,13 +62,19 @@ def test_unconfigured_plans_drop_out(monkeypatch):
     assert b.plan_for_price("price_p") == "pro"
 
 
-def test_billing_configured_requires_key_and_a_price(monkeypatch):
+def test_billing_configured_requires_key_price_and_webhook_secret(monkeypatch):
     monkeypatch.setattr(b, "STRIPE_SECRET_KEY", "", raising=False)
+    monkeypatch.setattr(b, "STRIPE_BILLING_WEBHOOK_SECRET", "whsec_x", raising=False)
     _set_prices(monkeypatch, pro="price_p")
     assert b.billing_configured() is False    # no secret key
     monkeypatch.setattr(b, "STRIPE_SECRET_KEY", "sk_test_x", raising=False)
     assert b.billing_configured() is True
     _set_prices(monkeypatch)                   # key but no prices
+    assert b.billing_configured() is False
+    # Checkout without the entitlement-granting webhook would take money and
+    # never apply the plan — an unset webhook secret must block selling.
+    _set_prices(monkeypatch, pro="price_p")
+    monkeypatch.setattr(b, "STRIPE_BILLING_WEBHOOK_SECRET", "", raising=False)
     assert b.billing_configured() is False
 
 

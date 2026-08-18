@@ -29,6 +29,19 @@ _FIELDS = ("property_id", "assigned_to", "title", "location", "starts_at",
            "ends_at", "status", "notes")
 
 
+def _assert_property(db: PGConn, property_id: int | None, account_id: int) -> None:
+    """A client-supplied property_id must belong to the caller's account —
+    contact_history has no account_id of its own, so an unchecked id here
+    would write into another tenant's lead timeline."""
+    if property_id is None:
+        return
+    with db.cursor() as cur:
+        cur.execute("SELECT 1 FROM properties WHERE id = %s AND account_id = %s",
+                    (property_id, account_id))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Lead not found")
+
+
 def _get_appointment_or_404(db: PGConn, appointment_id: int, account_id: int) -> dict:
     with db.cursor() as cur:
         cur.execute("SELECT * FROM appointments WHERE id = %s AND account_id = %s",
@@ -122,6 +135,7 @@ def create_appointment(body: AppointmentCreate, current_user: dict = Depends(get
         raise HTTPException(status_code=400, detail="Invalid status")
     if body.ends_at <= body.starts_at:
         raise HTTPException(status_code=400, detail="ends_at must be after starts_at")
+    _assert_property(db, body.property_id, current_user["account_id"])
     with db.cursor() as cur:
         cur.execute(
             "INSERT INTO appointments (property_id, assigned_to, title, location, starts_at, ends_at, "
@@ -147,6 +161,7 @@ def update_appointment(appointment_id: int, body: AppointmentUpdate, user: dict 
     existing = _get_appointment_or_404(db, appointment_id, user["account_id"])
     if body.status is not None and body.status not in APPOINTMENT_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid status")
+    _assert_property(db, body.property_id, user["account_id"])
 
     sets, params = ["updated_at = NOW()"], []
     for field in _FIELDS:

@@ -5,9 +5,13 @@ import type { NextRequest } from 'next/server'
 // X-Robots-Tag: noindex header — robots.txt only stops crawling, it doesn't
 // stop a URL that's linked elsewhere (e.g. a shared /q/ quote link) from being
 // indexed; the header does.
+//
+// Next 16 renamed the `middleware` file convention to `proxy` — same contract,
+// new name (see node_modules/next/dist/docs/01-app/03-api-reference/
+// 03-file-conventions/proxy.md).
 const INDEXABLE_PATHS = ['/', '/hcad-data', '/login', '/signup', '/privacy', '/terms']
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
   const isIndexable = INDEXABLE_PATHS.some(
     p => pathname === p || (p !== '/' && pathname.startsWith(p + '/')),
