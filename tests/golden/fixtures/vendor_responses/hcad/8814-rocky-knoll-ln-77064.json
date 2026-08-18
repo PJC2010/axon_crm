@@ -1,0 +1,20 @@
+{
+  "extra_features": {
+    "garage_spaces": 2,
+    "has_cracked_slab": false,
+    "has_pool": false
+  },
+  "permit_count_24mo": 4,
+  "property_summary": {
+    "estimated_value": 310000,
+    "last_sale_date": "2025-09-20",
+    "lot_size": 7300,
+    "neighborhood_code": "6064",
+    "neighborhood_name": null,
+    "owner_occupied": true,
+    "parcel_apn": "0004531200411",
+    "square_footage": 2210,
+    "state_class": "A1",
+    "year_built": 2005
+  }
+}

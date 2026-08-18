@@ -1,0 +1,29 @@
+[
+  {
+    "addressLine1": "15918 Lakeview Terrace Dr",
+    "assessorID": "0004531200548",
+    "city": "Humble",
+    "features": {
+      "garageSpaces": 2,
+      "garageType": "Attached"
+    },
+    "formattedAddress": "15918 Lakeview Terrace Dr, Humble, TX 77346",
+    "lastSaleDate": "2026-04-02T00:00:00.000Z",
+    "lastSalePrice": null,
+    "latitude": 29.9931,
+    "longitude": -95.1745,
+    "lotSize": 9100,
+    "ownerOccupied": true,
+    "propertyType": "Single Family",
+    "squareFootage": 2480,
+    "state": "TX",
+    "taxAssessments": {
+      "2025": {
+        "value": 299000,
+        "year": 2025
+      }
+    },
+    "yearBuilt": 2001,
+    "zipCode": "77346"
+  }
+]

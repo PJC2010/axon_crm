@@ -1,0 +1,1002 @@
+{
+  "10119-forum-west-dr-77036": {
+    "composite": 46.3,
+    "data_completeness": 0.94,
+    "fields": {
+      "estimated_equity": 114000,
+      "estimated_value": 190000,
+      "garage_spaces": 1,
+      "last_sale_date": "2025-06-10",
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": 2,
+      "year_built": 1972,
+      "zip_median_income": 42000
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 29.716,
+      "longitude": -95.542,
+      "resolved": true
+    },
+    "grade": "C",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "hcad",
+      "last_sale_date": "hcad",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "hcad",
+      "year_built": "hcad",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 0.0,
+      "equity": 1.0,
+      "garage": 0.5,
+      "income": 0.56,
+      "neighborhood": 0.0,
+      "permit": 1.0,
+      "sale": 0.429205
+    }
+  },
+  "11322-sagevale-ln-77089": {
+    "composite": 62.93,
+    "data_completeness": 0.72,
+    "fields": {
+      "estimated_equity": 126000,
+      "estimated_value": 210000,
+      "garage_spaces": 2,
+      "last_sale_date": null,
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": 1,
+      "year_built": 1993,
+      "zip_median_income": 58500
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 29.5901,
+      "longitude": -95.193,
+      "resolved": true
+    },
+    "grade": "B",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "hcad",
+      "last_sale_date": "missing",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "hcad",
+      "year_built": "hcad",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 0.85,
+      "equity": 1.0,
+      "garage": 1.0,
+      "income": 0.78,
+      "neighborhood": 0.0,
+      "permit": 0.5,
+      "sale": 0.0
+    }
+  },
+  "1218-wakefield-dr-77018": {
+    "composite": 64.0,
+    "data_completeness": 0.64,
+    "fields": {
+      "estimated_equity": 252000,
+      "estimated_value": 420000,
+      "garage_spaces": 2,
+      "last_sale_date": null,
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": null,
+      "year_built": 1998,
+      "zip_median_income": 96000
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 29.8259,
+      "longitude": -95.427,
+      "resolved": true
+    },
+    "grade": "B",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "hcad",
+      "last_sale_date": "missing",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "missing",
+      "year_built": "hcad",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 1.0,
+      "equity": 1.0,
+      "garage": 1.0,
+      "income": 1.0,
+      "neighborhood": 0.0,
+      "permit": 0.0,
+      "sale": 0.0
+    }
+  },
+  "12206-mossycup-dr-77024": {
+    "composite": 88.97,
+    "data_completeness": 0.94,
+    "fields": {
+      "estimated_equity": 750000,
+      "estimated_value": 1250000,
+      "garage_spaces": 3,
+      "last_sale_date": "2026-02-15",
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": 2,
+      "year_built": 1999,
+      "zip_median_income": 128000
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 29.7743,
+      "longitude": -95.5582,
+      "resolved": true
+    },
+    "grade": "A",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "hcad",
+      "last_sale_date": "hcad",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "hcad",
+      "year_built": "hcad",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 1.0,
+      "equity": 1.0,
+      "garage": 1.0,
+      "income": 1.0,
+      "neighborhood": 0.0,
+      "permit": 1.0,
+      "sale": 0.771408
+    }
+  },
+  "13230-ravensway-dr-77429": {
+    "composite": 45.59,
+    "data_completeness": 0.49,
+    "fields": {
+      "estimated_equity": 105000,
+      "estimated_value": 175000,
+      "garage_spaces": null,
+      "last_sale_date": null,
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": null,
+      "year_built": 2013,
+      "zip_median_income": 74000
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 29.977,
+      "longitude": -95.642,
+      "resolved": true
+    },
+    "grade": "C",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "missing",
+      "last_sale_date": "missing",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "missing",
+      "year_built": "hcad",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 0.866667,
+      "equity": 1.0,
+      "garage": 0.0,
+      "income": 0.986667,
+      "neighborhood": 0.0,
+      "permit": 0.0,
+      "sale": 0.0
+    }
+  },
+  "13818-hollowgreen-dr-77082": {
+    "composite": 64.66,
+    "data_completeness": 0.88,
+    "fields": {
+      "estimated_equity": 159000,
+      "estimated_value": 265000,
+      "garage_spaces": 2,
+      "last_sale_date": "2026-03-10",
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": 1,
+      "year_built": 1984,
+      "zip_median_income": null
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 29.721,
+      "longitude": -95.607,
+      "resolved": true
+    },
+    "grade": "B",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "hcad",
+      "last_sale_date": "hcad",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "hcad",
+      "year_built": "hcad",
+      "zip_median_income": "missing"
+    },
+    "subscores": {
+      "age": 0.4,
+      "equity": 1.0,
+      "garage": 1.0,
+      "income": 0.0,
+      "neighborhood": 0.0,
+      "permit": 0.5,
+      "sale": 0.802891
+    }
+  },
+  "15918-lakeview-terrace-dr-77346": {
+    "composite": 90.36,
+    "data_completeness": 0.94,
+    "fields": {
+      "estimated_equity": 177000,
+      "estimated_value": 295000,
+      "garage_spaces": 2,
+      "last_sale_date": "2026-04-02",
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": 2,
+      "year_built": 2001,
+      "zip_median_income": 88000
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 29.9931,
+      "longitude": -95.1745,
+      "resolved": true
+    },
+    "grade": "A",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "hcad",
+      "last_sale_date": "hcad",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "hcad",
+      "year_built": "hcad",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 1.0,
+      "equity": 1.0,
+      "garage": 1.0,
+      "income": 1.0,
+      "neighborhood": 0.0,
+      "permit": 1.0,
+      "sale": 0.834374
+    }
+  },
+  "1611-avenue-o-77571": {
+    "composite": 36.36,
+    "data_completeness": 0.72,
+    "fields": {
+      "estimated_equity": 87000,
+      "estimated_value": 145000,
+      "garage_spaces": 1,
+      "last_sale_date": null,
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": 3,
+      "year_built": 1962,
+      "zip_median_income": 65000
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 29.657,
+      "longitude": -95.048,
+      "resolved": true
+    },
+    "grade": "C",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "hcad",
+      "last_sale_date": "missing",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "hcad",
+      "year_built": "hcad",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 0.0,
+      "equity": 0.87,
+      "garage": 0.5,
+      "income": 0.866667,
+      "neighborhood": 0.0,
+      "permit": 1.0,
+      "sale": 0.0
+    }
+  },
+  "16706-clan-macintosh-dr-77084": {
+    "composite": 48.28,
+    "data_completeness": 0.64,
+    "fields": {
+      "estimated_equity": 144000,
+      "estimated_value": 240000,
+      "garage_spaces": 0,
+      "last_sale_date": null,
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": null,
+      "year_built": 2000,
+      "zip_median_income": 66000
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 29.873,
+      "longitude": -95.656,
+      "resolved": true
+    },
+    "grade": "C",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "rentcast",
+      "last_sale_date": "missing",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "missing",
+      "year_built": "hcad",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 1.0,
+      "equity": 1.0,
+      "garage": 0.0,
+      "income": 0.88,
+      "neighborhood": 0.0,
+      "permit": 0.0,
+      "sale": 0.0
+    }
+  },
+  "16710-clan-macintosh-dr-77084": {
+    "composite": 48.28,
+    "data_completeness": 0.49,
+    "fields": {
+      "estimated_equity": 144000,
+      "estimated_value": 240000,
+      "garage_spaces": null,
+      "last_sale_date": null,
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": null,
+      "year_built": 2000,
+      "zip_median_income": 66000
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 29.8731,
+      "longitude": -95.6559,
+      "resolved": true
+    },
+    "grade": "C",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "missing",
+      "last_sale_date": "missing",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "missing",
+      "year_built": "hcad",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 1.0,
+      "equity": 1.0,
+      "garage": 0.0,
+      "income": 0.88,
+      "neighborhood": 0.0,
+      "permit": 0.0,
+      "sale": 0.0
+    }
+  },
+  "223-frawley-st-77009": {
+    "composite": 21.98,
+    "data_completeness": 0.49,
+    "fields": {
+      "estimated_equity": 99000,
+      "estimated_value": 165000,
+      "garage_spaces": null,
+      "last_sale_date": null,
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": null,
+      "year_built": 1948,
+      "zip_median_income": 52000
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 29.796,
+      "longitude": -95.362,
+      "resolved": true
+    },
+    "grade": "D",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "missing",
+      "last_sale_date": "missing",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "missing",
+      "year_built": "hcad",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 0.0,
+      "equity": 0.99,
+      "garage": 0.0,
+      "income": 0.693333,
+      "neighborhood": 0.0,
+      "permit": 0.0,
+      "sale": 0.0
+    }
+  },
+  "2323-crawford-st-apt-208-77002": {
+    "composite": 57.46,
+    "data_completeness": 0.86,
+    "fields": {
+      "estimated_equity": 70999,
+      "estimated_value": 285000,
+      "garage_spaces": 1,
+      "last_sale_date": "2025-03-15",
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": null,
+      "year_built": 2007,
+      "zip_median_income": 67000
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 29.748,
+      "longitude": -95.356,
+      "resolved": true
+    },
+    "grade": "B",
+    "provenance": {
+      "estimated_equity": "imputed:amortized@rentcast",
+      "estimated_value": "rentcast",
+      "garage_spaces": "rentcast",
+      "last_sale_date": "rentcast",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "missing",
+      "year_built": "rentcast",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 1.0,
+      "equity": 0.70999,
+      "garage": 0.5,
+      "income": 0.893333,
+      "neighborhood": 0.0,
+      "permit": 0.0,
+      "sale": 0.310118
+    }
+  },
+  "24011-verona-river-dr-77389": {
+    "composite": 39.0,
+    "data_completeness": 0.64,
+    "fields": {
+      "estimated_equity": 228000,
+      "estimated_value": 380000,
+      "garage_spaces": 2,
+      "last_sale_date": null,
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": null,
+      "year_built": 2026,
+      "zip_median_income": 97000
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 30.105,
+      "longitude": -95.529,
+      "resolved": true
+    },
+    "grade": "C",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "hcad",
+      "last_sale_date": "missing",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "missing",
+      "year_built": "hcad",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 0.0,
+      "equity": 1.0,
+      "garage": 1.0,
+      "income": 1.0,
+      "neighborhood": 0.0,
+      "permit": 0.0,
+      "sale": 0.0
+    }
+  },
+  "2815-quiet-glen-ct-77084": {
+    "composite": 63.68,
+    "data_completeness": 0.64,
+    "fields": {
+      "estimated_equity": 138000,
+      "estimated_value": 230000,
+      "garage_spaces": 2,
+      "last_sale_date": null,
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": null,
+      "year_built": 2004,
+      "zip_median_income": 71000
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 29.871,
+      "longitude": -95.662,
+      "resolved": true
+    },
+    "grade": "B",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "rentcast",
+      "last_sale_date": "missing",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "missing",
+      "year_built": "hcad",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 1.0,
+      "equity": 1.0,
+      "garage": 1.0,
+      "income": 0.946667,
+      "neighborhood": 0.0,
+      "permit": 0.0,
+      "sale": 0.0
+    }
+  },
+  "4022-lambeth-ln-77373": {
+    "composite": 68.04,
+    "data_completeness": 0.86,
+    "fields": {
+      "estimated_equity": 144000,
+      "estimated_value": 240000,
+      "garage_spaces": 2,
+      "last_sale_date": "2025-10-20",
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": null,
+      "year_built": 2016,
+      "zip_median_income": 62000
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 30.0499,
+      "longitude": -95.381,
+      "resolved": true
+    },
+    "grade": "B",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "hcad",
+      "last_sale_date": "hcad",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "missing",
+      "year_built": "hcad",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 0.666667,
+      "equity": 1.0,
+      "garage": 1.0,
+      "income": 0.826667,
+      "neighborhood": 0.0,
+      "permit": 0.0,
+      "sale": 0.609888
+    }
+  },
+  "4614-pin-oak-forest-dr-77070": {
+    "composite": 86.05,
+    "data_completeness": 0.94,
+    "fields": {
+      "estimated_equity": 231000,
+      "estimated_value": 385000,
+      "garage_spaces": 2,
+      "last_sale_date": "2025-11-10",
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": 3,
+      "year_built": 2003,
+      "zip_median_income": 92000
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 29.9902,
+      "longitude": -95.5361,
+      "resolved": true
+    },
+    "grade": "A",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "hcad",
+      "last_sale_date": "hcad",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "hcad",
+      "year_built": "hcad",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 1.0,
+      "equity": 1.0,
+      "garage": 1.0,
+      "income": 1.0,
+      "neighborhood": 0.0,
+      "permit": 1.0,
+      "sale": 0.638633
+    }
+  },
+  "5106-elm-heights-st-77093": {
+    "composite": 28.27,
+    "data_completeness": 0.49,
+    "fields": {
+      "estimated_equity": 111000,
+      "estimated_value": 185000,
+      "garage_spaces": null,
+      "last_sale_date": null,
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": null,
+      "year_built": 2022,
+      "zip_median_income": 45000
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 29.861,
+      "longitude": -95.335,
+      "resolved": true
+    },
+    "grade": "D",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "missing",
+      "last_sale_date": "missing",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "missing",
+      "year_built": "hcad",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 0.266667,
+      "equity": 1.0,
+      "garage": 0.0,
+      "income": 0.6,
+      "neighborhood": 0.0,
+      "permit": 0.0,
+      "sale": 0.0
+    }
+  },
+  "514-woodhaven-st-77336": {
+    "composite": 42.32,
+    "data_completeness": 0.72,
+    "fields": {
+      "estimated_equity": 93000,
+      "estimated_value": 155000,
+      "garage_spaces": 2,
+      "last_sale_date": null,
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": 1,
+      "year_built": 1978,
+      "zip_median_income": 51000
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 30.059,
+      "longitude": -95.103,
+      "resolved": true
+    },
+    "grade": "C",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "hcad",
+      "last_sale_date": "missing",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "hcad",
+      "year_built": "hcad",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 0.1,
+      "equity": 0.93,
+      "garage": 1.0,
+      "income": 0.68,
+      "neighborhood": 0.0,
+      "permit": 0.5,
+      "sale": 0.0
+    }
+  },
+  "6110-grand-colony-ct-77449": {
+    "composite": 86.68,
+    "data_completeness": 0.94,
+    "fields": {
+      "estimated_equity": 159000,
+      "estimated_value": 265000,
+      "garage_spaces": 2,
+      "last_sale_date": "2025-12-01",
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": 2,
+      "year_built": 2008,
+      "zip_median_income": 81000
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 29.833,
+      "longitude": -95.736,
+      "resolved": true
+    },
+    "grade": "A",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "hcad",
+      "last_sale_date": "hcad",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "hcad",
+      "year_built": "hcad",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 1.0,
+      "equity": 1.0,
+      "garage": 1.0,
+      "income": 1.0,
+      "neighborhood": 0.0,
+      "permit": 1.0,
+      "sale": 0.667378
+    }
+  },
+  "7002-fair-oaks-dr-77396": {
+    "composite": 91.29,
+    "data_completeness": 0.94,
+    "fields": {
+      "estimated_equity": 174000,
+      "estimated_value": 290000,
+      "garage_spaces": 2,
+      "last_sale_date": "2026-05-03",
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": 2,
+      "year_built": 2010,
+      "zip_median_income": 76500
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 29.943,
+      "longitude": -95.262,
+      "resolved": true
+    },
+    "grade": "A",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "hcad",
+      "last_sale_date": "hcad",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "hcad",
+      "year_built": "hcad",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 1.0,
+      "equity": 1.0,
+      "garage": 1.0,
+      "income": 1.0,
+      "neighborhood": 0.0,
+      "permit": 1.0,
+      "sale": 0.876807
+    }
+  },
+  "7726-battle-oaks-dr-77521": {
+    "composite": 48.99,
+    "data_completeness": 0.64,
+    "fields": {
+      "estimated_equity": 129000,
+      "estimated_value": 215000,
+      "garage_spaces": 2,
+      "last_sale_date": null,
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": null,
+      "year_built": 2019,
+      "zip_median_income": 54000
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 29.777,
+      "longitude": -94.955,
+      "resolved": true
+    },
+    "grade": "C",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "hcad",
+      "last_sale_date": "missing",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "missing",
+      "year_built": "hcad",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 0.466667,
+      "equity": 1.0,
+      "garage": 1.0,
+      "income": 0.72,
+      "neighborhood": 0.0,
+      "permit": 0.0,
+      "sale": 0.0
+    }
+  },
+  "818-w-main-st-77506": {
+    "composite": 53.01,
+    "data_completeness": 0.64,
+    "fields": {
+      "estimated_equity": 105000,
+      "estimated_value": 175000,
+      "garage_spaces": 1,
+      "last_sale_date": null,
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": null,
+      "year_built": 1995,
+      "zip_median_income": 47000
+    },
+    "geocode": {
+      "confidence": 0.6,
+      "latitude": 29.691,
+      "longitude": -95.211,
+      "resolved": true
+    },
+    "grade": "C",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "hcad",
+      "last_sale_date": "missing",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "missing",
+      "year_built": "hcad",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 0.95,
+      "equity": 1.0,
+      "garage": 0.5,
+      "income": 0.626667,
+      "neighborhood": 0.0,
+      "permit": 0.0,
+      "sale": 0.0
+    }
+  },
+  "8814-rocky-knoll-ln-77064": {
+    "composite": 87.51,
+    "data_completeness": 1.0,
+    "fields": {
+      "estimated_equity": 186000,
+      "estimated_value": 310000,
+      "garage_spaces": 2,
+      "last_sale_date": "2025-09-20",
+      "neighborhood_value_ratio": 1.15,
+      "permit_count_24mo": 4,
+      "year_built": 2005,
+      "zip_median_income": 78500
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 29.9161,
+      "longitude": -95.5504,
+      "resolved": true
+    },
+    "grade": "A",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "hcad",
+      "last_sale_date": "hcad",
+      "neighborhood_value_ratio": "computed",
+      "permit_count_24mo": "hcad",
+      "year_built": "hcad",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 1.0,
+      "equity": 1.0,
+      "garage": 1.0,
+      "income": 1.0,
+      "neighborhood": 0.5,
+      "permit": 1.0,
+      "sale": 0.568824
+    }
+  },
+  "918-ringrose-dr-77029": {
+    "composite": 13.66,
+    "data_completeness": 0.49,
+    "fields": {
+      "estimated_equity": 58800,
+      "estimated_value": 98000,
+      "garage_spaces": null,
+      "last_sale_date": null,
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": null,
+      "year_built": 1955,
+      "zip_median_income": 38500
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 29.779,
+      "longitude": -95.262,
+      "resolved": true
+    },
+    "grade": "D",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "missing",
+      "last_sale_date": "missing",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "missing",
+      "year_built": "hcad",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 0.0,
+      "equity": 0.588,
+      "garage": 0.0,
+      "income": 0.513333,
+      "neighborhood": 0.0,
+      "permit": 0.0,
+      "sale": 0.0
+    }
+  },
+  "9503-truscon-dr-77080": {
+    "composite": 62.18,
+    "data_completeness": 0.94,
+    "fields": {
+      "estimated_equity": 171000,
+      "estimated_value": 285000,
+      "garage_spaces": 1,
+      "last_sale_date": "2024-10-15",
+      "neighborhood_value_ratio": null,
+      "permit_count_24mo": 1,
+      "year_built": 1996,
+      "zip_median_income": 67500
+    },
+    "geocode": {
+      "confidence": 0.9,
+      "latitude": 29.8163,
+      "longitude": -95.505,
+      "resolved": true
+    },
+    "grade": "B",
+    "provenance": {
+      "estimated_equity": "imputed:fallback@hcad",
+      "estimated_value": "hcad",
+      "garage_spaces": "hcad",
+      "last_sale_date": "hcad",
+      "neighborhood_value_ratio": "missing",
+      "permit_count_24mo": "hcad",
+      "year_built": "hcad",
+      "zip_median_income": "acs"
+    },
+    "subscores": {
+      "age": 1.0,
+      "equity": 1.0,
+      "garage": 0.5,
+      "income": 0.9,
+      "neighborhood": 0.0,
+      "permit": 0.5,
+      "sale": 0.103428
+    }
+  }
+}

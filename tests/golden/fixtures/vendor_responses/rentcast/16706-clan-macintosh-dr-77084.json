@@ -1,0 +1,29 @@
+[
+  {
+    "addressLine1": "16706 Clan Macintosh Dr",
+    "assessorID": "0004531202740",
+    "city": "Houston",
+    "features": {
+      "garageSpaces": 0,
+      "garageType": null
+    },
+    "formattedAddress": "16706 Clan Macintosh Dr, Houston, TX 77084",
+    "lastSaleDate": null,
+    "lastSalePrice": null,
+    "latitude": 29.873,
+    "longitude": -95.656,
+    "lotSize": 6300,
+    "ownerOccupied": true,
+    "propertyType": "Single Family",
+    "squareFootage": 1760,
+    "state": "TX",
+    "taxAssessments": {
+      "2025": {
+        "value": 244000,
+        "year": 2025
+      }
+    },
+    "yearBuilt": 2000,
+    "zipCode": "77084"
+  }
+]

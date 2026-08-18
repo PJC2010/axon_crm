@@ -1,0 +1,20 @@
+{
+  "extra_features": {
+    "garage_spaces": 1,
+    "has_cracked_slab": false,
+    "has_pool": false
+  },
+  "permit_count_24mo": 3,
+  "property_summary": {
+    "estimated_value": 145000,
+    "last_sale_date": null,
+    "lot_size": 6200,
+    "neighborhood_code": "6571",
+    "neighborhood_name": null,
+    "owner_occupied": true,
+    "parcel_apn": "0004531202055",
+    "square_footage": 1380,
+    "state_class": "A1",
+    "year_built": 1962
+  }
+}

@@ -1,0 +1,29 @@
+[
+  {
+    "addressLine1": "2815 Quiet Glen Ct",
+    "assessorID": "0004531201370",
+    "city": "Houston",
+    "features": {
+      "garageSpaces": 2,
+      "garageType": "Attached"
+    },
+    "formattedAddress": "2815 Quiet Glen Ct, Houston, TX 77084",
+    "lastSaleDate": null,
+    "lastSalePrice": null,
+    "latitude": 29.871,
+    "longitude": -95.662,
+    "lotSize": 6400,
+    "ownerOccupied": true,
+    "propertyType": "Single Family",
+    "squareFootage": 1890,
+    "state": "TX",
+    "taxAssessments": {
+      "2025": {
+        "value": 234000,
+        "year": 2025
+      }
+    },
+    "yearBuilt": 2004,
+    "zipCode": "77084"
+  }
+]

@@ -1,0 +1,14 @@
+{
+  "result": {
+    "addressMatches": [
+      {
+        "coordinates": {
+          "x": -95.607,
+          "y": 29.721
+        },
+        "matchType": "Exact",
+        "matchedAddress": "13818 Hollowgreen Dr, Houston, TX, 77082"
+      }
+    ]
+  }
+}

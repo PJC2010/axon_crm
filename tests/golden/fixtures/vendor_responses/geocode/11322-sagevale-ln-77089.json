@@ -1,0 +1,14 @@
+{
+  "result": {
+    "addressMatches": [
+      {
+        "coordinates": {
+          "x": -95.193,
+          "y": 29.5901
+        },
+        "matchType": "Exact",
+        "matchedAddress": "11322 Sagevale Ln, Houston, TX, 77089"
+      }
+    ]
+  }
+}

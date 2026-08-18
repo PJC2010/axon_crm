@@ -1,0 +1,29 @@
+[
+  {
+    "addressLine1": "2323 Crawford St Apt 208",
+    "assessorID": "0004531203014",
+    "city": "Houston",
+    "features": {
+      "garageSpaces": 1,
+      "garageType": "Attached"
+    },
+    "formattedAddress": "2323 Crawford St Apt 208, Houston, TX 77002",
+    "lastSaleDate": "2025-03-15T00:00:00.000Z",
+    "lastSalePrice": 272000,
+    "latitude": 29.748,
+    "longitude": -95.356,
+    "lotSize": null,
+    "ownerOccupied": true,
+    "propertyType": "Condo",
+    "squareFootage": 1140,
+    "state": "TX",
+    "taxAssessments": {
+      "2025": {
+        "value": 285000,
+        "year": 2025
+      }
+    },
+    "yearBuilt": 2007,
+    "zipCode": "77002"
+  }
+]

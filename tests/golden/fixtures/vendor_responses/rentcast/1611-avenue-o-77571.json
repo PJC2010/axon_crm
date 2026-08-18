@@ -1,0 +1,29 @@
+[
+  {
+    "addressLine1": "1611 Avenue O",
+    "assessorID": "0004531202055",
+    "city": "La Porte",
+    "features": {
+      "garageSpaces": 1,
+      "garageType": "Attached"
+    },
+    "formattedAddress": "1611 Avenue O, La Porte, TX 77571",
+    "lastSaleDate": null,
+    "lastSalePrice": null,
+    "latitude": 29.657,
+    "longitude": -95.048,
+    "lotSize": 6200,
+    "ownerOccupied": true,
+    "propertyType": "Single Family",
+    "squareFootage": 1380,
+    "state": "TX",
+    "taxAssessments": {
+      "2025": {
+        "value": 149000,
+        "year": 2025
+      }
+    },
+    "yearBuilt": 1962,
+    "zipCode": "77571"
+  }
+]

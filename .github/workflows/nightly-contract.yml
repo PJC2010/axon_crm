@@ -1,0 +1,123 @@
+# Layer B — nightly live vendor contract run (3am CT / 08:00 UTC).
+#
+# The ONLY workflow that touches vendor API keys. It re-fetches every
+# live-recorded corpus address from RentCast/ACS/the Census geocoder, replays
+# the payloads through the same harness the goldens were built with, and fails
+# on drift: composite moved > 2.0 points, a grade flipped, or any factor's
+# provenance changed. A failure opens (or updates — never duplicates) a
+# GitHub issue titled "Vendor drift detected", with the drift table in the
+# body. It never blocks a merge; PR CI is test.yml.
+name: nightly-contract
+
+on:
+  schedule:
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run live vendor contract tests
+        id: live
+        # Explicit `shell: bash` turns on pipefail — without it the tee would
+        # swallow pytest's failing exit code and drift could never fail the job.
+        shell: bash
+        env:
+          RENTCAST_API_KEY: ${{ secrets.RENTCAST_API_KEY }}
+          CENSUS_API_KEY: ${{ secrets.CENSUS_API_KEY }}
+          CONTRACT_REPORT_PATH: contract-report.md
+        run: |
+          pytest tests/golden/test_vendor_contract.py -m live -rs \
+            | tee pytest-output.txt
+
+      - name: Surface a fully-skipped run in the job summary
+        if: always()
+        shell: bash
+        run: |
+          if grep -qE "^[^0-9]*[0-9]+ skipped" pytest-output.txt \
+             && ! grep -qE "[0-9]+ (passed|failed)" pytest-output.txt; then
+            {
+              echo "> [!WARNING]"
+              echo "> Every contract test SKIPPED — no live-recorded baselines"
+              echo "> exist yet, so this run measured nothing. Record real"
+              echo "> baselines with \`python scripts/refresh_fixtures.py"
+              echo "> --confirm\` (see tests/golden/README.md)."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Open or update the drift issue
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const title = 'Vendor drift detected';
+            const date = new Date().toISOString().slice(0, 10);
+            // Belt-and-braces: strip any key=... query fragment that a vendor
+            // URL embedded in an exception message could carry into the log
+            // tail (GitHub masks registered secrets, but only exact matches).
+            const redact = (s) => s.replace(/([?&]key=)[^&\s"']+/gi, '$1REDACTED');
+            let table = '';
+            try { table = redact(fs.readFileSync('contract-report.md', 'utf8')); } catch {}
+            let tail = '';
+            try {
+              const out = fs.readFileSync('pytest-output.txt', 'utf8');
+              tail = redact(out.split('\n').slice(-40).join('\n'));
+            } catch {}
+            const body = [
+              `Nightly vendor contract run failed on ${date}.`,
+              '',
+              table || '_No drift table was produced (the run may have failed before comparisons)._',
+              '',
+              '<details><summary>pytest tail</summary>',
+              '',
+              '```',
+              tail,
+              '```',
+              '</details>',
+              '',
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            ].join('\n');
+
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              creator: 'github-actions[bot]',
+              per_page: 100,
+            });
+            const existing = issues.find(i => i.title.startsWith(title));
+            if (existing) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                title: `${title} — ${date}`,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `${title} — ${date}`,
+                body,
+                labels: ['vendor-drift'],
+              });
+            }

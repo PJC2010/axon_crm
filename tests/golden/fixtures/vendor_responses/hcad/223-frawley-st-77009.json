@@ -1,0 +1,16 @@
+{
+  "extra_features": null,
+  "permit_count_24mo": null,
+  "property_summary": {
+    "estimated_value": 165000,
+    "last_sale_date": null,
+    "lot_size": 5100,
+    "neighborhood_code": "6009",
+    "neighborhood_name": null,
+    "owner_occupied": false,
+    "parcel_apn": "0004531202329",
+    "square_footage": 990,
+    "state_class": "A1",
+    "year_built": 1948
+  }
+}

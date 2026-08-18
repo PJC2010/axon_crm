@@ -1,0 +1,20 @@
+{
+  "extra_features": {
+    "garage_spaces": 2,
+    "has_cracked_slab": false,
+    "has_pool": false
+  },
+  "permit_count_24mo": 2,
+  "property_summary": {
+    "estimated_value": 290000,
+    "last_sale_date": "2026-05-03",
+    "lot_size": 8000,
+    "neighborhood_code": "6396",
+    "neighborhood_name": null,
+    "owner_occupied": true,
+    "parcel_apn": "0004531203425",
+    "square_footage": 2320,
+    "state_class": "A1",
+    "year_built": 2010
+  }
+}

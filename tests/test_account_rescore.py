@@ -1,7 +1,7 @@
 """Tests for account-wide non-property scoring (pipeline/account_rescore.py):
 the pure roll-up row builders and the rescore_account SQL orchestration.
 Fake-conn style — no live DB."""
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -11,6 +11,12 @@ from pipeline.scoring import compute_score
 
 
 TODAY = date(2026, 7, 2)
+
+# rescore_account reads the real date.today() internally (no injection point),
+# so rows scripted for it must carry dates RELATIVE to the wall clock — the
+# absolute dates this file used before quietly rotted once the calendar
+# passed them ("renewal in 15 days" became "renewal 30 days ago").
+REAL_TODAY = date.today()
 
 
 class _ScriptedCursor:
@@ -127,7 +133,8 @@ class TestRescoreAccount:
     def test_insurance_account_scores_and_writes(self):
         # profile lookup (business_type passed) → roll-up SELECT → UPDATE executemany
         conn = _ScriptedConn([
-            [(101, date(2026, 7, 17), 1, 2500), (102, None, 0, 0)],   # roll-up rows
+            # Renewal 15 days out — imminent.
+            [(101, REAL_TODAY + timedelta(days=15), 1, 2500), (102, None, 0, 0)],
         ])
         updated = ar.rescore_account(conn, 3, business_type="insurance_agency")
         assert updated == 2
@@ -146,14 +153,14 @@ class TestRescoreAccount:
         assert by_pid[102][0] == 0.0 and by_pid[102][1] == "D"
 
     def test_retail_account_uses_orders_rollup(self):
-        conn = _ScriptedConn([[(200, date(2026, 7, 2), 6, 1000)]])
+        conn = _ScriptedConn([[(200, REAL_TODAY, 6, 1000)]])
         updated = ar.rescore_account(conn, 5, business_type="retail")
         assert updated == 1
         select_sql, _ = conn.executed[0]
         assert "LEFT JOIN orders" in select_sql
 
     def test_general_sales_uses_engagement_rollup(self):
-        conn = _ScriptedConn([[(300, 8000, date(2026, 7, 1), 5)]])
+        conn = _ScriptedConn([[(300, 8000, REAL_TODAY - timedelta(days=1), 5)]])
         updated = ar.rescore_account(conn, 9, business_type="general_sales")
         assert updated == 1
         select_sql, select_params = conn.executed[0]
@@ -166,7 +173,7 @@ class TestRescoreAccount:
         assert update_rows[0][1] == "A"
 
     def test_professional_services_uses_engagement_rollup(self):
-        conn = _ScriptedConn([[(301, 2000, date(2026, 7, 2), 5)]])
+        conn = _ScriptedConn([[(301, 2000, REAL_TODAY, 5)]])
         updated = ar.rescore_account(conn, 11, business_type="professional_services")
         assert updated == 1
         select_sql, _ = conn.executed[0]

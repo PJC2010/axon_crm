@@ -1,0 +1,14 @@
+{
+  "result": {
+    "addressMatches": [
+      {
+        "coordinates": {
+          "x": -95.542,
+          "y": 29.716
+        },
+        "matchType": "Exact",
+        "matchedAddress": "10119 Forum West Dr, Houston, TX, 77036"
+      }
+    ]
+  }
+}

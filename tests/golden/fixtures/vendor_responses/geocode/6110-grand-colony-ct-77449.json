@@ -1,0 +1,14 @@
+{
+  "result": {
+    "addressMatches": [
+      {
+        "coordinates": {
+          "x": -95.736,
+          "y": 29.833
+        },
+        "matchType": "Exact",
+        "matchedAddress": "6110 Grand Colony Ct, Katy, TX, 77449"
+      }
+    ]
+  }
+}

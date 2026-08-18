@@ -1,0 +1,20 @@
+{
+  "extra_features": {
+    "garage_spaces": 1,
+    "has_cracked_slab": false,
+    "has_pool": false
+  },
+  "permit_count_24mo": 2,
+  "property_summary": {
+    "estimated_value": 190000,
+    "last_sale_date": "2025-06-10",
+    "lot_size": 7100,
+    "neighborhood_code": "6036",
+    "neighborhood_name": null,
+    "owner_occupied": true,
+    "parcel_apn": "0004531201781",
+    "square_footage": 1650,
+    "state_class": "A1",
+    "year_built": 1972
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "result": {
+    "addressMatches": [
+      {
+        "coordinates": {
+          "x": -95.262,
+          "y": 29.943
+        },
+        "matchType": "Exact",
+        "matchedAddress": "7002 Fair Oaks Dr, Humble, TX, 77396"
+      }
+    ]
+  }
+}

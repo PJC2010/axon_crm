@@ -1,0 +1,16 @@
+{
+  "extra_features": null,
+  "permit_count_24mo": null,
+  "property_summary": {
+    "estimated_value": 185000,
+    "last_sale_date": null,
+    "lot_size": 5400,
+    "neighborhood_code": "6093",
+    "neighborhood_name": null,
+    "owner_occupied": true,
+    "parcel_apn": "0004531202466",
+    "square_footage": 1580,
+    "state_class": "A1",
+    "year_built": 2022
+  }
+}

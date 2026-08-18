@@ -1,2 +1,6 @@
 -r requirements.txt
 pytest>=8.0
+# tests/golden reads its corpus from addresses.yaml. PyYAML already arrives
+# transitively via uvicorn[standard]; declared here so the test suite doesn't
+# depend on an extra of a server package.
+pyyaml>=6.0

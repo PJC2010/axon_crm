@@ -1,0 +1,14 @@
+{
+  "result": {
+    "addressMatches": [
+      {
+        "coordinates": {
+          "x": -95.356,
+          "y": 29.748
+        },
+        "matchType": "Exact",
+        "matchedAddress": "2323 Crawford St Apt 208, Houston, TX, 77002"
+      }
+    ]
+  }
+}

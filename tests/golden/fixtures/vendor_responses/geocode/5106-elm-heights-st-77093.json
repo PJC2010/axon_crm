@@ -1,0 +1,14 @@
+{
+  "result": {
+    "addressMatches": [
+      {
+        "coordinates": {
+          "x": -95.335,
+          "y": 29.861
+        },
+        "matchType": "Exact",
+        "matchedAddress": "5106 Elm Heights St, Houston, TX, 77093"
+      }
+    ]
+  }
+}
