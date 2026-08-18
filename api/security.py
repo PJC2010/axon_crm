@@ -30,12 +30,15 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 def create_access_token(user_id: int, username: str, role: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+    now = datetime.now(timezone.utc)
     payload = {
         "sub": str(user_id),
         "username": username,
         "role": role,
-        "exp": expire,
+        # iat lets a password reset invalidate every token issued before it
+        # (users.password_changed_at, checked in api/deps.py).
+        "iat": now,
+        "exp": now + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 

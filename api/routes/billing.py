@@ -180,8 +180,13 @@ def _handle_checkout_completed(db: PGConn, event) -> str:
     account_id = _resolve_account(db, metadata=metadata, customer_id=obj.get("customer"))
     plan = metadata.get("plan")
     if not account_id or plan not in billing.PLAN_PRICING:
-        raise ValueError(f"unresolvable checkout session {obj.get('id')!r} "
-                         f"(account={account_id}, plan={plan!r})")
+        # Not raising: a session this deployment didn't create (shared Stripe
+        # account, Payment Link, renamed plan) would otherwise 500 on every
+        # redelivery for days and degrade the endpoint's health in Stripe.
+        # Same contract as _handle_subscription_event's unresolvable branch.
+        log.warning("Ignoring unresolvable checkout session %r (account=%s, plan=%r)",
+                    obj.get("id"), account_id, plan)
+        return "ignored"
     _upsert_billing(
         db, account_id,
         stripe_customer_id=obj.get("customer"),
@@ -209,14 +214,17 @@ def _handle_subscription_event(db: PGConn, event) -> str:
         return "ignored"  # a subscription this deployment didn't create
 
     status = obj.get("status") or ("canceled" if event["type"].endswith("deleted") else None)
-    _upsert_billing(
-        db, account_id,
+    fields = dict(
         stripe_customer_id=obj.get("customer"),
         stripe_subscription_id=obj.get("id"),
-        plan_name=plan,
         status=status,
         cancel_at_period_end=bool(obj.get("cancel_at_period_end")),
     )
+    # A stale STRIPE_PRICE_* env (price rotated in Stripe) leaves plan=None —
+    # keep the last known plan_name rather than overwriting it with NULL.
+    if plan:
+        fields["plan_name"] = plan
+    _upsert_billing(db, account_id, **fields)
     # current_period_end arrives as epoch seconds; cast it SQL-side.
     period_end = obj.get("current_period_end")
     if period_end:
@@ -229,6 +237,12 @@ def _handle_subscription_event(db: PGConn, event) -> str:
 
     if status in billing.ACTIVE_STATUSES and plan:
         billing.apply_plan(db, account_id, plan)
+    elif status in billing.ACTIVE_STATUSES:
+        log.warning(
+            "Subscription %s active for account %d but no plan resolved "
+            "(price=%r not in STRIPE_PRICE_* env, no metadata plan) — "
+            "entitlements left unchanged", obj.get("id"), account_id, price_id,
+        )
     elif status in ("canceled", "unpaid", "incomplete_expired"):
         # Access ends: back to the always-on core (never a data lockout).
         billing.apply_plan(db, account_id, "starter")

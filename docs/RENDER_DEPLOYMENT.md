@@ -107,7 +107,7 @@ overwritten).
 - `preDeployCommand: python db/migrate.py` — applies migrations on every deploy.
 - `startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT`
 - `healthCheckPath: /api/health`
-- Env: `DATABASE_URL` (from the DB), `JWT_SECRET` (generated), `SEED_SOURCE=hcad`,
+- Env: `DATABASE_URL` (from the DB), `JWT_SECRET_KEY` (generated), `SEED_SOURCE=hcad`,
   `PERMIT_DB_PATH=""` (forces the Postgres path), paid API keys blank.
 - Use **Starter** Postgres or higher — the free database expires after ~30 days.
 

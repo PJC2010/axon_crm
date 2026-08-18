@@ -67,3 +67,8 @@ public_pay_limiter = RateLimiter(max_calls=30, per_seconds=60, name="public paym
 public_intake_limiter = RateLimiter(max_calls=30, per_seconds=60, name="website intake")
 # Landing/preview email capture — browser-facing and unauthenticated, keep tight.
 prospect_limiter = RateLimiter(max_calls=5, per_seconds=3600, name="prospect signup")
+# Outbound customer messaging (lead messages + invoice/quote delivery), keyed
+# by account id. Sends ride the platform's Resend/Twilio identity, so one
+# runaway account must not be able to burn the shared domain reputation.
+# Generous for a human working leads; fatal for a spam loop.
+message_send_limiter = RateLimiter(max_calls=100, per_seconds=3600, name="message send")

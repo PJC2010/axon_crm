@@ -121,7 +121,7 @@ Where SQL is built by interpolating column names (`pipeline/db.py::fetch_missing
 - Design-system primitives in `frontend/components/ds/`.
 
 ## Database migrations
-Sequential numbered SQL files in `db/migrations/` (currently 74, `0000`–`0075` with two historical gaps, 4-digit zero-padded so filename order matches numeric order), tracked in a `schema_migrations` table. **Always create new migrations with `python db/migrate.py create <name>`** — never hand-edit an already-applied migration; add a new one. Render runs `python db/migrate.py` as its pre-deploy command.
+Sequential numbered SQL files in `db/migrations/` (currently 75, `0000`–`0076` with two historical gaps, 4-digit zero-padded so filename order matches numeric order), tracked in a `schema_migrations` table. **Always create new migrations with `python db/migrate.py create <name>`** — never hand-edit an already-applied migration; add a new one. Render runs `python db/migrate.py` as its pre-deploy command.
 
 ## Git workflow for this task
 - Work on branch `claude/claude-md-docs-hg7dzp`. Create it from latest `master` if needed.

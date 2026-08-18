@@ -279,7 +279,7 @@ export function CallTrackingSection() {
             </div>
 
             <p style={{ fontSize: 12, color: 'var(--color-ink-400)', margin: '12px 0 0' }}>
-              Want more than the one auto-text? Build multi-step follow-ups in <a href="/settings?tab=automation" style={{ color: 'var(--color-link)' }}>Settings → Automation</a>.
+              Want more than the one auto-text? Build multi-step follow-ups in <a href="/settings?tab=pipeline" style={{ color: 'var(--color-link)' }}>Settings → Leads &amp; Automations</a>.
             </p>
           </div>
         ) : (

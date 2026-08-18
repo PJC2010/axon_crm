@@ -1280,6 +1280,10 @@ def reconcile_stale_runs() -> int:
                 log.debug("Stale-run reconcile skipped — a run is in progress")
                 return 0
         try:
+            # RUN_MAX_SECONDS=0 disables the watchdog; the sweep must then use
+            # a generous fallback, not 1 second — a live backfill doesn't hold
+            # the run lock and only its age protects it.
+            stale_after = RUN_MAX_SECONDS if RUN_MAX_SECONDS > 0 else 24 * 3600
             with conn.cursor() as cur:
                 cur.execute(
                     "UPDATE pipeline_runs SET status = 'failed', finished_at = NOW(), "
@@ -1287,12 +1291,24 @@ def reconcile_stale_runs() -> int:
                     "WHERE status = 'running' "
                     "  AND COALESCE(started_at, created_at) < NOW() - make_interval(secs => %s)",
                     (psycopg2.extras.Json({"error": "stale (process restarted)"}),
-                     max(RUN_MAX_SECONDS, 1)),
+                     stale_after),
                 )
                 n = cur.rowcount
+                # APScheduler jobs live only in memory: a restart between the
+                # pipeline_runs INSERT and the job starting orphans the row at
+                # `queued` forever — the UI shows a phantom pending run. A real
+                # queued run starts within seconds; an hour is decisive.
+                cur.execute(
+                    "UPDATE pipeline_runs SET status = 'failed', finished_at = NOW(), "
+                    "result_json = COALESCE(result_json, '{}'::jsonb) || %s::jsonb "
+                    "WHERE status = 'queued' "
+                    "  AND created_at < NOW() - make_interval(hours => 1)",
+                    (psycopg2.extras.Json({"error": "stale (never started — process restarted)"}),),
+                )
+                n += cur.rowcount
             conn.commit()
             if n:
-                log.warning("Reconciled %d stale `running` pipeline run(s) to failed", n)
+                log.warning("Reconciled %d stale pipeline run(s) to failed", n)
             return n
         finally:
             with conn.cursor() as cur:

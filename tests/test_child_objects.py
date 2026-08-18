@@ -88,19 +88,33 @@ class TestPolicies:
         fired = {}
         monkeypatch.setattr(policies_route, "_fire_policy_event",
                             lambda db, policy, event, user_id: fired.update(event=event))
-        conn = _ScriptedConn([[_policy_row()], []])       # INSERT RETURNING, history INSERT
+        # property ownership probe, INSERT RETURNING, history INSERT
+        conn = _ScriptedConn([[(1,)], [_policy_row()], []])
         body = PolicyCreate(property_id=42, carrier="Allstate", policy_type="auto",
                             premium=1200, expiration_date=date(2027, 1, 1))
         result = policies_route.create_policy(body, current_user=USER, db=conn)
-        insert_sql, insert_params = conn.executed[0]
+        probe_sql, probe_params = conn.executed[0]
+        assert "FROM properties" in probe_sql and "account_id" in probe_sql
+        assert probe_params == [42, 3]
+        insert_sql, insert_params = conn.executed[1]
         assert "INSERT INTO policies" in insert_sql
         assert insert_params[-2:] == [9, 3]               # created_by, account_id
-        history_sql, history_params = conn.executed[1]
+        history_sql, history_params = conn.executed[2]
         assert "contact_history" in history_sql
         assert history_params[0] == 42
         assert "Allstate auto" in history_params[1]
         assert fired["event"] == "created"
         assert result.status == "quoted"
+
+    def test_create_rejects_foreign_property(self):
+        # A property_id outside the caller's account must 404, never write —
+        # contact_history has no account_id, so this is the tenancy boundary.
+        conn = _ScriptedConn([[]])                        # ownership probe: no row
+        body = PolicyCreate(property_id=999, carrier="X", policy_type="auto")
+        with pytest.raises(HTTPException) as exc:
+            policies_route.create_policy(body, current_user=USER, db=conn)
+        assert exc.value.status_code == 404
+        assert len(conn.executed) == 1                    # nothing written
 
     def test_create_rejects_bad_status(self):
         with pytest.raises(HTTPException) as exc:
@@ -165,15 +179,23 @@ class TestOrders:
             "channel": "in_store", "status": "completed", "notes": None,
             "created_by": 9, "created_at": datetime(2026, 7, 2), "updated_at": datetime(2026, 7, 2),
         }
-        conn = _ScriptedConn([[row], []])
+        conn = _ScriptedConn([[(1,)], [row], []])   # ownership probe first
         result = orders_route.create_order(
             OrderCreate(property_id=42, order_number="SQ-100", total=55,
                         items=[{"description": "Widget", "quantity": 2}]),
             current_user=USER, db=conn)
         assert result.items == [{"description": "Widget", "quantity": 2}]  # JSON string parsed
-        history_sql, history_params = conn.executed[1]
+        history_sql, history_params = conn.executed[2]
         assert "contact_history" in history_sql
         assert "SQ-100" in history_params[1]
+
+    def test_create_rejects_foreign_property(self):
+        conn = _ScriptedConn([[]])                  # ownership probe: no row
+        with pytest.raises(HTTPException) as exc:
+            orders_route.create_order(OrderCreate(property_id=999, total=1),
+                                      current_user=USER, db=conn)
+        assert exc.value.status_code == 404
+        assert len(conn.executed) == 1
 
     def test_create_rejects_bad_status(self):
         with pytest.raises(HTTPException):
@@ -207,11 +229,18 @@ class TestAppointments:
             "status": "scheduled", "notes": None, "created_by": 9,
             "created_at": datetime(2026, 7, 2), "updated_at": datetime(2026, 7, 2),
         }
-        conn = _ScriptedConn([[row], []])
+        conn = _ScriptedConn([[(1,)], [row], []])   # ownership probe first
         appointments_route.create_appointment(self._body(), current_user=USER, db=conn)
-        history_sql, history_params = conn.executed[1]
+        history_sql, history_params = conn.executed[2]
         assert "contact_history" in history_sql
         assert "Site visit" in history_params[1]
+
+    def test_create_rejects_foreign_property(self):
+        conn = _ScriptedConn([[]])                  # ownership probe: no row
+        with pytest.raises(HTTPException) as exc:
+            appointments_route.create_appointment(self._body(), current_user=USER, db=conn)
+        assert exc.value.status_code == 404
+        assert len(conn.executed) == 1
 
 
 class TestObjectEventRules:

@@ -6,7 +6,25 @@ import { getToken, clearToken } from './auth'
 // Use 127.0.0.1 (not localhost): on macOS `localhost` resolves to IPv6 ::1
 // first, but the dev backend binds IPv4, so localhost can fail with
 // "Failed to fetch". 127.0.0.1 forces IPv4 and is unambiguous.
-const BASE = (process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000') + '/api'
+// A trailing slash on NEXT_PUBLIC_API_URL would produce `//api/...` URLs that
+// proxies/CDNs handle inconsistently — strip it.
+const BASE =
+  (process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000').replace(/\/+$/, '') + '/api'
+
+// Endpoints where a 401 is a *credentials* failure the form must display —
+// not an expired session. Redirecting to /login from the login page itself
+// triggers a full reload that wipes the error before the user can read it.
+const AUTH_401_PATHS = ['/auth/login', '/auth/oauth/']
+
+function isAuthFailurePath(path: string): boolean {
+  return AUTH_401_PATHS.some(p => path === p || path.startsWith(p))
+}
+
+function handle401(path: string): void {
+  if (isAuthFailurePath(path)) return
+  clearToken()
+  if (typeof window !== 'undefined') window.location.href = '/login'
+}
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken()
@@ -15,9 +33,8 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 
   const res = await fetch(`${BASE}${path}`, { headers, ...init })
 
-  if (res.status === 401) {
-    clearToken()
-    if (typeof window !== 'undefined') window.location.href = '/login'
+  if (res.status === 401 && !isAuthFailurePath(path)) {
+    handle401(path)
     throw new Error('Session expired')
   }
 
@@ -39,9 +56,8 @@ async function multipart<T>(path: string, form: FormData): Promise<T> {
 
   const res = await fetch(`${BASE}${path}`, { method: 'POST', headers, body: form })
 
-  if (res.status === 401) {
-    clearToken()
-    if (typeof window !== 'undefined') window.location.href = '/login'
+  if (res.status === 401 && !isAuthFailurePath(path)) {
+    handle401(path)
     throw new Error('Session expired')
   }
   if (!res.ok) {

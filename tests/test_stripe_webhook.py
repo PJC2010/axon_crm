@@ -56,7 +56,8 @@ class FakeConn:
         return self._router(sql)
 
 
-def build_router(*, duplicate=False, prior_status=None, sa_row=SA_ROW, invoice_exists=True):
+def build_router(*, duplicate=False, prior_status=None, sa_row=SA_ROW, invoice_exists=True,
+                 payment_row=True, already_refunded=0.0):
     def route(sql):
         if sql.startswith("INSERT INTO stripe_webhook_events"):
             return ([] if duplicate else [(1,)]), None
@@ -69,6 +70,13 @@ def build_router(*, duplicate=False, prior_status=None, sa_row=SA_ROW, invoice_e
             return [tuple(sa_row[c] for c in SA_COLS)], desc
         if sql.startswith("SELECT 1 FROM invoices"):
             return ([(1,)] if invoice_exists else []), None
+        # _handle_charge_refunded internals:
+        if sql.startswith("SELECT invoice_id FROM invoice_payments"):
+            return ([(7,)] if payment_row else []), None
+        if sql.startswith("SELECT account_id FROM invoices"):
+            return [(3,)], None
+        if "SUM(-amount)" in sql:
+            return [(already_refunded,)], None
         # _update_invoice_payment_state internals:
         if sql.startswith("SELECT total, due_date, status FROM invoices"):
             return [(123.45, None, "sent")], None
@@ -90,6 +98,12 @@ def make_event(event_type="checkout.session.completed", account="acct_1", metada
     elif event_type == "account.updated":
         obj = {"id": account, "charges_enabled": True, "payouts_enabled": False,
                "details_submitted": True}
+    elif event_type == "charge.refunded":
+        # Charge objects carry no session metadata; the handler resolves the
+        # invoice through the recorded PaymentIntent. amount_refunded is
+        # CUMULATIVE across partial refunds.
+        obj = {"id": "ch_1", "payment_intent": "pi_1",
+               "amount_refunded": 12345, "metadata": {}}
     return {"id": "evt_1", "type": event_type, "account": account, "data": {"object": obj}}
 
 
@@ -150,6 +164,37 @@ def test_event_without_our_metadata_is_ignored():
 def test_unknown_event_type_is_ignored():
     conn = FakeConn(build_router())
     assert _handle_event(conn, make_event("customer.created")) == "ignored"
+
+
+def test_charge_refunded_records_negative_payment():
+    conn = FakeConn(build_router())
+    assert _handle_event(conn, make_event("charge.refunded")) == "processed"
+    (sql, params), = _payment_inserts(conn)
+    assert -123.45 in params and "ch_1" in params
+    # The refund row must NOT reuse the PaymentIntent id — the partial unique
+    # index on it would silently drop the insert via ON CONFLICT.
+    assert "stripe_payment_intent_id" not in sql
+    assert any(s.startswith("UPDATE invoices SET amount_paid") for s, _ in conn.executed)
+
+
+def test_charge_refunded_delta_already_recorded_is_ignored():
+    # Redelivery (or a second event for the same cumulative amount) nets to
+    # zero and must not double-book the refund.
+    conn = FakeConn(build_router(already_refunded=123.45))
+    assert _handle_event(conn, make_event("charge.refunded")) == "ignored"
+    assert _payment_inserts(conn) == []
+
+
+def test_charge_refunded_for_unknown_payment_is_ignored():
+    conn = FakeConn(build_router(payment_row=False))
+    assert _handle_event(conn, make_event("charge.refunded")) == "ignored"
+    assert _payment_inserts(conn) == []
+
+
+def test_charge_refunded_mismatched_account_is_rejected():
+    conn = FakeConn(build_router())
+    assert _handle_event(conn, make_event("charge.refunded", account="acct_evil")) == "error"
+    assert _payment_inserts(conn) == []
 
 
 def test_account_updated_refreshes_onboarding_flags():

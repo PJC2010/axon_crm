@@ -28,6 +28,19 @@ _FIELDS = ("property_id", "policy_number", "carrier", "policy_type", "premium",
            "commission_rate", "notes")
 
 
+def _assert_property(db: PGConn, property_id: int | None, account_id: int) -> None:
+    """A client-supplied property_id must belong to the caller's account —
+    contact_history has no account_id of its own, so an unchecked id here
+    would write into another tenant's lead timeline."""
+    if property_id is None:
+        return
+    with db.cursor() as cur:
+        cur.execute("SELECT 1 FROM properties WHERE id = %s AND account_id = %s",
+                    (property_id, account_id))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Lead not found")
+
+
 def _get_policy_or_404(db: PGConn, policy_id: int, account_id: int) -> dict:
     with db.cursor() as cur:
         cur.execute("SELECT * FROM policies WHERE id = %s AND account_id = %s", (policy_id, account_id))
@@ -120,6 +133,7 @@ def list_policies(
 def create_policy(body: PolicyCreate, current_user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
     if body.status not in POLICY_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid status")
+    _assert_property(db, body.property_id, current_user["account_id"])
     with db.cursor() as cur:
         cur.execute(
             "INSERT INTO policies (property_id, policy_number, carrier, policy_type, premium, "
@@ -147,6 +161,7 @@ def update_policy(policy_id: int, body: PolicyUpdate, user: dict = Depends(get_c
     existing = _get_policy_or_404(db, policy_id, user["account_id"])
     if body.status is not None and body.status not in POLICY_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid status")
+    _assert_property(db, body.property_id, user["account_id"])
 
     sets, params = ["updated_at = NOW()"], []
     for field in _FIELDS:

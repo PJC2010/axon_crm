@@ -1,9 +1,14 @@
 """
 HCAD data management — upload county CSV data and query it from Postgres.
 
-POST /api/hcad/upload     — upload properties + permits CSVs for a ZIP
+POST /api/hcad/upload     — upload properties + permits CSVs for a ZIP (platform admin)
 GET  /api/hcad/status     — show loaded ZIPs and row counts
-DELETE /api/hcad/{zip}    — remove county data for a ZIP
+DELETE /api/hcad/{zip}    — remove county data for a ZIP (platform admin)
+
+hcad_properties / hcad_permits are SHARED reference tables (no account_id):
+they seed every tenant's pipeline and the shared parcels cache. Mutations are
+therefore platform-admin-only — a tenant owner must not be able to wipe or
+poison data every other tenant depends on. Status stays tenant-owner readable.
 """
 import csv
 import io
@@ -12,7 +17,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from psycopg2.extensions import connection as PGConn
 
-from api.deps import get_db, require_owner
+from api.deps import get_db, require_owner, require_platform_admin
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -23,7 +28,7 @@ async def upload_hcad(
     zip_code: str = Form(...),
     properties_csv: UploadFile = File(...),
     permits_csv: UploadFile = File(...),
-    _: dict = Depends(require_owner),
+    _: dict = Depends(require_platform_admin),
     db: PGConn = Depends(get_db),
 ):
     """Upload HCAD CSV exports for a single ZIP code."""
@@ -151,7 +156,7 @@ def hcad_status(_: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
 
 
 @router.delete("/hcad/{zip_code}", status_code=204)
-def delete_hcad_zip(zip_code: str, _: dict = Depends(require_owner), db: PGConn = Depends(get_db)):
+def delete_hcad_zip(zip_code: str, _: dict = Depends(require_platform_admin), db: PGConn = Depends(get_db)):
     """Remove all HCAD data for a ZIP."""
     with db.cursor() as cur:
         cur.execute("SELECT acct FROM hcad_properties WHERE site_zip = %s", (zip_code,))

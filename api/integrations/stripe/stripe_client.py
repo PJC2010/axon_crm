@@ -99,6 +99,16 @@ def create_checkout_session(*, stripe_account_id: str, amount_cents: int, fee_ce
     )
 
 
+def expire_checkout_session(stripe_account_id: str, session_id: str) -> None:
+    """Expire a still-open Checkout Session on the connected account.
+
+    Raises if the session is already completed/expired — callers treat that as
+    success (the goal is simply that no *second* payable link stays live).
+    """
+    stripe = _stripe()
+    stripe.checkout.Session.expire(session_id, stripe_account=stripe_account_id)
+
+
 def construct_webhook_event(payload: bytes, sig_header: str):
     """Verify the webhook signature and parse the event. Raises on a bad
     signature. STRIPE_WEBHOOK_SECRET must be the CONNECT endpoint's secret —

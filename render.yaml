@@ -89,6 +89,26 @@ services:
       # rate-capped by PUBLIC_SAMPLE_RUNS_PER_HOUR.
       - key: PUBLIC_SAMPLE_AUTORUN
         value: "true"
+      # Stripe — BOTH halves of the money flow. Subscription billing (accounts
+      # paying for Axon) needs STRIPE_SECRET_KEY + the three STRIPE_PRICE_* ids
+      # + STRIPE_BILLING_WEBHOOK_SECRET (a *platform* webhook endpoint pointed
+      # at /api/public/stripe/billing-webhook). Checkout deliberately refuses to
+      # open until the billing webhook secret is set — without it Stripe would
+      # collect money the app never hears about. Connect invoice payments use
+      # the separate STRIPE_WEBHOOK_SECRET (a *Connect* endpoint pointed at
+      # /api/public/stripe/webhook). All fail soft while unset.
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_BILLING_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRICE_STARTER
+        sync: false
+      - key: STRIPE_PRICE_GROWTH
+        sync: false
+      - key: STRIPE_PRICE_PRO
+        sync: false
       # Website lead intake (insure-auto). Generate a long random value, set it
       # here, and copy the same value into insure-auto's Vercel AXON_API_KEY env
       # var (Preview + Production). Find PUBLIC_INTAKE_ACCOUNT_ID via

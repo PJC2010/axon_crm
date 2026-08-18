@@ -27,8 +27,10 @@ passlib[bcrypt]>=1.7
 bcrypt>=4.0,<5.0
 duckdb>=0.10
 
-# Scheduling
-apscheduler>=3.10
+# Scheduling. Capped below 4: APScheduler 4.x is a full API rewrite
+# (BackgroundScheduler is gone) and Render rebuilds deps from scratch on every
+# deploy, so an uncapped floor would brick a routine redeploy with no commit.
+apscheduler>=3.10,<4
 
 # Predictive lead scoring (pipeline/ml) ships a dependency-free pure-Python
 # logistic-regression trainer, so nothing here is required to run it. These are

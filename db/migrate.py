@@ -109,6 +109,7 @@ def run(args):
     pending = [f for f in all_migration_files() if _canonical(f.name) not in applied]
 
     if not pending:
+        conn.close()
         print("Nothing to migrate — all up to date.")
         return
 
