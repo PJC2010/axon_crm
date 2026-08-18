@@ -1,0 +1,29 @@
+[
+  {
+    "addressLine1": "7726 Battle Oaks Dr",
+    "assessorID": "0004531201507",
+    "city": "Baytown",
+    "features": {
+      "garageSpaces": 2,
+      "garageType": "Attached"
+    },
+    "formattedAddress": "7726 Battle Oaks Dr, Baytown, TX 77521",
+    "lastSaleDate": null,
+    "lastSalePrice": null,
+    "latitude": 29.777,
+    "longitude": -94.955,
+    "lotSize": 6600,
+    "ownerOccupied": true,
+    "propertyType": "Single Family",
+    "squareFootage": 2040,
+    "state": "TX",
+    "taxAssessments": {
+      "2025": {
+        "value": 219000,
+        "year": 2025
+      }
+    },
+    "yearBuilt": 2019,
+    "zipCode": "77521"
+  }
+]

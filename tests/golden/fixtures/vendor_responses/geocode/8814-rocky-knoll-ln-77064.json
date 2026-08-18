@@ -1,0 +1,14 @@
+{
+  "result": {
+    "addressMatches": [
+      {
+        "coordinates": {
+          "x": -95.5504,
+          "y": 29.9161
+        },
+        "matchType": "Exact",
+        "matchedAddress": "8814 Rocky Knoll Ln, Houston, TX, 77064"
+      }
+    ]
+  }
+}

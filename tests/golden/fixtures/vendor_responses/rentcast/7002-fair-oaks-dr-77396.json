@@ -1,0 +1,29 @@
+[
+  {
+    "addressLine1": "7002 Fair Oaks Dr",
+    "assessorID": "0004531203425",
+    "city": "Humble",
+    "features": {
+      "garageSpaces": 2,
+      "garageType": "Attached"
+    },
+    "formattedAddress": "7002 Fair Oaks Dr, Humble, TX 77396",
+    "lastSaleDate": "2026-05-03T00:00:00.000Z",
+    "lastSalePrice": null,
+    "latitude": 29.943,
+    "longitude": -95.262,
+    "lotSize": 8000,
+    "ownerOccupied": true,
+    "propertyType": "Single Family",
+    "squareFootage": 2320,
+    "state": "TX",
+    "taxAssessments": {
+      "2025": {
+        "value": 294000,
+        "year": 2025
+      }
+    },
+    "yearBuilt": 2010,
+    "zipCode": "77396"
+  }
+]

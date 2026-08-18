@@ -1,0 +1,14 @@
+{
+  "result": {
+    "addressMatches": [
+      {
+        "coordinates": {
+          "x": -95.656,
+          "y": 29.873
+        },
+        "matchType": "Exact",
+        "matchedAddress": "16706 Clan Macintosh Dr, Houston, TX, 77084"
+      }
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "result": {
+    "addressMatches": [
+      {
+        "coordinates": {
+          "x": -95.211,
+          "y": 29.691
+        },
+        "matchedAddress": "818 W Main St, Pasadena, TX, 77506"
+      },
+      {
+        "coordinates": {
+          "x": -95.2008,
+          "y": 29.6866
+        },
+        "matchedAddress": "818 Main St, Pasadena, TX, 77506"
+      }
+    ]
+  }
+}

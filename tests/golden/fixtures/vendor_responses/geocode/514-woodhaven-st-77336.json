@@ -1,0 +1,14 @@
+{
+  "result": {
+    "addressMatches": [
+      {
+        "coordinates": {
+          "x": -95.103,
+          "y": 30.059
+        },
+        "matchType": "Exact",
+        "matchedAddress": "514 Woodhaven St, Huffman, TX, 77336"
+      }
+    ]
+  }
+}

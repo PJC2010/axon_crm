@@ -1,0 +1,14 @@
+{
+  "result": {
+    "addressMatches": [
+      {
+        "coordinates": {
+          "x": -95.642,
+          "y": 29.977
+        },
+        "matchType": "Exact",
+        "matchedAddress": "13230 Ravensway Dr, Cypress, TX, 77429"
+      }
+    ]
+  }
+}

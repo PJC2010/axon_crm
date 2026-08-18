@@ -1,0 +1,20 @@
+{
+  "extra_features": {
+    "garage_spaces": 2,
+    "has_cracked_slab": false,
+    "has_pool": false
+  },
+  "permit_count_24mo": null,
+  "property_summary": {
+    "estimated_value": 240000,
+    "last_sale_date": "2025-10-20",
+    "lot_size": 6900,
+    "neighborhood_code": "6373",
+    "neighborhood_name": null,
+    "owner_occupied": true,
+    "parcel_apn": "0004531201096",
+    "square_footage": 2380,
+    "state_class": "A1",
+    "year_built": 2016
+  }
+}

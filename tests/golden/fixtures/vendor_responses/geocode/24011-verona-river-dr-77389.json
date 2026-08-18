@@ -1,0 +1,14 @@
+{
+  "result": {
+    "addressMatches": [
+      {
+        "coordinates": {
+          "x": -95.529,
+          "y": 30.105
+        },
+        "matchType": "Exact",
+        "matchedAddress": "24011 Verona River Dr, Spring, TX, 77389"
+      }
+    ]
+  }
+}

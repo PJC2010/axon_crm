@@ -1,0 +1,16 @@
+{
+  "extra_features": null,
+  "permit_count_24mo": null,
+  "property_summary": {
+    "estimated_value": 240000,
+    "last_sale_date": null,
+    "lot_size": 6300,
+    "neighborhood_code": "6084",
+    "neighborhood_name": null,
+    "owner_occupied": true,
+    "parcel_apn": "0004531202877",
+    "square_footage": 1760,
+    "state_class": "A1",
+    "year_built": 2000
+  }
+}

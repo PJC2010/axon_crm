@@ -1,0 +1,14 @@
+{
+  "result": {
+    "addressMatches": [
+      {
+        "coordinates": {
+          "x": -95.1745,
+          "y": 29.9931
+        },
+        "matchType": "Exact",
+        "matchedAddress": "15918 Lakeview Terrace Dr, Humble, TX, 77346"
+      }
+    ]
+  }
+}

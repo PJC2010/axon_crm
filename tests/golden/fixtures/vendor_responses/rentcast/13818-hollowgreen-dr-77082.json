@@ -1,0 +1,29 @@
+[
+  {
+    "addressLine1": "13818 Hollowgreen Dr",
+    "assessorID": "0004531203288",
+    "city": "Houston",
+    "features": {
+      "garageSpaces": 2,
+      "garageType": "Attached"
+    },
+    "formattedAddress": "13818 Hollowgreen Dr, Houston, TX 77082",
+    "lastSaleDate": "2026-03-10T00:00:00.000Z",
+    "lastSalePrice": null,
+    "latitude": 29.721,
+    "longitude": -95.607,
+    "lotSize": 7500,
+    "ownerOccupied": true,
+    "propertyType": "Single Family",
+    "squareFootage": 2010,
+    "state": "TX",
+    "taxAssessments": {
+      "2025": {
+        "value": 269000,
+        "year": 2025
+      }
+    },
+    "yearBuilt": 1984,
+    "zipCode": "77082"
+  }
+]

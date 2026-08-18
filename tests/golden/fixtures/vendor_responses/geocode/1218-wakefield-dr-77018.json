@@ -1,0 +1,14 @@
+{
+  "result": {
+    "addressMatches": [
+      {
+        "coordinates": {
+          "x": -95.427,
+          "y": 29.8259
+        },
+        "matchType": "Exact",
+        "matchedAddress": "1218 Wakefield Dr, Houston, TX, 77018"
+      }
+    ]
+  }
+}

@@ -1,0 +1,29 @@
+[
+  {
+    "addressLine1": "6110 Grand Colony Ct",
+    "assessorID": "0004531200685",
+    "city": "Katy",
+    "features": {
+      "garageSpaces": 2,
+      "garageType": "Attached"
+    },
+    "formattedAddress": "6110 Grand Colony Ct, Katy, TX 77449",
+    "lastSaleDate": "2025-12-01T00:00:00.000Z",
+    "lastSalePrice": null,
+    "latitude": 29.833,
+    "longitude": -95.736,
+    "lotSize": 6800,
+    "ownerOccupied": true,
+    "propertyType": "Single Family",
+    "squareFootage": 2150,
+    "state": "TX",
+    "taxAssessments": {
+      "2025": {
+        "value": 269000,
+        "year": 2025
+      }
+    },
+    "yearBuilt": 2008,
+    "zipCode": "77449"
+  }
+]

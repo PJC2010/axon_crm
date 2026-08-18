@@ -1,0 +1,29 @@
+[
+  {
+    "addressLine1": "818 W Main St",
+    "assessorID": "0004531203151",
+    "city": "Pasadena",
+    "features": {
+      "garageSpaces": 1,
+      "garageType": "Attached"
+    },
+    "formattedAddress": "818 W Main St, Pasadena, TX 77506",
+    "lastSaleDate": null,
+    "lastSalePrice": null,
+    "latitude": 29.691,
+    "longitude": -95.211,
+    "lotSize": 6700,
+    "ownerOccupied": true,
+    "propertyType": "Single Family",
+    "squareFootage": 1520,
+    "state": "TX",
+    "taxAssessments": {
+      "2025": {
+        "value": 179000,
+        "year": 2025
+      }
+    },
+    "yearBuilt": 1995,
+    "zipCode": "77506"
+  }
+]

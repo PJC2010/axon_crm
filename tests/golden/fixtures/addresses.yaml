@@ -1,0 +1,188 @@
+# Golden corpus — Harris County addresses scored by the golden suite.
+#
+# `synthetic: true` marks fixture payloads authored by hand (schema-exact,
+# PII-free). scripts/refresh_fixtures.py replaces them with recorded live
+# payloads and registers each recording in fixtures/recorded.json; the
+# nightly contract tests only drift-check slugs recorded from live vendors.
+#
+# `band` is the expected grade band pinned by test_scoring_golden.py
+# ('edge' rows pin whatever grade the goldens hold).
+
+as_of: "2026-08-01"
+addresses:
+  - slug: 4614-pin-oak-forest-dr-77070
+    address: "4614 PIN OAK FOREST DR"
+    city: "HOUSTON"
+    zip: "77070"
+    band: A
+    synthetic: true
+    purpose: "Clear A: 23yo home (sweet spot), sold ~9mo ago, $231k fallback equity, 2-car garage, high-income ZIP, 3 permits."
+  - slug: 12206-mossycup-dr-77024
+    address: "12206 MOSSYCUP DR"
+    city: "HOUSTON"
+    zip: "77024"
+    band: A
+    synthetic: true
+    purpose: "Clear A: Memorial-area high value ($1.25M), 27yo, sold ~6mo ago, 3-car garage, equity saturated far past the $100k target."
+  - slug: 8814-rocky-knoll-ln-77064
+    address: "8814 ROCKY KNOLL LN"
+    city: "HOUSTON"
+    zip: "77064"
+    band: A
+    synthetic: true
+    neighborhood_value_ratio: 1.15
+    purpose: "Clear A: sweet-spot age, 4 permits (signal saturated at 2), plus the only corpus row with a neighborhood_value_ratio benchmark (1.15)."
+  - slug: 15918-lakeview-terrace-dr-77346
+    address: "15918 LAKEVIEW TERRACE DR"
+    city: "HUMBLE"
+    zip: "77346"
+    band: A
+    synthetic: true
+    purpose: "Clear A: Atascocita, sold 4 months ago (sale signal ~0.83) with every other factor near saturation."
+  - slug: 6110-grand-colony-ct-77449
+    address: "6110 GRAND COLONY CT"
+    city: "KATY"
+    zip: "77449"
+    band: A
+    synthetic: true
+    purpose: "Clear A: Katy starter-plus, 18yo, sold 8mo ago, equity just past saturation ($159k fallback)."
+  - slug: 1218-wakefield-dr-77018
+    address: "1218 WAKEFIELD DR"
+    city: "HOUSTON"
+    zip: "77018"
+    band: B
+    synthetic: true
+    purpose: "Clear B: Oak Forest, strong age/equity/garage but NO recorded sale — the 22-point sale factor at zero holds an otherwise-A row at B."
+  - slug: 9503-truscon-dr-77080
+    address: "9503 TRUSCON DR"
+    city: "HOUSTON"
+    zip: "77080"
+    band: B
+    synthetic: true
+    purpose: "Clear B: sale 21.5 months ago — recency signal nearly decayed to the 24-month floor (~0.10); 1-car garage at half signal."
+  - slug: 4022-lambeth-ln-77373
+    address: "4022 LAMBETH LN"
+    city: "SPRING"
+    zip: "77373"
+    band: B
+    synthetic: true
+    purpose: "Clear B: 10yo home below the 15-year sweet spot (age signal 2/3), recent sale and full equity/garage."
+  - slug: 11322-sagevale-ln-77089
+    address: "11322 SAGEVALE LN"
+    city: "HOUSTON"
+    zip: "77089"
+    band: B
+    synthetic: true
+    purpose: "Clear B: 33yo home on the post-sweet-spot decay (signal 0.85), no sale, one permit."
+  - slug: 2815-quiet-glen-ct-77084
+    address: "2815 QUIET GLEN CT"
+    city: "HOUSTON"
+    zip: "77084"
+    band: B
+    synthetic: true
+    purpose: "Clear B: garage supplied by RENTCAST, not HCAD (no county garage feature rows) — pins a cascade split inside one row."
+  - slug: 7726-battle-oaks-dr-77521
+    address: "7726 BATTLE OAKS DR"
+    city: "BAYTOWN"
+    zip: "77521"
+    band: C
+    synthetic: true
+    purpose: "Clear C: 7yo home well below the renovation sweet spot; equity and garage carry it to a C."
+  - slug: 514-woodhaven-st-77336
+    address: "514 WOODHAVEN ST"
+    city: "HUFFMAN"
+    zip: "77336"
+    band: C
+    synthetic: true
+    purpose: "Clear C: 48yo home deep on the age decay (signal 0.10), sub-target equity ($93k of the $100k target)."
+  - slug: 10119-forum-west-dr-77036
+    address: "10119 FORUM WEST DR"
+    city: "HOUSTON"
+    zip: "77036"
+    band: C
+    synthetic: true
+    purpose: "Clear C: 54yo (age signal fully decayed to 0) but sold 14mo ago with 2 permits — activity without the age profile."
+  - slug: 13230-ravensway-dr-77429
+    address: "13230 RAVENSWAY DR"
+    city: "CYPRESS"
+    zip: "77429"
+    band: C
+    synthetic: true
+    purpose: "Clear C: 13yo, equity saturated, but NO garage data from either source (garage provenance 'missing')."
+  - slug: 1611-avenue-o-77571
+    address: "1611 AVENUE O"
+    city: "LA PORTE"
+    zip: "77571"
+    band: C
+    synthetic: true
+    purpose: "Clear C: 64yo (age 0), no sale, modest equity — permits saturated at the 2-permit target keep it a C."
+  - slug: 918-ringrose-dr-77029
+    address: "918 RINGROSE DR"
+    city: "HOUSTON"
+    zip: "77029"
+    band: D
+    synthetic: true
+    purpose: "Below C: 71yo, low value ($98k -> $59k fallback equity), no garage, no sale, no permits."
+  - slug: 223-frawley-st-77009
+    address: "223 FRAWLEY ST"
+    city: "HOUSTON"
+    zip: "77009"
+    band: D
+    synthetic: true
+    purpose: "Below C: 78yo absentee-owned bungalow; equity just under target is nearly the whole score."
+  - slug: 5106-elm-heights-st-77093
+    address: "5106 ELM HEIGHTS ST"
+    city: "HOUSTON"
+    zip: "77093"
+    band: D
+    synthetic: true
+    purpose: "Below C: RentCast has NO RECORD (empty response) — HCAD-only row; 4yo build far below the sweet spot."
+  - slug: 24011-verona-river-dr-77389
+    address: "24011 VERONA RIVER DR"
+    city: "SPRING"
+    zip: "77389"
+    band: edge
+    synthetic: true
+    purpose: "EDGE new construction: year_built = 2026 (home_age 0 -> age signal 0.0) and no recorded sale — no last_sale_recency at all."
+  - slug: 16706-clan-macintosh-dr-77084
+    address: "16706 CLAN MACINTOSH DR"
+    city: "HOUSTON"
+    zip: "77084"
+    band: edge
+    synthetic: true
+    purpose: "EDGE garage_spaces = 0 (RentCast confirms a no-garage carport home): must NOT read as identical to its garage-null twin at 16710."
+  - slug: 16710-clan-macintosh-dr-77084
+    address: "16710 CLAN MACINTOSH DR"
+    city: "HOUSTON"
+    zip: "77084"
+    band: edge
+    synthetic: true
+    purpose: "EDGE garage_spaces = null (no source speaks to garages): twin of 16706 — same composite under SCORE_MISSING_MODE=zero, but lower data_completeness and provenance 'missing'."
+  - slug: 2323-crawford-st-apt-208-77002
+    address: "2323 CRAWFORD ST APT 208"
+    city: "HOUSTON"
+    zip: "77002"
+    band: edge
+    synthetic: true
+    purpose: "EDGE condo with no parcel-level HCAD match: the whole cascade shifts to RentCast, and equity comes from the AMORTIZED path (RentCast has the sale price)."
+  - slug: 818-w-main-st-77506
+    address: "818 W MAIN ST"
+    city: "PASADENA"
+    zip: "77506"
+    band: edge
+    synthetic: true
+    purpose: "EDGE ambiguous geocode: two candidate matches (Main St vs W Main St) — pins that the first candidate wins at confidence 0.6."
+  - slug: 13818-hollowgreen-dr-77082
+    address: "13818 HOLLOWGREEN DR"
+    city: "HOUSTON"
+    zip: "77082"
+    band: edge
+    synthetic: true
+    purpose: "EDGE ZCTA straddling two ACS tracts with a suppressed estimate: ACS returns the -666666666 sentinel -> zip_median_income stays NULL and the income factor scores 0 with provenance 'missing'."
+  - slug: 7002-fair-oaks-dr-77396
+    address: "7002 FAIR OAKS DR"
+    city: "HUMBLE"
+    zip: "77396"
+    band: edge
+    synthetic: true
+    purpose: "EDGE sold exactly 90 days before AS_OF (2026-05-03): pins the sale recency decay near its recent extreme (~0.877)."

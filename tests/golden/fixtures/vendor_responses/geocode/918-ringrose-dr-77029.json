@@ -1,0 +1,14 @@
+{
+  "result": {
+    "addressMatches": [
+      {
+        "coordinates": {
+          "x": -95.262,
+          "y": 29.779
+        },
+        "matchType": "Exact",
+        "matchedAddress": "918 Ringrose Dr, Houston, TX, 77029"
+      }
+    ]
+  }
+}

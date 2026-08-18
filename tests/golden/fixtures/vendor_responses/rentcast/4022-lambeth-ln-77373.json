@@ -1,0 +1,29 @@
+[
+  {
+    "addressLine1": "4022 Lambeth Ln",
+    "assessorID": "0004531201096",
+    "city": "Spring",
+    "features": {
+      "garageSpaces": 2,
+      "garageType": "Attached"
+    },
+    "formattedAddress": "4022 Lambeth Ln, Spring, TX 77373",
+    "lastSaleDate": "2025-10-20T00:00:00.000Z",
+    "lastSalePrice": null,
+    "latitude": 30.0499,
+    "longitude": -95.381,
+    "lotSize": 6900,
+    "ownerOccupied": true,
+    "propertyType": "Single Family",
+    "squareFootage": 2380,
+    "state": "TX",
+    "taxAssessments": {
+      "2025": {
+        "value": 244000,
+        "year": 2025
+      }
+    },
+    "yearBuilt": 2016,
+    "zipCode": "77373"
+  }
+]

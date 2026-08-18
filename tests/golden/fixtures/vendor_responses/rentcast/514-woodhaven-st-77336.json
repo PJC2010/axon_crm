@@ -1,0 +1,29 @@
+[
+  {
+    "addressLine1": "514 Woodhaven St",
+    "assessorID": "0004531201644",
+    "city": "Huffman",
+    "features": {
+      "garageSpaces": 2,
+      "garageType": "Attached"
+    },
+    "formattedAddress": "514 Woodhaven St, Huffman, TX 77336",
+    "lastSaleDate": null,
+    "lastSalePrice": null,
+    "latitude": 30.059,
+    "longitude": -95.103,
+    "lotSize": 13200,
+    "ownerOccupied": true,
+    "propertyType": "Single Family",
+    "squareFootage": 1490,
+    "state": "TX",
+    "taxAssessments": {
+      "2025": {
+        "value": 159000,
+        "year": 2025
+      }
+    },
+    "yearBuilt": 1978,
+    "zipCode": "77336"
+  }
+]

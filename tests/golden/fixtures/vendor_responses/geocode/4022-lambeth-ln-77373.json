@@ -1,0 +1,14 @@
+{
+  "result": {
+    "addressMatches": [
+      {
+        "coordinates": {
+          "x": -95.381,
+          "y": 30.0499
+        },
+        "matchType": "Exact",
+        "matchedAddress": "4022 Lambeth Ln, Spring, TX, 77373"
+      }
+    ]
+  }
+}

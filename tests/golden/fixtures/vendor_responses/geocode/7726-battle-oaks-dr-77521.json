@@ -1,0 +1,14 @@
+{
+  "result": {
+    "addressMatches": [
+      {
+        "coordinates": {
+          "x": -94.955,
+          "y": 29.777
+        },
+        "matchType": "Exact",
+        "matchedAddress": "7726 Battle Oaks Dr, Baytown, TX, 77521"
+      }
+    ]
+  }
+}

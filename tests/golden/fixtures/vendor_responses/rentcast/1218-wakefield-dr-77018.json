@@ -1,0 +1,29 @@
+[
+  {
+    "addressLine1": "1218 Wakefield Dr",
+    "assessorID": "0004531200822",
+    "city": "Houston",
+    "features": {
+      "garageSpaces": 2,
+      "garageType": "Attached"
+    },
+    "formattedAddress": "1218 Wakefield Dr, Houston, TX 77018",
+    "lastSaleDate": null,
+    "lastSalePrice": null,
+    "latitude": 29.8259,
+    "longitude": -95.427,
+    "lotSize": 7700,
+    "ownerOccupied": true,
+    "propertyType": "Single Family",
+    "squareFootage": 2050,
+    "state": "TX",
+    "taxAssessments": {
+      "2025": {
+        "value": 424000,
+        "year": 2025
+      }
+    },
+    "yearBuilt": 1998,
+    "zipCode": "77018"
+  }
+]

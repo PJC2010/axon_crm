@@ -1,0 +1,14 @@
+{
+  "result": {
+    "addressMatches": [
+      {
+        "coordinates": {
+          "x": -95.662,
+          "y": 29.871
+        },
+        "matchType": "Exact",
+        "matchedAddress": "2815 Quiet Glen Ct, Houston, TX, 77084"
+      }
+    ]
+  }
+}

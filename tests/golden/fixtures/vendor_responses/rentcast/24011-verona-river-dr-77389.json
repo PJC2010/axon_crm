@@ -1,0 +1,29 @@
+[
+  {
+    "addressLine1": "24011 Verona River Dr",
+    "assessorID": "0004531202603",
+    "city": "Spring",
+    "features": {
+      "garageSpaces": 2,
+      "garageType": "Attached"
+    },
+    "formattedAddress": "24011 Verona River Dr, Spring, TX 77389",
+    "lastSaleDate": null,
+    "lastSalePrice": null,
+    "latitude": 30.105,
+    "longitude": -95.529,
+    "lotSize": 7600,
+    "ownerOccupied": false,
+    "propertyType": "Single Family",
+    "squareFootage": 2740,
+    "state": "TX",
+    "taxAssessments": {
+      "2025": {
+        "value": 384000,
+        "year": 2025
+      }
+    },
+    "yearBuilt": 2026,
+    "zipCode": "77389"
+  }
+]

@@ -1,0 +1,14 @@
+{
+  "result": {
+    "addressMatches": [
+      {
+        "coordinates": {
+          "x": -95.362,
+          "y": 29.796
+        },
+        "matchType": "Exact",
+        "matchedAddress": "223 Frawley St, Houston, TX, 77009"
+      }
+    ]
+  }
+}

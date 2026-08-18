@@ -1,0 +1,26 @@
+[
+  {
+    "addressLine1": "223 Frawley St",
+    "assessorID": "0004531202329",
+    "city": "Houston",
+    "features": {},
+    "formattedAddress": "223 Frawley St, Houston, TX 77009",
+    "lastSaleDate": null,
+    "lastSalePrice": null,
+    "latitude": 29.796,
+    "longitude": -95.362,
+    "lotSize": 5100,
+    "ownerOccupied": false,
+    "propertyType": "Single Family",
+    "squareFootage": 990,
+    "state": "TX",
+    "taxAssessments": {
+      "2025": {
+        "value": 169000,
+        "year": 2025
+      }
+    },
+    "yearBuilt": 1948,
+    "zipCode": "77009"
+  }
+]

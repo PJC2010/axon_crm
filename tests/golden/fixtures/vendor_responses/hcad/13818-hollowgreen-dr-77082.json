@@ -1,0 +1,20 @@
+{
+  "extra_features": {
+    "garage_spaces": 2,
+    "has_cracked_slab": false,
+    "has_pool": false
+  },
+  "permit_count_24mo": 1,
+  "property_summary": {
+    "estimated_value": 265000,
+    "last_sale_date": "2026-03-10",
+    "lot_size": 7500,
+    "neighborhood_code": "6082",
+    "neighborhood_name": null,
+    "owner_occupied": true,
+    "parcel_apn": "0004531203288",
+    "square_footage": 2010,
+    "state_class": "A1",
+    "year_built": 1984
+  }
+}

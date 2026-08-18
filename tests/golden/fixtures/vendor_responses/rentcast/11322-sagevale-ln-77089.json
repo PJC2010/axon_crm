@@ -1,0 +1,29 @@
+[
+  {
+    "addressLine1": "11322 Sagevale Ln",
+    "assessorID": "0004531201233",
+    "city": "Houston",
+    "features": {
+      "garageSpaces": 2,
+      "garageType": "Attached"
+    },
+    "formattedAddress": "11322 Sagevale Ln, Houston, TX 77089",
+    "lastSaleDate": null,
+    "lastSalePrice": null,
+    "latitude": 29.5901,
+    "longitude": -95.193,
+    "lotSize": 8500,
+    "ownerOccupied": true,
+    "propertyType": "Single Family",
+    "squareFootage": 1980,
+    "state": "TX",
+    "taxAssessments": {
+      "2025": {
+        "value": 214000,
+        "year": 2025
+      }
+    },
+    "yearBuilt": 1993,
+    "zipCode": "77089"
+  }
+]

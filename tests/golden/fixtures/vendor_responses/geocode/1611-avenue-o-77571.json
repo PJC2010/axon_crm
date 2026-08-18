@@ -1,0 +1,14 @@
+{
+  "result": {
+    "addressMatches": [
+      {
+        "coordinates": {
+          "x": -95.048,
+          "y": 29.657
+        },
+        "matchType": "Exact",
+        "matchedAddress": "1611 Avenue O, La Porte, TX, 77571"
+      }
+    ]
+  }
+}
