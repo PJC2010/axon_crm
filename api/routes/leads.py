@@ -116,8 +116,12 @@ def search_leads(
     """Universal customer lookup. Matches across account_number, contact/owner
     name, address, email, and phone (digits only, so formatting doesn't matter).
     Exact and prefix account-number hits rank first, then everything else.
-    Always scoped to the caller's account and excludes archived leads. Uses the
-    trigram (pg_trgm) indexes from migration 038 for fast ILIKE substring search."""
+    Always scoped to the caller's account and excludes archived leads. Served by
+    an account-scoped index scan + filter: the 0038 trigram indexes never
+    applied here (the OR has non-trigram-indexable arms — account_number, and a
+    COALESCE'd phone expression that didn't match the index expression) and
+    were dropped in migration 0078. If per-account search ever needs indexes,
+    rewrite each OR arm to be independently indexable first."""
     term = q.strip()
     if not term:
         return []

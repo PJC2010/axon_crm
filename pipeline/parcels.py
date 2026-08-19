@@ -75,6 +75,111 @@ assert not (set(SHARED_COLS) & _NEVER_SHARED), "shared/never-shared overlap"
 # "Exact" match (0.9 — pipeline/geocode_batch.py) without claiming rooftop truth.
 CENTROID_CONFIDENCE = 0.95
 
+# The columns ensure_from_hcad's conflict branch gap-fills. One list drives both
+# the SET clause and the "would this row actually change?" guard below it, so
+# the two can never drift: a column filled but not guarded would silently
+# re-enable the every-row rewrite the guard exists to prevent.
+_HCAD_FILL_COLS = [
+    "city", "state", "parcel_apn",
+    "year_built", "square_footage", "lot_size", "estimated_value",
+    "last_sale_date", "owner_name", "owner_occupied", "mailing_address",
+    "state_class", "hcad_neighborhood_code", "hcad_neighborhood_name",
+]
+
+
+def _work_mem_sql() -> str:
+    """`SET LOCAL` prefix for the two statements that sort a whole ZIP.
+
+    Both ensure_from_hcad (DISTINCT ON) and seed_account (window numbering)
+    sort tens of thousands of ~700-byte rows; at the 4MB default work_mem each
+    sort is an external merge spilling ~13MB to disk per seed. SET LOCAL scopes
+    the raise to the one statement's transaction — API request connections keep
+    the conservative default. Lazy config import: parcels is imported during
+    startup checks before the environment is necessarily complete.
+    """
+    from config import SEED_WORK_MEM_MB
+    mb = int(SEED_WORK_MEM_MB or 0)
+    return f"SET LOCAL work_mem = '{mb}MB';\n" if mb > 0 else ""
+
+
+def _classify_residential(cur, zip_code: str) -> int:
+    """Re-derive parcels.non_residential for a ZIP from the live rule.
+
+    The verdict (pipeline/residential.py, EXCLUDE tier) is a fact about the
+    parcel, so it lives in the shared cache and is computed when parcel data
+    changes — not re-derived inline by every tenant's seed, which measured
+    4.1s per seed on a 47k-parcel ZIP. IS DISTINCT FROM keeps the pass
+    write-free (and trigger/bloat-free) for rows whose verdict stands.
+
+    Returns rows whose verdict changed.
+    """
+    from pipeline.residential import sql_non_residential
+    cur.execute(
+        f"""
+        UPDATE parcels SET non_residential = v.verdict
+        FROM (
+            SELECT p.id, {sql_non_residential('p.')} AS verdict
+            FROM parcels p
+            WHERE p.zip = %s
+        ) v
+        WHERE parcels.id = v.id
+          AND parcels.non_residential IS DISTINCT FROM v.verdict
+        """,
+        (zip_code,),
+    )
+    return cur.rowcount
+
+
+def _has_unclassified(cur, zip_code: str) -> bool:
+    """Any parcel in the ZIP still carrying a NULL verdict? Index-only via
+    idx_parcels_zip_unclassified (0077), so the per-seed probe is free."""
+    cur.execute(
+        "SELECT 1 FROM parcels WHERE zip = %s AND non_residential IS NULL "
+        "LIMIT 1",
+        (zip_code,),
+    )
+    return cur.fetchone() is not None
+
+
+def _rule_hash() -> str:
+    """Fingerprint of the residential rule AS DEPLOYED — the generated SQL
+    expression, which folds in the token/phrase lists, the tier composition,
+    and the config thresholds (NONRESIDENTIAL_*_SQFT) of this environment.
+
+    Stamped per ZIP in parcel_rule_stamps (0077): when an operator edits
+    pipeline/residential.py or overrides a threshold, the hash changes, every
+    stamp goes stale, and each ZIP re-derives its verdicts on its next touch —
+    the same freshness the old inline-per-seed filter had, without its cost.
+    Without this, a rule change would never reach already-classified ZIPs: the
+    change guards make a complete ZIP's re-run write nothing, so nothing else
+    would ever trigger reclassification, and a token removed from the rule
+    (a discovered surname collision) would keep excluding real homeowners
+    forever.
+    """
+    import hashlib
+
+    from pipeline.residential import sql_non_residential
+    return hashlib.sha256(sql_non_residential("p.").encode()).hexdigest()[:16]
+
+
+def _stamped_rule_hash(cur, zip_code: str):
+    cur.execute("SELECT rule_hash FROM parcel_rule_stamps WHERE zip = %s",
+                (zip_code,))
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
+def _stamp_rule(cur, zip_code: str, rule_hash: str) -> None:
+    cur.execute(
+        """
+        INSERT INTO parcel_rule_stamps (zip, rule_hash, classified_at)
+        VALUES (%s, %s, NOW())
+        ON CONFLICT (zip) DO UPDATE SET
+            rule_hash = EXCLUDED.rule_hash, classified_at = NOW()
+        """,
+        (zip_code, rule_hash),
+    )
+
 
 def ensure_from_hcad(conn, zip_code: str) -> int:
     """Populate `parcels` for a ZIP from the free HCAD mirror. Idempotent.
@@ -83,12 +188,28 @@ def ensure_from_hcad(conn, zip_code: str) -> int:
     cache already knows (e.g. coordinates promoted by an earlier account) and
     only supplies what is still NULL.
 
-    Returns the number of parcel rows inserted or updated.
+    The conflict branch is guarded by "would this row actually change?" — a
+    re-run over an already-complete ZIP matches every row but writes none, so
+    it costs no WAL, no dead tuples, and no index churn. Before the guard, a
+    no-op refresh of ZIP 77433 rewrote all 47,531 rows in 5.5s and left as many
+    dead tuples for autovacuum. Returns the number of rows actually inserted
+    or changed (0 for a no-op re-run — callers that need "is the ZIP cached?"
+    ask coverage(), which _seed_from_parcels already does).
     """
+    fill_sets = ",\n                ".join(
+        f"{c} = COALESCE(parcels.{c}, EXCLUDED.{c})" for c in _HCAD_FILL_COLS
+    )
+    # A row changes only if some fill lands (NULL here, value there) or the
+    # flags merge adds a key. enriched_at deliberately follows the data: a
+    # touch that changes nothing is not an enrichment.
+    change_guard = "\n               OR ".join(
+        f"(parcels.{c} IS NULL AND EXCLUDED.{c} IS NOT NULL)"
+        for c in _HCAD_FILL_COLS
+    )
     with conn.cursor() as cur:
         cur.execute(
             f"""
-            INSERT INTO parcels (
+            {_work_mem_sql()}INSERT INTO parcels (
                 address, zip, city, state, parcel_apn,
                 year_built, square_footage, lot_size, estimated_value,
                 last_sale_date, owner_name, owner_occupied, mailing_address,
@@ -147,26 +268,31 @@ def ensure_from_hcad(conn, zip_code: str) -> int:
                          tot_appr_val DESC NULLS LAST, acct
             ) h
             ON CONFLICT (address_norm, zip) DO UPDATE SET
-                city                   = COALESCE(parcels.city, EXCLUDED.city),
-                state                  = COALESCE(parcels.state, EXCLUDED.state),
-                parcel_apn             = COALESCE(parcels.parcel_apn, EXCLUDED.parcel_apn),
-                year_built             = COALESCE(parcels.year_built, EXCLUDED.year_built),
-                square_footage         = COALESCE(parcels.square_footage, EXCLUDED.square_footage),
-                lot_size               = COALESCE(parcels.lot_size, EXCLUDED.lot_size),
-                estimated_value        = COALESCE(parcels.estimated_value, EXCLUDED.estimated_value),
-                last_sale_date         = COALESCE(parcels.last_sale_date, EXCLUDED.last_sale_date),
-                owner_name             = COALESCE(parcels.owner_name, EXCLUDED.owner_name),
-                owner_occupied         = COALESCE(parcels.owner_occupied, EXCLUDED.owner_occupied),
-                mailing_address        = COALESCE(parcels.mailing_address, EXCLUDED.mailing_address),
-                state_class            = COALESCE(parcels.state_class, EXCLUDED.state_class),
-                hcad_neighborhood_code = COALESCE(parcels.hcad_neighborhood_code, EXCLUDED.hcad_neighborhood_code),
-                hcad_neighborhood_name = COALESCE(parcels.hcad_neighborhood_name, EXCLUDED.hcad_neighborhood_name),
+                {fill_sets},
                 enrichment_flags       = parcels.enrichment_flags || EXCLUDED.enrichment_flags,
                 enriched_at            = NOW()
+            WHERE {change_guard}
+               OR NOT parcels.enrichment_flags @> EXCLUDED.enrichment_flags
             """,
             (zip_code,),
         )
         n = cur.rowcount
+        # Re-derive the stored residential verdict whenever parcel data
+        # changed, whenever the RULE changed since this ZIP was last
+        # classified (stale/missing stamp — see _rule_hash), and whenever any
+        # NULL verdict survives in the ZIP, so a future writer that forgets
+        # this pass cannot strand rows unclassified (a NULL is seedable, which
+        # silently disables the filter). Short-circuit order: the stamp lookup
+        # and NULL probe are index-only glances, run only when nothing
+        # changed.
+        rule = _rule_hash()
+        if n or _stamped_rule_hash(cur, zip_code) != rule \
+                or _has_unclassified(cur, zip_code):
+            reclassified = _classify_residential(cur, zip_code)
+            _stamp_rule(cur, zip_code, rule)
+            if reclassified:
+                log.info("parcels: %d residential verdicts updated for ZIP %s",
+                         reclassified, zip_code)
     conn.commit()
     log.info("parcels: %d cached for ZIP %s from HCAD", n, zip_code)
     return n
@@ -255,14 +381,17 @@ def seed_account(conn, zip_code: str, account_id: int, limit: int | None = None,
         filter_sql += ("\n                  AND (COALESCE(p.year_built, 0) > 0"
                        " OR COALESCE(p.square_footage, 0) > 0)")
     if residential_only:
-        # Same rule the audit and the bulk archive apply to rows already
-        # materialized, so what a seed refuses and what a cleanup removes can
-        # never drift apart. Imported here rather than at module scope because
-        # residential imports config, and parcels is imported during startup
-        # checks before the environment is necessarily complete.
-        from pipeline.residential import sql_non_residential
-        filter_sql += (f"\n                  AND NOT "
-                       f"{sql_non_residential('p.')}")
+        # Reads the stored verdict (parcels.non_residential, migration 0077)
+        # instead of inlining pipeline/residential.py's ~12KB predicate — which
+        # re-normalized owner_name ~76 times per row and cost 4.1s per seed on a
+        # 47k-parcel ZIP. The verdict is written by _classify_residential from
+        # the same live rule whenever parcel data changes, so what a seed
+        # refuses and what the audit/bulk-archive flag still cannot drift.
+        # NULL (never classified) is seedable on purpose: a false positive
+        # excludes a paying customer, a false negative leaves a visible bad
+        # row — the same asymmetry the rule's tiers encode.
+        filter_sql += ("\n                  AND NOT "
+                       "COALESCE(p.non_residential, FALSE)")
 
     shared = ", ".join(SHARED_COLS)
     params: list = [zip_code, account_id]
@@ -272,20 +401,34 @@ def seed_account(conn, zip_code: str, account_id: int, limit: int | None = None,
         limit_sql = "LIMIT %s"
         params.append(limit)
 
-    # Real street addresses first. Ordering by address_norm alone sorted HCAD's
-    # no-situs parcels — vacant land and easements, which it addresses with a
-    # zero house number — to the very top ("0 ACKLEY DR" < "1 …"), so a capped
-    # seed took nothing else: a 50-parcel seed of ZIP 77024 bought 50 parcels
-    # no vendor can enrich and nobody lives at, out of 12,403 available. The
-    # tiebreak stays address_norm, so a repeated capped run still takes the
-    # same set.
-    order_sql = f"ORDER BY {sql_has_situs('p.address')} DESC, p.address_norm"
+    # Ordering exists for one reason: a CAPPED seed must take parcels with a
+    # real street address first, deterministically. Ordering by address_norm
+    # alone sorted HCAD's no-situs parcels — vacant land and easements, which
+    # it addresses with a zero house number — to the very top ("0 ACKLEY DR" <
+    # "1 …"), so a capped seed took nothing else: a 50-parcel seed of ZIP 77024
+    # bought 50 parcels no vendor can enrich and nobody lives at, out of 12,403
+    # available. The tiebreak stays address_norm, so a repeated capped run
+    # still takes the same set.
+    #
+    # An UNCAPPED seed takes every parcel regardless of order, so both sorts —
+    # the selection order and the window numbering below — are pure waste
+    # there: two external merge sorts of the whole ZIP (~13MB spill each at
+    # default work_mem) that cannot change the result set. Customer numbers
+    # then arrive in storage order rather than address order, which nothing
+    # depends on: the block claim guarantees uniqueness either way, and the
+    # per-row trigger path never assigned them in address order to begin with.
+    if limit_sql:
+        order_sql = f"ORDER BY {sql_has_situs('p.address')} DESC, p.address_norm"
+        number_over = "ORDER BY np.address_norm"
+    else:
+        order_sql = ""
+        number_over = ""
     params.extend([account_id, account_id])
 
     with conn.cursor() as cur:
         cur.execute(
             f"""
-            WITH new_parcels AS (
+            {_work_mem_sql()}WITH new_parcels AS (
                 -- Only parcels this account does not already hold. Selecting
                 -- these up front (rather than leaning on ON CONFLICT) means a
                 -- re-seed inserts nothing and burns no customer numbers.
@@ -300,7 +443,7 @@ def seed_account(conn, zip_code: str, account_id: int, limit: int | None = None,
                 {limit_sql}
             ),
             numbered AS (
-                SELECT np.*, ROW_NUMBER() OVER (ORDER BY np.address_norm) - 1 AS offset_n
+                SELECT np.*, ROW_NUMBER() OVER ({number_over}) - 1 AS offset_n
                 FROM new_parcels np
             ),
             counted AS (SELECT COUNT(*) AS n FROM numbered),
@@ -362,6 +505,13 @@ def promote(conn, zip_code: str, account_id: int) -> int:
         f"{c} = COALESCE(pc.{c}, src.{c})" for c in SHARED_COLS
     )
     cols = ", ".join(f"p.{c}" for c in SHARED_COLS)
+    # Fill-only means a row can only change where the cache is NULL and the
+    # tenant has a value. Guarding on exactly that turns the every-run rewrite
+    # of a whole ZIP's parcels (and the matching pile of dead tuples autovacuum
+    # had to chase) into a no-op once the cache has caught up.
+    guard = "\n                   OR ".join(
+        f"(pc.{c} IS NULL AND src.{c} IS NOT NULL)" for c in SHARED_COLS
+    )
     with conn.cursor() as cur:
         cur.execute(
             f"""
@@ -374,10 +524,18 @@ def promote(conn, zip_code: str, account_id: int) -> int:
                 WHERE p.zip = %s AND p.account_id = %s AND p.parcel_id IS NOT NULL
             ) AS src
             WHERE pc.id = src.parcel_id
+              AND ({guard})
             """,
             (zip_code, account_id),
         )
         n = cur.rowcount
+        # Promoted facts (property_type, owner_name, square_footage, ...) are
+        # inputs to the stored residential verdict — re-derive it for the ZIP
+        # whenever a promotion actually landed, and stamp the rule build that
+        # produced the verdicts (same bookkeeping as ensure_from_hcad).
+        if n:
+            _classify_residential(cur, zip_code)
+            _stamp_rule(cur, zip_code, _rule_hash())
     conn.commit()
     log.info("parcels: promoted findings from %d properties in ZIP %s", n, zip_code)
     return n
@@ -393,6 +551,14 @@ def sync(conn, zip_code: str, account_id: int) -> int:
     sets = ",\n                ".join(
         f"{c} = COALESCE(p.{c}, pc.{c})" for c in SHARED_COLS
     )
+    # Same change-guard as promote(), pointed the other way: touch a tenant row
+    # only when the cache can actually fill a gap in it. Every skipped row is a
+    # row that keeps its updated_at honest and skips maintenance on all of
+    # properties' ~30 indexes — on a re-seed this UPDATE used to rewrite the
+    # account's whole ZIP for nothing.
+    guard = "\n                   OR ".join(
+        f"(p.{c} IS NULL AND pc.{c} IS NOT NULL)" for c in SHARED_COLS
+    )
     with conn.cursor() as cur:
         cur.execute(
             f"""
@@ -401,6 +567,7 @@ def sync(conn, zip_code: str, account_id: int) -> int:
             FROM parcels pc
             WHERE p.parcel_id = pc.id
               AND p.zip = %s AND p.account_id = %s
+              AND ({guard})
             """,
             (zip_code, account_id),
         )

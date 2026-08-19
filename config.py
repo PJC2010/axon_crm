@@ -11,7 +11,7 @@ load_dotenv()
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").strip().upper()
 
 # ── Database ──────────────────────────────────────────────────────────────────
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost/axon_crm")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost/smart_crm")
 
 # Per-instance connection pool for API requests (api/deps.py). Bounded so the
 # 2-instance deploy plus the in-process scheduler can't exhaust the Postgres
@@ -224,6 +224,17 @@ NONRESIDENTIAL_REVIEW_SQFT = int(os.getenv("NONRESIDENTIAL_REVIEW_SQFT", "12000"
 # business_type, reached through PATCH /api/account/profile; until then, leave
 # it off on a shared deployment and clean up with the archive endpoint instead.
 SEED_RESIDENTIAL_ONLY = os.getenv("SEED_RESIDENTIAL_ONLY", "false").lower() == "true"
+
+# work_mem for the two seed statements that sort a whole ZIP inside the shared
+# parcel cache (pipeline/parcels.py::_work_mem_sql — ensure_from_hcad's
+# DISTINCT ON and seed_account's window numbering). Applied with SET LOCAL, so
+# only the seed's own transaction gets the raise; API request connections keep
+# the server default. At the 4MB Postgres default each sort is an external
+# merge spilling ~13MB to disk per 47k-parcel ZIP. 0 disables the override.
+# Sized for the smallest plausible production Postgres: the scheduler's seeds
+# are serialized by PIPELINE_RUN_LOCK_KEY, but an external run_pipeline.py or
+# county build can sort concurrently, so budget ~2x this transiently.
+SEED_WORK_MEM_MB = int(os.getenv("SEED_WORK_MEM_MB", "64"))
 
 # ── Search-area expansion (when a ZIP returns too few seed rows) ──────────────
 SEED_EXPAND_ENABLED   = os.getenv("SEED_EXPAND_ENABLED", "true").lower() == "true"

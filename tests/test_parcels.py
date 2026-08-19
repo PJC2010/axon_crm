@@ -262,7 +262,7 @@ def test_seed_account_materialization_filters_default_off():
     parcels.seed_account(_FakeConn(cur), "77449", 7)
     assert "owner_occupied IS TRUE" not in cur.sql
     assert "COALESCE(p.year_built, 0) > 0" not in cur.sql
-    assert "strpos" not in cur.sql        # the residential guard is off too
+    assert "non_residential" not in cur.sql   # the residential guard is off too
 
 
 def test_seed_account_owner_occupied_filter_is_literal_sql():
@@ -288,15 +288,17 @@ def test_seed_account_built_only_uses_the_confirmed_structure_rule():
 def test_seed_account_residential_only_filters_and_adds_no_params():
     """The non-residential guard, applied at materialization.
 
-    Like the other two it must be literal SQL: psycopg2 binds %s positionally by
+    Reads the stored verdict (parcels.non_residential, migration 0077) rather
+    than inlining the ~12KB rule — see test_residential.py's
+    test_seed_filter_uses_the_shared_rule for the one-rule chain. Like the
+    other two filters it must be literal SQL: psycopg2 binds %s positionally by
     statement-text order and filter_sql is interpolated ahead of the claim/INSERT
     params, so a bind param added here would silently shift every later one.
     """
     cur = _FakeCursor(rowcount=1)
     parcels.seed_account(_FakeConn(cur), "77449", 7, residential_only=True)
-    assert "AND NOT" in cur.sql
-    # Reads the parcels alias, never properties.
-    assert "p.owner_name" in cur.sql and "p.square_footage" in cur.sql
+    # NULL-safe include: an unclassified parcel is seedable, never excluded.
+    assert "AND NOT COALESCE(p.non_residential, FALSE)" in cur.sql
     # A literal '%' would be read as a placeholder once params are bound.
     assert "%s" in cur.sql and "%" not in cur.sql.replace("%s", "")
     assert cur.params == ["77449", 7, 7, 7]
@@ -380,6 +382,150 @@ def test_seed_links_pre_existing_rows_before_seeding_them(monkeypatch):
     # properties; link precedes seed for the parcel_id join in sync().
     assert calls.index("ensure") < calls.index("fill") < calls.index("link") \
         < calls.index("seed"), f"wrong order: {calls}"
+
+
+# ── Change guards + stored residential verdict (migration 0077) ──────────────
+
+def test_ensure_from_hcad_skips_rows_that_would_not_change():
+    """A re-run over an already-complete ZIP must write nothing: before the
+    guard it rewrote all 47,531 rows of ZIP 77433 in 5.5s and left as many dead
+    tuples. A row updates only when a fill lands or the flags merge adds a key."""
+    cur = _FakeCursor(rowcount=0)
+    parcels.ensure_from_hcad(_FakeConn(cur), "77449")
+    sql = " ".join(cur.sql.split())
+    assert "WHERE (parcels.city IS NULL AND EXCLUDED.city IS NOT NULL)" in sql
+    # Every fill column is guarded — the list drives both SET and guard.
+    for c in parcels._HCAD_FILL_COLS:
+        assert f"(parcels.{c} IS NULL AND EXCLUDED.{c} IS NOT NULL)" in sql, c
+    assert "NOT parcels.enrichment_flags @> EXCLUDED.enrichment_flags" in sql
+
+
+def test_ensure_from_hcad_reclassifies_when_rows_changed():
+    """New or changed parcels must get a residential verdict in the same
+    transaction — the county build's only classification point."""
+    cur = _FakeCursor(rowcount=500)
+    conn = _FakeConn(cur)
+    parcels.ensure_from_hcad(conn, "77449")
+    all_sql = cur.all_sql()
+    assert "non_residential = v.verdict" in all_sql
+    assert "IS DISTINCT FROM v.verdict" in all_sql
+    assert conn.commits == 1, "classification must share the upsert's commit"
+
+
+class _SeqCursor(_FakeCursor):
+    """_FakeCursor whose fetchone() returns each queued result once, so a test
+    can express different answers for consecutive SELECTs (stamp lookup, then
+    NULL probe)."""
+
+    def __init__(self, results, rowcount=0):
+        super().__init__(rowcount=rowcount)
+        self._seq = list(results)
+
+    def fetchone(self):
+        return self._seq.pop(0) if self._seq else None
+
+
+def test_ensure_from_hcad_self_heals_unclassified_rows():
+    """rowcount=0 (nothing changed) and the rule stamp is FRESH, but a NULL
+    verdict survives in the ZIP: the probe must find it and the classification
+    must still run, so a future writer that forgets the pass cannot silently
+    disable the seed filter."""
+    cur = _SeqCursor([(parcels._rule_hash(),), (1,)], rowcount=0)
+    parcels.ensure_from_hcad(_FakeConn(cur), "77449")
+    assert "non_residential IS NULL" in cur.all_sql()
+    assert "non_residential = v.verdict" in cur.all_sql()
+
+
+def test_ensure_from_hcad_reclassifies_when_the_rule_changed():
+    """A stale (or missing) rule stamp forces reclassification even when no
+    parcel data changed — editing residential.py's token lists or overriding a
+    threshold must reach already-classified ZIPs on their next touch, exactly
+    the freshness the old inline-per-seed filter had."""
+    cur = _SeqCursor([("stale-hash",)], rowcount=0)
+    parcels.ensure_from_hcad(_FakeConn(cur), "77449")
+    all_sql = cur.all_sql()
+    assert "non_residential = v.verdict" in all_sql
+    assert "parcel_rule_stamps" in all_sql, "must re-stamp after classifying"
+
+
+def test_ensure_from_hcad_skips_classification_when_all_fresh():
+    """Steady state — nothing changed, stamp fresh, no NULLs: the whole pass
+    is two index-only glances and zero writes."""
+    cur = _SeqCursor([(parcels._rule_hash(),), None], rowcount=0)
+    parcels.ensure_from_hcad(_FakeConn(cur), "77449")
+    assert "non_residential = v.verdict" not in cur.all_sql()
+
+
+def test_promote_skips_rows_it_cannot_fill():
+    """promote() is fill-only, so a row can change only where the cache is NULL
+    and the tenant has a value — the guard says exactly that, and stops every
+    pipeline run rewriting a whole ZIP's parcels for nothing."""
+    cur = _FakeCursor(rowcount=0)
+    parcels.promote(_FakeConn(cur), "77449", 1)
+    sql = " ".join(cur.sql.split())
+    assert "(pc.latitude IS NULL AND src.latitude IS NOT NULL)" in sql
+    assert "(pc.owner_name IS NULL AND src.owner_name IS NOT NULL)" in sql
+
+
+def test_promote_reclassifies_only_when_something_landed():
+    """Promoted facts (property_type, owner_name, ...) are verdict inputs."""
+    cur = _FakeCursor(rowcount=3)
+    parcels.promote(_FakeConn(cur), "77449", 1)
+    assert "non_residential = v.verdict" in cur.all_sql()
+    assert "parcel_rule_stamps" in cur.all_sql()
+
+    cur = _FakeCursor(rowcount=0)
+    parcels.promote(_FakeConn(cur), "77449", 1)
+    assert "non_residential" not in cur.all_sql()
+
+
+def test_sync_skips_rows_it_cannot_fill():
+    """Every skipped row keeps updated_at honest (inbound SMS matching orders
+    by it) and skips maintenance on all of properties' ~30 indexes."""
+    cur = _FakeCursor(rowcount=0)
+    parcels.sync(_FakeConn(cur), "77449", 1)
+    sql = " ".join(cur.sql.split())
+    assert "(p.latitude IS NULL AND pc.latitude IS NOT NULL)" in sql
+
+
+def test_uncapped_seed_does_not_sort():
+    """Ordering exists to pick WHICH parcels a capped seed takes; an uncapped
+    seed takes all of them, so both sorts (selection + window numbering) were
+    pure waste — two ~13MB external merges per seed at default work_mem."""
+    cur = _FakeCursor(rowcount=1)
+    parcels.seed_account(_FakeConn(cur), "77449", 7)
+    assert "ORDER BY" not in cur.sql
+    assert "ROW_NUMBER() OVER ()" in cur.sql
+
+
+def test_capped_seed_still_sorts_deterministically():
+    cur = _FakeCursor(rowcount=1)
+    parcels.seed_account(_FakeConn(cur), "77449", 7, limit=50)
+    assert "ORDER BY" in cur.sql
+    assert "ROW_NUMBER() OVER (ORDER BY np.address_norm)" in cur.sql
+
+
+def test_seed_statements_raise_work_mem_locally(monkeypatch):
+    """SET LOCAL in the same statement string: scoped to the seed transaction,
+    invisible to API request connections, and the FakeCursor first-statement
+    convention keeps holding (it is a prefix, not a separate execute)."""
+    import config
+    monkeypatch.setattr(config, "SEED_WORK_MEM_MB", 64)
+    cur = _FakeCursor(rowcount=1)
+    parcels.seed_account(_FakeConn(cur), "77449", 7)
+    assert cur.sql.lstrip().startswith("SET LOCAL work_mem = '64MB';")
+
+    cur = _FakeCursor(rowcount=0)
+    parcels.ensure_from_hcad(_FakeConn(cur), "77449")
+    assert cur.sql.lstrip().startswith("SET LOCAL work_mem = '64MB';")
+
+
+def test_work_mem_override_can_be_disabled(monkeypatch):
+    import config
+    monkeypatch.setattr(config, "SEED_WORK_MEM_MB", 0)
+    cur = _FakeCursor(rowcount=1)
+    parcels.seed_account(_FakeConn(cur), "77449", 7)
+    assert "SET LOCAL" not in cur.sql
 
 
 @pytest.mark.parametrize("call,expected_commits", [
