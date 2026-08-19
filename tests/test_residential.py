@@ -448,12 +448,42 @@ def test_prefix_qualifies_every_column():
 
 
 def test_seed_filter_uses_the_shared_rule():
-    """parcels.seed_account must apply this module's rule, not its own copy —
-    what a seed refuses and what the audit archives have to be one rule.
+    """The seed must refuse exactly what this module's rule refuses — one rule.
+
+    Since migration 0077 the seed reads the STORED verdict
+    (parcels.non_residential) instead of inlining sql_non_residential — the
+    inline predicate re-normalized owner_name ~76 times per row and cost 4.1s
+    per seed on a 47k-parcel ZIP. The one-rule guarantee now has two links,
+    and this test pins both:
+
+      1. seed_account(residential_only=True) filters on the stored column;
+      2. the ONLY writer of that column, parcels._classify_residential,
+         derives it from THIS module's sql_non_residential (EXCLUDE tier —
+         the default; REVIEW rows must never be excluded from a seed).
     """
     import inspect
 
     from pipeline import parcels
-    source = inspect.getsource(parcels.seed_account)
-    assert "residential_only" in source
-    assert "sql_non_residential" in source
+    seed_source = inspect.getsource(parcels.seed_account)
+    assert "residential_only" in seed_source
+    # NULL-safe on purpose: an unclassified parcel is seedable, because a
+    # false positive here excludes a paying customer.
+    assert "COALESCE(p.non_residential, FALSE)" in seed_source
+
+    classify_source = inspect.getsource(parcels._classify_residential)
+    assert "sql_non_residential" in classify_source
+    # Default tier is EXCLUDE; passing tier= anything else here would archive
+    # the REVIEW band (trophy estates, surname-collision owners) from seeds.
+    assert "tier=" not in classify_source
+
+    # And the writers that change a parcel's inputs re-derive the verdict.
+    assert "_classify_residential" in inspect.getsource(parcels.ensure_from_hcad)
+    assert "_classify_residential" in inspect.getsource(parcels.promote)
+
+    # Freshness: a change to THIS module (or its config thresholds) must reach
+    # already-classified ZIPs. The rule is fingerprinted (parcels._rule_hash
+    # hashes the generated SQL) and stamped per ZIP; ensure_from_hcad
+    # reclassifies whenever the stamp is stale. Without this link the change
+    # guards would freeze old verdicts forever.
+    assert "_rule_hash" in inspect.getsource(parcels.ensure_from_hcad)
+    assert "sql_non_residential" in inspect.getsource(parcels._rule_hash)

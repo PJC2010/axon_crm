@@ -18,7 +18,7 @@ services:
   - type: web
     name: axon-crm-api
     runtime: python
-    plan: starter
+    plan: standard
     buildCommand: pip install -r requirements.txt
     # Runs after build, before the new version goes live, with env vars present.
     preDeployCommand: python db/migrate.py
@@ -52,6 +52,12 @@ services:
       # PERMIT_DB_PATH empty to force the durable Postgres mirror path.
       - key: SEED_SOURCE
         value: hcad
+      # Sort memory for the shared-parcel-cache seed statements (SET LOCAL,
+      # seed transactions only). SIZED AGAINST THE DATABASE PLAN's RAM, not
+      # this web service's: 64 suits a 1GB Postgres; set 16-32 if the database
+      # is still on the 256MB starter plan.
+      - key: SEED_WORK_MEM_MB
+        value: "64"
       - key: PERMIT_DB_PATH
         value: ""
       # Public links in emails (password reset, verification) and admin reset
