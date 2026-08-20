@@ -15,13 +15,11 @@
  * MapLibre is imported lazily inside an effect (never at module scope) so it
  * never touches `window` during SSR.
  */
-import { useEffect, useRef, useState, useCallback, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Home, RefreshCw, Signal, Award, Grid3x3, Sparkles, Zap, X, SlidersHorizontal, ChevronDown, ChevronUp, MapPin } from 'lucide-react'
-import ngeohash from 'ngeohash'
-import { gradeVarName, GRADE_TOKENS, GRADE_ACTION, type Grade } from '@/lib/gradeColors'
+import { ArrowLeft, Home, RefreshCw, Signal, Award, Grid3x3, Sparkles, Zap, SlidersHorizontal, MapPin } from 'lucide-react'
 import { resolveBasemap, registerPmtilesProtocol, needsPmtiles, OSM_RASTER } from '@/lib/mapStyle'
-import { registerPinSprites, spriteId, type PinPalette } from '@/lib/mapPins'
+import { registerPinSprites } from '@/lib/mapPins'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Map as MLMap, GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
 import { getMapCells, getMapProperties, getMapZips, getLead, getGeoHeatmap, getGeoClusters, prospectArea, getGeoEvents } from '@/lib/api'
@@ -29,9 +27,18 @@ import { serviceAreaBounds, serviceAreaLabel, clampToServiceArea, clampBoundsToS
 import { AuthGuard } from '@/components/AuthGuard'
 import { ContactDrawer } from '@/components/ContactDrawer'
 import { ToastStack, useToast } from '@/components/Toast'
-import type { MapCell, MapPoint, MapZip, Lead, LeadStatus, HeatmapCell, HeatmapMetric } from '@/lib/types'
-
-type ColorMode = 'signals' | 'score'
+import { useMediaQuery, MOBILE_BREAKPOINT } from '@/hooks/useMediaQuery'
+import { readPalette, pinPalette, type Palette } from '@/components/map/mapPalette'
+import {
+  cellsToGeoJSON, pointsToGeoJSON, heatToGeoJSON, clustersToGeoJSON, eventsToGeoJSON,
+  type ColorMode,
+} from '@/components/map/geojson'
+import { overlayBtn } from '@/components/map/ui/overlayBtn'
+import { Legend } from '@/components/map/ui/Legend'
+import { ZipPicker } from '@/components/map/ui/ZipPicker'
+import { ClusterActionPanel } from '@/components/map/ui/ClusterActionPanel'
+import { UnsupportedDevice } from '@/components/map/ui/UnsupportedDevice'
+import type { MapCell, MapPoint, MapZip, Lead, LeadStatus, HeatmapMetric } from '@/lib/types'
 
 // Below this zoom we show the choropleth; at/above it we swap to property pins.
 const PIN_ZOOM = 13
@@ -41,206 +48,6 @@ const HOME: [number, number] = [-95.3698, 29.7604]
 const STATUSES: LeadStatus[] = [
   'new', 'contacted', 'qualified', 'quote_sent', 'won', 'lost', 'not_interested', 'converted',
 ]
-
-// Resolve design-system CSS variables to concrete hex (WebGL can't read vars).
-//
-// Grade colors are looked up through lib/gradeColors so the map cannot drift
-// from ScoreBadge again — it previously painted grade B in `--color-accent`,
-// the app's interactive turquoise, which made B pins read as selected controls.
-//
-// Fallbacks are the dark-system token values rather than the old Tailwind-ish
-// hexes that used to sit here: if getComputedStyle ever returns empty (SSR-ish
-// edge, very early paint) the map should degrade to Axon's palette, not to a
-// light-theme one that no longer exists anywhere in the app.
-function readPalette() {
-  const cs = getComputedStyle(document.documentElement)
-  const v = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback
-  const grade = (g: Grade, fallback: string) => v(gradeVarName(g) as string, fallback)
-  return {
-    none:   v('--color-ink-200', '#404854'),
-    cool:   v('--color-ocean',   '#3fa6da'),
-    line:   v('--color-ink-300', '#5f6b7c'),
-    accent: v('--color-accent',  '#00a396'),   // UI affordance only — never a data category
-    // Grade ramp, keyed to the shared source of truth.
-    gradeA: grade('A', '#32a467'),
-    gradeB: grade('B', '#3fa6da'),
-    gradeC: grade('C', '#f0b726'),
-    gradeD: grade('D', '#e76a6e'),
-    // Overlay semantics, deliberately named for what they *mean* rather than
-    // for their hue, so an overlay can be recolored without anyone wondering
-    // whether it also moves a lead grade. They currently share hues with the
-    // grade ramp; that is a coincidence of the palette, not a coupling.
-    heatLow:  v('--color-ocean',   '#3fa6da'),  // heatmap: coolest
-    heatMid:  v('--color-gold',    '#f0b726'),
-    heatHigh: v('--color-rose',    '#f5498b'),  // heatmap: hottest
-    customer: v('--color-moss',    '#32a467'),  // customer-cluster hulls
-    alert:    v('--color-danger',  '#e76a6e'),  // active event polygons
-    // Pin artwork: slate body, light letter, muted border for "no grade".
-    body:     v('--color-surface',  '#2f343c'),
-    ink:      v('--color-ink-900',  '#f6f7f9'),
-    neutral:  v('--color-ink-300',  '#5f6b7c'),
-  }
-}
-
-/** The subset of the palette the pin sprites need, in their own shape. */
-function pinPalette(p: Palette): PinPalette {
-  return {
-    gradeA: p.gradeA, gradeB: p.gradeB, gradeC: p.gradeC, gradeD: p.gradeD,
-    body: p.body, ink: p.ink, neutral: p.neutral,
-    signal: p.gradeC,  // gold badge — "there's recent intent here"
-  }
-}
-type Palette = ReturnType<typeof readPalette>
-
-// ── color logic (shared by cells + pins) ─────────────────────────────────────────
-
-function cellColor(c: MapCell, mode: ColorMode, p: Palette): string {
-  if (mode === 'signals') {
-    // Three steps, not four: the old middle branch read
-    // `p.accent === p.gold ? p.danger : p.gold`, a self-comparison of two
-    // distinct tokens that always took the `p.gold` arm, so bands 2 and 3 were
-    // the same color.
-    if (c.signal_count <= 0) return p.none
-    if (c.signal_count <= 3) return p.gradeC
-    return p.gradeD
-  }
-  // score: shade by the cell's average lead score (higher = better prospect)
-  const s = c.avg_score
-  if (s == null) return p.none
-  if (s >= 80) return p.gradeA
-  if (s >= 65) return p.gradeB
-  if (s >= 50) return p.gradeC
-  return p.gradeD
-}
-
-function pointColor(pt: MapPoint, mode: ColorMode, p: Palette): string {
-  if (mode === 'signals') return pt.signals.length > 0 ? p.gradeD : p.cool
-  switch (pt.score_grade) {
-    case 'A': return p.gradeA
-    case 'B': return p.gradeB
-    case 'C': return p.gradeC
-    case 'D': return p.gradeD
-    default:  return p.none
-  }
-}
-
-// ── GeoJSON builders ─────────────────────────────────────────────────────────────
-
-function cellsToGeoJSON(cells: MapCell[], mode: ColorMode, p: Palette) {
-  return {
-    type: 'FeatureCollection' as const,
-    features: cells.map(c => {
-      const [minLat, minLng, maxLat, maxLng] = ngeohash.decode_bbox(c.cell)
-      return {
-        type: 'Feature' as const,
-        properties: {
-          cell: c.cell,
-          name: c.name ?? '',
-          leads: c.leads,
-          signal_count: c.signal_count,
-          avg_score: c.avg_score ?? 0,
-          color: cellColor(c, mode, p),
-        },
-        geometry: {
-          type: 'Polygon' as const,
-          coordinates: [[
-            [minLng, minLat], [maxLng, minLat], [maxLng, maxLat],
-            [minLng, maxLat], [minLng, minLat],
-          ]],
-        },
-      }
-    }),
-  }
-}
-
-/**
- * Property pins → GeoJSON.
- *
- * Carries the fields the pin sprite, cluster aggregation and hover card all read
- * — `grade`, `status`, `score`, `hasSignal` — rather than only a precomputed
- * `color`. The API has always sent these; the renderer used to throw them away
- * and draw an undifferentiated dot.
- *
- * `sprite` is resolved here rather than in a MapLibre expression because the
- * sprite id depends on the active color mode, which an expression over feature
- * properties can't see. `color` is kept for the cluster bubbles, which shade by
- * their dominant grade.
- */
-function pointsToGeoJSON(points: MapPoint[], mode: ColorMode, p: Palette) {
-  return {
-    type: 'FeatureCollection' as const,
-    features: points.map(pt => {
-      const hasSignal = pt.signals.length > 0
-      // In signals mode every pin shares one shape and splits on signal state,
-      // so the grade ramp shouldn't leak into it.
-      const grade = mode === 'signals' ? (hasSignal ? 'S' : 'N') : (pt.score_grade ?? 'N')
-      return {
-        type: 'Feature' as const,
-        properties: {
-          id: pt.id,
-          address: pt.address ?? '',
-          grade,
-          status: pt.status,
-          score: pt.lead_score ?? null,
-          signals: pt.signals.join(', '),
-          hasSignal,
-          sprite: spriteId(grade, hasSignal),
-          color: pointColor(pt, mode, p),
-        },
-        geometry: { type: 'Point' as const, coordinates: [pt.longitude, pt.latitude] },
-      }
-    }),
-  }
-}
-
-// H3 heatmap hexes → GeoJSON, with a normalized 0–1 `intensity` for shading.
-function heatToGeoJSON(cells: HeatmapCell[]) {
-  const max = Math.max(1, ...cells.map(c => c.value ?? 0))
-  return {
-    type: 'FeatureCollection' as const,
-    features: cells
-      .filter(c => c.boundary && c.boundary.length >= 3)
-      .map(c => ({
-        type: 'Feature' as const,
-        properties: {
-          h3: c.h3,
-          value: c.value ?? 0,
-          intensity: (c.value ?? 0) / max,
-          leads: c.leads,
-          customers: c.customers,
-        },
-        geometry: {
-          type: 'Polygon' as const,
-          coordinates: [[...c.boundary!, c.boundary![0]]],
-        },
-      })),
-  }
-}
-
-// Cluster hulls come back as a GeoJSON FeatureCollection; drop the null-geometry
-// (too-small) clusters before handing it to MapLibre.
-function clustersToGeoJSON(fc: { features: Array<{ geometry: unknown }> } | null) {
-  const features = (fc?.features ?? []).filter(f => f.geometry != null)
-  return { type: 'FeatureCollection' as const, features: features as GeoJSON.Feature[] }
-}
-
-// Event polygons come back as a GeoJSON FeatureCollection (properties carry an
-// `active` flag used to shade them); drop any null geometry.
-function eventsToGeoJSON(fc: { features: Array<{ geometry: unknown }> } | null) {
-  const features = (fc?.features ?? []).filter(f => f.geometry != null)
-  return { type: 'FeatureCollection' as const, features: features as GeoJSON.Feature[] }
-}
-
-// Tracks a media query on the client; `false` during SSR so the desktop layout
-// is the hydration baseline.
-function useMediaQuery(query: string) {
-  const subscribe = useCallback((onChange: () => void) => {
-    const mq = window.matchMedia(query)
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
-  }, [query])
-  return useSyncExternalStore(subscribe, () => window.matchMedia(query).matches, () => false)
-}
 
 // ── component ─────────────────────────────────────────────────────────────────────
 
@@ -283,7 +90,7 @@ function PropertyMapInner() {
   const [activeZip, setActiveZip] = useState<string | null>(null)
   const { toasts, show: showToast, dismiss: dismissToast } = useToast()
   // Mobile layout: controls collapse behind a Filters button, legend collapses.
-  const isMobile = useMediaQuery('(max-width: 767px)')
+  const isMobile = useMediaQuery(MOBILE_BREAKPOINT)
   const [showControls, setShowControls] = useState(false)
   // MapLibre v6 dropped the WebGL1 fallback path, so on a device without WebGL2
   // (iOS 14, older Androids — roughly 4% of traffic) the Map constructor throws.
@@ -1046,261 +853,6 @@ function PropertyMapInner() {
         onToast={showToast}
       />
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
-    </div>
-  )
-}
-
-// Pill style for the geo-overlay toggles, active state matching the mode toggle.
-function overlayBtn(active: boolean): CSSProperties {
-  return {
-    display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px',
-    fontSize: 12, fontWeight: 500, borderRadius: 'var(--radius-pill)', cursor: 'pointer',
-    border: '1px solid var(--color-ink-200)',
-    background: active ? 'var(--color-ink-900)' : 'var(--color-paper)',
-    color: active ? 'var(--color-paper)' : 'var(--color-ink-700)',
-  }
-}
-
-// Floating panel shown when a customer cluster is clicked — fires the Section 5
-// "prospect this area" flow with the map's current vertical filter.
-function ClusterActionPanel({
-  cluster, busy, onProspect, onClose,
-}: {
-  cluster: { label: number; count: number }
-  busy: boolean
-  onProspect: () => void
-  onClose: () => void
-}) {
-  return (
-    <div style={{
-      position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
-      background: 'var(--color-paper)', border: '1px solid var(--color-ink-200)',
-      borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)',
-      padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12, maxWidth: '92%',
-      flexWrap: 'wrap', justifyContent: 'center',
-    }}>
-      <div>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-ink-900)' }}>
-          Cluster #{cluster.label}
-        </div>
-        <div style={{ fontSize: 11, color: 'var(--color-ink-500)' }}>
-          {cluster.count} active customer{cluster.count === 1 ? '' : 's'} here
-        </div>
-      </div>
-      <button
-        onClick={onProspect}
-        disabled={busy}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
-          fontSize: 12, fontWeight: 600, borderRadius: 'var(--radius-pill)', border: 'none',
-          cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1,
-          background: 'var(--color-accent)', color: '#ffffff',
-        }}
-      >
-        <Sparkles size={13} strokeWidth={1.5} /> {busy ? 'Prospecting…' : 'Prospect this area'}
-      </button>
-      <button onClick={onClose} className="dash-icon-btn borderless" title="Close">
-        <X size={15} strokeWidth={1.5} />
-      </button>
-    </div>
-  )
-}
-
-/**
- * ZIP jump control — a bottom sheet on mobile, a dropdown on desktop.
- *
- * The list is the account's *own* ZIPs (GET /api/map/zips), so every entry is
- * guaranteed to contain leads and picking one fits the map to that ZIP's real
- * extent. Mobile affordances: full-width sheet with 44px rows, a numeric keypad
- * via inputMode, a 16px font so iOS Safari doesn't auto-zoom the page on focus,
- * and a tap-anywhere backdrop to dismiss.
- */
-function ZipPicker({
-  zips, loading, query, onQuery, onPick, onClose, isMobile, areaLabel,
-}: {
-  zips: MapZip[]
-  loading: boolean
-  query: string
-  onQuery: (v: string) => void
-  onPick: (z: MapZip) => void
-  onClose: () => void
-  isMobile: boolean
-  areaLabel: string
-}) {
-  const term = query.trim()
-  const filtered = term ? zips.filter(z => z.zip.startsWith(term)) : zips
-
-  const panel: CSSProperties = isMobile
-    ? {
-        position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 6,
-        maxHeight: '62%', display: 'flex', flexDirection: 'column',
-        background: 'var(--color-paper)', borderTop: '1px solid var(--color-ink-200)',
-        borderTopLeftRadius: 16, borderTopRightRadius: 16,
-        boxShadow: 'var(--shadow-card)', padding: '10px 12px 14px',
-      }
-    : {
-        position: 'absolute', top: 12, left: 16, zIndex: 6,
-        width: 280, maxHeight: 380, display: 'flex', flexDirection: 'column',
-        background: 'var(--color-paper)', border: '1px solid var(--color-ink-200)',
-        borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)',
-        padding: '10px 12px 12px',
-      }
-
-  return (
-    <>
-      <div
-        onClick={onClose}
-        style={{
-          position: 'absolute', inset: 0, zIndex: 5,
-          background: isMobile ? 'rgba(0,0,0,0.28)' : 'transparent',
-        }}
-      />
-      <div style={panel} role="dialog" aria-label="Jump to a ZIP code">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-ink-900)' }}>Jump to ZIP</div>
-            <div style={{ fontSize: 11, color: 'var(--color-ink-500)' }}>{areaLabel}</div>
-          </div>
-          <button onClick={onClose} className="dash-icon-btn borderless" title="Close" aria-label="Close">
-            <X size={15} strokeWidth={1.5} />
-          </button>
-        </div>
-
-        <input
-          autoFocus={!isMobile}
-          value={query}
-          onChange={e => onQuery(e.target.value.replace(/[^0-9]/g, '').slice(0, 5))}
-          onKeyDown={e => { if (e.key === 'Enter' && filtered.length) onPick(filtered[0]) }}
-          placeholder="Search ZIP…"
-          inputMode="numeric"
-          enterKeyHint="go"
-          aria-label="Filter ZIP codes"
-          style={{
-            width: '100%', padding: isMobile ? '11px 12px' : '8px 10px',
-            fontSize: 16, borderRadius: 'var(--radius-pill)',
-            border: '1px solid var(--color-ink-200)',
-            background: 'var(--color-paper)', color: 'var(--color-ink-900)',
-          }}
-        />
-
-        <div role="listbox" style={{ overflowY: 'auto', marginTop: 8, flex: 1 }}>
-          {loading && <ZipHint>Loading ZIP codes…</ZipHint>}
-          {!loading && !zips.length && <ZipHint>No mapped ZIP codes yet.</ZipHint>}
-          {!loading && zips.length > 0 && !filtered.length && (
-            <ZipHint>No ZIP starts with “{term}”.</ZipHint>
-          )}
-          {!loading && filtered.map(z => (
-            <button
-              key={z.zip}
-              role="option"
-              aria-selected={false}
-              onClick={() => onPick(z)}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                width: '100%', minHeight: 44, gap: 10, padding: '8px 10px', marginTop: 2,
-                border: 'none', borderRadius: 'var(--radius-card)', background: 'transparent',
-                cursor: 'pointer', textAlign: 'left',
-              }}
-            >
-              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-ink-900)' }}>{z.zip}</span>
-              <span style={{ fontSize: 11, color: 'var(--color-ink-500)' }}>
-                {z.leads.toLocaleString()} lead{z.leads === 1 ? '' : 's'}
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-    </>
-  )
-}
-
-/**
- * Shown when the browser can't give MapLibre a WebGL2 context.
- *
- * MapLibre v6 removed the WebGL1 fallback path, so this is a real outcome on
- * iOS 14 and older Androids rather than a theoretical one. The rest of the CRM
- * works fine on those devices — only the map doesn't — so this says exactly that
- * and points at the surfaces that still do the job, instead of leaving a blank
- * rectangle that reads as a broken page.
- */
-function UnsupportedDevice() {
-  return (
-    <div style={{
-      position: 'absolute', inset: 0, zIndex: 4, display: 'flex',
-      alignItems: 'center', justifyContent: 'center', padding: 24,
-      background: 'var(--color-paper)',
-    }}>
-      <div style={{ maxWidth: 380, textAlign: 'center' }}>
-        <MapPin size={28} strokeWidth={1.5} style={{ color: 'var(--color-ink-400)' }} />
-        <div style={{
-          fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 600,
-          color: 'var(--color-ink-900)', margin: '10px 0 6px',
-        }}>
-          This device can&rsquo;t display the map
-        </div>
-        <p style={{ fontSize: 13, lineHeight: 1.55, color: 'var(--color-ink-500)', margin: 0 }}>
-          The map needs WebGL2, which this browser doesn&rsquo;t support. Updating to a
-          newer browser or device will fix it. Everything else in Axon works normally —
-          your leads are all on the{' '}
-          <Link href="/pipeline" style={{ color: 'var(--color-accent-300)' }}>pipeline board</Link>.
-        </p>
-      </div>
-    </div>
-  )
-}
-
-function ZipHint({ children }: { children: ReactNode }) {
-  return <div style={{ padding: '10px 4px', fontSize: 12, color: 'var(--color-ink-500)' }}>{children}</div>
-}
-
-function Legend({ mode, collapsible }: { mode: ColorMode; collapsible?: boolean }) {
-  // Collapsed by default on mobile so it doesn't cover the map (the parent
-  // remounts this via `key` when crossing the breakpoint).
-  const [open, setOpen] = useState(!collapsible)
-  // Swatches read from the same shared source the layers paint from, so the
-  // legend cannot describe a color the map isn't drawing. (It previously
-  // claimed grade B was `--color-accent`; both were wrong together, which is
-  // exactly why the drift went unnoticed.)
-  const items = mode === 'signals'
-    ? [
-        { c: GRADE_TOKENS.D.fg,      t: 'Hot — recent signals' },
-        { c: GRADE_TOKENS.C.fg,      t: 'Some signal activity' },
-        { c: 'var(--color-ink-200)', t: 'No recent signals' },
-      ]
-    : (['A', 'B', 'C', 'D'] as const).map(g => ({
-        c: GRADE_TOKENS[g].fg,
-        t: GRADE_ACTION[g],
-      }))
-  return (
-    <div style={{
-      position: 'absolute', bottom: 16, left: 16, background: 'var(--color-paper)',
-      border: '1px solid var(--color-ink-200)', borderRadius: 'var(--radius-card)',
-      boxShadow: 'var(--shadow-card)', padding: '10px 12px', fontSize: 11, color: 'var(--color-ink-700)',
-    }}>
-      {collapsible ? (
-        <button
-          onClick={() => setOpen(v => !v)}
-          aria-expanded={open}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6, padding: 0, margin: open ? '0 0 6px' : 0,
-            border: 'none', background: 'transparent', cursor: 'pointer',
-            fontSize: 11, fontWeight: 600, color: 'var(--color-ink-900)',
-          }}
-        >
-          {mode === 'signals' ? 'Intent signals' : 'Lead score'}
-          {open ? <ChevronDown size={12} strokeWidth={1.5} /> : <ChevronUp size={12} strokeWidth={1.5} />}
-        </button>
-      ) : (
-        <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--color-ink-900)' }}>
-          {mode === 'signals' ? 'Intent signals' : 'Lead score'}
-        </div>
-      )}
-      {open && items.map(i => (
-        <div key={i.t} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
-          <span style={{ width: 12, height: 12, borderRadius: 3, background: i.c, flexShrink: 0 }} />
-          {i.t}
-        </div>
-      ))}
     </div>
   )
 }
