@@ -15,26 +15,14 @@ import type { MapCell, MapPoint, HeatmapCell } from '@/lib/types'
 /** Which metric the choropleth and pins are shaded by. */
 export type ColorMode = 'signals' | 'score'
 
-// ── color logic (shared by cells + pins) ─────────────────────────────────────
-
-export function cellColor(c: MapCell, mode: ColorMode, p: Palette): string {
-  if (mode === 'signals') {
-    // Three bands, not four. The old middle branch read
-    // `p.accent === p.gold ? p.danger : p.gold` — a self-comparison of two
-    // distinct tokens, which always took the `p.gold` arm, so bands 2 and 3
-    // rendered identically.
-    if (c.signal_count <= 0) return p.none
-    if (c.signal_count <= 3) return p.gradeC
-    return p.gradeD
-  }
-  // score: shade by the cell's average lead score (higher = better prospect)
-  const s = c.avg_score
-  if (s == null) return p.none
-  if (s >= 80) return p.gradeA
-  if (s >= 65) return p.gradeB
-  if (s >= 50) return p.gradeC
-  return p.gradeD
-}
+// ── color logic ──────────────────────────────────────────────────────────────
+//
+// Cells are no longer colored here. They used to be bucketed into one of four
+// grade hues in JS and baked onto each feature; they're now shaded by a
+// continuous MapLibre ramp (see ./ramp.ts), because average score and signal
+// count are ordered values and four distinct hues claim they're four unrelated
+// categories. Pins stay in JS — their sprite depends on the mode, which an
+// expression over feature properties can't see.
 
 export function pointColor(pt: MapPoint, mode: ColorMode, p: Palette): string {
   if (mode === 'signals') return pt.signals.length > 0 ? p.gradeD : p.cool
@@ -57,7 +45,7 @@ export function pointColor(pt: MapPoint, mode: ColorMode, p: Palette): string {
  * `[minLat, minLng, maxLat, maxLng]` — note the lat/lng order is the reverse of
  * GeoJSON's, which is the easy mistake to make when touching this.
  */
-export function cellsToGeoJSON(cells: MapCell[], mode: ColorMode, p: Palette) {
+export function cellsToGeoJSON(cells: MapCell[]) {
   return {
     type: 'FeatureCollection' as const,
     features: cells.map(c => {
@@ -68,9 +56,14 @@ export function cellsToGeoJSON(cells: MapCell[], mode: ColorMode, p: Palette) {
           cell: c.cell,
           name: c.name ?? '',
           leads: c.leads,
+          // The ramp reads these directly, so both bases must ride along —
+          // which is what makes switching basis a paint update, not a refetch.
           signal_count: c.signal_count,
           avg_score: c.avg_score ?? 0,
-          color: cellColor(c, mode, p),
+          // Grade mix, for the cell hover card. Fetched all along and discarded
+          // until now.
+          grade_a: c.grade_a, grade_b: c.grade_b,
+          grade_c: c.grade_c, grade_d: c.grade_d,
         },
         geometry: {
           type: 'Polygon' as const,

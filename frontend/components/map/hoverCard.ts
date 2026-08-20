@@ -107,3 +107,92 @@ export function buildHoverCard(f: HoverFields): HTMLElement {
 
   return root
 }
+
+// ── choropleth cells ─────────────────────────────────────────────────────────
+
+export interface CellFields {
+  name: string
+  leads: number
+  signals: number
+  avgScore: number
+  grades: { A: number; B: number; C: number; D: number }
+}
+
+export function cellFieldsFrom(props: Record<string, unknown> | null | undefined): CellFields | null {
+  if (!props) return null
+  const n = (v: unknown) => Number(v) || 0
+  return {
+    name: String(props.name ?? ''),
+    leads: n(props.leads),
+    signals: n(props.signal_count),
+    avgScore: n(props.avg_score),
+    grades: { A: n(props.grade_a), B: n(props.grade_b), C: n(props.grade_c), D: n(props.grade_d) },
+  }
+}
+
+/**
+ * Hover card for a choropleth cell.
+ *
+ * The grade counts driving the bar have been in every `/api/map/cells` response
+ * since the endpoint was written and were never rendered — the cell's fill
+ * collapsed all of them into a single average. But "twelve leads averaging 68"
+ * is ambiguous in the way that matters: it could be twelve mediocre houses or
+ * four excellent ones dragged down by eight poor ones, and those call for
+ * completely different decisions.
+ */
+export function buildCellCard(f: CellFields): HTMLElement {
+  const root = el('div', {
+    minWidth: '170px', maxWidth: '240px', padding: '10px 12px',
+    background: 'var(--color-surface)', border: '1px solid var(--color-ink-200)',
+    borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-pop)',
+    fontFamily: 'var(--font-sans)', color: 'var(--color-ink-700)',
+  })
+
+  root.appendChild(el('div', {
+    fontSize: '13px', fontWeight: '600', color: 'var(--color-ink-900)', marginBottom: '2px',
+  }, f.name || 'This block'))
+
+  root.appendChild(el('div', {
+    fontSize: '11px', color: 'var(--color-ink-500)', marginBottom: '7px',
+  }, `${f.leads.toLocaleString()} lead${f.leads === 1 ? '' : 's'}`
+    + (f.avgScore ? ` · avg ${Math.round(f.avgScore)}` : '')
+    + (f.signals ? ` · ${f.signals} signal${f.signals === 1 ? '' : 's'}` : '')))
+
+  // Stacked bar rather than four numbers: the mix is a proportion, and a
+  // proportion is what a bar reads as at a glance.
+  const total = f.grades.A + f.grades.B + f.grades.C + f.grades.D
+  if (total > 0) {
+    const bar = el('div', {
+      display: 'flex', height: '6px', borderRadius: '3px',
+      overflow: 'hidden', background: 'var(--color-ink-100)',
+    })
+    for (const g of ['A', 'B', 'C', 'D'] as const) {
+      const count = f.grades[g]
+      if (!count) continue
+      const seg = el('div', {
+        width: `${(count / total) * 100}%`,
+        background: GRADE_TOKENS[g].fg,
+      })
+      seg.title = `${count} grade ${g}`
+      bar.appendChild(seg)
+    }
+    root.appendChild(bar)
+
+    const counts = el('div', {
+      display: 'flex', gap: '8px', marginTop: '5px',
+      fontSize: '10px', color: 'var(--color-ink-500)',
+    })
+    for (const g of ['A', 'B', 'C', 'D'] as const) {
+      if (!f.grades[g]) continue
+      const item = el('span', { display: 'inline-flex', alignItems: 'center', gap: '3px' })
+      item.appendChild(el('span', {
+        width: '6px', height: '6px', borderRadius: '50%', background: GRADE_TOKENS[g].fg,
+      }))
+      item.appendChild(el('span', {}, `${g} ${f.grades[g]}`))
+      counts.appendChild(item)
+    }
+    root.appendChild(counts)
+  }
+
+  return root
+}

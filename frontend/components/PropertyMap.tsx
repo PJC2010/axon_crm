@@ -37,8 +37,9 @@ import {
   type ColorMode,
 } from '@/components/map/geojson'
 import { padBbox, contains, VIEWPORT_PAD, type Bbox } from '@/components/map/bbox'
+import { rampExpression } from '@/components/map/ramp'
 import { gradeClusterProperties, createDonutManager, type DonutManager } from '@/components/map/clusterDonuts'
-import { buildHoverCard, hoverFieldsFrom } from '@/components/map/hoverCard'
+import { buildHoverCard, hoverFieldsFrom, buildCellCard, cellFieldsFrom } from '@/components/map/hoverCard'
 import { overlayBtn } from '@/components/map/ui/overlayBtn'
 import { Legend } from '@/components/map/ui/Legend'
 import { ZipPicker } from '@/components/map/ui/ZipPicker'
@@ -73,6 +74,10 @@ function PropertyMapInner() {
   // Mirrors `heatmap` state so the zoom handler (created once at init) can keep
   // the choropleth hidden while the heatmap overlay is on.
   const heatmapRef = useRef(false)
+  // Mirrors `mode` for the same reason heatmapRef exists: setupLayers is built
+  // once, so it would otherwise bake the basis that was active at mount and a
+  // style swap would silently revert the choropleth's ramp.
+  const modeRef = useRef<ColorMode>('signals')
   // Cluster donut markers. Held in a ref because the zoom/idle handlers are
   // registered once at init and would otherwise close over the first render's
   // value — the same reason loadPointsRef exists.
@@ -123,12 +128,18 @@ function PropertyMapInner() {
 
   const filters = { vertical: vertical || undefined, status: status || undefined, signal_days: signalDays }
 
-  // Recolor existing GeoJSON in place — used by the toggle (no refetch).
+  // Switch the color basis in place — the toggle never refetches, because both
+  // metrics ride along in every payload.
   const recolor = useCallback((m: ColorMode) => {
     const map = mapRef.current, pal = paletteRef.current
     if (!map || !pal) return
-    ;(map.getSource('cells') as GeoJSONSource | undefined)
-      ?.setData(cellsToGeoJSON(cellsRef.current, m, pal))
+    // Cells: one paint-property update. No data churn — the ramp reads
+    // signal_count / avg_score straight off features that already carry both.
+    if (map.getLayer('cell-fill')) {
+      map.setPaintProperty('cell-fill', 'fill-color', rampExpression(m, pal) as never)
+    }
+    // Pins do need new data: each feature's `sprite` depends on the mode, and
+    // that's resolved in JS rather than by an expression.
     ;(map.getSource('points') as GeoJSONSource | undefined)
       ?.setData(pointsToGeoJSON(pointsRef.current, m, pal))
   }, [])
@@ -140,7 +151,7 @@ function PropertyMapInner() {
     try {
       const cells = await getMapCells(filters)
       cellsRef.current = cells
-      ;(map.getSource('cells') as GeoJSONSource | undefined)?.setData(cellsToGeoJSON(cells, mode, pal))
+      ;(map.getSource('cells') as GeoJSONSource | undefined)?.setData(cellsToGeoJSON(cells))
       // Fit to the data once on first load so users land on their territory.
       // Clamped to the service area: a handful of mis-geocoded rows (a lat/lng
       // in another state) would otherwise drag the opening view out to a
@@ -420,7 +431,14 @@ function PropertyMapInner() {
         map.addSource('cells', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
         map.addLayer({
           id: 'cell-fill', type: 'fill', source: 'cells',
-          paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.45 },
+          paint: {
+            // A continuous ramp evaluated by MapLibre, not a color baked per
+            // feature in JS. Average score and signal count are ordered values,
+            // so they get a gradient; switching basis is now a paint-property
+            // update rather than rebuilding and re-uploading every polygon.
+            'fill-color': rampExpression(modeRef.current, paletteRef.current!) as never,
+            'fill-opacity': 0.45,
+          },
         })
         map.addLayer({
           id: 'cell-line', type: 'line', source: 'cells',
@@ -606,6 +624,21 @@ function PropertyMapInner() {
           })
           // A hover card left hanging over a cluster reads as belonging to it.
           map.on('mouseenter', 'clusters', () => hoverRef.current?.remove())
+
+          // Same treatment for choropleth cells, using the grade counts that
+          // have been in every /api/map/cells response since it was written and
+          // were never drawn. The cell's fill shows one average; the card shows
+          // what that average is made of.
+          map.on('mousemove', 'cell-fill', (e) => {
+            const f = e.features?.[0]
+            const fields = cellFieldsFrom(f?.properties)
+            if (!fields) return
+            hoverRef.current
+              ?.setLngLat([e.lngLat.lng, e.lngLat.lat])
+              .setDOMContent(buildCellCard(fields))
+              .addTo(map!)
+          })
+          map.on('mouseleave', 'cell-fill', () => hoverRef.current?.remove())
         }
 
         // Visibility + the first data load must run on EVERY setup, including a
@@ -722,7 +755,7 @@ function PropertyMapInner() {
   }, [activePin])
 
   // Toggle recolors in place — instant, no refetch.
-  useEffect(() => { recolor(mode) }, [mode, recolor])
+  useEffect(() => { modeRef.current = mode; recolor(mode) }, [mode, recolor])
 
   // Heatmap overlay: show/hide the hex layer, keep the choropleth suppressed
   // while it's on, and (re)load when turned on or the metric changes.

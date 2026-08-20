@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  cellColor, pointColor, cellsToGeoJSON, pointsToGeoJSON,
+  pointColor, cellsToGeoJSON, pointsToGeoJSON,
   heatToGeoJSON, clustersToGeoJSON,
 } from './geojson'
 import type { Palette } from './mapPalette'
@@ -33,49 +33,6 @@ function point(over: Partial<MapPoint> = {}): MapPoint {
   }
 }
 
-describe('cellColor — signals basis', () => {
-  it('renders three distinct bands, not four', () => {
-    // The bug: the middle branch read `p.accent === p.gold ? p.danger : p.gold`,
-    // a self-comparison of two distinct tokens that always took the same arm, so
-    // bands 2 and 3 painted identically. Four thresholds, three colors.
-    const colors = [0, 1, 3, 4, 50].map(n => cellColor(cell({ signal_count: n }), 'signals', P))
-    expect(colors).toEqual([P.none, P.gradeC, P.gradeC, P.gradeD, P.gradeD])
-    expect(new Set(colors).size).toBe(3)
-  })
-
-  it('treats a zero or negative count as "no signals"', () => {
-    expect(cellColor(cell({ signal_count: 0 }), 'signals', P)).toBe(P.none)
-    expect(cellColor(cell({ signal_count: -1 }), 'signals', P)).toBe(P.none)
-  })
-
-  it('ignores avg_score entirely on the signals basis', () => {
-    const hot = cell({ signal_count: 9, avg_score: 5 })
-    expect(cellColor(hot, 'signals', P)).toBe(P.gradeD)
-  })
-})
-
-describe('cellColor — score basis', () => {
-  it('maps each band boundary to the grade above it', () => {
-    // Boundaries are inclusive lower bounds; 80/65/50 are the cut points.
-    const at = (s: number) => cellColor(cell({ avg_score: s }), 'score', P)
-    expect(at(100)).toBe(P.gradeA)
-    expect(at(80)).toBe(P.gradeA)
-    expect(at(79.9)).toBe(P.gradeB)
-    expect(at(65)).toBe(P.gradeB)
-    expect(at(64.9)).toBe(P.gradeC)
-    expect(at(50)).toBe(P.gradeC)
-    expect(at(49.9)).toBe(P.gradeD)
-    expect(at(0)).toBe(P.gradeD)
-  })
-
-  it('distinguishes an unscored cell from a badly scored one', () => {
-    // null must not collapse to grade D — "we haven't scored this block" and
-    // "this block is poor" are different claims.
-    expect(cellColor(cell({ avg_score: null }), 'score', P)).toBe(P.none)
-    expect(cellColor(cell({ avg_score: 0 }), 'score', P)).toBe(P.gradeD)
-  })
-})
-
 describe('pointColor', () => {
   it('splits on signal presence, not grade, on the signals basis', () => {
     expect(pointColor(point({ signals: ['permit'], score_grade: 'A' }), 'signals', P)).toBe(P.gradeD)
@@ -95,7 +52,7 @@ describe('cellsToGeoJSON', () => {
   it('emits a closed ring in GeoJSON lng/lat order', () => {
     // ngeohash returns [minLat, minLng, maxLat, maxLng] — the reverse of
     // GeoJSON's axis order. Getting this backwards puts Houston in Somalia.
-    const [f] = cellsToGeoJSON([cell()], 'signals', P).features
+    const [f] = cellsToGeoJSON([cell()]).features
     const ring = f.geometry.coordinates[0]
     expect(ring).toHaveLength(5)
     expect(ring[0]).toEqual(ring[4])            // closed
@@ -108,14 +65,25 @@ describe('cellsToGeoJSON', () => {
 
   it('substitutes safe defaults for the nullable fields layers read', () => {
     // `avg_score: 0` rather than null matters: MapLibre cannot interpolate null
-    // and silently drops the feature's paint.
-    const [f] = cellsToGeoJSON([cell({ name: null, avg_score: null })], 'signals', P).features
+    // and silently drops the feature's paint, so an unscored cell would render
+    // as a hole rather than as the bottom of the ramp.
+    const [f] = cellsToGeoJSON([cell({ name: null, avg_score: null })]).features
     expect(f.properties.name).toBe('')
     expect(f.properties.avg_score).toBe(0)
   })
 
+  it('carries both ramp inputs and the grade mix', () => {
+    // Both bases must ride along or switching basis would need a refetch; the
+    // grade counts back the hover card.
+    const [f] = cellsToGeoJSON([cell({ signal_count: 3, avg_score: 71, grade_a: 5, grade_d: 1 })]).features
+    expect(f.properties.signal_count).toBe(3)
+    expect(f.properties.avg_score).toBe(71)
+    expect(f.properties.grade_a).toBe(5)
+    expect(f.properties.grade_d).toBe(1)
+  })
+
   it('returns an empty collection for no cells', () => {
-    expect(cellsToGeoJSON([], 'signals', P).features).toEqual([])
+    expect(cellsToGeoJSON([]).features).toEqual([])
   })
 })
 

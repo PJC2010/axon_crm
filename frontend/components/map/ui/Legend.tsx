@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { GRADE_TOKENS, GRADE_ACTION } from '@/lib/gradeColors'
+import { rampCss } from '../ramp'
 import type { ColorMode } from '../geojson'
 
 /**
@@ -18,15 +19,32 @@ export function Legend({ mode, collapsible }: { mode: ColorMode; collapsible?: b
   // remounts this via `key` when crossing the breakpoint).
   const [open, setOpen] = useState(!collapsible)
 
+  // Cells are shaded by a continuous ramp, pins by discrete grade. So the legend
+  // has two halves: a gradient strip describing the choropleth, and the grade
+  // swatches describing the pins. Showing only swatches implied the cells were
+  // bucketed, which is exactly the misreading the ramp exists to fix.
+  //
+  // The strip is built from the same stops the layer paints from — via CSS
+  // variables rather than the resolved palette, because the palette needs a live
+  // document and this renders during SSR too.
+  const rampCssValue = mode === 'signals'
+    ? rampCss([
+        { at: 0, color: 'var(--color-ink-200)' },
+        { at: 1, color: GRADE_TOKENS.C.fg },
+        { at: 6, color: GRADE_TOKENS.D.fg },
+      ])
+    : rampCss([
+        { at: 0,   color: GRADE_TOKENS.D.fg },
+        { at: 50,  color: GRADE_TOKENS.C.fg },
+        { at: 65,  color: GRADE_TOKENS.B.fg },
+        { at: 80,  color: GRADE_TOKENS.A.fg },
+        { at: 100, color: GRADE_TOKENS.A.fg },
+      ])
+
+  const ends = mode === 'signals' ? ['Quiet', 'Hot'] : ['Weak', 'Strong']
+
   const items = mode === 'signals'
-    ? [
-        { c: GRADE_TOKENS.D.fg, t: 'Hot — recent signals' },
-        { c: GRADE_TOKENS.C.fg, t: 'Some signal activity' },
-        // Matches `readPalette().none` — both resolve `--color-ink-200`. Named
-        // here rather than pulled from the palette because the palette needs a
-        // live document and this component renders during SSR.
-        { c: 'var(--color-ink-200)', t: 'No recent signals' },
-      ]
+    ? []
     : (['A', 'B', 'C', 'D'] as const).map(g => ({
         c: GRADE_TOKENS[g].fg,
         t: GRADE_ACTION[g],
@@ -56,12 +74,30 @@ export function Legend({ mode, collapsible }: { mode: ColorMode; collapsible?: b
           {mode === 'signals' ? 'Intent signals' : 'Lead score'}
         </div>
       )}
-      {open && items.map(i => (
-        <div key={i.t} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
-          <span style={{ width: 12, height: 12, borderRadius: 3, background: i.c, flexShrink: 0 }} />
-          {i.t}
-        </div>
-      ))}
+      {open && (
+        <>
+          {/* Blocks: the continuous ramp the choropleth actually paints. */}
+          <div style={{ marginBottom: items.length ? 8 : 0 }}>
+            <div style={{
+              height: 8, width: 132, borderRadius: 2,
+              background: rampCssValue, border: '1px solid var(--color-ink-200)',
+            }} />
+            <div style={{
+              display: 'flex', justifyContent: 'space-between',
+              fontSize: 10, color: 'var(--color-ink-500)', marginTop: 2,
+            }}>
+              <span>{ends[0]}</span><span>{ends[1]}</span>
+            </div>
+          </div>
+          {/* Pins: discrete, because a lead's grade is a category. */}
+          {items.map(i => (
+            <div key={i.t} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+              <span style={{ width: 12, height: 12, borderRadius: 3, background: i.c, flexShrink: 0 }} />
+              {i.t}
+            </div>
+          ))}
+        </>
+      )}
     </div>
   )
 }
