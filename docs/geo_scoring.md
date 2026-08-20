@@ -135,8 +135,20 @@ clickable to fire the Section 5 **"prospect this area"** flow with the map's
 current vertical filter, and a **"Route fit"** chip on the lead drawer ("0.3 mi
 from 2 active customers") read straight off the lead's `nearest_customer_m` /
 `customers_within_1600m`. Verified with `tsc --noEmit`, `eslint`, and a full
-`next build`. Service-area polygon draw/edit is deferred (needs mapbox-gl-draw);
-the derived area is already returned by `GET /geo/service-area`.
+`next build`.
+
+**Service-area polygon draw/edit shipped with the maps remodel** — it used
+**Terra Draw** (MIT, zero runtime dependencies, headless) with
+`terra-draw-maplibre-gl-adapter`, smoke-tested against MapLibre 6.4.1 first
+because the adapter's peer range predates v6 and its CI pins 5.24.0. Correcting
+the note this replaces: `@mapbox/mapbox-gl-draw` was never a *licensing*
+blocker — it is ISC; only the `mapbox-gl` **renderer** is proprietary. What ruled
+it out is that its types package depends on that proprietary renderer, dragging
+it into the tree.
+
+The same draw session also feeds `POST /geo/events` (event polygons) and
+`/geo/prospect`'s long-unused `lat`/`lng` seed, and a select mode drives bulk
+archive over the pins inside a drawn shape.
 
 ## What shipped in Phase 4 (event layers)
 

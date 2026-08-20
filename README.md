@@ -133,7 +133,7 @@ See [Geo Scoring & Prospecting](#geo-scoring--prospecting) below. (A predictive-
 |---|---|
 | Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS v4 |
 | Icons | lucide-react |
-| Maps | MapLibre GL JS, ngeohash |
+| Maps | MapLibre GL JS 6, ngeohash, pmtiles (lazy), Terra Draw (lazy) |
 | Backend | FastAPI (Python 3.11+), Uvicorn |
 | Database | PostgreSQL (primary), DuckDB (HCAD permit/property data, optional) |
 | Auth | JWT (python-jose), bcrypt password hashing, Sign in with Google/Apple (OIDC) |
@@ -236,7 +236,13 @@ axon-crm/
 │   │   │   BookkeepingDashboard.tsx, JobCostingTable.tsx,
 │   │   │   StripeConnectSection.tsx              # Invoicing/quotes/bookkeeping/payments
 │   │   ├── AIInsightsPanel.tsx                   # Predictive-scoring insights
-│   │   ├── PropertyMap.tsx                       # Map
+│   │   ├── PropertyMap.tsx                       # Map orchestrator
+│   │   ├── map/                                  # Map modules (pure logic + UI)
+│   │   │   ├── geojson.ts, ramp.ts, bbox.ts, draw.ts,
+│   │   │   │   clusterDonuts.ts, mapPalette.ts, hoverCard.ts
+│   │   │   ├── useDrawTools.ts                   # Terra Draw session
+│   │   │   └── ui/                               # Legend, PlacePicker, DrawTools,
+│   │   │       BlastPanel, ClusterActionPanel, …
 │   │   └── WorkflowRuleForm.tsx,
 │   │       CustomFieldsSettings.tsx, MessageTemplatesSettings.tsx  # Settings
 │   ├── hooks/
@@ -649,7 +655,7 @@ Cross-tenant operator surface, guarded by `users.is_platform_admin` (grant via `
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/leads` | List leads with filtering, sorting, pagination |
-| GET | `/api/leads/search` | Universal lookup by account #, name, address, phone, email |
+| GET | `/api/leads/search` | Universal lookup by account #, name, address, phone, email — returns `latitude`/`longitude` so the map can fly to a hit |
 | GET | `/api/leads/by-number/{account_number}` | Resolve by durable account number |
 | GET | `/api/leads/{id}` | Get single lead |
 | GET | `/api/leads/{id}/score-explanation` | Factor-by-factor score breakdown (+ ML overlay) |
@@ -773,20 +779,21 @@ Cross-tenant operator surface, guarded by `users.is_platform_admin` (grant via `
 | POST | `/api/ml/retrain` | Backfill labels + retrain (owner) |
 | GET | `/api/ml/insights/leads` | Predictive findings + revenue forecast |
 
-### Map **(map)** & Geo
+### Map & Geo **(map)**
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/map/cells` | Geohash-6 choropleth aggregates |
-| GET | `/api/map/properties` | Property pins within a viewport bbox |
+| GET | `/api/map/properties` | Property pins within a viewport bbox (send `limit = N + 1` to detect truncation) |
+| GET | `/api/map/zips` | The account's own ZIPs, with per-ZIP lead counts and extents |
 | GET | `/api/geo/config` | Resolved per-vertical geo config |
 | POST | `/api/geo/score/batch` | Recompute geo + final scores |
 | POST | `/api/geo/geocode/backfill` | Enqueue geocoding for leads missing coordinates |
 | GET | `/api/geo/clusters` / `/heatmap` | Customer clusters / H3 heatmap (GeoJSON) |
 | POST | `/api/geo/cluster/recompute` | Re-run clustering + H3 backfill |
-| POST | `/api/geo/prospect` | Cluster-seeded prospecting |
+| POST | `/api/geo/prospect` | Prospecting seeded by a cluster, a customer, **or a dropped `lat`/`lng` pin** |
 | POST | `/api/geo/neighbors` | Blast-radius door-knock list around a won job |
 | GET/POST/DELETE | `/api/geo/events[/{id}]` | Event polygons (hail swaths, etc.), triggers rescore |
-| GET/PUT | `/api/geo/service-area` | Account's service-area polygon |
+| GET/PUT | `/api/geo/service-area` | Account's service-area polygon (PUT rescores the account **synchronously**) |
 
 ### Payments **(invoicing)**
 | Method | Path | Description |

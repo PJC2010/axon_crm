@@ -72,7 +72,8 @@ Optional features are grouped into **modules** (`prospecting`, `map`, `invoicing
 
 - Source of truth: `api/entitlements.py` (`MODULE_KEYS`, `PLAN_CATALOG`, `get_account_modules`, `require_module`).
 - Whole-module routers are gated in `api/main.py` with `dependencies=[Depends(require_module("x"))]`. Mixed-concern routers (e.g. `pipeline.py`) gate **per-endpoint** instead.
-- Public, token-addressed routers (pay page, public quote/invoice, Stripe/Twilio webhooks, public intake) stay **ungated** — they must work without a login or plan.
+- Public, token-addressed routers (pay page, public quote/invoice, Stripe/Twilio webhooks, public intake) stay **ungated** — they must work without a login or plan. `tests/test_router_gating.py` asserts both directions off the live app, so a router that moves can't silently change its gate.
+- **A feature's backend belongs behind the same gate as its UI.** `/api/geo/*` was ungated while `/api/map/*` sat behind `require_module("map")`, so an account without the module couldn't see the map and could still call the heatmap, clusters, events, prospecting and the service-area write it is built on.
 - Gating is **permissive**: an account with no `account_plans` row gets the full set, so gating never silently strips access. Keep `MODULE_KEYS` in sync with the frontend nav (`frontend/lib/nav.ts`).
 - Plans are **sold** via Stripe subscription billing (`api/billing.py`, `api/routes/billing.py`): Checkout + customer portal + a platform webhook that writes `plan_name` back to `account_plans`. Advertised prices live in `billing.PLAN_PRICING` — keep them in sync with `PLAN_CATALOG` and the landing page's pricing section. Self-serve signups (`api/routes/signup.py`, provisioning in `api/accounts.py::provision_owner`) start on a `pro` trial; a daily scheduler tick downgrades expired trials to `starter`.
 
@@ -117,14 +118,16 @@ Where SQL is built by interpolating column names (`pipeline/db.py::fetch_missing
 ### Frontend notes
 - **Next.js 16 is intentional and non-standard.** `frontend/CLAUDE.md` → `frontend/AGENTS.md` warns: this version has breaking changes vs. training data. Read the relevant guide in `frontend/node_modules/next/dist/docs/` before writing Next-specific code.
 - `frontend/lib/api.ts` — all API client calls. `frontend/lib/types.ts` — TS interfaces. `frontend/lib/nav.ts` — module-gated nav. `frontend/lib/auth.ts` — token in localStorage.
-- Hooks: `useEntitlements` (`hasModule()`), `useTerminology`, `useKanbanDnd`.
+- Hooks: `useEntitlements` (`hasModule()`), `useTerminology`, `useKanbanDnd`, `useMediaQuery` (the app's only responsive-JS hook — everything else is CSS-responsive, and its `useSyncExternalStore` SSR snapshot of `false` is what keeps hydration stable).
 - Design-system primitives in `frontend/components/ds/`.
+- **Colors that encode data have one source: `frontend/lib/gradeColors.ts`.** Grade and status colors were defined four times and disagreed twice — the map painted grade B in `--color-accent`, the app's *interactive* turquoise, so B-grade pins read as selected controls. `ScoreBadge`, `StatusPill`, `StatusSelect`, `TerritoryFilter` and the map all consume it now. The map additionally needs the raw custom-property *name* (`gradeVarName()`), because WebGL can't read CSS variables and `readPalette()` resolves them to hex at runtime.
+- **The map is a module, not a component.** `frontend/components/map/` holds the pure logic (`geojson`, `ramp`, `bbox`, `draw`, `clusterDonuts`, `hoverCard`, `mapPalette`), the Terra Draw session (`useDrawTools`), and `ui/` for its chrome; `PropertyMap.tsx` is the orchestrator. Three invariants there are load-bearing and each cost a real debugging session: layers are added on **`'styledata'`, never `'load'`** and never gated on `isStyleLoaded()` (a slow tile host otherwise leaves the map permanently empty); once-registered listeners read through refs (`loadPointsRef`) and sit behind one-shot latches, because a basemap style swap re-runs setup while `map.on()` accumulates; and anything a lazily-imported handler does must tolerate React replaying the click across the `import()` boundary. `npm test` (vitest) covers the pure modules only — if a test there needs a DOM, the code is in the wrong module.
 
 ## Database migrations
 Sequential numbered SQL files in `db/migrations/` (currently 75, `0000`–`0076` with two historical gaps, 4-digit zero-padded so filename order matches numeric order), tracked in a `schema_migrations` table. **Always create new migrations with `python db/migrate.py create <name>`** — never hand-edit an already-applied migration; add a new one. Render runs `python db/migrate.py` as its pre-deploy command.
 
 ## Git workflow for this task
-- Work on branch `claude/claude-md-docs-hg7dzp`. Create it from latest `master` if needed.
+- Work on branch `claude/maps-remodel-options-tbwzej`. Create it from latest `master` if needed.
 - Commit with clear messages; push with `git push -u origin claude/claude-md-docs-hg7dzp`.
 - Do **not** open a PR unless explicitly asked.
 
