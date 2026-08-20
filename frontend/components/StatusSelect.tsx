@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import type { LeadStatus } from '@/lib/types'
 import { updateStatus } from '@/lib/api'
+import { statusTokens } from '@/lib/gradeColors'
 import { WonCelebration } from './WonCelebration'
 
 const STATUS_LABELS: Record<LeadStatus, string> = {
@@ -15,17 +16,16 @@ const STATUS_LABELS: Record<LeadStatus, string> = {
   lost:           'Lost',
 }
 
-/* Colors matched to Axon semantic palette */
-const STATUS_STYLES: Record<LeadStatus, React.CSSProperties> = {
-  new:            { background: 'var(--color-ink-50)',    color: 'var(--color-ink-600)' },
-  contacted:      { background: 'var(--color-info-bg)',   color: 'var(--color-info)' },
-  qualified:      { background: 'var(--color-accent-50)', color: 'var(--color-accent)' },
-  not_interested: { background: 'var(--color-danger-bg)', color: 'var(--color-danger)' },
-  converted:      { background: 'var(--color-success-bg)',color: 'var(--color-success)' },
-  quote_sent:     { background: 'var(--color-gold-bg)',   color: 'var(--color-gold)' },
-  won:            { background: 'var(--color-success-bg)',color: 'var(--color-success)' },
-  lost:           { background: 'var(--color-ink-50)',    color: 'var(--color-ink-500)' },
-}
+/* Colors come from the one shared source (lib/gradeColors). This file used to
+   define its own map in which `lost` and `not_interested` were swapped relative
+   to StatusPill — the same lead read as danger in one place and neutral in the
+   other. */
+const STATUS_STYLES: Record<LeadStatus, React.CSSProperties> = Object.fromEntries(
+  (Object.keys(STATUS_LABELS) as LeadStatus[]).map(k => {
+    const t = statusTokens(k)
+    return [k, { background: t.bg, color: t.fg }]
+  }),
+) as Record<LeadStatus, React.CSSProperties>
 
 const CHEVRON_SVG = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236E7585' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")"
 

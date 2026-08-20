@@ -1,22 +1,5 @@
 import React from 'react'
-
-const GRADE_COLORS: Record<string, { bg: string; fg: string }> = {
-  A: { bg: 'var(--color-success-bg)', fg: 'var(--color-success)' },
-  B: { bg: 'var(--color-info-bg)',    fg: 'var(--color-info)' },
-  C: { bg: 'var(--color-gold-soft)',  fg: 'var(--color-gold)' },
-  D: { bg: 'var(--color-danger-bg)',  fg: 'var(--color-danger)' },
-  F: { bg: 'var(--color-danger-bg)',  fg: 'var(--color-danger)' },
-}
-
-// Grades framed as actions, not letters (matches WhyThisScore's plain-language
-// verdicts): the tooltip/screen-reader text tells the user what to *do*.
-const GRADE_ACTION: Record<string, string> = {
-  A: 'A — call first',
-  B: 'B — worth a timely follow-up',
-  C: 'C — when you have capacity',
-  D: 'D — low priority',
-  F: 'F — low priority',
-}
+import { gradeTokens, GRADE_ACTION, type Grade } from '@/lib/gradeColors'
 
 export interface ScoreBadgeProps {
   grade?: string | null
@@ -30,8 +13,8 @@ export interface ScoreBadgeProps {
  */
 export function ScoreBadge({ grade, score, style }: ScoreBadgeProps) {
   if (!grade) return <span style={{ color: 'var(--color-ink-400)', fontSize: 13 }}>—</span>
-  const c = GRADE_COLORS[grade] || GRADE_COLORS.F
-  const action = GRADE_ACTION[grade]
+  const c = gradeTokens(grade)!
+  const action = GRADE_ACTION[grade.toUpperCase() as Grade]
   return (
     <span
       title={action}

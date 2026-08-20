@@ -19,6 +19,7 @@ import { useEffect, useRef, useState, useCallback, useSyncExternalStore, type CS
 import Link from 'next/link'
 import { ArrowLeft, Home, RefreshCw, Signal, Award, Grid3x3, Sparkles, Zap, X, SlidersHorizontal, ChevronDown, ChevronUp, MapPin } from 'lucide-react'
 import ngeohash from 'ngeohash'
+import { gradeVarName, GRADE_TOKENS, GRADE_ACTION, type Grade } from '@/lib/gradeColors'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Map as MLMap, GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
 import { getMapCells, getMapProperties, getMapZips, getLead, getGeoHeatmap, getGeoClusters, prospectArea, getGeoEvents } from '@/lib/api'
@@ -57,17 +58,38 @@ const OSM_STYLE = {
 }
 
 // Resolve design-system CSS variables to concrete hex (WebGL can't read vars).
+//
+// Grade colors are looked up through lib/gradeColors so the map cannot drift
+// from ScoreBadge again — it previously painted grade B in `--color-accent`,
+// the app's interactive turquoise, which made B pins read as selected controls.
+//
+// Fallbacks are the dark-system token values rather than the old Tailwind-ish
+// hexes that used to sit here: if getComputedStyle ever returns empty (SSR-ish
+// edge, very early paint) the map should degrade to Axon's palette, not to a
+// light-theme one that no longer exists anywhere in the app.
 function readPalette() {
   const cs = getComputedStyle(document.documentElement)
   const v = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback
+  const grade = (g: Grade, fallback: string) => v(gradeVarName(g) as string, fallback)
   return {
-    none:   v('--color-ink-200', '#e5e7eb'),
-    cool:   v('--color-ocean',   '#3b82f6'),
-    moss:   v('--color-moss',    '#16a34a'),
-    accent: v('--color-accent',  '#65a30d'),
-    gold:   v('--color-gold',    '#d97706'),
-    danger: v('--color-danger',  '#dc2626'),
-    line:   v('--color-ink-300', '#cbd5e1'),
+    none:   v('--color-ink-200', '#404854'),
+    cool:   v('--color-ocean',   '#3fa6da'),
+    line:   v('--color-ink-300', '#5f6b7c'),
+    accent: v('--color-accent',  '#00a396'),   // UI affordance only — never a data category
+    // Grade ramp, keyed to the shared source of truth.
+    gradeA: grade('A', '#32a467'),
+    gradeB: grade('B', '#3fa6da'),
+    gradeC: grade('C', '#f0b726'),
+    gradeD: grade('D', '#e76a6e'),
+    // Overlay semantics, deliberately named for what they *mean* rather than
+    // for their hue, so an overlay can be recolored without anyone wondering
+    // whether it also moves a lead grade. They currently share hues with the
+    // grade ramp; that is a coincidence of the palette, not a coupling.
+    heatLow:  v('--color-ocean',   '#3fa6da'),  // heatmap: coolest
+    heatMid:  v('--color-gold',    '#f0b726'),
+    heatHigh: v('--color-rose',    '#f5498b'),  // heatmap: hottest
+    customer: v('--color-moss',    '#32a467'),  // customer-cluster hulls
+    alert:    v('--color-danger',  '#e76a6e'),  // active event polygons
   }
 }
 type Palette = ReturnType<typeof readPalette>
@@ -76,27 +98,30 @@ type Palette = ReturnType<typeof readPalette>
 
 function cellColor(c: MapCell, mode: ColorMode, p: Palette): string {
   if (mode === 'signals') {
+    // Three steps, not four: the old middle branch read
+    // `p.accent === p.gold ? p.danger : p.gold`, a self-comparison of two
+    // distinct tokens that always took the `p.gold` arm, so bands 2 and 3 were
+    // the same color.
     if (c.signal_count <= 0) return p.none
-    if (c.signal_count <= 2) return p.gold
-    if (c.signal_count <= 5) return p.accent === p.gold ? p.danger : p.gold
-    return p.danger
+    if (c.signal_count <= 3) return p.gradeC
+    return p.gradeD
   }
   // score: shade by the cell's average lead score (higher = better prospect)
   const s = c.avg_score
   if (s == null) return p.none
-  if (s >= 80) return p.moss
-  if (s >= 65) return p.accent
-  if (s >= 50) return p.gold
-  return p.danger
+  if (s >= 80) return p.gradeA
+  if (s >= 65) return p.gradeB
+  if (s >= 50) return p.gradeC
+  return p.gradeD
 }
 
 function pointColor(pt: MapPoint, mode: ColorMode, p: Palette): string {
-  if (mode === 'signals') return pt.signals.length > 0 ? p.danger : p.cool
+  if (mode === 'signals') return pt.signals.length > 0 ? p.gradeD : p.cool
   switch (pt.score_grade) {
-    case 'A': return p.moss
-    case 'B': return p.accent
-    case 'C': return p.gold
-    case 'D': return p.danger
+    case 'A': return p.gradeA
+    case 'B': return p.gradeB
+    case 'C': return p.gradeC
+    case 'D': return p.gradeD
     default:  return p.none
   }
 }
@@ -526,7 +551,7 @@ function PropertyMapInner() {
           layout: { visibility: 'none' },
           paint: {
             'fill-color': ['interpolate', ['linear'], ['get', 'intensity'],
-              0, paletteRef.current!.cool, 0.5, paletteRef.current!.gold, 1, paletteRef.current!.danger],
+              0, paletteRef.current!.heatLow, 0.5, paletteRef.current!.heatMid, 1, paletteRef.current!.heatHigh],
             'fill-opacity': 0.55,
           },
         })
@@ -536,12 +561,12 @@ function PropertyMapInner() {
         map.addLayer({
           id: 'cluster-hull-fill', type: 'fill', source: 'clusters-hull',
           layout: { visibility: 'none' },
-          paint: { 'fill-color': paletteRef.current!.moss, 'fill-opacity': 0.12 },
+          paint: { 'fill-color': paletteRef.current!.customer, 'fill-opacity': 0.12 },
         })
         map.addLayer({
           id: 'cluster-hull-line', type: 'line', source: 'clusters-hull',
           layout: { visibility: 'none' },
-          paint: { 'line-color': paletteRef.current!.moss, 'line-width': 2, 'line-dasharray': [2, 1] },
+          paint: { 'line-color': paletteRef.current!.customer, 'line-width': 2, 'line-dasharray': [2, 1] },
         })
 
         // Event polygons (Phase 4) — hidden until toggled. Active events shade
@@ -551,7 +576,7 @@ function PropertyMapInner() {
           id: 'event-fill', type: 'fill', source: 'events',
           layout: { visibility: 'none' },
           paint: {
-            'fill-color': ['case', ['get', 'active'], paletteRef.current!.danger, paletteRef.current!.line],
+            'fill-color': ['case', ['get', 'active'], paletteRef.current!.alert, paletteRef.current!.line],
             'fill-opacity': 0.18,
           },
         })
@@ -559,7 +584,7 @@ function PropertyMapInner() {
           id: 'event-line', type: 'line', source: 'events',
           layout: { visibility: 'none' },
           paint: {
-            'line-color': ['case', ['get', 'active'], paletteRef.current!.danger, paletteRef.current!.line],
+            'line-color': ['case', ['get', 'active'], paletteRef.current!.alert, paletteRef.current!.line],
             'line-width': 2,
           },
         })
@@ -1087,18 +1112,20 @@ function Legend({ mode, collapsible }: { mode: ColorMode; collapsible?: boolean 
   // Collapsed by default on mobile so it doesn't cover the map (the parent
   // remounts this via `key` when crossing the breakpoint).
   const [open, setOpen] = useState(!collapsible)
+  // Swatches read from the same shared source the layers paint from, so the
+  // legend cannot describe a color the map isn't drawing. (It previously
+  // claimed grade B was `--color-accent`; both were wrong together, which is
+  // exactly why the drift went unnoticed.)
   const items = mode === 'signals'
     ? [
-        { c: 'var(--color-danger)', t: 'Hot — recent signals' },
-        { c: 'var(--color-gold)',   t: 'Some signal activity' },
+        { c: GRADE_TOKENS.D.fg,      t: 'Hot — recent signals' },
+        { c: GRADE_TOKENS.C.fg,      t: 'Some signal activity' },
         { c: 'var(--color-ink-200)', t: 'No recent signals' },
       ]
-    : [
-        { c: 'var(--color-moss)',   t: 'A — strong' },
-        { c: 'var(--color-accent)', t: 'B' },
-        { c: 'var(--color-gold)',   t: 'C' },
-        { c: 'var(--color-danger)', t: 'D — weak' },
-      ]
+    : (['A', 'B', 'C', 'D'] as const).map(g => ({
+        c: GRADE_TOKENS[g].fg,
+        t: GRADE_ACTION[g],
+      }))
   return (
     <div style={{
       position: 'absolute', bottom: 16, left: 16, background: 'var(--color-paper)',

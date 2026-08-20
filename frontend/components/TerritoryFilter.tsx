@@ -4,6 +4,7 @@ import { SlidersHorizontal } from 'lucide-react'
 import { getZips, getNeighborhoods } from '@/lib/api'
 import { useTerminology } from '@/hooks/useTerminology'
 import { SegmentPicker } from './SegmentPicker'
+import { gradeTokens } from '@/lib/gradeColors'
 import type { LeadFilters, Neighborhood } from '@/lib/types'
 
 interface Props {
@@ -13,24 +14,16 @@ interface Props {
 
 const GRADES = ['A', 'B', 'C', 'D']
 
-const GRADE_COLORS: Record<string, { active: React.CSSProperties; inactive: React.CSSProperties }> = {
-  A: {
-    active:   { background: 'var(--color-success-bg)', color: 'var(--color-success)',  borderColor: 'transparent' },
-    inactive: { background: 'var(--color-paper)',      color: 'var(--color-ink-700)',   borderColor: 'var(--color-ink-200)' },
-  },
-  B: {
-    active:   { background: 'var(--color-info-bg)',    color: 'var(--color-info)',      borderColor: 'transparent' },
-    inactive: { background: 'var(--color-paper)',      color: 'var(--color-ink-700)',   borderColor: 'var(--color-ink-200)' },
-  },
-  C: {
-    active:   { background: 'var(--color-warning-bg)', color: 'var(--color-warning)',   borderColor: 'transparent' },
-    inactive: { background: 'var(--color-paper)',      color: 'var(--color-ink-700)',   borderColor: 'var(--color-ink-200)' },
-  },
-  D: {
-    active:   { background: 'var(--color-danger-bg)',  color: 'var(--color-danger)',    borderColor: 'transparent' },
-    inactive: { background: 'var(--color-paper)',      color: 'var(--color-ink-700)',   borderColor: 'var(--color-ink-200)' },
-  },
-}
+// Grade chip colors come from the one shared source; this file used to define
+// its own, with grade C on `--color-warning` instead of `--color-gold`.
+const GRADE_COLORS: Record<string, { active: React.CSSProperties; inactive: React.CSSProperties }> =
+  Object.fromEntries(GRADES.map(g => {
+    const c = gradeTokens(g)!
+    return [g, {
+      active:   { background: c.bg,                 color: c.fg,                   borderColor: 'transparent' },
+      inactive: { background: 'var(--color-paper)', color: 'var(--color-ink-700)', borderColor: 'var(--color-ink-200)' },
+    }]
+  }))
 
 const STATUSES = [
   { value: '',               label: 'All statuses' },
