@@ -1,8 +1,9 @@
 'use client'
 import { useState } from 'react'
-import { Pencil, MapPinPlus, CloudHail, X, Check, Undo2 } from 'lucide-react'
+import { Pencil, MapPinPlus, CloudHail, X, Check, Undo2, SquareDashedMousePointer, Archive } from 'lucide-react'
 import { overlayBtn, fieldStyle } from './controlStyles'
 import { ringAreaSqMeters, formatArea } from '../draw'
+import { plural } from '@/lib/terminology'
 import { TOOL_LABEL, type DrawTool, type DrawPending } from '../useDrawTools'
 
 /**
@@ -34,6 +35,7 @@ export function DrawToolbar({
     { key: 'territory', label: 'Territory', icon: <Pencil size={13} strokeWidth={1.5} /> },
     { key: 'event', label: 'Event', icon: <CloudHail size={13} strokeWidth={1.5} /> },
     { key: 'pin', label: 'Drop pin', icon: <MapPinPlus size={13} strokeWidth={1.5} /> },
+    { key: 'select', label: 'Select', icon: <SquareDashedMousePointer size={13} strokeWidth={1.5} /> },
   ]
   return (
     <>
@@ -56,7 +58,9 @@ export function DrawToolbar({
 export function DrawHint({ tool, onCancel }: { tool: DrawTool; onCancel: () => void }) {
   const text = tool === 'pin'
     ? 'Tap the map where you want to prospect.'
-    : 'Tap each corner, then tap the first point again to close the shape.'
+    : tool === 'select'
+      ? 'Draw around the pins you want. Tap each corner, then the first point to close.'
+      : 'Tap each corner, then tap the first point again to close the shape.'
   return (
     <div style={{
       position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
@@ -84,10 +88,12 @@ export function DrawHint({ tool, onCancel }: { tool: DrawTool; onCancel: () => v
  * looks hung is a save the user clicks twice.
  */
 export function DrawConfirm({
-  pending, busy, onSave, onRedraw, onCancel,
+  pending, busy, selectionCount, onSave, onRedraw, onCancel,
 }: {
   pending: DrawPending
   busy: boolean
+  /** How many loaded pins fall inside a `select` shape. */
+  selectionCount?: number
   onSave: (opts: { eventType: string; name: string }) => void
   onRedraw: () => void
   onCancel: () => void
@@ -99,9 +105,17 @@ export function DrawConfirm({
     ? formatArea(ringAreaSqMeters(pending.polygon.coordinates[0]))
     : null
 
+  const n = selectionCount ?? 0
   const saveLabel = busy
-    ? (pending.tool === 'territory' ? 'Saving & rescoring…' : 'Saving…')
-    : pending.tool === 'pin' ? 'Prospect here' : 'Save'
+    ? (pending.tool === 'territory' ? 'Saving & rescoring…' : pending.tool === 'select' ? 'Archiving…' : 'Saving…')
+    : pending.tool === 'pin' ? 'Prospect here'
+    : pending.tool === 'select' ? `Archive ${n.toLocaleString()}`
+    : 'Save'
+  // Archiving is the one action here that removes rows from every view, so it
+  // gets the danger color rather than the accent every other save uses, and it
+  // disables at zero rather than posting an empty list.
+  const destructive = pending.tool === 'select'
+  const disabled = busy || (destructive && n === 0)
 
   return (
     <div style={{
@@ -146,6 +160,16 @@ export function DrawConfirm({
         </>
       )}
 
+      {pending.tool === 'select' && (
+        <div style={{ fontSize: 11, color: 'var(--color-ink-500)', lineHeight: 1.4 }}>
+          {n === 0
+            ? 'No pins inside this shape.'
+            : `${plural(n, 'lead', 'leads')} inside this shape.`}
+          {' '}Only pins currently drawn are counted — zoom out or pan and they
+          are re-selected from what is loaded.
+        </div>
+      )}
+
       {pending.tool === 'pin' && pending.point && (
         <div className="tabular" style={{ fontSize: 11, color: 'var(--color-ink-500)' }}>
           {pending.point[1].toFixed(5)}, {pending.point[0].toFixed(5)}
@@ -155,15 +179,17 @@ export function DrawConfirm({
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <button
           onClick={() => onSave({ eventType, name: name.trim() })}
-          disabled={busy}
+          disabled={disabled}
           style={{
             display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', minHeight: 40,
             fontSize: 12, fontWeight: 600, borderRadius: 'var(--radius-pill)', border: 'none',
-            cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1,
-            background: 'var(--color-accent)', color: '#ffffff', flex: 1, justifyContent: 'center',
+            cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.6 : 1,
+            background: destructive ? 'var(--color-danger)' : 'var(--color-accent)',
+            color: '#ffffff', flex: 1, justifyContent: 'center',
           }}
         >
-          <Check size={13} strokeWidth={2} /> {saveLabel}
+          {destructive ? <Archive size={13} strokeWidth={2} /> : <Check size={13} strokeWidth={2} />}
+          {saveLabel}
         </button>
         <button
           onClick={onRedraw}

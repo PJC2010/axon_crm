@@ -40,12 +40,14 @@ import type { TerraDraw } from 'terra-draw'
 import type { Palette } from './mapPalette'
 import { polygonFromSnapshot, polygonStyles, pointStyles, type DrawnPolygon } from './draw'
 
-export type DrawTool = 'territory' | 'event' | 'pin'
+export type DrawTool = 'territory' | 'event' | 'pin' | 'select'
 
 export interface DrawPending {
   tool: DrawTool
   polygon?: DrawnPolygon
   point?: [number, number]
+  /** Ids inside a `select` shape, resolved when the shape closed. */
+  selection?: number[]
 }
 
 /** Label for the confirm panel and the toolbar's active state. */
@@ -53,6 +55,7 @@ export const TOOL_LABEL: Record<DrawTool, string> = {
   territory: 'Service area',
   event: 'Event area',
   pin: 'Prospect here',
+  select: 'Selected leads',
 }
 
 interface Options {
@@ -72,6 +75,14 @@ interface Options {
    */
   layersReady: () => boolean
   onError?: (message: string) => void
+  /**
+   * Ids inside a finished `select` polygon.
+   *
+   * Resolved by the caller, which owns the data, and called from the `finish`
+   * handler rather than during render — the pins live in a ref, and reading a
+   * ref while rendering is both a React rule violation and a real staleness bug.
+   */
+  resolveSelection?: (polygon: DrawnPolygon) => number[]
 }
 
 /**
@@ -98,7 +109,7 @@ function whenStyleAccepts(map: MLMap, ready: () => boolean, timeoutMs = 8000): P
   })
 }
 
-export function useDrawTools({ mapRef, paletteRef, onActiveChange, layersReady, onError }: Options) {
+export function useDrawTools({ mapRef, paletteRef, onActiveChange, layersReady, onError, resolveSelection }: Options) {
   const drawRef = useRef<TerraDraw | null>(null)
   const [tool, setTool] = useState<DrawTool | null>(null)
   const [pending, setPending] = useState<DrawPending | null>(null)
@@ -117,10 +128,12 @@ export function useDrawTools({ mapRef, paletteRef, onActiveChange, layersReady, 
   const onActiveChangeRef = useRef(onActiveChange)
   const layersReadyRef = useRef(layersReady)
   const onErrorRef = useRef(onError)
+  const resolveSelectionRef = useRef(resolveSelection)
   useEffect(() => {
     onActiveChangeRef.current = onActiveChange
     layersReadyRef.current = layersReady
     onErrorRef.current = onError
+    resolveSelectionRef.current = resolveSelection
   })
 
   const activeRef = useRef(false)
@@ -233,7 +246,15 @@ export function useDrawTools({ mapRef, paletteRef, onActiveChange, layersReady, 
             if (c) setPending({ tool: 'pin', point: c })
           } else {
             const polygon = polygonFromSnapshot(snapshot)
-            if (polygon) setPending({ tool: current, polygon })
+            if (polygon) {
+              setPending({
+                tool: current,
+                polygon,
+                selection: current === 'select'
+                  ? resolveSelectionRef.current?.(polygon) ?? []
+                  : undefined,
+              })
+            }
           }
           drawRef.current?.setMode('done')
         })

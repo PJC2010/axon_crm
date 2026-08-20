@@ -15,7 +15,7 @@
  * MapLibre is imported lazily inside an effect (never at module scope) so it
  * never touches `window` during SSR.
  */
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Home, RefreshCw, Signal, Award, Grid3x3, Sparkles, Zap, SlidersHorizontal, MapPin } from 'lucide-react'
 import { resolveBasemap, registerPmtilesProtocol, needsPmtiles, OSM_RASTER } from '@/lib/mapStyle'
@@ -25,7 +25,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 // MapLibre ships (popup surface, tip, attribution, controls) for the dark system.
 import '@/components/map/map.css'
 import type { Map as MLMap, GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
-import { getMapCells, getMapProperties, getMapZips, getLead, getGeoHeatmap, getGeoClusters, prospectArea, getGeoEvents, putServiceArea, createGeoEvent, getBlastRadius, searchCustomers } from '@/lib/api'
+import { getMapCells, getMapProperties, getMapZips, getLead, getGeoHeatmap, getGeoClusters, prospectArea, getGeoEvents, putServiceArea, createGeoEvent, getBlastRadius, searchCustomers, archiveBulk } from '@/lib/api'
 import { serviceAreaBounds, serviceAreaLabel, clampToServiceArea, clampBoundsToServiceArea } from '@/lib/serviceArea'
 import { AuthGuard } from '@/components/AuthGuard'
 import { ContactDrawer } from '@/components/ContactDrawer'
@@ -36,7 +36,7 @@ import {
   cellsToGeoJSON, pointsToGeoJSON, heatToGeoJSON, clustersToGeoJSON, eventsToGeoJSON, blastToGeoJSON,
   type ColorMode,
 } from '@/components/map/geojson'
-import { circleRing, ringBounds } from '@/components/map/draw'
+import { circleRing, ringBounds, ringContains } from '@/components/map/draw'
 import { padBbox, contains, VIEWPORT_PAD, type Bbox } from '@/components/map/bbox'
 import { rampExpression } from '@/components/map/ramp'
 import { gradeClusterProperties, createDonutManager, type DonutManager } from '@/components/map/clusterDonuts'
@@ -52,6 +52,7 @@ import { UnsupportedDevice } from '@/components/map/ui/UnsupportedDevice'
 import { TruncationNotice } from '@/components/map/ui/TruncationNotice'
 import { Sheet } from '@/components/ds/Sheet'
 import { statusTokens } from '@/lib/gradeColors'
+import { plural } from '@/lib/terminology'
 import type { MapCell, MapPoint, MapZip, Lead, LeadStatus, HeatmapMetric, NeighborHit, CustomerSearchResult } from '@/lib/types'
 
 // Below this zoom we show the choropleth; at/above it we swap to property pins.
@@ -472,6 +473,15 @@ function PropertyMapInner() {
     // presence is proof the style accepts addSource — including after the
     // basemap fallback rebuilds the style from scratch.
     layersReady: () => !!mapRef.current?.getLayer('cell-fill'),
+    // `pointsRef` is the honest bound: only pins actually drawn can be
+    // selected, which the confirm panel says out loud rather than implying the
+    // polygon caught everything inside it.
+    resolveSelection: (polygon) => {
+      const ring = polygon.coordinates[0]
+      return pointsRef.current
+        .filter(pt => ringContains(ring, pt.longitude, pt.latitude))
+        .map(pt => pt.id)
+    },
     onError: (m) => showToastRef.current(m, 'error'),
     onActiveChange: (active) => {
       drawActiveRef.current = active
@@ -482,6 +492,10 @@ function PropertyMapInner() {
   })
   const [savingDraw, setSavingDraw] = useState(false)
   useEffect(() => { drawTeardownRef.current = drawTools.teardown }, [drawTools.teardown])
+
+  // `?? []` would allocate a new array every render and so change saveDrawing's
+  // identity every render; the pending object is already stable between draws.
+  const selection = useMemo(() => drawTools.pending?.selection ?? [], [drawTools.pending])
 
   const saveDrawing = useCallback(async ({ eventType, name }: { eventType: string; name: string }) => {
     const p = drawTools.pending
@@ -501,6 +515,12 @@ function PropertyMapInner() {
         showToast('Event area saved.', 'success')
         if (showEvents) loadEvents()
         else setShowEvents(true)     // no point saving one you can't see
+      } else if (p.tool === 'select') {
+        if (!selection.length) return
+        const r = await archiveBulk(selection)
+        showToast(`Archived ${plural(r.archived_count, 'lead', 'leads')}.`, 'success')
+        loadCells()
+        loadPoints({ force: true })
       } else if (p.tool === 'pin' && p.point) {
         const [lng, lat] = p.point
         const r = await prospectArea({ seed: { lat, lng }, vertical: vertical || undefined })
@@ -520,7 +540,7 @@ function PropertyMapInner() {
     } finally {
       setSavingDraw(false)
     }
-  }, [drawTools, savingDraw, showToast, loadCells, loadPoints, loadEvents, showEvents, vertical])
+  }, [drawTools, savingDraw, selection, showToast, loadCells, loadPoints, loadEvents, showEvents, vertical])
 
   // ── map init (once) ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1309,6 +1329,7 @@ function PropertyMapInner() {
           <DrawConfirm
             pending={drawTools.pending}
             busy={savingDraw}
+            selectionCount={selection.length}
             onSave={saveDrawing}
             onRedraw={drawTools.redraw}
             onCancel={drawTools.cancel}
