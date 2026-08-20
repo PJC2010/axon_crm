@@ -20,6 +20,7 @@ import Link from 'next/link'
 import { ArrowLeft, Home, RefreshCw, Signal, Award, Grid3x3, Sparkles, Zap, X, SlidersHorizontal, ChevronDown, ChevronUp, MapPin } from 'lucide-react'
 import ngeohash from 'ngeohash'
 import { gradeVarName, GRADE_TOKENS, GRADE_ACTION, type Grade } from '@/lib/gradeColors'
+import { resolveBasemap, registerPmtilesProtocol, needsPmtiles, OSM_RASTER } from '@/lib/mapStyle'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Map as MLMap, GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
 import { getMapCells, getMapProperties, getMapZips, getLead, getGeoHeatmap, getGeoClusters, prospectArea, getGeoEvents } from '@/lib/api'
@@ -39,23 +40,6 @@ const HOME: [number, number] = [-95.3698, 29.7604]
 const STATUSES: LeadStatus[] = [
   'new', 'contacted', 'qualified', 'quote_sent', 'won', 'lost', 'not_interested', 'converted',
 ]
-
-// Free, no-key default basemap (OpenStreetMap raster). Override with a provider
-// style URL via NEXT_PUBLIC_MAP_STYLE for production-grade tiles + vector glyphs.
-const ENV_STYLE = process.env.NEXT_PUBLIC_MAP_STYLE
-const OSM_STYLE = {
-  version: 8 as const,
-  glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
-  sources: {
-    osm: {
-      type: 'raster' as const,
-      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-      tileSize: 256,
-      attribution: '© OpenStreetMap contributors',
-    },
-  },
-  layers: [{ id: 'osm', type: 'raster' as const, source: 'osm' }],
-}
 
 // Resolve design-system CSS variables to concrete hex (WebGL can't read vars).
 //
@@ -232,6 +216,9 @@ function PropertyMapInner() {
   // Mirrors `heatmap` state so the zoom handler (created once at init) can keep
   // the choropleth hidden while the heatmap overlay is on.
   const heatmapRef = useRef(false)
+  // Fontstack the active basemap's glyph server actually serves. Set before the
+  // map is constructed and read when the symbol layers are added.
+  const fontRef = useRef<string>(OSM_RASTER.font)
 
   const [mode, setMode] = useState<ColorMode>('signals')
   const [vertical, setVertical] = useState('')
@@ -441,6 +428,13 @@ function PropertyMapInner() {
   useEffect(() => {
     let cancelled = false
     let map: MLMap | null = null
+    // One-shot latch: interaction listeners must survive a style swap without
+    // being registered twice. See the note in setupLayers.
+    let handlersBound = false
+    let viewportHandlersBound = false
+    // The basemap fallback is one-way and one-time; without this a flapping
+    // provider could ping-pong the style.
+    let basemapFellBack = false
 
     ;(async () => {
       // MapLibre v6 ships ESM with NO default export — `(await import(...)).default`
@@ -459,10 +453,18 @@ function PropertyMapInner() {
 
       paletteRef.current = readPalette()
 
+      // Which basemap we're on decides the glyph endpoint, and therefore which
+      // fontstack the cluster-count layer may ask for. Resolve both together —
+      // see lib/mapStyle for why a mismatch fails silently.
+      const basemap = resolveBasemap()
+      fontRef.current = basemap.font
+      if (needsPmtiles(basemap.style)) await registerPmtilesProtocol(maplibregl)
+      if (cancelled) return
+
       try {
         map = new maplibregl.Map({
           container: containerRef.current,
-          style: (ENV_STYLE as string) || (OSM_STYLE as unknown as string),
+          style: basemap.style as string,
           center: HOME,
           zoom: 10,
           // Hard-constrain panning/zooming to the configured service area. Widening
@@ -517,19 +519,23 @@ function PropertyMapInner() {
             'circle-radius': ['step', ['get', 'point_count'], 14, 25, 20, 100, 28],
           },
         })
-        // `text-font` is pinned deliberately. MapLibre's style-spec default is
-        // ['Open Sans Regular', 'Arial Unicode MS Regular'], and it requests every
-        // stack entry from the `glyphs` endpoint. fonts.openmaptiles.org hosts the
-        // first but answers the second with an HTML error page under HTTP 200 —
-        // MapLibre sees a 200, hands the HTML to the pbf decoder, and it throws
-        // "Unimplemented type: 4" (wire type 4 = deprecated end-group). Requesting
-        // only the stack that actually exists keeps the console clean.
+        // `text-font` is pinned rather than left to the style-spec default of
+        // ['Open Sans Regular', 'Arial Unicode MS Regular'] — MapLibre requests
+        // every entry in the stack, so a default that names a font the glyph
+        // server lacks breaks the layer. See the note at the property below.
         map.addLayer({
           id: 'cluster-count', type: 'symbol', source: 'points', filter: ['has', 'point_count'],
           layout: {
             'text-field': ['get', 'point_count_abbreviated'],
             'text-size': 12,
-            'text-font': ['Open Sans Regular'],
+            // Not hardcoded: each basemap serves its own fontstack names and
+            // MapLibre requests exactly what it's given. OpenFreeMap has
+            // 'Noto Sans Regular' and 404s on 'Open Sans Regular';
+            // fonts.openmaptiles.org is the reverse and answers unknown stacks
+            // with an HTML error page under HTTP 200, which the pbf decoder
+            // throws on as "Unimplemented type: 4". lib/mapStyle keeps the
+            // style and its font together so they can't drift apart.
+            'text-font': [fontRef.current],
           },
           paint: { 'text-color': '#ffffff' },
         })
@@ -589,33 +595,45 @@ function PropertyMapInner() {
           },
         })
 
-        // Interactions
-        map.on('click', 'pin', (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
-          const id = e.features?.[0]?.properties?.id
-          if (id != null) openLead(Number(id))
-        })
-        map.on('click', 'cell-fill', (e: MapMouseEvent) => {
-          map!.easeTo({ center: e.lngLat, zoom: Math.max(map!.getZoom() + 2, PIN_ZOOM) })
-        })
-        map.on('click', 'clusters', async (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
-          const f = e.features?.[0]
-          const cid = f?.properties?.cluster_id
-          if (cid == null) return
-          const src = map!.getSource('points') as GeoJSONSource
-          const zoom = await src.getClusterExpansionZoom(cid as number)
-          map!.easeTo({ center: (f!.geometry as GeoJSON.Point).coordinates as [number, number], zoom })
-        })
-        // Clicking a customer-cluster hull opens the "prospect this area" panel.
-        map.on('click', 'cluster-hull-fill', (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
-          const props = e.features?.[0]?.properties
-          if (!props) return
-          setSelectedCluster({ label: Number(props.cluster_label), count: Number(props.customer_count) })
-        })
-        for (const layer of ['pin', 'cell-fill', 'clusters', 'cluster-hull-fill']) {
-          map.on('mouseenter', layer, () => { map!.getCanvas().style.cursor = 'pointer' })
-          map.on('mouseleave', layer, () => { map!.getCanvas().style.cursor = '' })
+        // Interactions.
+        //
+        // Layers are recreated whenever the style is replaced (see the basemap
+        // fallback below), and `map.on(...)` accumulates rather than replaces,
+        // so these must bind exactly once for the lifetime of the map. The
+        // `getLayer('cell-fill')` guard at the top of setupLayers doesn't cover
+        // this: after setStyle the layers are genuinely gone, so setupLayers is
+        // supposed to run again — it's only the listeners that must not.
+        if (!handlersBound) {
+          handlersBound = true
+          map.on('click', 'pin', (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+            const id = e.features?.[0]?.properties?.id
+            if (id != null) openLead(Number(id))
+          })
+          map.on('click', 'cell-fill', (e: MapMouseEvent) => {
+            map!.easeTo({ center: e.lngLat, zoom: Math.max(map!.getZoom() + 2, PIN_ZOOM) })
+          })
+          map.on('click', 'clusters', async (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+            const f = e.features?.[0]
+            const cid = f?.properties?.cluster_id
+            if (cid == null) return
+            const src = map!.getSource('points') as GeoJSONSource
+            const zoom = await src.getClusterExpansionZoom(cid as number)
+            map!.easeTo({ center: (f!.geometry as GeoJSON.Point).coordinates as [number, number], zoom })
+          })
+          // Clicking a customer-cluster hull opens the "prospect this area" panel.
+          map.on('click', 'cluster-hull-fill', (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+            const props = e.features?.[0]?.properties
+            if (!props) return
+            setSelectedCluster({ label: Number(props.cluster_label), count: Number(props.customer_count) })
+          })
+          for (const layer of ['pin', 'cell-fill', 'clusters', 'cluster-hull-fill']) {
+            map.on('mouseenter', layer, () => { map!.getCanvas().style.cursor = 'pointer' })
+            map.on('mouseleave', layer, () => { map!.getCanvas().style.cursor = '' })
+          }
         }
 
+        // Visibility + the first data load must run on EVERY setup, including a
+        // re-setup after a style swap — only the listeners above are one-shot.
         const applyZoom = () => {
           if (!map) return
           const inPins = map.getZoom() >= PIN_ZOOM
@@ -627,14 +645,19 @@ function PropertyMapInner() {
           for (const l of ['cell-fill', 'cell-line']) map.setLayoutProperty(l, 'visibility', cellVis)
           for (const l of ['clusters', 'cluster-count', 'pin']) map.setLayoutProperty(l, 'visibility', pinVis)
         }
-        map.on('zoomend', applyZoom)
-        map.on('moveend', () => {
-          if (moveTimer.current) clearTimeout(moveTimer.current)
-          moveTimer.current = setTimeout(() => {
-            if (map && map.getZoom() >= PIN_ZOOM) loadPointsRef.current()
-          }, 350)
-        })
+        if (!viewportHandlersBound) {
+          viewportHandlersBound = true
+          map.on('zoomend', applyZoom)
+          map.on('moveend', () => {
+            if (moveTimer.current) clearTimeout(moveTimer.current)
+            moveTimer.current = setTimeout(() => {
+              if (map && map.getZoom() >= PIN_ZOOM) loadPointsRef.current()
+            }, 350)
+          })
+        }
 
+        // Both run on every setup: after a style swap the layers are new, so
+        // their visibility has to be reapplied and their data refetched.
         applyZoom()
         loadCells()
       }
@@ -644,6 +667,33 @@ function PropertyMapInner() {
       // (guards on cell-fill), so later style events — sprite loads, style
       // swaps — are harmless no-ops. The direct call covers the edge case of a
       // style that was somehow already fully loaded by this point.
+      // Basemap fallback.
+      //
+      // The default basemap is a remote vector style, so it can be unreachable:
+      // a provider outage, a corporate network that blocks it, an operator
+      // typo in NEXT_PUBLIC_MAP_STYLE. Without this the map degrades to a blank
+      // canvas — the data layers still draw (that's the 'styledata'-not-'load'
+      // contract above), but with no streets under them they're unreadable.
+      //
+      // So: on a style-load failure, fall back once to the bundled raster style,
+      // which needs no key and no configuration. One-way and one-time, so a
+      // flapping provider can't ping-pong the basemap. Swapping the style drops
+      // every layer, which is why setupLayers is re-entrant and why the listener
+      // latches above exist.
+      // v6 fully types map events, so let the listener signature be inferred
+      // rather than hand-rolling one.
+      map.on('error', (e) => {
+        const failedToLoadStyle = !basemapFellBack && !map!.isStyleLoaded()
+        if (!failedToLoadStyle) return
+        basemapFellBack = true
+        console.warn(
+          `[map] basemap "${basemap.label}" failed to load; falling back to ${OSM_RASTER.label}.`,
+          e.error,
+        )
+        fontRef.current = OSM_RASTER.font
+        map!.setStyle(OSM_RASTER.style as unknown as string)
+      })
+
       map.on('styledata', setupLayers)
       if (map.isStyleLoaded()) setupLayers()
     })()
