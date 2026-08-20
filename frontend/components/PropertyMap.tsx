@@ -21,6 +21,9 @@ import { ArrowLeft, Home, RefreshCw, Signal, Award, Grid3x3, Sparkles, Zap, Slid
 import { resolveBasemap, registerPmtilesProtocol, needsPmtiles, OSM_RASTER } from '@/lib/mapStyle'
 import { registerPinSprites } from '@/lib/mapPins'
 import 'maplibre-gl/dist/maplibre-gl.css'
+// Must follow maplibre's own stylesheet — it re-tokenises the light-theme chrome
+// MapLibre ships (popup surface, tip, attribution, controls) for the dark system.
+import '@/components/map/map.css'
 import type { Map as MLMap, GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
 import { getMapCells, getMapProperties, getMapZips, getLead, getGeoHeatmap, getGeoClusters, prospectArea, getGeoEvents } from '@/lib/api'
 import { serviceAreaBounds, serviceAreaLabel, clampToServiceArea, clampBoundsToServiceArea } from '@/lib/serviceArea'
@@ -33,6 +36,8 @@ import {
   cellsToGeoJSON, pointsToGeoJSON, heatToGeoJSON, clustersToGeoJSON, eventsToGeoJSON,
   type ColorMode,
 } from '@/components/map/geojson'
+import { gradeClusterProperties, createDonutManager, type DonutManager } from '@/components/map/clusterDonuts'
+import { buildHoverCard, hoverFieldsFrom } from '@/components/map/hoverCard'
 import { overlayBtn } from '@/components/map/ui/overlayBtn'
 import { Legend } from '@/components/map/ui/Legend'
 import { ZipPicker } from '@/components/map/ui/ZipPicker'
@@ -62,9 +67,13 @@ function PropertyMapInner() {
   // Mirrors `heatmap` state so the zoom handler (created once at init) can keep
   // the choropleth hidden while the heatmap overlay is on.
   const heatmapRef = useRef(false)
-  // Fontstack the active basemap's glyph server actually serves. Set before the
-  // map is constructed and read when the symbol layers are added.
-  const fontRef = useRef<string>(OSM_RASTER.font)
+  // Cluster donut markers. Held in a ref because the zoom/idle handlers are
+  // registered once at init and would otherwise close over the first render's
+  // value — the same reason loadPointsRef exists.
+  const donutsRef = useRef<DonutManager | null>(null)
+  // Reused hover Popup. One instance for the lifetime of the map: constructing
+  // one per hover leaks DOM and makes the card flicker as you cross pins.
+  const hoverRef = useRef<{ setLngLat: (c: [number, number]) => { setDOMContent: (n: Node) => { addTo: (m: MLMap) => void } }; remove: () => void } | null>(null)
 
   const [mode, setMode] = useState<ColorMode>('signals')
   const [vertical, setVertical] = useState('')
@@ -305,11 +314,12 @@ function PropertyMapInner() {
 
       paletteRef.current = readPalette()
 
-      // Which basemap we're on decides the glyph endpoint, and therefore which
-      // fontstack the cluster-count layer may ask for. Resolve both together —
-      // see lib/mapStyle for why a mismatch fails silently.
+      // No layer requests glyphs any more — the only text on the map is the
+      // cluster count, and that moved into the donut markers' SVG, where it
+      // renders in the app's own font instead of whatever the tile provider
+      // serves. That also removes a whole class of silent failure; see the
+      // fontstack note in lib/mapStyle for what it used to cost.
       const basemap = resolveBasemap()
-      fontRef.current = basemap.font
       if (needsPmtiles(basemap.style)) await registerPmtilesProtocol(maplibregl)
       if (cancelled) return
 
@@ -332,6 +342,24 @@ function PropertyMapInner() {
       }
       mapRef.current = map
       map.addControl(new maplibregl.NavigationControl(), 'top-right')
+
+      // One Popup, reused for every hover. MapLibre owns the anchoring and the
+      // edge-flipping; we only ever move it and swap its contents.
+      hoverRef.current = new maplibregl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        offset: 18,          // clears the pin, which is anchored at its lower vertex
+        maxWidth: 'none',    // the card sets its own max-width
+        className: 'map-hover-popup',
+      })
+
+      // Donut cluster markers. The manager owns marker lifecycle; it only needs
+      // a factory so it never imports maplibre itself (keeping it a plain module).
+      donutsRef.current = createDonutManager(
+        map,
+        (el, lngLat) => new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map!),
+        paletteRef.current!,
+      )
 
       // Add our data layers as soon as the *style JSON* is parsed — deliberately
       // NOT on 'load', which also waits for the basemap's first tiles. If the
@@ -362,38 +390,32 @@ function PropertyMapInner() {
           paint: { 'line-color': paletteRef.current!.line, 'line-width': 0.5 },
         })
 
-        // Pins (clustered)
+        // Pins (clustered).
+        //
+        // `clusterProperties` makes Supercluster tally the grade mix while it
+        // clusters, so the donut markers below get their proportions for free
+        // rather than us counting members every frame.
         map.addSource('points', {
           type: 'geojson', data: { type: 'FeatureCollection', features: [] },
           cluster: true, clusterRadius: 50, clusterMaxZoom: 16,
+          clusterProperties: gradeClusterProperties(),
         })
+        // Clusters are drawn as HTML donut markers (see components/map/
+        // clusterDonuts.ts), not as a circle+symbol layer pair. A proportional
+        // multi-segment arc isn't expressible as a circle paint property, and
+        // there are only ever a few dozen clusters on screen, so the DOM is
+        // affordable here in a way it isn't for the 2,000 pins.
+        //
+        // An invisible hit layer keeps click/cursor handling on the GL side, so
+        // the existing `click`/`mouseenter` wiring works unchanged and the
+        // markers themselves stay non-interactive.
         map.addLayer({
           id: 'clusters', type: 'circle', source: 'points', filter: ['has', 'point_count'],
           paint: {
             'circle-color': paletteRef.current!.cool,
-            'circle-opacity': 0.85,
-            'circle-radius': ['step', ['get', 'point_count'], 14, 25, 20, 100, 28],
+            'circle-opacity': 0,   // the donut marker is what you see
+            'circle-radius': ['step', ['get', 'point_count'], 17, 25, 21, 100, 26],
           },
-        })
-        // `text-font` is pinned rather than left to the style-spec default of
-        // ['Open Sans Regular', 'Arial Unicode MS Regular'] — MapLibre requests
-        // every entry in the stack, so a default that names a font the glyph
-        // server lacks breaks the layer. See the note at the property below.
-        map.addLayer({
-          id: 'cluster-count', type: 'symbol', source: 'points', filter: ['has', 'point_count'],
-          layout: {
-            'text-field': ['get', 'point_count_abbreviated'],
-            'text-size': 12,
-            // Not hardcoded: each basemap serves its own fontstack names and
-            // MapLibre requests exactly what it's given. OpenFreeMap has
-            // 'Noto Sans Regular' and 404s on 'Open Sans Regular';
-            // fonts.openmaptiles.org is the reverse and answers unknown stacks
-            // with an HTML error page under HTTP 200, which the pbf decoder
-            // throws on as "Unimplemented type: 4". lib/mapStyle keeps the
-            // style and its font together so they can't drift apart.
-            'text-font': [fontRef.current],
-          },
-          paint: { 'text-color': '#ffffff' },
         })
         // Hover/selected highlight, drawn UNDER the pins.
         //
@@ -405,7 +427,11 @@ function PropertyMapInner() {
         // reliably. A filter costs nothing here and has no such dependency.
         map.addLayer({
           id: 'pin-highlight', type: 'circle', source: 'points',
-          filter: ['==', ['get', 'id'], -1],
+          // Both clauses matter. The id match is the actual selection; excluding
+          // clusters guards the case where a cluster feature carries an `id` —
+          // it doesn't today (clusters get `cluster_id`), but a highlight that
+          // can latch onto a cluster is a bug waiting for a schema change.
+          filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', 'id'], -1]],
           paint: {
             'circle-color': paletteRef.current!.accent,
             'circle-opacity': 0.28,
@@ -515,15 +541,34 @@ function PropertyMapInner() {
             map.on('mouseenter', layer, () => { map!.getCanvas().style.cursor = 'pointer' })
             map.on('mouseleave', layer, () => { map!.getCanvas().style.cursor = '' })
           }
-          // Highlight the pin under the cursor. `mousemove` rather than
-          // `mouseenter`: with pins this dense, sliding from one to its
-          // neighbour doesn't re-fire enter, so the highlight would stick on
-          // the wrong lead.
+          // Highlight + preview the pin under the cursor. `mousemove` rather
+          // than `mouseenter`: with pins this dense, sliding from one to its
+          // neighbour doesn't re-fire enter, so both the highlight and the card
+          // would stick on the wrong lead.
+          //
+          // Everything the card shows already rides in the feature's properties,
+          // so hovering costs no request — which is the point. Clicking still
+          // fetches the full lead for the drawer.
           map.on('mousemove', 'pin', (e) => {
-            const id = e.features?.[0]?.properties?.id
-            if (id != null) setActivePin(Number(id))
+            const f = e.features?.[0]
+            const id = f?.properties?.id
+            if (id == null) return
+            setActivePin(Number(id))
+
+            const fields = hoverFieldsFrom(f?.properties)
+            const coords = (f?.geometry as GeoJSON.Point | undefined)?.coordinates
+            if (!fields || !coords) return
+            hoverRef.current
+              ?.setLngLat(coords as [number, number])
+              .setDOMContent(buildHoverCard(fields))
+              .addTo(map!)
           })
-          map.on('mouseleave', 'pin', () => setActivePin(null))
+          map.on('mouseleave', 'pin', () => {
+            setActivePin(null)
+            hoverRef.current?.remove()
+          })
+          // A hover card left hanging over a cluster reads as belonging to it.
+          map.on('mouseenter', 'clusters', () => hoverRef.current?.remove())
         }
 
         // Visibility + the first data load must run on EVERY setup, including a
@@ -537,7 +582,12 @@ function PropertyMapInner() {
           const cellVis = (inPins || heatmapRef.current) ? 'none' : 'visible'
           const pinVis = inPins ? 'visible' : 'none'
           for (const l of ['cell-fill', 'cell-line']) map.setLayoutProperty(l, 'visibility', cellVis)
-          for (const l of ['clusters', 'cluster-count', 'pin']) map.setLayoutProperty(l, 'visibility', pinVis)
+          for (const l of ['clusters', 'pin-highlight', 'pin']) map.setLayoutProperty(l, 'visibility', pinVis)
+          // Donut markers are DOM, not layers, so `visibility` can't reach them —
+          // they have to be torn down by hand when we leave pin mode, or they
+          // float over the choropleth.
+          if (!inPins) donutsRef.current?.clear()
+          else donutsRef.current?.refresh()
         }
         if (!viewportHandlersBound) {
           viewportHandlersBound = true
@@ -547,6 +597,12 @@ function PropertyMapInner() {
             moveTimer.current = setTimeout(() => {
               if (map && map.getZoom() >= PIN_ZOOM) loadPointsRef.current()
             }, 350)
+          })
+          // Clusters are recomputed by Supercluster whenever the source data or
+          // the zoom changes; `idle` is the point at which those results are
+          // actually queryable, so it's the right moment to resync the markers.
+          map.on('idle', () => {
+            if (map && map.getZoom() >= PIN_ZOOM) donutsRef.current?.refresh()
           })
         }
 
@@ -584,7 +640,10 @@ function PropertyMapInner() {
           `[map] basemap "${basemap.label}" failed to load; falling back to ${OSM_RASTER.label}.`,
           e.error,
         )
-        fontRef.current = OSM_RASTER.font
+        // Markers are DOM and survive setStyle, but the clusters they describe
+        // don't — the source is rebuilt, so stale donuts would hang over the new
+        // basemap until the next idle. Clear them and let setupLayers re-sync.
+        donutsRef.current?.clear()
         map!.setStyle(OSM_RASTER.style as unknown as string)
       })
 
@@ -595,6 +654,12 @@ function PropertyMapInner() {
     return () => {
       cancelled = true
       if (moveTimer.current) clearTimeout(moveTimer.current)
+      // Markers and the Popup live outside the map's own node, so `map.remove()`
+      // does not take them with it.
+      donutsRef.current?.clear()
+      donutsRef.current = null
+      hoverRef.current?.remove()
+      hoverRef.current = null
       map?.remove()
       mapRef.current = null
     }

@@ -1,0 +1,76 @@
+/* ── Map overrides for MapLibre's default chrome ──
+   MapLibre ships light-theme defaults (white popup content, white tip, a light
+   attribution bar). Under Axon's dark system those read as a rendering bug, so
+   the pieces that show through are re-tokenised here rather than fought with
+   inline styles — MapLibre owns these nodes, so we can't set props on them.
+
+   Imported by components/PropertyMap.tsx immediately after maplibre-gl.css, so
+   these rules win on load order without needing !important. */
+
+/* Hover preview card. The card itself is built in components/map/hoverCard.ts
+   and brings its own surface, border and shadow — so MapLibre's wrapper has to
+   get out of the way entirely rather than be restyled. */
+.map-hover-popup .maplibregl-popup-content {
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+/* The tip is a CSS triangle drawn with border-color, so it has to be pointed at
+   the card's surface token per direction. Without this it stays white and reads
+   as a shard hanging off the card. */
+.map-hover-popup .maplibregl-popup-tip {
+  border-top-color: var(--color-surface);
+  border-bottom-color: var(--color-surface);
+  border-left-color: var(--color-surface);
+  border-right-color: var(--color-surface);
+}
+.map-hover-popup.maplibregl-popup-anchor-top .maplibregl-popup-tip,
+.map-hover-popup.maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+.map-hover-popup.maplibregl-popup-anchor-top-right .maplibregl-popup-tip {
+  border-top-color: transparent;
+}
+.map-hover-popup.maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
+.map-hover-popup.maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+.map-hover-popup.maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip {
+  border-bottom-color: transparent;
+}
+.map-hover-popup.maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-left-color: transparent;
+}
+.map-hover-popup.maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-right-color: transparent;
+}
+
+/* The card is a preview, not a target — letting it swallow pointer events means
+   it sits under the cursor, fires mouseleave on the pin, and flickers. */
+.map-hover-popup {
+  pointer-events: none;
+}
+
+/* Attribution and controls: legally required and functionally needed, but they
+   ship as white boxes. */
+.maplibregl-ctrl-attrib {
+  background: color-mix(in srgb, var(--color-black) 72%, transparent);
+  color: var(--color-ink-500);
+}
+.maplibregl-ctrl-attrib a {
+  color: var(--color-ink-400);
+}
+.maplibregl-ctrl-group {
+  background: var(--color-surface);
+  border: 1px solid var(--color-ink-200);
+  box-shadow: var(--shadow-card);
+}
+.maplibregl-ctrl-group button + button {
+  border-top-color: var(--color-ink-200);
+}
+/* The control glyphs are background-images tinted for light backgrounds; invert
+   them rather than shipping our own sprite set. */
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(1) brightness(1.6);
+}
+.maplibregl-ctrl-group button:not(:disabled):hover {
+  background: var(--color-surface-hi);
+}
