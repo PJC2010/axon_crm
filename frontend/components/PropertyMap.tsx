@@ -25,7 +25,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 // MapLibre ships (popup surface, tip, attribution, controls) for the dark system.
 import '@/components/map/map.css'
 import type { Map as MLMap, GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
-import { getMapCells, getMapProperties, getMapZips, getLead, getGeoHeatmap, getGeoClusters, prospectArea, getGeoEvents } from '@/lib/api'
+import { getMapCells, getMapProperties, getMapZips, getLead, getGeoHeatmap, getGeoClusters, prospectArea, getGeoEvents, putServiceArea, createGeoEvent } from '@/lib/api'
 import { serviceAreaBounds, serviceAreaLabel, clampToServiceArea, clampBoundsToServiceArea } from '@/lib/serviceArea'
 import { AuthGuard } from '@/components/AuthGuard'
 import { ContactDrawer } from '@/components/ContactDrawer'
@@ -40,7 +40,9 @@ import { padBbox, contains, VIEWPORT_PAD, type Bbox } from '@/components/map/bbo
 import { rampExpression } from '@/components/map/ramp'
 import { gradeClusterProperties, createDonutManager, type DonutManager } from '@/components/map/clusterDonuts'
 import { buildHoverCard, hoverFieldsFrom, buildCellCard, cellFieldsFrom } from '@/components/map/hoverCard'
-import { overlayBtn } from '@/components/map/ui/overlayBtn'
+import { overlayBtn, fieldStyle } from '@/components/map/ui/controlStyles'
+import { useDrawTools } from '@/components/map/useDrawTools'
+import { DrawToolbar, DrawHint, DrawConfirm } from '@/components/map/ui/DrawTools'
 import { Legend } from '@/components/map/ui/Legend'
 import { ZipPicker } from '@/components/map/ui/ZipPicker'
 import { ClusterActionPanel } from '@/components/map/ui/ClusterActionPanel'
@@ -89,6 +91,13 @@ function PropertyMapInner() {
   // Whether the primary input is a finger. Kept live rather than sampled once,
   // because it's the only thing sizing pins for touch.
   const coarsePointerRef = useRef(false)
+  // Whether a draw tool currently owns the map surface. A ref because the
+  // interaction handlers are registered once and would otherwise close over the
+  // first render's value.
+  const drawActiveRef = useRef(false)
+  // The style-swap handler is registered once, so it reaches the draw session
+  // through a ref rather than closing over the hook's current teardown.
+  const drawTeardownRef = useRef<() => void>(() => {})
   // The padded box the current pins were fetched for. A pan stays cached while
   // the viewport is still inside it; null means "nothing trustworthy loaded".
   const fetchedBoxRef = useRef<Bbox | null>(null)
@@ -357,6 +366,63 @@ function PropertyMapInner() {
       setProspecting(false)
     }
   }, [vertical, showToast, loadCells, loadPoints])
+
+  // ── draw tools ────────────────────────────────────────────────────────────────
+  const drawTools = useDrawTools({
+    mapRef, paletteRef,
+    // `cell-fill` is added by setupLayers on the first 'styledata', so its
+    // presence is proof the style accepts addSource — including after the
+    // basemap fallback rebuilds the style from scratch.
+    layersReady: () => !!mapRef.current?.getLayer('cell-fill'),
+    onError: (m) => showToastRef.current(m, 'error'),
+    onActiveChange: (active) => {
+      drawActiveRef.current = active
+      // A card left hanging while the user starts drawing points at a lead they
+      // are no longer looking at.
+      if (active) hoverRef.current?.remove()
+    },
+  })
+  const [savingDraw, setSavingDraw] = useState(false)
+  useEffect(() => { drawTeardownRef.current = drawTools.teardown }, [drawTools.teardown])
+
+  const saveDrawing = useCallback(async ({ eventType, name }: { eventType: string; name: string }) => {
+    const p = drawTools.pending
+    if (!p || savingDraw) return
+    setSavingDraw(true)
+    try {
+      if (p.tool === 'territory' && p.polygon) {
+        await putServiceArea(p.polygon)
+        // The save rescored every lead in the account before it returned, so
+        // both layers are stale by definition. Forced for the same reason
+        // prospecting forces: the box is right, the contents aren't.
+        showToast('Service area saved. Leads rescored.', 'success')
+        loadCells()
+        loadPoints({ force: true })
+      } else if (p.tool === 'event' && p.polygon) {
+        await createGeoEvent({ event_type: eventType, name: name || undefined, polygon: p.polygon })
+        showToast('Event area saved.', 'success')
+        if (showEvents) loadEvents()
+        else setShowEvents(true)     // no point saving one you can't see
+      } else if (p.tool === 'pin' && p.point) {
+        const [lng, lat] = p.point
+        const r = await prospectArea({ seed: { lat, lng }, vertical: vertical || undefined })
+        if (r.status === 'skipped_recent_cell') {
+          showToast('Already prospected this area in the last 14 days.', 'success')
+        } else {
+          showToast(`Prospected: ${r.ingested ?? 0} new lead(s) ingested, ${r.scored ?? 0} scored.`, 'success')
+        }
+        loadCells()
+        loadPoints({ force: true })
+      }
+      drawTools.cancel()
+    } catch (e) {
+      // Deliberately keep the drawing: a failed save with the shape thrown away
+      // means redrawing a territory by hand.
+      showToast(e instanceof Error ? e.message : 'Could not save', 'error')
+    } finally {
+      setSavingDraw(false)
+    }
+  }, [drawTools, savingDraw, showToast, loadCells, loadPoints, loadEvents, showEvents, vertical])
 
   // ── map init (once) ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -631,14 +697,22 @@ function PropertyMapInner() {
         // supposed to run again — it's only the listeners that must not.
         if (!handlersBound) {
           handlersBound = true
+          // While a draw tool is armed, the map surface belongs to the gesture:
+          // a tap is a vertex, not a lead. Terra Draw draws its own layers over
+          // ours and doesn't stop MapLibre's feature clicks, so without this a
+          // tap that places a corner also opens a contact drawer over the map
+          // the user is drawing on.
           map.on('click', 'pin', (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+            if (drawActiveRef.current) return
             const id = e.features?.[0]?.properties?.id
             if (id != null) openLead(Number(id))
           })
           map.on('click', 'cell-fill', (e: MapMouseEvent) => {
+            if (drawActiveRef.current) return
             map!.easeTo({ center: e.lngLat, zoom: Math.max(map!.getZoom() + 2, PIN_ZOOM) })
           })
           map.on('click', 'clusters', async (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+            if (drawActiveRef.current) return
             const f = e.features?.[0]
             const cid = f?.properties?.cluster_id
             if (cid == null) return
@@ -648,6 +722,7 @@ function PropertyMapInner() {
           })
           // Clicking a customer-cluster hull opens the "prospect this area" panel.
           map.on('click', 'cluster-hull-fill', (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+            if (drawActiveRef.current) return
             const props = e.features?.[0]?.properties
             if (!props) return
             setSelectedCluster({ label: Number(props.cluster_label), count: Number(props.customer_count) })
@@ -665,6 +740,7 @@ function PropertyMapInner() {
           // so hovering costs no request — which is the point. Clicking still
           // fetches the full lead for the drawer.
           map.on('mousemove', 'pin', (e) => {
+            if (drawActiveRef.current) return
             const f = e.features?.[0]
             const id = f?.properties?.id
             if (id == null) return
@@ -690,6 +766,7 @@ function PropertyMapInner() {
           // were never drawn. The cell's fill shows one average; the card shows
           // what that average is made of.
           map.on('mousemove', 'cell-fill', (e) => {
+            if (drawActiveRef.current) return
             const f = e.features?.[0]
             const fields = cellFieldsFrom(f?.properties)
             if (!fields) return
@@ -774,6 +851,11 @@ function PropertyMapInner() {
         // don't — the source is rebuilt, so stale donuts would hang over the new
         // basemap until the next idle. Clear them and let setupLayers re-sync.
         donutsRef.current?.clear()
+        // Same reason, one step further: setStyle drops the adapter's five
+        // layers too, and a later draw.stop() would then try to remove layers
+        // that no longer exist. Tear the session down while it can still clean
+        // up after itself.
+        drawTeardownRef.current()
         map!.setStyle(OSM_RASTER.style as unknown as string)
       })
 
@@ -868,16 +950,16 @@ function PropertyMapInner() {
         value={vertical}
         onChange={e => setVertical(e.target.value)}
         placeholder="Vertical"
-        style={{ width: 120, padding: '6px 10px', fontSize: 12, borderRadius: 'var(--radius-pill)', border: '1px solid var(--color-ink-200)', background: 'var(--color-paper)' }}
+        style={{ ...fieldStyle(isMobile), width: 120 }}
       />
       <select value={status} onChange={e => setStatus(e.target.value)}
-        style={{ padding: '6px 10px', fontSize: 12, borderRadius: 'var(--radius-pill)', border: '1px solid var(--color-ink-200)', background: 'var(--color-paper)' }}>
+        style={fieldStyle(isMobile)}>
         <option value="">All statuses</option>
         {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
       </select>
       {mode === 'signals' && (
         <select value={signalDays} onChange={e => setSignalDays(Number(e.target.value))}
-          style={{ padding: '6px 10px', fontSize: 12, borderRadius: 'var(--radius-pill)', border: '1px solid var(--color-ink-200)', background: 'var(--color-paper)' }}>
+          style={fieldStyle(isMobile)}>
           <option value={30}>30 days</option>
           <option value={60}>60 days</option>
           <option value={90}>90 days</option>
@@ -895,7 +977,7 @@ function PropertyMapInner() {
       </button>
       {heatmap && (
         <select value={heatMetric} onChange={e => setHeatMetric(e.target.value as HeatmapMetric)}
-          style={{ padding: '6px 10px', fontSize: 12, borderRadius: 'var(--radius-pill)', border: '1px solid var(--color-ink-200)', background: 'var(--color-paper)' }}>
+          style={fieldStyle(isMobile)}>
           <option value="density">Customer density</option>
           <option value="avg_score">Avg score</option>
         </select>
@@ -914,6 +996,11 @@ function PropertyMapInner() {
       >
         <Zap size={13} strokeWidth={1.5} /> Events
       </button>
+
+      {/* Draw tools. Three endpoints that shipped with no way to reach them:
+          the service-area polygon, the event layer, and /geo/prospect's
+          lat/lng seed. */}
+      <DrawToolbar tool={drawTools.tool} onPick={drawTools.start} touch={isMobile} />
     </>
   )
 
@@ -1057,12 +1144,24 @@ function PropertyMapInner() {
             areaLabel={serviceAreaLabel()}
           />
         )}
-        {showClusters && selectedCluster && (
+        {showClusters && selectedCluster && !drawTools.tool && (
           <ClusterActionPanel
             cluster={selectedCluster}
             busy={prospecting}
             onProspect={() => handleProspect(selectedCluster.label)}
             onClose={() => setSelectedCluster(null)}
+          />
+        )}
+        {drawTools.tool && !drawTools.pending && (
+          <DrawHint tool={drawTools.tool} onCancel={drawTools.cancel} />
+        )}
+        {drawTools.pending && (
+          <DrawConfirm
+            pending={drawTools.pending}
+            busy={savingDraw}
+            onSave={saveDrawing}
+            onRedraw={drawTools.redraw}
+            onCancel={drawTools.cancel}
           />
         )}
       </div>

@@ -22,3 +22,24 @@ export function overlayBtn(active: boolean, touch = false): CSSProperties {
     color: active ? 'var(--color-paper)' : 'var(--color-ink-700)',
   }
 }
+
+/**
+ * Pill style for the map's text inputs and selects.
+ *
+ * Was inlined verbatim at four call sites in the header — the vertical filter,
+ * the status filter, the signal-window picker and the heatmap metric — which is
+ * how three of them ended up at 12px while the ZIP picker had already learned
+ * that anything under 16px makes iOS zoom the page on focus. `touch` opts into
+ * the size that doesn't.
+ */
+export function fieldStyle(touch = false): CSSProperties {
+  return {
+    padding: touch ? '9px 12px' : '6px 10px',
+    minHeight: touch ? 44 : undefined,
+    fontSize: touch ? 16 : 12,
+    borderRadius: 'var(--radius-pill)',
+    border: '1px solid var(--color-ink-200)',
+    background: 'var(--color-paper)',
+    color: 'var(--color-ink-900)',
+  }
+}
