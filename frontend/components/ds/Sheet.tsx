@@ -6,7 +6,7 @@ import { X } from 'lucide-react'
  * Bottom sheet — a dismissible surface anchored to the bottom of the viewport.
  *
  * Consolidates a shape the app had already copied five times: `QuoteForm`,
- * `InvoiceForm`, `ExpenseForm`, `InvoiceDetail` and the map's `ZipPicker` each
+ * `InvoiceForm`, `ExpenseForm`, `InvoiceDetail` and the map's place picker each
  * hand-rolled the same fixed-bottom panel, rounded top corners, safe-area
  * padding and 40×4 grab handle. Those call sites still have their own copies;
  * they can migrate onto this one at leisure. New sheets should start here.

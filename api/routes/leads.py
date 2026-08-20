@@ -139,7 +139,7 @@ def search_leads(
         cur.execute(
             """
             SELECT id, account_number, contact_name, owner_name, address, city, zip,
-                   contact_phone, status, score_grade,
+                   contact_phone, status, score_grade, latitude, longitude,
                    CASE
                        WHEN UPPER(account_number) = UPPER(%(term)s)     THEN 0
                        WHEN account_number ILIKE %(prefix)s             THEN 1

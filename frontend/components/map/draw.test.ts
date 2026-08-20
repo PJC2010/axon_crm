@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   polygonFromSnapshot, closeRing, ringAreaSqMeters, formatArea, ringContains, ringBounds,
+  circleRing, formatDistance,
 } from './draw'
 
 /**
@@ -132,5 +133,50 @@ describe('ringBounds', () => {
 
   it('is null for an empty ring rather than returning Infinity', () => {
     expect(ringBounds([])).toBeNull()
+  })
+})
+
+describe('circleRing', () => {
+  const CENTER: [number, number] = [-95.37, 29.76]
+
+  it('closes the ring', () => {
+    const r = circleRing(CENTER, 150)
+    expect(r[0]).toEqual(r[r.length - 1])
+  })
+
+  it('measures the radius it was asked for, in every direction', () => {
+    // The point of scaling longitude by 1/cos(lat): without it the east-west
+    // radius is ~13% short here, and the overlay understates walking distance
+    // in the direction a rep actually walks.
+    const r = circleRing(CENTER, 200, 8)
+    const m = (a: [number, number], b: [number, number]) => {
+      const toRad = (d: number) => (d * Math.PI) / 180
+      const dLat = toRad(b[1] - a[1]), dLng = toRad(b[0] - a[0])
+      const h = Math.sin(dLat / 2) ** 2
+        + Math.cos(toRad(a[1])) * Math.cos(toRad(b[1])) * Math.sin(dLng / 2) ** 2
+      return 2 * 6378137 * Math.asin(Math.sqrt(h))
+    }
+    for (const p of r) expect(m(CENTER, p)).toBeGreaterThan(195)
+    for (const p of r) expect(m(CENTER, p)).toBeLessThan(205)
+  })
+
+  it('produces a ring the hit test agrees with', () => {
+    const r = circleRing(CENTER, 300)
+    expect(ringContains(r, CENTER[0], CENTER[1])).toBe(true)
+    expect(ringContains(r, CENTER[0] + 0.02, CENTER[1])).toBe(false)
+  })
+
+  it('reports an area close to πr²', () => {
+    const r = circleRing(CENTER, 500, 128)
+    const expected = Math.PI * 500 * 500
+    expect(ringAreaSqMeters(r) / expected).toBeGreaterThan(0.98)
+    expect(ringAreaSqMeters(r) / expected).toBeLessThan(1.02)
+  })
+})
+
+describe('formatDistance', () => {
+  it('uses feet up close and miles once it is a drive', () => {
+    expect(formatDistance(45)).toBe('150 ft')
+    expect(formatDistance(2000)).toBe('1.2 mi')
   })
 })

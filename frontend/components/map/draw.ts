@@ -190,3 +190,42 @@ export function pointStyles(pal: Palette) {
     pointOutlineWidth: 2,
   }
 }
+
+// ── blast radius ─────────────────────────────────────────────────────────────
+
+/**
+ * A closed ring approximating a circle of `radiusM` around a point.
+ *
+ * Drawn as a real polygon rather than a `circle` layer because MapLibre's
+ * `circle-radius` is in *screen pixels*: a 150 m ring would grow and shrink
+ * relative to the streets as the map zooms, which is exactly backwards for a
+ * "how far can I walk" overlay.
+ *
+ * Longitude is scaled by `1/cos(lat)` so the shape is a circle on the ground
+ * rather than an ellipse — at Houston's latitude the unscaled version is ~13%
+ * too narrow, which would understate the walkable area in the direction reps
+ * actually walk.
+ */
+export function circleRing(
+  center: [number, number], radiusM: number, steps = 64,
+): [number, number][] {
+  const [lng, lat] = center
+  const rad = (d: number) => (d * Math.PI) / 180
+  const dLat = (radiusM / EARTH_RADIUS_M) * (180 / Math.PI)
+  const dLng = dLat / Math.max(Math.cos(rad(lat)), 1e-6)
+  const ring: [number, number][] = []
+  for (let i = 0; i < steps; i++) {
+    const t = (i / steps) * 2 * Math.PI
+    ring.push([lng + dLng * Math.cos(t), lat + dLat * Math.sin(t)])
+  }
+  ring.push([ring[0][0], ring[0][1]])
+  return ring
+}
+
+/** Metres as a rep would say them: feet up close, miles once it's a drive. */
+export function formatDistance(meters: number): string {
+  const feet = meters * 3.28084
+  if (feet < 1000) return `${Math.round(feet / 10) * 10} ft`
+  const miles = meters / 1609.344
+  return `${miles.toFixed(miles < 10 ? 1 : 0)} mi`
+}

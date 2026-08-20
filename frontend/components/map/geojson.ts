@@ -10,7 +10,8 @@
 import ngeohash from 'ngeohash'
 import { spriteId } from '@/lib/mapPins'
 import type { Palette } from './mapPalette'
-import type { MapCell, MapPoint, HeatmapCell } from '@/lib/types'
+import type { MapCell, MapPoint, HeatmapCell, NeighborHit } from '@/lib/types'
+import { circleRing } from './draw'
 
 /** Which metric the choropleth and pins are shaded by. */
 export type ColorMode = 'signals' | 'score'
@@ -26,7 +27,12 @@ export type ColorMode = 'signals' | 'score'
 
 export function pointColor(pt: MapPoint, mode: ColorMode, p: Palette): string {
   if (mode === 'signals') return pt.signals.length > 0 ? p.gradeD : p.cool
-  switch (pt.score_grade) {
+  return gradeDotColor(pt.score_grade, p)
+}
+
+/** Grade → dot color. Shared so a pin and a blast-radius hit can't disagree. */
+export function gradeDotColor(grade: string | null | undefined, p: Palette): string {
+  switch (grade) {
     case 'A': return p.gradeA
     case 'B': return p.gradeB
     case 'C': return p.gradeC
@@ -165,3 +171,35 @@ function dropNullGeometry(fc: { features: Array<{ geometry: unknown }> } | null)
 
 export const clustersToGeoJSON = dropNullGeometry
 export const eventsToGeoJSON = dropNullGeometry
+
+/**
+ * Blast radius around a completed job: the walkable ring plus its ranked hits.
+ *
+ * One FeatureCollection rather than two sources, because the ring and the pins
+ * are one answer to one question and are always shown and cleared together.
+ * The layers separate them with a `geometry-type` filter.
+ *
+ * `rank` rides along so the panel's list and the map agree on the order — the
+ * endpoint sorts by distance then blended score, and re-sorting on either side
+ * would quietly break that pairing.
+ */
+export function blastToGeoJSON(
+  center: [number, number], radiusM: number, hits: NeighborHit[], p: Palette,
+): GeoJSON.FeatureCollection {
+  const ring: GeoJSON.Feature = {
+    type: 'Feature',
+    geometry: { type: 'Polygon', coordinates: [circleRing(center, radiusM)] },
+    properties: { kind: 'ring' },
+  }
+  const pins: GeoJSON.Feature[] = hits.map((h, i) => ({
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [h.longitude, h.latitude] },
+    properties: {
+      kind: 'hit',
+      id: h.id,
+      rank: i + 1,
+      color: gradeDotColor(h.score_grade, p),
+    },
+  }))
+  return { type: 'FeatureCollection', features: [ring, ...pins] }
+}

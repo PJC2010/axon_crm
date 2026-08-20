@@ -25,7 +25,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 // MapLibre ships (popup surface, tip, attribution, controls) for the dark system.
 import '@/components/map/map.css'
 import type { Map as MLMap, GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
-import { getMapCells, getMapProperties, getMapZips, getLead, getGeoHeatmap, getGeoClusters, prospectArea, getGeoEvents, putServiceArea, createGeoEvent } from '@/lib/api'
+import { getMapCells, getMapProperties, getMapZips, getLead, getGeoHeatmap, getGeoClusters, prospectArea, getGeoEvents, putServiceArea, createGeoEvent, getBlastRadius, searchCustomers } from '@/lib/api'
 import { serviceAreaBounds, serviceAreaLabel, clampToServiceArea, clampBoundsToServiceArea } from '@/lib/serviceArea'
 import { AuthGuard } from '@/components/AuthGuard'
 import { ContactDrawer } from '@/components/ContactDrawer'
@@ -33,9 +33,10 @@ import { ToastStack, useToast } from '@/components/Toast'
 import { useMediaQuery, MOBILE_BREAKPOINT } from '@/hooks/useMediaQuery'
 import { readPalette, pinPalette, type Palette } from '@/components/map/mapPalette'
 import {
-  cellsToGeoJSON, pointsToGeoJSON, heatToGeoJSON, clustersToGeoJSON, eventsToGeoJSON,
+  cellsToGeoJSON, pointsToGeoJSON, heatToGeoJSON, clustersToGeoJSON, eventsToGeoJSON, blastToGeoJSON,
   type ColorMode,
 } from '@/components/map/geojson'
+import { circleRing, ringBounds } from '@/components/map/draw'
 import { padBbox, contains, VIEWPORT_PAD, type Bbox } from '@/components/map/bbox'
 import { rampExpression } from '@/components/map/ramp'
 import { gradeClusterProperties, createDonutManager, type DonutManager } from '@/components/map/clusterDonuts'
@@ -43,13 +44,14 @@ import { buildHoverCard, hoverFieldsFrom, buildCellCard, cellFieldsFrom } from '
 import { overlayBtn, fieldStyle } from '@/components/map/ui/controlStyles'
 import { useDrawTools } from '@/components/map/useDrawTools'
 import { DrawToolbar, DrawHint, DrawConfirm } from '@/components/map/ui/DrawTools'
+import { BlastPanel, NeighborsPrompt } from '@/components/map/ui/BlastPanel'
 import { Legend } from '@/components/map/ui/Legend'
-import { ZipPicker } from '@/components/map/ui/ZipPicker'
+import { PlacePicker } from '@/components/map/ui/PlacePicker'
 import { ClusterActionPanel } from '@/components/map/ui/ClusterActionPanel'
 import { UnsupportedDevice } from '@/components/map/ui/UnsupportedDevice'
 import { TruncationNotice } from '@/components/map/ui/TruncationNotice'
 import { Sheet } from '@/components/ds/Sheet'
-import type { MapCell, MapPoint, MapZip, Lead, LeadStatus, HeatmapMetric } from '@/lib/types'
+import type { MapCell, MapPoint, MapZip, Lead, LeadStatus, HeatmapMetric, NeighborHit, CustomerSearchResult } from '@/lib/types'
 
 // Below this zoom we show the choropleth; at/above it we swap to property pins.
 const PIN_ZOOM = 13
@@ -57,6 +59,9 @@ const PIN_ZOOM = 13
 // so behaviour is unchanged; the difference is that we now *know* when we hit it
 // (we request PIN_LIMIT + 1) instead of silently showing the top slice.
 const PIN_LIMIT = 2000
+// Blast radius for "show neighbors". Matches the server's GEO_NEIGHBOR_RADIUS_M
+// default; ~150 m is the block a rep can work while the truck stays parked.
+const BLAST_RADIUS_M = 150
 // Houston — the app's primary service area (matches the seed/HCAD data).
 const HOME: [number, number] = [-95.3698, 29.7604]
 
@@ -126,6 +131,8 @@ function PropertyMapInner() {
   const [zipOpen, setZipOpen] = useState(false)
   const [zipQuery, setZipQuery] = useState('')
   const [zipsLoading, setZipsLoading] = useState(false)
+  const [leadHits, setLeadHits] = useState<CustomerSearchResult[]>([])
+  const [leadsLoading, setLeadsLoading] = useState(false)
   const [activeZip, setActiveZip] = useState<string | null>(null)
   const { toasts, show: showToast, dismiss: dismissToast } = useToast()
   // Mobile layout: controls collapse behind a Filters button, legend collapses.
@@ -272,7 +279,7 @@ function PropertyMapInner() {
     }
   }, [vertical, status, showToast])
 
-  const toggleZipPicker = useCallback(() => {
+  const togglePlacePicker = useCallback(() => {
     const opening = !zipOpen
     setZipOpen(opening)
     if (opening) {
@@ -280,6 +287,40 @@ function PropertyMapInner() {
       loadZips()
     }
   }, [zipOpen, loadZips])
+
+  // Lead search, debounced.
+  //
+  // Reuses `GET /api/leads/search` rather than adding `/api/map/search`: it is
+  // already account-scoped, already excludes archived rows, and already ranks
+  // exact account-number hits first. The only thing it was missing was
+  // coordinates, which is now two columns on its SELECT rather than a new
+  // endpoint. One consequence taken deliberately: `/leads/*` is ungated while
+  // `/map/*` sits behind require_module("map"), so map search inherits the
+  // looser gate — correct, since it is the same data the lead list already
+  // shows.
+  // Whether the term is long enough to search is derived, not stored: clearing
+  // the hits with a setState in the effect body is a cascading render, and the
+  // stale-results case it was there to handle is better answered by not
+  // rendering them.
+  const searchTerm = zipQuery.trim()
+  const leadSearchArmed = zipOpen && searchTerm.length >= 2
+
+  useEffect(() => {
+    if (!leadSearchArmed) return
+    let cancelled = false
+    const t = setTimeout(async () => {
+      setLeadsLoading(true)
+      try {
+        const rows = await searchCustomers(searchTerm, 8)
+        if (!cancelled) setLeadHits(rows)
+      } catch {
+        if (!cancelled) setLeadHits([])
+      } finally {
+        if (!cancelled) setLeadsLoading(false)
+      }
+    }, 250)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [searchTerm, leadSearchArmed])
 
   // Fit to the ZIP's actual extent rather than flying to a centroid at a guessed
   // zoom, so the whole ZIP frames correctly whatever its shape. The resulting
@@ -305,6 +346,20 @@ function PropertyMapInner() {
       showToast(e instanceof Error ? e.message : 'Failed to open lead', 'error')
     }
   }, [showToast])
+
+  const jumpToLead = useCallback((l: CustomerSearchResult) => {
+    const map = mapRef.current
+    if (!map) return
+    if (l.latitude == null || l.longitude == null) {
+      // Not an error: `properties` doubles as the contact book, so an inbound
+      // call or web-form lead genuinely has nowhere to fly to.
+      showToast('That lead has no map location yet.', 'success')
+      return
+    }
+    setZipOpen(false)
+    map.easeTo({ center: [l.longitude, l.latitude], zoom: Math.max(map.getZoom(), PIN_ZOOM + 2), duration: 600 })
+    openLead(l.id)
+  }, [showToast, openLead])
 
   const loadHeatmap = useCallback(async () => {
     const map = mapRef.current
@@ -367,6 +422,48 @@ function PropertyMapInner() {
     }
   }, [vertical, showToast, loadCells, loadPoints])
 
+  // ── blast radius ──────────────────────────────────────────────────────────────
+  //
+  // `getBlastRadius` has had an API client since the geo phase and no caller at
+  // all. It ranks open leads around a completed job — the door-knock list for
+  // verticals where the work is visible from the street — which is exactly the
+  // question a map should be able to answer and couldn't.
+  const [blast, setBlast] = useState<{ lead: Lead; hits: NeighborHit[]; radius: number } | null>(null)
+  const [blastLoading, setBlastLoading] = useState(false)
+
+  const clearBlast = useCallback(() => {
+    setBlast(null)
+    const src = mapRef.current?.getSource('blast') as GeoJSONSource | undefined
+    src?.setData({ type: 'FeatureCollection', features: [] })
+  }, [])
+
+  const showNeighbors = useCallback(async (lead: Lead) => {
+    const map = mapRef.current, pal = paletteRef.current
+    if (!map || !pal || lead.latitude == null || lead.longitude == null) return
+    setBlastLoading(true)
+    try {
+      const r = await getBlastRadius(lead.id, BLAST_RADIUS_M)
+      // `POST /geo/neighbors` returns [] both for "no open leads nearby" and for
+      // a job with no coordinates, so the client cannot tell them apart. Say the
+      // true thing — that nothing came back — rather than inventing a cause.
+      if (!r.neighbors.length) {
+        showToast('No open leads within a short walk of this job.', 'success')
+        return
+      }
+      const center: [number, number] = [lead.longitude, lead.latitude]
+      setBlast({ lead, hits: r.neighbors, radius: r.radius_m })
+      const src = map.getSource('blast') as GeoJSONSource | undefined
+      src?.setData(blastToGeoJSON(center, r.radius_m, r.neighbors, pal))
+      const b = ringBounds(circleRing(center, r.radius_m))
+      if (b) map.fitBounds(b, { padding: 80, maxZoom: 17, duration: 600 })
+      setSelectedLead(null)     // the drawer covers the answer it just produced
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Could not load neighbors', 'error')
+    } finally {
+      setBlastLoading(false)
+    }
+  }, [showToast])
+
   // ── draw tools ────────────────────────────────────────────────────────────────
   const drawTools = useDrawTools({
     mapRef, paletteRef,
@@ -379,7 +476,7 @@ function PropertyMapInner() {
       drawActiveRef.current = active
       // A card left hanging while the user starts drawing points at a lead they
       // are no longer looking at.
-      if (active) hoverRef.current?.remove()
+      if (active) { hoverRef.current?.remove(); clearBlast() }
     },
   })
   const [savingDraw, setSavingDraw] = useState(false)
@@ -687,6 +784,36 @@ function PropertyMapInner() {
           },
         })
 
+        // Blast radius (Phase 6): the ring around a completed job and its ranked
+        // door-knock targets. Added last so it sits above the pins it annotates.
+        //
+        // The ring is a real polygon, not a `circle` layer: circle-radius is in
+        // screen pixels, so a 150 m ring would grow and shrink against the
+        // streets as you zoom — backwards for a "how far can I walk" overlay.
+        map.addSource('blast', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
+        map.addLayer({
+          id: 'blast-fill', type: 'fill', source: 'blast',
+          filter: ['==', ['get', 'kind'], 'ring'],
+          paint: { 'fill-color': paletteRef.current!.accent, 'fill-opacity': 0.08 },
+        })
+        map.addLayer({
+          id: 'blast-ring', type: 'line', source: 'blast',
+          filter: ['==', ['get', 'kind'], 'ring'],
+          paint: {
+            'line-color': paletteRef.current!.accent, 'line-width': 2, 'line-dasharray': [3, 2],
+          },
+        })
+        map.addLayer({
+          id: 'blast-hit', type: 'circle', source: 'blast',
+          filter: ['==', ['get', 'kind'], 'hit'],
+          paint: {
+            'circle-radius': coarsePointer ? 9 : 7,
+            'circle-color': ['get', 'color'],
+            'circle-stroke-color': paletteRef.current!.body,
+            'circle-stroke-width': 2,
+          },
+        })
+
         // Interactions.
         //
         // Layers are recreated whenever the style is replaced (see the basemap
@@ -703,6 +830,11 @@ function PropertyMapInner() {
           // tap that places a corner also opens a contact drawer over the map
           // the user is drawing on.
           map.on('click', 'pin', (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+            if (drawActiveRef.current) return
+            const id = e.features?.[0]?.properties?.id
+            if (id != null) openLead(Number(id))
+          })
+          map.on('click', 'blast-hit', (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
             if (drawActiveRef.current) return
             const id = e.features?.[0]?.properties?.id
             if (id != null) openLead(Number(id))
@@ -727,7 +859,7 @@ function PropertyMapInner() {
             if (!props) return
             setSelectedCluster({ label: Number(props.cluster_label), count: Number(props.customer_count) })
           })
-          for (const layer of ['pin', 'cell-fill', 'clusters', 'cluster-hull-fill']) {
+          for (const layer of ['pin', 'cell-fill', 'clusters', 'cluster-hull-fill', 'blast-hit']) {
             map.on('mouseenter', layer, () => { map!.getCanvas().style.cursor = 'pointer' })
             map.on('mouseleave', layer, () => { map!.getCanvas().style.cursor = '' })
           }
@@ -1056,9 +1188,9 @@ function PropertyMapInner() {
             mobile instead of collapsing behind the Filters button. Navigating to a
             ZIP is the primary way to move around the map on a phone. */}
         <button
-          onClick={toggleZipPicker}
-          title="Jump to a ZIP code"
-          aria-label="Jump to a ZIP code"
+          onClick={togglePlacePicker}
+          title="Jump to a ZIP, address, or lead"
+          aria-label="Jump to a ZIP, address, or lead"
           aria-expanded={zipOpen}
           aria-haspopup="listbox"
           style={overlayBtn(zipOpen || activeZip != null, isMobile)}
@@ -1133,12 +1265,15 @@ function PropertyMapInner() {
           </span>
         )}
         {zipOpen && (
-          <ZipPicker
+          <PlacePicker
             zips={zips}
-            loading={zipsLoading}
+            zipsLoading={zipsLoading}
             query={zipQuery}
             onQuery={setZipQuery}
-            onPick={jumpToZip}
+            onPickZip={jumpToZip}
+            leads={leadSearchArmed ? leadHits : []}
+            leadsLoading={leadSearchArmed && leadsLoading}
+            onPickLead={jumpToLead}
             onClose={() => setZipOpen(false)}
             isMobile={isMobile}
             areaLabel={serviceAreaLabel()}
@@ -1155,6 +1290,17 @@ function PropertyMapInner() {
         {drawTools.tool && !drawTools.pending && (
           <DrawHint tool={drawTools.tool} onCancel={drawTools.cancel} />
         )}
+        {/* Blast radius. Mutually exclusive with the draw panels — they share the
+            bottom-centre slot, and a draw session clears the overlay anyway. */}
+        {!drawTools.tool && blast && (
+          <BlastPanel
+            address={blast.lead.address ?? ''}
+            hits={blast.hits}
+            radiusM={blast.radius}
+            onPick={openLead}
+            onClose={clearBlast}
+          />
+        )}
         {drawTools.pending && (
           <DrawConfirm
             pending={drawTools.pending}
@@ -1168,6 +1314,13 @@ function PropertyMapInner() {
 
       <ContactDrawer
         lead={selectedLead}
+        // "Show neighbors" belongs to the lead being viewed, so it renders in
+        // the drawer rather than floating over a map the drawer covers.
+        actions={l => (
+          l.status === 'won' && l.latitude != null && l.longitude != null
+            ? <NeighborsPrompt busy={blastLoading} onShow={() => showNeighbors(l)} />
+            : null
+        )}
         onClose={() => { setSelectedLead(null); setActivePin(null) }}
         onStatusChange={() => refresh()}
         onLeadChange={updated => { setSelectedLead(updated); refresh() }}
