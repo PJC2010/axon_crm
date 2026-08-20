@@ -234,6 +234,10 @@ function PropertyMapInner() {
   // Mobile layout: controls collapse behind a Filters button, legend collapses.
   const isMobile = useMediaQuery('(max-width: 767px)')
   const [showControls, setShowControls] = useState(false)
+  // MapLibre v6 dropped the WebGL1 fallback path, so on a device without WebGL2
+  // (iOS 14, older Androids — roughly 4% of traffic) the Map constructor throws.
+  // Track it so the surface explains itself instead of showing a blank rectangle.
+  const [glUnsupported, setGlUnsupported] = useState(false)
 
   const filters = { vertical: vertical || undefined, status: status || undefined, signal_days: signalDays }
 
@@ -414,19 +418,39 @@ function PropertyMapInner() {
     let map: MLMap | null = null
 
     ;(async () => {
-      const maplibregl = (await import('maplibre-gl')).default
+      // MapLibre v6 ships ESM with NO default export — `(await import(...)).default`
+      // is `undefined` and every `maplibregl.X` below would throw. Take the module
+      // namespace instead. (v4 had a default; this is the v4→v6 break.)
+      const maplibregl = await import('maplibre-gl')
       if (cancelled || !containerRef.current) return
+
+      // Point the worker at the copy in /public. Next's bundlers rewrite the
+      // worker URL without emitting its `maplibre-gl-shared.mjs` sibling, so the
+      // worker throws on its first import and the map mounts but never requests a
+      // tile — a silent, production-only failure. scripts/copy-maplibre-worker.mjs
+      // puts both files there via prebuild/predev. Idempotent: setting the same
+      // URL twice is harmless, and this effect runs once.
+      maplibregl.setWorkerUrl('/maplibre/maplibre-gl-worker.mjs')
+
       paletteRef.current = readPalette()
 
-      map = new maplibregl.Map({
-        container: containerRef.current,
-        style: (ENV_STYLE as string) || (OSM_STYLE as unknown as string),
-        center: HOME,
-        zoom: 10,
-        // Hard-constrain panning/zooming to the configured service area. Widening
-        // coverage is a one-entry change in lib/serviceArea.ts — see SERVICE_REGIONS.
-        maxBounds: serviceAreaBounds(),
-      })
+      try {
+        map = new maplibregl.Map({
+          container: containerRef.current,
+          style: (ENV_STYLE as string) || (OSM_STYLE as unknown as string),
+          center: HOME,
+          zoom: 10,
+          // Hard-constrain panning/zooming to the configured service area. Widening
+          // coverage is a one-entry change in lib/serviceArea.ts — see SERVICE_REGIONS.
+          maxBounds: serviceAreaBounds(),
+        })
+      } catch (err) {
+        // The constructor throws synchronously when a WebGL2 context can't be
+        // created. Nothing below can run, so bail to the explanatory fallback.
+        console.error('[map] WebGL2 unavailable', err)
+        setGlUnsupported(true)
+        return
+      }
       mapRef.current = map
       map.addControl(new maplibregl.NavigationControl(), 'top-right')
 
@@ -810,8 +834,9 @@ function PropertyMapInner() {
 
       <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
         <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
-        <Legend key={isMobile ? 'mobile' : 'desktop'} mode={mode} collapsible={isMobile} />
-        {isMobile && (
+        {glUnsupported && <UnsupportedDevice />}
+        {!glUnsupported && <Legend key={isMobile ? 'mobile' : 'desktop'} mode={mode} collapsible={isMobile} />}
+        {isMobile && !glUnsupported && (
           <span style={{
             position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
             fontSize: 11, color: 'var(--color-ink-700)', background: 'var(--color-paper)',
@@ -1016,6 +1041,41 @@ function ZipPicker({
         </div>
       </div>
     </>
+  )
+}
+
+/**
+ * Shown when the browser can't give MapLibre a WebGL2 context.
+ *
+ * MapLibre v6 removed the WebGL1 fallback path, so this is a real outcome on
+ * iOS 14 and older Androids rather than a theoretical one. The rest of the CRM
+ * works fine on those devices — only the map doesn't — so this says exactly that
+ * and points at the surfaces that still do the job, instead of leaving a blank
+ * rectangle that reads as a broken page.
+ */
+function UnsupportedDevice() {
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, zIndex: 4, display: 'flex',
+      alignItems: 'center', justifyContent: 'center', padding: 24,
+      background: 'var(--color-paper)',
+    }}>
+      <div style={{ maxWidth: 380, textAlign: 'center' }}>
+        <MapPin size={28} strokeWidth={1.5} style={{ color: 'var(--color-ink-400)' }} />
+        <div style={{
+          fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 600,
+          color: 'var(--color-ink-900)', margin: '10px 0 6px',
+        }}>
+          This device can&rsquo;t display the map
+        </div>
+        <p style={{ fontSize: 13, lineHeight: 1.55, color: 'var(--color-ink-500)', margin: 0 }}>
+          The map needs WebGL2, which this browser doesn&rsquo;t support. Updating to a
+          newer browser or device will fix it. Everything else in Axon works normally —
+          your leads are all on the{' '}
+          <Link href="/pipeline" style={{ color: 'var(--color-accent-300)' }}>pipeline board</Link>.
+        </p>
+      </div>
+    </div>
   )
 }
 
