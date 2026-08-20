@@ -51,6 +51,7 @@ import { ClusterActionPanel } from '@/components/map/ui/ClusterActionPanel'
 import { UnsupportedDevice } from '@/components/map/ui/UnsupportedDevice'
 import { TruncationNotice } from '@/components/map/ui/TruncationNotice'
 import { Sheet } from '@/components/ds/Sheet'
+import { statusTokens } from '@/lib/gradeColors'
 import type { MapCell, MapPoint, MapZip, Lead, LeadStatus, HeatmapMetric, NeighborHit, CustomerSearchResult } from '@/lib/types'
 
 // Below this zoom we show the choropleth; at/above it we swap to property pins.
@@ -1087,7 +1088,10 @@ function PropertyMapInner() {
       <select value={status} onChange={e => setStatus(e.target.value)}
         style={fieldStyle(isMobile)}>
         <option value="">All statuses</option>
-        {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+        {/* The label, not the enum: this dropdown used to read `quote_sent` and
+            `not_interested` while every other status surface in the app showed
+            "Quote Sent" and "Not Interested" from the same shared source. */}
+        {STATUSES.map(s => <option key={s} value={s}>{statusTokens(s).label}</option>)}
       </select>
       {mode === 'signals' && (
         <select value={signalDays} onChange={e => setSignalDays(Number(e.target.value))}

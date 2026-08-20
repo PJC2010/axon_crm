@@ -210,7 +210,14 @@ app.include_router(ml.router,          prefix="/api", tags=["ML"],
                    dependencies=[Depends(require_module("prospecting"))])
 app.include_router(map_routes.router,  prefix="/api", tags=["Map"],
                    dependencies=[Depends(require_module("map"))])
-app.include_router(geo.router,         prefix="/api", tags=["Geo"])
+# Gated with the map, not separately: /geo/* is heatmap, clusters, events,
+# prospecting and the service-area write — the premium surface the map is built
+# on. Leaving it open meant an account without the `map` module could not see
+# the map UI but could still call everything behind it. Low risk to close:
+# gating is permissive (an account with no account_plans row gets every module),
+# and starter/growth accounts already cannot reach the map.
+app.include_router(geo.router,         prefix="/api", tags=["Geo"],
+                   dependencies=[Depends(require_module("map"))])
 
 
 @app.get("/api/health")

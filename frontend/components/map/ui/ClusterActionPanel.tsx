@@ -1,5 +1,6 @@
 'use client'
 import { Sparkles, X } from 'lucide-react'
+import { plural } from '@/lib/terminology'
 
 /**
  * Floating panel shown when a customer-cluster hull is clicked — fires the
@@ -35,7 +36,7 @@ export function ClusterActionPanel({
           Cluster #{cluster.label}
         </div>
         <div style={{ fontSize: 11, color: 'var(--color-ink-500)' }}>
-          {cluster.count} active customer{cluster.count === 1 ? '' : 's'} here
+          {plural(cluster.count, 'active customer', 'active customers')} here
         </div>
       </div>
       <button

@@ -22,6 +22,7 @@
  * variables rather than the resolved palette so this stays a pure DOM concern.
  */
 import { GRADE_TOKENS, GRADE_ACTION, statusTokens, type Grade } from '@/lib/gradeColors'
+import { plural } from '@/lib/terminology'
 
 export interface HoverFields {
   address: string
@@ -154,9 +155,9 @@ export function buildCellCard(f: CellFields): HTMLElement {
 
   root.appendChild(el('div', {
     fontSize: '11px', color: 'var(--color-ink-500)', marginBottom: '7px',
-  }, `${f.leads.toLocaleString()} lead${f.leads === 1 ? '' : 's'}`
+  }, plural(f.leads, 'lead', 'leads')
     + (f.avgScore ? ` · avg ${Math.round(f.avgScore)}` : '')
-    + (f.signals ? ` · ${f.signals} signal${f.signals === 1 ? '' : 's'}` : '')))
+    + (f.signals ? ` · ${plural(f.signals, 'signal', 'signals')}` : '')))
 
   // Stacked bar rather than four numbers: the mix is a proportion, and a
   // proportion is what a bar reads as at a glance.

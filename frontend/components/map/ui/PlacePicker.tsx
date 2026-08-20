@@ -2,6 +2,7 @@
 import { X, MapPin, Search } from 'lucide-react'
 import type { CSSProperties, ReactNode } from 'react'
 import { GRADE_TOKENS, type Grade } from '@/lib/gradeColors'
+import { plural } from '@/lib/terminology'
 import type { MapZip, CustomerSearchResult } from '@/lib/types'
 
 function Hint({ children }: { children: ReactNode }) {
@@ -143,7 +144,7 @@ export function PlacePicker({
                     <MapPin size={13} strokeWidth={1.5} /> {z.zip}
                   </span>
                   <span style={{ fontSize: 11, color: 'var(--color-ink-500)' }}>
-                    {z.leads.toLocaleString()} lead{z.leads === 1 ? '' : 's'}
+                    {plural(z.leads, 'lead', 'leads')}
                   </span>
                 </button>
               ))}
