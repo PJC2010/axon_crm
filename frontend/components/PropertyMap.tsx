@@ -21,6 +21,7 @@ import { ArrowLeft, Home, RefreshCw, Signal, Award, Grid3x3, Sparkles, Zap, X, S
 import ngeohash from 'ngeohash'
 import { gradeVarName, GRADE_TOKENS, GRADE_ACTION, type Grade } from '@/lib/gradeColors'
 import { resolveBasemap, registerPmtilesProtocol, needsPmtiles, OSM_RASTER } from '@/lib/mapStyle'
+import { registerPinSprites, spriteId, type PinPalette } from '@/lib/mapPins'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Map as MLMap, GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
 import { getMapCells, getMapProperties, getMapZips, getLead, getGeoHeatmap, getGeoClusters, prospectArea, getGeoEvents } from '@/lib/api'
@@ -74,6 +75,19 @@ function readPalette() {
     heatHigh: v('--color-rose',    '#f5498b'),  // heatmap: hottest
     customer: v('--color-moss',    '#32a467'),  // customer-cluster hulls
     alert:    v('--color-danger',  '#e76a6e'),  // active event polygons
+    // Pin artwork: slate body, light letter, muted border for "no grade".
+    body:     v('--color-surface',  '#2f343c'),
+    ink:      v('--color-ink-900',  '#f6f7f9'),
+    neutral:  v('--color-ink-300',  '#5f6b7c'),
+  }
+}
+
+/** The subset of the palette the pin sprites need, in their own shape. */
+function pinPalette(p: Palette): PinPalette {
+  return {
+    gradeA: p.gradeA, gradeB: p.gradeB, gradeC: p.gradeC, gradeD: p.gradeD,
+    body: p.body, ink: p.ink, neutral: p.neutral,
+    signal: p.gradeC,  // gold badge — "there's recent intent here"
   }
 }
 type Palette = ReturnType<typeof readPalette>
@@ -139,18 +153,43 @@ function cellsToGeoJSON(cells: MapCell[], mode: ColorMode, p: Palette) {
   }
 }
 
+/**
+ * Property pins → GeoJSON.
+ *
+ * Carries the fields the pin sprite, cluster aggregation and hover card all read
+ * — `grade`, `status`, `score`, `hasSignal` — rather than only a precomputed
+ * `color`. The API has always sent these; the renderer used to throw them away
+ * and draw an undifferentiated dot.
+ *
+ * `sprite` is resolved here rather than in a MapLibre expression because the
+ * sprite id depends on the active color mode, which an expression over feature
+ * properties can't see. `color` is kept for the cluster bubbles, which shade by
+ * their dominant grade.
+ */
 function pointsToGeoJSON(points: MapPoint[], mode: ColorMode, p: Palette) {
   return {
     type: 'FeatureCollection' as const,
-    features: points.map(pt => ({
-      type: 'Feature' as const,
-      properties: {
-        id: pt.id,
-        address: pt.address ?? '',
-        color: pointColor(pt, mode, p),
-      },
-      geometry: { type: 'Point' as const, coordinates: [pt.longitude, pt.latitude] },
-    })),
+    features: points.map(pt => {
+      const hasSignal = pt.signals.length > 0
+      // In signals mode every pin shares one shape and splits on signal state,
+      // so the grade ramp shouldn't leak into it.
+      const grade = mode === 'signals' ? (hasSignal ? 'S' : 'N') : (pt.score_grade ?? 'N')
+      return {
+        type: 'Feature' as const,
+        properties: {
+          id: pt.id,
+          address: pt.address ?? '',
+          grade,
+          status: pt.status,
+          score: pt.lead_score ?? null,
+          signals: pt.signals.join(', '),
+          hasSignal,
+          sprite: spriteId(grade, hasSignal),
+          color: pointColor(pt, mode, p),
+        },
+        geometry: { type: 'Point' as const, coordinates: [pt.longitude, pt.latitude] },
+      }
+    }),
   }
 }
 
@@ -250,6 +289,9 @@ function PropertyMapInner() {
   // (iOS 14, older Androids — roughly 4% of traffic) the Map constructor throws.
   // Track it so the surface explains itself instead of showing a blank rectangle.
   const [glUnsupported, setGlUnsupported] = useState(false)
+  // Id of the pin under the cursor / currently open in the drawer. Drives the
+  // `pin-highlight` layer's filter.
+  const [activePin, setActivePin] = useState<number | null>(null)
 
   const filters = { vertical: vertical || undefined, status: status || undefined, signal_days: signalDays }
 
@@ -359,6 +401,9 @@ function PropertyMapInner() {
 
   const openLead = useCallback(async (id: number) => {
     try {
+      // Keep the pin lit while its drawer is open, so it's obvious which house
+      // the panel is describing.
+      setActivePin(id)
       setSelectedLead(await getLead(id))
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Failed to open lead', 'error')
@@ -495,6 +540,10 @@ function PropertyMapInner() {
       // bails on isStyleLoaded() is never retried and the overlay never appears.
       const setupLayers = () => {
         if (!map || map.getLayer('cell-fill')) return
+        // Fire-and-forget: MapLibre draws symbols as their images arrive, so the
+        // layer can be added before registration finishes. Re-run after a style
+        // swap too, which drops registered images along with the layers.
+        void registerPinSprites(map, pinPalette(paletteRef.current!))
         // Choropleth (cells)
         map.addSource('cells', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
         map.addLayer({
@@ -539,13 +588,42 @@ function PropertyMapInner() {
           },
           paint: { 'text-color': '#ffffff' },
         })
-        // Bigger pins on touch devices so they're tappable with a finger.
+        // Hover/selected highlight, drawn UNDER the pins.
+        //
+        // A separate layer rather than extra sprites: two more states across six
+        // grades would have doubled the sprite set for what is really one glow.
+        // It filters on the id in React state rather than using `feature-state`,
+        // because feature-state needs a stable feature id via `promoteId`, and
+        // this source also sets `cluster: true` — the two don't compose
+        // reliably. A filter costs nothing here and has no such dependency.
+        map.addLayer({
+          id: 'pin-highlight', type: 'circle', source: 'points',
+          filter: ['==', ['get', 'id'], -1],
+          paint: {
+            'circle-color': paletteRef.current!.accent,
+            'circle-opacity': 0.28,
+            'circle-radius': 20,
+            'circle-stroke-width': 2,
+            'circle-stroke-color': paletteRef.current!.accent,
+          },
+        })
+
+        // Branded pins. Bigger on touch so they're tappable with a thumb.
         const coarsePointer = window.matchMedia('(pointer: coarse)').matches
         map.addLayer({
-          id: 'pin', type: 'circle', source: 'points', filter: ['!', ['has', 'point_count']],
-          paint: {
-            'circle-color': ['get', 'color'], 'circle-radius': coarsePointer ? 9 : 6,
-            'circle-stroke-width': 1.5, 'circle-stroke-color': '#ffffff',
+          id: 'pin', type: 'symbol', source: 'points', filter: ['!', ['has', 'point_count']],
+          layout: {
+            'icon-image': ['get', 'sprite'],
+            'icon-size': coarsePointer ? 1 : 0.82,
+            // The diamond's lower vertex is the anchor, so the point sits on the
+            // coordinate rather than the shape's centre.
+            'icon-anchor': 'bottom',
+            // Collision detection is the single biggest symbol-layer cost, and
+            // clustering already handles decluttering. Skip it.
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+            // A-grade pins win any remaining overlap.
+            'symbol-sort-key': ['match', ['get', 'grade'], 'A', 1, 'B', 2, 'C', 3, 'D', 4, 5],
           },
         })
 
@@ -630,6 +708,15 @@ function PropertyMapInner() {
             map.on('mouseenter', layer, () => { map!.getCanvas().style.cursor = 'pointer' })
             map.on('mouseleave', layer, () => { map!.getCanvas().style.cursor = '' })
           }
+          // Highlight the pin under the cursor. `mousemove` rather than
+          // `mouseenter`: with pins this dense, sliding from one to its
+          // neighbour doesn't re-fire enter, so the highlight would stick on
+          // the wrong lead.
+          map.on('mousemove', 'pin', (e) => {
+            const id = e.features?.[0]?.properties?.id
+            if (id != null) setActivePin(Number(id))
+          })
+          map.on('mouseleave', 'pin', () => setActivePin(null))
         }
 
         // Visibility + the first data load must run on EVERY setup, including a
@@ -715,6 +802,14 @@ function PropertyMapInner() {
     if (zoomedIn) loadPoints()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vertical, status, signalDays])
+
+  // Push the hovered/selected pin into the highlight layer's filter. Cheap:
+  // one filter update, no source data churn.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !map.getLayer('pin-highlight')) return
+    map.setFilter('pin-highlight', ['==', ['get', 'id'], activePin ?? -1])
+  }, [activePin])
 
   // Toggle recolors in place — instant, no refetch.
   useEffect(() => { recolor(mode) }, [mode, recolor])
@@ -945,7 +1040,7 @@ function PropertyMapInner() {
 
       <ContactDrawer
         lead={selectedLead}
-        onClose={() => setSelectedLead(null)}
+        onClose={() => { setSelectedLead(null); setActivePin(null) }}
         onStatusChange={() => refresh()}
         onLeadChange={updated => { setSelectedLead(updated); refresh() }}
         onToast={showToast}
