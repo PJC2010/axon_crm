@@ -36,6 +36,7 @@ import {
   cellsToGeoJSON, pointsToGeoJSON, heatToGeoJSON, clustersToGeoJSON, eventsToGeoJSON,
   type ColorMode,
 } from '@/components/map/geojson'
+import { padBbox, contains, VIEWPORT_PAD, type Bbox } from '@/components/map/bbox'
 import { gradeClusterProperties, createDonutManager, type DonutManager } from '@/components/map/clusterDonuts'
 import { buildHoverCard, hoverFieldsFrom } from '@/components/map/hoverCard'
 import { overlayBtn } from '@/components/map/ui/overlayBtn'
@@ -43,10 +44,15 @@ import { Legend } from '@/components/map/ui/Legend'
 import { ZipPicker } from '@/components/map/ui/ZipPicker'
 import { ClusterActionPanel } from '@/components/map/ui/ClusterActionPanel'
 import { UnsupportedDevice } from '@/components/map/ui/UnsupportedDevice'
+import { TruncationNotice } from '@/components/map/ui/TruncationNotice'
 import type { MapCell, MapPoint, MapZip, Lead, LeadStatus, HeatmapMetric } from '@/lib/types'
 
 // Below this zoom we show the choropleth; at/above it we swap to property pins.
 const PIN_ZOOM = 13
+// How many pins we're willing to draw at once. Matches the server's own default
+// so behaviour is unchanged; the difference is that we now *know* when we hit it
+// (we request PIN_LIMIT + 1) instead of silently showing the top slice.
+const PIN_LIMIT = 2000
 // Houston — the app's primary service area (matches the seed/HCAD data).
 const HOME: [number, number] = [-95.3698, 29.7604]
 
@@ -71,6 +77,9 @@ function PropertyMapInner() {
   // registered once at init and would otherwise close over the first render's
   // value — the same reason loadPointsRef exists.
   const donutsRef = useRef<DonutManager | null>(null)
+  // The padded box the current pins were fetched for. A pan stays cached while
+  // the viewport is still inside it; null means "nothing trustworthy loaded".
+  const fetchedBoxRef = useRef<Bbox | null>(null)
   // Reused hover Popup. One instance for the lifetime of the map: constructing
   // one per hover leaks DOM and makes the card flicker as you cross pins.
   const hoverRef = useRef<{ setLngLat: (c: [number, number]) => { setDOMContent: (n: Node) => { addTo: (m: MLMap) => void } }; remove: () => void } | null>(null)
@@ -108,6 +117,9 @@ function PropertyMapInner() {
   // Id of the pin under the cursor / currently open in the drawer. Drives the
   // `pin-highlight` layer's filter.
   const [activePin, setActivePin] = useState<number | null>(null)
+  // True when the viewport holds more leads than PIN_LIMIT, so the map is
+  // showing a slice. Surfaced rather than hidden — see the note in loadPoints.
+  const [truncated, setTruncated] = useState(false)
 
   const filters = { vertical: vertical || undefined, status: status || undefined, signal_days: signalDays }
 
@@ -153,19 +165,42 @@ function PropertyMapInner() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vertical, status, signalDays, mode, showToast])
 
-  const loadPoints = useCallback(async () => {
+  const loadPoints = useCallback(async (opts?: { force?: boolean }) => {
     const map = mapRef.current, pal = paletteRef.current
     if (!map || !pal || map.getZoom() < PIN_ZOOM) return
+
     const b = map.getBounds()
+    const view: Bbox = {
+      min_lat: b.getSouth(), min_lng: b.getWest(),
+      max_lat: b.getNorth(), max_lng: b.getEast(),
+    }
+
+    // Skip the request when the last fetch already covers where we are.
+    //
+    // Every pan used to refetch up to 2,000 rows the client already held, even
+    // for a nudge of a few pixels. We now fetch a padded box and only go back to
+    // the server once the viewport leaves it — so small pans are instant because
+    // the pins are already there. `force` is for filter changes, where the
+    // cached box is still geometrically valid but semantically stale.
+    if (!opts?.force && fetchedBoxRef.current && contains(fetchedBoxRef.current, view)) return
+
+    const padded = padBbox(view, VIEWPORT_PAD)
     setLoading(true)
     try {
-      const points = await getMapProperties(
-        { min_lat: b.getSouth(), min_lng: b.getWest(), max_lat: b.getNorth(), max_lng: b.getEast() },
-        filters,
-      )
+      // Ask for one more than we draw: if the server can fill it, there are more
+      // leads here than we're showing, and the user deserves to know.
+      const rows = await getMapProperties(padded, filters, PIN_LIMIT + 1)
+      const truncated = rows.length > PIN_LIMIT
+      const points = truncated ? rows.slice(0, PIN_LIMIT) : rows
+
       pointsRef.current = points
+      fetchedBoxRef.current = padded
+      setTruncated(truncated)
       ;(map.getSource('points') as GeoJSONSource | undefined)?.setData(pointsToGeoJSON(points, mode, pal))
     } catch (e) {
+      // Drop the cached box so the next pan retries rather than trusting a
+      // fetch that never landed.
+      fetchedBoxRef.current = null
       showToast(e instanceof Error ? e.message : 'Failed to load properties', 'error')
     } finally {
       setLoading(false)
@@ -275,9 +310,11 @@ function PropertyMapInner() {
         showToast(`Prospected: ${r.ingested ?? 0} new lead(s) ingested, ${r.scored ?? 0} scored.`, 'success')
       }
       setSelectedCluster(null)
-      // Reflect the freshly ingested leads.
+      // Reflect the freshly ingested leads. Forced: prospecting adds rows inside
+      // the box we already fetched, so the cache is geometrically valid and
+      // semantically stale — exactly the case `force` exists for.
       loadCells()
-      loadPoints()
+      loadPoints({ force: true })
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Prospecting failed', 'error')
     } finally {
@@ -671,7 +708,8 @@ function PropertyMapInner() {
   useEffect(() => {
     if (!mapRef.current) return
     loadCells()
-    if (zoomedIn) loadPoints()
+    // Forced: the viewport hasn't moved, but which leads belong in it has.
+    if (zoomedIn) loadPoints({ force: true })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vertical, status, signalDays])
 
@@ -719,7 +757,8 @@ function PropertyMapInner() {
 
   const refresh = () => {
     loadCells()
-    if (zoomedIn) loadPoints()
+    // The refresh button means "go and ask again", so it must bypass the cache.
+    if (zoomedIn) loadPoints({ force: true })
     if (heatmap) loadHeatmap()
     if (showClusters) loadClusters()
     if (showEvents) loadEvents()
@@ -878,6 +917,9 @@ function PropertyMapInner() {
         <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
         {glUnsupported && <UnsupportedDevice />}
         {!glUnsupported && <Legend key={isMobile ? 'mobile' : 'desktop'} mode={mode} collapsible={isMobile} />}
+        {!glUnsupported && truncated && zoomedIn && (
+          <TruncationNotice limit={PIN_LIMIT} isMobile={isMobile} />
+        )}
         {isMobile && !glUnsupported && (
           <span style={{
             position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
