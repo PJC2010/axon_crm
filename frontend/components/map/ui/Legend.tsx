@@ -52,7 +52,10 @@ export function Legend({ mode, collapsible }: { mode: ColorMode; collapsible?: b
 
   return (
     <div style={{
-      position: 'absolute', bottom: 16, left: 16, background: 'var(--color-paper)',
+      // Explicit, and deliberately below ClusterActionPanel (3): when both are
+      // up on a narrow screen the action panel is the thing being acted on.
+      // Previously neither declared one and stacking fell to DOM order.
+      position: 'absolute', bottom: 16, left: 16, zIndex: 2, background: 'var(--color-paper)',
       border: '1px solid var(--color-ink-200)', borderRadius: 'var(--radius-card)',
       boxShadow: 'var(--shadow-card)', padding: '10px 12px', fontSize: 11, color: 'var(--color-ink-700)',
     }}>

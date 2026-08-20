@@ -46,6 +46,7 @@ import { ZipPicker } from '@/components/map/ui/ZipPicker'
 import { ClusterActionPanel } from '@/components/map/ui/ClusterActionPanel'
 import { UnsupportedDevice } from '@/components/map/ui/UnsupportedDevice'
 import { TruncationNotice } from '@/components/map/ui/TruncationNotice'
+import { Sheet } from '@/components/ds/Sheet'
 import type { MapCell, MapPoint, MapZip, Lead, LeadStatus, HeatmapMetric } from '@/lib/types'
 
 // Below this zoom we show the choropleth; at/above it we swap to property pins.
@@ -82,6 +83,12 @@ function PropertyMapInner() {
   // registered once at init and would otherwise close over the first render's
   // value — the same reason loadPointsRef exists.
   const donutsRef = useRef<DonutManager | null>(null)
+  // Control handlers are registered once inside the init effect, so they can't
+  // close over `showToast` directly — same stale-closure trap as loadPointsRef.
+  const showToastRef = useRef<(m: string, v?: 'success' | 'error') => void>(() => {})
+  // Whether the primary input is a finger. Kept live rather than sampled once,
+  // because it's the only thing sizing pins for touch.
+  const coarsePointerRef = useRef(false)
   // The padded box the current pins were fetched for. A pan stays cached while
   // the viewport is still inside it; null means "nothing trustworthy loaded".
   const fetchedBoxRef = useRef<Bbox | null>(null)
@@ -226,6 +233,24 @@ function PropertyMapInner() {
   // trick heatmapRef uses above) so the handler always calls the current one.
   const loadPointsRef = useRef(loadPoints)
   useEffect(() => { loadPointsRef.current = loadPoints }, [loadPoints])
+  useEffect(() => { showToastRef.current = showToast }, [showToast])
+
+  // Keep the pointer-coarseness ref current and restyle the pins in place when
+  // it flips. `icon-size` is a layout property, so this is a cheap update — no
+  // re-registering sprites, no source churn.
+  useEffect(() => {
+    const mq = window.matchMedia('(pointer: coarse)')
+    const apply = () => {
+      coarsePointerRef.current = mq.matches
+      const map = mapRef.current
+      if (map?.getLayer('pin')) {
+        map.setLayoutProperty('pin', 'icon-size', mq.matches ? 1 : 0.82)
+      }
+    }
+    apply()
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
+  }, [])
 
   const loadZips = useCallback(async () => {
     setZipsLoading(true)
@@ -391,6 +416,36 @@ function PropertyMapInner() {
       mapRef.current = map
       map.addControl(new maplibregl.NavigationControl(), 'top-right')
 
+      // "Where am I relative to my A-grade leads" is the single most useful
+      // control for a rep standing on a street, and it's core MapLibre — no
+      // dependency. map.css already re-tokenises .maplibregl-ctrl-group, so
+      // these inherit the dark styling.
+      const geolocate = new maplibregl.GeolocateControl({
+        positionOptions: { enableHighAccuracy: true },
+        trackUserLocation: true,
+        showAccuracyCircle: true,
+      })
+      map.addControl(geolocate, 'top-right')
+      // The map is hard-bounded to the service area, so a fix outside it is a
+      // location we simply cannot pan to. Say so rather than leaving a button
+      // that appears to do nothing.
+      geolocate.on('outofmaxbounds', () => {
+        showToastRef.current(
+          `You're outside ${serviceAreaLabel()}, so the map can't jump to you.`,
+          'error',
+        )
+      })
+      // v6 types this event, so let the signature be inferred.
+      geolocate.on('error', (e) => {
+        // Code 1 is PERMISSION_DENIED — a decision, not a failure, so don't
+        // shout about it.
+        if (e.code === 1) return
+        showToastRef.current('Could not get your location.', 'error')
+      })
+
+      // Scale bar: imperial, because this ships to US contractors.
+      map.addControl(new maplibregl.ScaleControl({ maxWidth: 90, unit: 'imperial' }), 'bottom-right')
+
       // One Popup, reused for every hover. MapLibre owns the anchoring and the
       // edge-flipping; we only ever move it and swap its contents.
       hoverRef.current = new maplibregl.Popup({
@@ -497,7 +552,12 @@ function PropertyMapInner() {
         })
 
         // Branded pins. Bigger on touch so they're tappable with a thumb.
-        const coarsePointer = window.matchMedia('(pointer: coarse)').matches
+        //
+        // Read from a ref that a listener keeps current, rather than sampled
+        // once at init: this is the only thing sizing pins for touch, and a
+        // device that changes input mode (or any hydration-order surprise) used
+        // to be stuck with the wrong size for the whole session.
+        const coarsePointer = coarsePointerRef.current
         map.addLayer({
           id: 'pin', type: 'symbol', source: 'points', filter: ['!', ['has', 'point_count']],
           layout: {
@@ -829,7 +889,7 @@ function PropertyMapInner() {
       <button
         onClick={() => setHeatmap(v => !v)}
         title="Toggle the H3 heatmap overlay"
-        style={overlayBtn(heatmap)}
+        style={overlayBtn(heatmap, isMobile)}
       >
         <Grid3x3 size={13} strokeWidth={1.5} /> Heatmap
       </button>
@@ -843,14 +903,14 @@ function PropertyMapInner() {
       <button
         onClick={() => { if (showClusters) setSelectedCluster(null); setShowClusters(v => !v) }}
         title="Toggle customer clusters"
-        style={overlayBtn(showClusters)}
+        style={overlayBtn(showClusters, isMobile)}
       >
         <Sparkles size={13} strokeWidth={1.5} /> Clusters
       </button>
       <button
         onClick={() => setShowEvents(v => !v)}
         title="Toggle event polygons (hail swaths, new construction, …)"
-        style={overlayBtn(showEvents)}
+        style={overlayBtn(showEvents, isMobile)}
       >
         <Zap size={13} strokeWidth={1.5} /> Events
       </button>
@@ -860,10 +920,17 @@ function PropertyMapInner() {
   return (
     <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column' }}>
       <header style={{
-        minHeight: isMobile ? 52 : 64, padding: isMobile ? '8px 12px' : '0 16px',
+        // Fixed height on mobile, not minHeight: paired with flexWrap this used
+        // to grow to two or three rows at 320px and take that height straight
+        // out of the map — the opposite of what a phone needs. Filters live in
+        // the sheet now, so the row has little enough in it to stay on one line.
+        height: isMobile ? 52 : undefined,
+        minHeight: isMobile ? undefined : 64,
+        padding: isMobile ? '8px 12px' : '0 16px',
         display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 10,
         borderBottom: '1px solid var(--color-ink-200)', background: 'var(--color-paper)', flexShrink: 0,
-        flexWrap: 'wrap',
+        flexWrap: isMobile ? 'nowrap' : 'wrap',
+        overflow: isMobile ? 'hidden' : undefined,
       }}>
         <Link href="/dashboard" className="dash-icon-btn" style={{ textDecoration: 'none', color: 'inherit' }}>
           <ArrowLeft size={15} strokeWidth={1.5} />
@@ -907,7 +974,7 @@ function PropertyMapInner() {
           aria-label="Jump to a ZIP code"
           aria-expanded={zipOpen}
           aria-haspopup="listbox"
-          style={{ ...overlayBtn(zipOpen || activeZip != null), minHeight: isMobile ? 36 : undefined }}
+          style={overlayBtn(zipOpen || activeZip != null, isMobile)}
         >
           <MapPin size={13} strokeWidth={1.5} /> {activeZip ?? 'ZIP'}
         </button>
@@ -925,7 +992,7 @@ function PropertyMapInner() {
             onClick={() => setShowControls(v => !v)}
             title="Filters & overlays"
             aria-expanded={showControls}
-            style={{ ...overlayBtn(showControls || activeOverlays > 0), position: 'relative' }}
+            style={{ ...overlayBtn(showControls || activeOverlays > 0, true), position: 'relative' }}
           >
             <SlidersHorizontal size={13} strokeWidth={1.5} /> Filters
             {activeOverlays > 0 && !showControls && ` · ${activeOverlays}`}
@@ -936,14 +1003,23 @@ function PropertyMapInner() {
         </button>
       </header>
 
-      {/* Mobile: collapsible filter panel below the header */}
-      {isMobile && showControls && (
-        <div style={{
-          padding: '10px 12px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8,
-          borderBottom: '1px solid var(--color-ink-200)', background: 'var(--color-paper)', flexShrink: 0,
-        }}>
-          {filterControls}
-        </div>
+      {/* Mobile: filters and overlays in a bottom sheet.
+          Previously a static block in this flex column, so opening it *took
+          height away from the map* — the opposite of what a phone needs. The
+          sheet floats over the map instead, and peeks at 45% so a rep can see
+          both the controls and where they are. */}
+      {isMobile && (
+        <Sheet
+          open={showControls}
+          onClose={() => setShowControls(false)}
+          label="Filters and overlays"
+          title="Filters & overlays"
+          snapPoints={[0.45, 0.85]}
+        >
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+            {filterControls}
+          </div>
+        </Sheet>
       )}
 
       <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
@@ -953,9 +1029,15 @@ function PropertyMapInner() {
         {!glUnsupported && truncated && zoomedIn && (
           <TruncationNotice limit={PIN_LIMIT} isMobile={isMobile} />
         )}
-        {isMobile && !glUnsupported && (
+        {/* Two stacked pills 34px apart is noise. The truncation notice is the
+            more important message — "you're only seeing part of the data"
+            outranks "zoom out for blocks" — so the hint yields to it. */}
+        {isMobile && !glUnsupported && !truncated && (
           <span style={{
-            position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
+            // z-index declared, and the pill yields to the truncation notice:
+            // "you're only seeing part of the data" outranks "zoom out for
+            // blocks". They sit 34px apart and used to stack silently.
+            position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 2,
             fontSize: 11, color: 'var(--color-ink-700)', background: 'var(--color-paper)',
             border: '1px solid var(--color-ink-200)', borderRadius: 'var(--radius-pill)',
             padding: '3px 10px', boxShadow: 'var(--shadow-card)', pointerEvents: 'none', whiteSpace: 'nowrap',
