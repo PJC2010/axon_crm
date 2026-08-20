@@ -175,8 +175,17 @@ export function createDonutManager(
       const drawn = segments.length ? segments : [{ grade: 'N' as ClusterGrade, count: total }]
       const drawnTotal = drawn.reduce((n, s) => n + s.count, 0)
 
-      // Re-render only when the mix actually changed.
-      const signature = drawn.map(s => `${s.grade}:${s.count}`).join('|') + `/${total}`
+      // Re-render only when the mix actually changed — but position is part of
+      // "changed". Supercluster assigns cluster ids positionally and reuses them
+      // across a `setData`, and the marker interface here is deliberately narrow
+      // (`remove()` only, so this module never imports maplibre), so a reused
+      // marker cannot be moved. Without the coordinates in the key, a cluster id
+      // that comes back denoting a *different* cluster keeps the old marker at
+      // the old place — a donut hovering over the wrong block. Coordinates come
+      // back tile-quantized and deterministic for a given cluster and zoom, so
+      // this doesn't churn markers on an ordinary refresh.
+      const [lng, lat] = geom.coordinates
+      const signature = drawn.map(s => `${s.grade}:${s.count}`).join('|') + `/${total}@${lng},${lat}`
       const existing = markers.get(id)
       if (existing && existing.signature === signature) continue
       existing?.marker.remove()

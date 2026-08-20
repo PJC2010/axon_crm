@@ -64,6 +64,9 @@ const PIN_LIMIT = 2000
 // Blast radius for "show neighbors". Matches the server's GEO_NEIGHBOR_RADIUS_M
 // default; ~150 m is the block a rep can work while the truck stays parked.
 const BLAST_RADIUS_M = 150
+// Matches `BulkIds`'s max_length in api/routes/leads.py. Exceeding it 422s the
+// whole request rather than truncating, so the client splits instead.
+const ARCHIVE_CHUNK = 500
 // Houston — the app's primary service area (matches the seed/HCAD data).
 const HOME: [number, number] = [-95.3698, 29.7604]
 
@@ -108,6 +111,12 @@ function PropertyMapInner() {
   // The padded box the current pins were fetched for. A pan stays cached while
   // the viewport is still inside it; null means "nothing trustworthy loaded".
   const fetchedBoxRef = useRef<Bbox | null>(null)
+  // Monotonic request id: only the newest pin fetch may write results.
+  const pointsSeqRef = useRef(0)
+  // What that cached box knows about itself — whether the server had more rows
+  // than we drew, and the zoom it was fetched at.
+  const truncatedRef = useRef(false)
+  const fetchedZoomRef = useRef(0)
   // Reused hover Popup. One instance for the lifetime of the map: constructing
   // one per hover leaks DOM and makes the card flicker as you cross pins.
   const hoverRef = useRef<{ setLngLat: (c: [number, number]) => { setDOMContent: (n: Node) => { addTo: (m: MLMap) => void } }; remove: () => void } | null>(null)
@@ -150,6 +159,12 @@ function PropertyMapInner() {
   // True when the viewport holds more leads than PIN_LIMIT, so the map is
   // showing a slice. Surfaced rather than hidden — see the note in loadPoints.
   const [truncated, setTruncated] = useState(false)
+  // Bumped whenever setupLayers actually (re)creates the layers — i.e. after the
+  // basemap fallback swaps the style. Every effect that owns a layer's
+  // visibility or data depends on it, so each one re-applies itself rather than
+  // setupLayers having to know about all of them (and drifting the first time
+  // someone adds an overlay).
+  const [styleEpoch, setStyleEpoch] = useState(0)
 
   const filters = { vertical: vertical || undefined, status: status || undefined, signal_days: signalDays }
 
@@ -218,28 +233,49 @@ function PropertyMapInner() {
     // the server once the viewport leaves it — so small pans are instant because
     // the pins are already there. `force` is for filter changes, where the
     // cached box is still geometrically valid but semantically stale.
-    if (!opts?.force && fetchedBoxRef.current && contains(fetchedBoxRef.current, view)) return
+    //
+    // One exception, or the cache defeats a feature it shares a phase with: when
+    // the last result was truncated the notice tells the user to zoom in for the
+    // rest, and zooming in *shrinks* the viewport — which stays inside the
+    // cached box, so the request the notice just asked for would be skipped and
+    // the missing pins would never arrive. A truncated cache therefore expires
+    // as soon as the user actually zooms deeper.
+    const zoomedPastTruncation =
+      truncatedRef.current && map.getZoom() > fetchedZoomRef.current + 0.5
+    if (!opts?.force && !zoomedPastTruncation
+        && fetchedBoxRef.current && contains(fetchedBoxRef.current, view)) return
 
     const padded = padBbox(view, VIEWPORT_PAD)
+    // Responses can land out of order — a filtered fetch is fast, the unfiltered
+    // one it replaced may still be in flight — and the loser used to win by
+    // arriving last, overwriting newer pins *and* stamping its own box into the
+    // cache, which then suppressed the correction. Only the newest request may
+    // write anything.
+    const seq = ++pointsSeqRef.current
     setLoading(true)
     try {
       // Ask for one more than we draw: if the server can fill it, there are more
       // leads here than we're showing, and the user deserves to know.
       const rows = await getMapProperties(padded, filters, PIN_LIMIT + 1)
+      if (seq !== pointsSeqRef.current) return
       const truncated = rows.length > PIN_LIMIT
       const points = truncated ? rows.slice(0, PIN_LIMIT) : rows
 
       pointsRef.current = points
       fetchedBoxRef.current = padded
+      truncatedRef.current = truncated
+      fetchedZoomRef.current = map.getZoom()
       setTruncated(truncated)
       ;(map.getSource('points') as GeoJSONSource | undefined)?.setData(pointsToGeoJSON(points, mode, pal))
     } catch (e) {
+      if (seq !== pointsSeqRef.current) return
       // Drop the cached box so the next pan retries rather than trusting a
       // fetch that never landed.
       fetchedBoxRef.current = null
+      truncatedRef.current = false
       showToast(e instanceof Error ? e.message : 'Failed to load properties', 'error')
     } finally {
-      setLoading(false)
+      if (seq === pointsSeqRef.current) setLoading(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vertical, status, signalDays, mode, showToast])
@@ -249,6 +285,12 @@ function PropertyMapInner() {
   // filters/mode that were active at mount — silently undoing a filter as soon as
   // the user pans, or jumps to a ZIP. Mirror the live callback in a ref (the same
   // trick heatmapRef uses above) so the handler always calls the current one.
+  // Same stale-closure guard as loadPointsRef, and for the same reason:
+  // setupLayers lives in the mount-once init effect, so a style-swap re-setup
+  // would otherwise call the *first* render's loadCells and refetch the
+  // choropleth with the filters that were active at mount.
+  const loadCellsRef = useRef(loadCells)
+  useEffect(() => { loadCellsRef.current = loadCells }, [loadCells])
   const loadPointsRef = useRef(loadPoints)
   useEffect(() => { loadPointsRef.current = loadPoints }, [loadPoints])
   useEffect(() => { showToastRef.current = showToast }, [showToast])
@@ -433,11 +475,11 @@ function PropertyMapInner() {
   const [blast, setBlast] = useState<{ lead: Lead; hits: NeighborHit[]; radius: number } | null>(null)
   const [blastLoading, setBlastLoading] = useState(false)
 
-  const clearBlast = useCallback(() => {
-    setBlast(null)
-    const src = mapRef.current?.getSource('blast') as GeoJSONSource | undefined
-    src?.setData({ type: 'FeatureCollection', features: [] })
-  }, [])
+  const clearBlast = useCallback(() => setBlast(null), [])
+  // Reached from the once-bound hull click handler, which must not close over
+  // a render's callback.
+  const clearBlastRef = useRef(clearBlast)
+  useEffect(() => { clearBlastRef.current = clearBlast }, [clearBlast])
 
   const showNeighbors = useCallback(async (lead: Lead) => {
     const map = mapRef.current, pal = paletteRef.current
@@ -454,11 +496,10 @@ function PropertyMapInner() {
       }
       const center: [number, number] = [lead.longitude, lead.latitude]
       setBlast({ lead, hits: r.neighbors, radius: r.radius_m })
-      const src = map.getSource('blast') as GeoJSONSource | undefined
-      src?.setData(blastToGeoJSON(center, r.radius_m, r.neighbors, pal))
       const b = ringBounds(circleRing(center, r.radius_m))
       if (b) map.fitBounds(b, { padding: 80, maxZoom: 17, duration: 600 })
       setSelectedLead(null)     // the drawer covers the answer it just produced
+      setSelectedCluster(null)  // both panels own the bottom-centre slot
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Could not load neighbors', 'error')
     } finally {
@@ -517,8 +558,17 @@ function PropertyMapInner() {
         else setShowEvents(true)     // no point saving one you can't see
       } else if (p.tool === 'select') {
         if (!selection.length) return
-        const r = await archiveBulk(selection)
-        showToast(`Archived ${plural(r.archived_count, 'lead', 'leads')}.`, 'success')
+        // Chunked because `BulkIds` caps `ids` at 500 (api/routes/leads.py) and
+        // a lasso can hold up to PIN_LIMIT = 2000 — the whole request 422s at
+        // 501, archiving nothing and showing the user a raw Pydantic error.
+        // Chunking client-side rather than raising the server bound: that cap
+        // also bounds the interpolated placeholder list in `archive_bulk`.
+        let archived = 0
+        for (let i = 0; i < selection.length; i += ARCHIVE_CHUNK) {
+          const r = await archiveBulk(selection.slice(i, i + ARCHIVE_CHUNK))
+          archived += r.archived_count
+        }
+        showToast(`Archived ${plural(archived, 'lead', 'leads')}.`, 'success')
         loadCells()
         loadPoints({ force: true })
       } else if (p.tool === 'pin' && p.point) {
@@ -553,6 +603,9 @@ function PropertyMapInner() {
     // The basemap fallback is one-way and one-time; without this a flapping
     // provider could ping-pong the style.
     let basemapFellBack = false
+    // Set on the first 'styledata'. The basemap fallback keys off this rather
+    // than off isStyleLoaded(), which is about tiles, not about the style.
+    let styleEverLoaded = false
 
     ;(async () => {
       // MapLibre v6 ships ESM with NO default export — `(await import(...)).default`
@@ -595,6 +648,10 @@ function PropertyMapInner() {
         // created. Nothing below can run, so bail to the explanatory fallback.
         console.error('[map] WebGL2 unavailable', err)
         setGlUnsupported(true)
+        // Nothing may sit above the explanatory panel — the picker is an overlay
+        // and would otherwise stay open over it with a dead search box.
+        setZipOpen(false)
+        setShowControls(false)
         return
       }
       mapRef.current = map
@@ -661,6 +718,8 @@ function PropertyMapInner() {
       // Tile completion fires 'sourcedata', not 'styledata', so a handler that
       // bails on isStyleLoaded() is never retried and the overlay never appears.
       const setupLayers = () => {
+        // A 'styledata' at all means the style parsed; see the error handler.
+        styleEverLoaded = true
         if (!map || map.getLayer('cell-fill')) return
         // Fire-and-forget: MapLibre draws symbols as their images arrive, so the
         // layer can be added before registration finishes. Re-run after a style
@@ -754,8 +813,12 @@ function PropertyMapInner() {
             // clustering already handles decluttering. Skip it.
             'icon-allow-overlap': true,
             'icon-ignore-placement': true,
-            // A-grade pins win any remaining overlap.
-            'symbol-sort-key': ['match', ['get', 'grade'], 'A', 1, 'B', 2, 'C', 3, 'D', 4, 5],
+            // A-grade pins win any remaining overlap. With
+            // `icon-allow-overlap: true` nothing is dropped for collision, so
+            // the key is purely paint order and the HIGHER key draws on top —
+            // the opposite of the sort-key-as-priority reading, which had
+            // A-grade pins rendering *underneath* D-grade ones.
+            'symbol-sort-key': ['match', ['get', 'grade'], 'A', 5, 'B', 4, 'C', 3, 'D', 2, 1],
           },
         })
 
@@ -878,6 +941,7 @@ function PropertyMapInner() {
             if (drawActiveRef.current) return
             const props = e.features?.[0]?.properties
             if (!props) return
+            clearBlastRef.current()   // the two panels share one slot
             setSelectedCluster({ label: Number(props.cluster_label), count: Number(props.customer_count) })
           })
           for (const layer of ['pin', 'cell-fill', 'clusters', 'cluster-hull-fill', 'blast-hit']) {
@@ -969,7 +1033,18 @@ function PropertyMapInner() {
         // Both run on every setup: after a style swap the layers are new, so
         // their visibility has to be reapplied and their data refetched.
         applyZoom()
-        loadCells()
+        loadCellsRef.current()
+
+        // Pins come straight back from memory rather than from the network. The
+        // rows are still in `pointsRef`, and `fetchedBoxRef` still says we have
+        // them — so without this the cache correctly reports "already fetched"
+        // for a source that is now empty, and the pins never return no matter
+        // how far you pan.
+        ;(map.getSource('points') as GeoJSONSource | undefined)
+          ?.setData(pointsToGeoJSON(pointsRef.current, modeRef.current, paletteRef.current!))
+
+        // Let every layer-owning effect re-apply itself against the new layers.
+        setStyleEpoch(n => n + 1)
       }
 
       // Registered synchronously after construction, so the 'styledata' emitted
@@ -993,7 +1068,21 @@ function PropertyMapInner() {
       // v6 fully types map events, so let the listener signature be inferred
       // rather than hand-rolling one.
       map.on('error', (e) => {
-        const failedToLoadStyle = !basemapFellBack && !map!.isStyleLoaded()
+        // `!isStyleLoaded()` is NOT "the style failed to load".
+        //
+        // MapLibre's Style.loaded() additionally requires every source's tiles
+        // and the sprite to have finished — so it is false during any ordinary
+        // pan, and false again for a moment after each setData on the pin
+        // source. Meanwhile every non-404 tile failure fires this same 'error'.
+        // Together those meant one flaky tile — a rep losing signal in a truck
+        // for a second — permanently swapped the basemap, cleared the cluster
+        // markers and threw away a half-drawn territory, with no way back short
+        // of a reload.
+        //
+        // What we actually want to detect is a style that never loaded at all,
+        // so latch that instead: a style URL that is unreachable or malformed
+        // never fires 'styledata', and nothing else can set the latch.
+        const failedToLoadStyle = !basemapFellBack && !styleEverLoaded
         if (!failedToLoadStyle) return
         basemapFellBack = true
         console.warn(
@@ -1047,7 +1136,20 @@ function PropertyMapInner() {
     const map = mapRef.current
     if (!map || !map.getLayer('pin-highlight')) return
     map.setFilter('pin-highlight', ['==', ['get', 'id'], activePin ?? -1])
-  }, [activePin])
+  }, [activePin, styleEpoch])
+
+  // The blast overlay's source, kept in step with its state — and re-applied on
+  // a style swap, which recreates the source empty.
+  useEffect(() => {
+    const map = mapRef.current, pal = paletteRef.current
+    const src = map?.getSource('blast') as GeoJSONSource | undefined
+    if (!src || !pal) return
+    src.setData(
+      blast && blast.lead.longitude != null && blast.lead.latitude != null
+        ? blastToGeoJSON([blast.lead.longitude, blast.lead.latitude], blast.radius, blast.hits, pal)
+        : { type: 'FeatureCollection', features: [] },
+    )
+  }, [blast, styleEpoch])
 
   // Toggle recolors in place — instant, no refetch.
   useEffect(() => { modeRef.current = mode; recolor(mode) }, [mode, recolor])
@@ -1063,7 +1165,7 @@ function PropertyMapInner() {
     const cellVis = (inPins || heatmap) ? 'none' : 'visible'
     for (const l of ['cell-fill', 'cell-line']) map.setLayoutProperty(l, 'visibility', cellVis)
     if (heatmap) loadHeatmap()
-  }, [heatmap, heatMetric, loadHeatmap])
+  }, [heatmap, heatMetric, loadHeatmap, styleEpoch])
 
   // Cluster-hull overlay: show/hide and load on demand.
   useEffect(() => {
@@ -1072,7 +1174,7 @@ function PropertyMapInner() {
     const vis = showClusters ? 'visible' : 'none'
     for (const l of ['cluster-hull-fill', 'cluster-hull-line']) map.setLayoutProperty(l, 'visibility', vis)
     if (showClusters) loadClusters()
-  }, [showClusters, loadClusters])
+  }, [showClusters, loadClusters, styleEpoch])
 
   // Event-polygon overlay: show/hide and load on demand.
   useEffect(() => {
@@ -1081,7 +1183,7 @@ function PropertyMapInner() {
     const vis = showEvents ? 'visible' : 'none'
     for (const l of ['event-fill', 'event-line']) map.setLayoutProperty(l, 'visibility', vis)
     if (showEvents) loadEvents()
-  }, [showEvents, loadEvents])
+  }, [showEvents, loadEvents, styleEpoch])
 
   const refresh = () => {
     loadCells()
@@ -1097,6 +1199,37 @@ function PropertyMapInner() {
 
   // Filter + overlay controls, rendered inline in the header on desktop and in
   // a collapsible panel below it on mobile.
+  // Color basis. On a phone this lives in the sheet with the other controls:
+  // the header is a fixed 52px single row, and back + title + a two-button
+  // toggle + ZIP + Filters + Refresh does not fit a 320px screen — it used to
+  // overflow into `overflow: hidden` and clip the trailing controls away
+  // entirely rather than wrapping.
+  const modeToggle = (
+    <div style={{
+      display: 'flex', gap: 2, background: 'var(--color-ink-100)',
+      borderRadius: 'var(--radius-pill)', padding: 2, marginLeft: isMobile ? 0 : 8,
+    }}>
+      {([['signals', Signal, 'Intent signals'], ['score', Award, 'Score grade']] as const).map(([key, Icon, label]) => (
+        <button
+          key={key}
+          onClick={() => setMode(key)}
+          title={label}
+          aria-label={label}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            padding: isMobile ? '9px 14px' : '5px 12px', minHeight: isMobile ? 40 : undefined,
+            fontSize: 12, fontWeight: 500, borderRadius: 'var(--radius-pill)', border: 'none', cursor: 'pointer',
+            background: mode === key ? 'var(--color-paper)' : 'transparent',
+            color: mode === key ? 'var(--color-ink-900)' : 'var(--color-ink-400)',
+            boxShadow: mode === key ? 'var(--shadow-card)' : 'none',
+          }}
+        >
+          <Icon size={13} strokeWidth={1.5} /> {label}
+        </button>
+      ))}
+    </div>
+  )
+
   const filterControls = (
     <>
       <input
@@ -1183,35 +1316,18 @@ function PropertyMapInner() {
             <Home size={15} strokeWidth={1.5} />
           </Link>
         )}
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600, color: 'var(--color-ink-900)', margin: 0 }}>
-          Map
-        </h1>
+        {!isMobile && (
+          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600, color: 'var(--color-ink-900)', margin: 0 }}>
+            Map
+          </h1>
+        )}
 
-        {/* Color-basis toggle (icon-only on mobile to fit one row) */}
-        <div style={{ display: 'flex', gap: 2, background: 'var(--color-ink-100)', borderRadius: 'var(--radius-pill)', padding: 2, marginLeft: 8 }}>
-          {([['signals', Signal, 'Intent signals'], ['score', Award, 'Score grade']] as const).map(([key, Icon, label]) => (
-            <button
-              key={key}
-              onClick={() => setMode(key)}
-              title={label}
-              aria-label={label}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '7px 12px' : '5px 12px',
-                fontSize: 12, fontWeight: 500, borderRadius: 'var(--radius-pill)', border: 'none', cursor: 'pointer',
-                background: mode === key ? 'var(--color-paper)' : 'transparent',
-                color: mode === key ? 'var(--color-ink-900)' : 'var(--color-ink-400)',
-                boxShadow: mode === key ? 'var(--shadow-card)' : 'none',
-              }}
-            >
-              <Icon size={13} strokeWidth={1.5} /> {!isMobile && label}
-            </button>
-          ))}
-        </div>
+        {!glUnsupported && !isMobile && modeToggle}
 
         {/* ZIP jump — deliberately outside `filterControls` so it stays visible on
             mobile instead of collapsing behind the Filters button. Navigating to a
             ZIP is the primary way to move around the map on a phone. */}
-        <button
+        {!glUnsupported && <button
           onClick={togglePlacePicker}
           title="Jump to a ZIP, address, or lead"
           aria-label="Jump to a ZIP, address, or lead"
@@ -1220,9 +1336,9 @@ function PropertyMapInner() {
           style={overlayBtn(zipOpen || activeZip != null, isMobile)}
         >
           <MapPin size={13} strokeWidth={1.5} /> {activeZip ?? 'ZIP'}
-        </button>
+        </button>}
 
-        {!isMobile && filterControls}
+        {!glUnsupported && !isMobile && filterControls}
 
         <div style={{ flex: 1 }} />
         {!isMobile && (
@@ -1230,7 +1346,7 @@ function PropertyMapInner() {
             {zoomedIn ? 'Properties' : 'Regions'} · zoom {zoomedIn ? 'out for blocks' : 'in for pins'}
           </span>
         )}
-        {isMobile && (
+        {!glUnsupported && isMobile && (
           <button
             onClick={() => setShowControls(v => !v)}
             title="Filters & overlays"
@@ -1241,9 +1357,9 @@ function PropertyMapInner() {
             {activeOverlays > 0 && !showControls && ` · ${activeOverlays}`}
           </button>
         )}
-        <button onClick={refresh} className="dash-icon-btn" title="Refresh">
+        {!glUnsupported && <button onClick={refresh} className="dash-icon-btn" title="Refresh">
           <RefreshCw size={13} strokeWidth={1.5} className={loading ? 'animate-spin' : ''} />
-        </button>
+        </button>}
       </header>
 
       {/* Mobile: filters and overlays in a bottom sheet.
@@ -1260,6 +1376,7 @@ function PropertyMapInner() {
           snapPoints={[0.45, 0.85]}
         >
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+            {modeToggle}
             {filterControls}
           </div>
         </Sheet>

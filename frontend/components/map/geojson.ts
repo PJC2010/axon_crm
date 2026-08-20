@@ -65,7 +65,14 @@ export function cellsToGeoJSON(cells: MapCell[]) {
           // The ramp reads these directly, so both bases must ride along —
           // which is what makes switching basis a paint update, not a refetch.
           signal_count: c.signal_count,
+          // `coalesce` has to stay — a null reaching `interpolate` makes
+          // MapLibre drop the feature's paint entirely, leaving a hole. But 0 is
+          // the ramp's bottom stop, the red reserved for the worst blocks, so a
+          // cell whose leads have simply never been scored would be painted as
+          // the worst block on the map. `scored` keeps "no score" distinct from
+          // "scored zero"; the ramp branches on it.
           avg_score: c.avg_score ?? 0,
+          scored: c.avg_score != null,
           // Grade mix, for the cell hover card. Fetched all along and discarded
           // until now.
           grade_a: c.grade_a, grade_b: c.grade_b,

@@ -72,13 +72,20 @@ export function rampProperty(mode: ColorMode): 'signal_count' | 'avg_score' {
  */
 export function rampExpression(mode: ColorMode, p: Palette): unknown {
   const stops = rampFor(mode, p)
-  return [
+  const interpolate = [
     'interpolate', ['linear'],
     // `coalesce` matters: avg_score is null for an unscored cell, and a null in
     // an interpolate input makes MapLibre drop the feature's paint silently.
     ['coalesce', ['get', rampProperty(mode)], 0],
     ...stops.flatMap(s => [s.at, s.color]),
   ]
+  // …but the coalesced 0 lands on the ramp's bottom stop, which in score mode is
+  // the grade-D red reserved for the worst blocks. A block whose leads have
+  // simply never been scored is an absence, not a bad score, so it gets the same
+  // neutral the signals ramp already uses for zero. Signals genuinely are zero
+  // when absent, so that mode needs no branch.
+  if (mode !== 'score') return interpolate
+  return ['case', ['get', 'scored'], interpolate, p.none]
 }
 
 /** CSS gradient for the legend, so it can show the same ramp it's describing. */

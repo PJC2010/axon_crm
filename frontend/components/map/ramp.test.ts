@@ -63,11 +63,29 @@ describe('ramp stops', () => {
 })
 
 describe('rampExpression', () => {
+  /** Score mode wraps its interpolate in a `case`; signals mode doesn't. */
+  const interpolateOf = (e: unknown[]) => (e[0] === 'case' ? e[2] as unknown[] : e)
+
   it('builds a linear interpolate over the right property', () => {
-    const e = rampExpression('score', P) as unknown[]
+    const e = interpolateOf(rampExpression('score', P) as unknown[])
     expect(e[0]).toBe('interpolate')
     expect(e[1]).toEqual(['linear'])
     expect(e[2]).toEqual(['coalesce', ['get', 'avg_score'], 0])
+  })
+
+  it('paints a never-scored cell neutral, not worst-grade red', () => {
+    // The coalesce that keeps MapLibre from dropping the paint lands a null on
+    // the ramp's bottom stop — which in score mode is the grade-D red for the
+    // worst blocks. A block nobody has scored is an absence, not a bad score.
+    const e = rampExpression('score', P) as unknown[]
+    expect(e[0]).toBe('case')
+    expect(e[1]).toEqual(['get', 'scored'])
+    expect(e[3]).toBe(P.none)
+    expect(e[3]).not.toBe(P.gradeD)
+  })
+
+  it('leaves the signals ramp unwrapped, because zero signals really is zero', () => {
+    expect((rampExpression('signals', P) as unknown[])[0]).toBe('interpolate')
   })
 
   it('guards against a null input', () => {
