@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { X, Archive, ArrowUpRight, MapPin, Zap } from 'lucide-react'
 import type { Lead, LeadStatus } from '@/lib/types'
 import { archiveLead } from '@/lib/api'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useTerminology } from '@/hooks/useTerminology'
 import { StatusSelect } from './StatusSelect'
 import { ScoreBadge } from './ScoreBadge'
@@ -25,9 +25,19 @@ interface Props {
   /** Propagate full-lead updates (contact edits / enrichment) up to the list. */
   onLeadChange?: (lead: Lead) => void
   onToast?: (message: string, variant?: 'success' | 'error') => void
+  /**
+   * Extra actions for the surface that opened this drawer, rendered under the
+   * header. The map uses it for "show neighbors" on a won job; every other call
+   * site passes nothing.
+   *
+   * A slot rather than a bottom-of-map panel because this drawer is
+   * `width: min(440px, 100vw)` — full width on a phone — so anything the map
+   * floats behind it is unreachable exactly where a rep would use it.
+   */
+  actions?: (lead: Lead) => ReactNode
 }
 
-export function ContactDrawer({ lead, onClose, onStatusChange, onLeadChange, onToast }: Props) {
+export function ContactDrawer({ lead, onClose, onStatusChange, onLeadChange, onToast, actions }: Props) {
   const { t, propertyBased } = useTerminology()
   const [archiving, setArchiving] = useState(false)
 
@@ -148,6 +158,9 @@ export function ContactDrawer({ lead, onClose, onStatusChange, onLeadChange, onT
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto' }}>
+          {actions && (
+            <div style={{ padding: '14px 24px 0' }}>{actions(lead)}</div>
+          )}
           <div style={{ padding: '0 24px' }}>
             <NextStepHint status={lead.status} leadId={lead.id} onToast={onToast} />
           </div>

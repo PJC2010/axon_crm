@@ -15,184 +15,64 @@
  * MapLibre is imported lazily inside an effect (never at module scope) so it
  * never touches `window` during SSR.
  */
-import { useEffect, useRef, useState, useCallback, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Home, RefreshCw, Signal, Award, Grid3x3, Sparkles, Zap, X, SlidersHorizontal, ChevronDown, ChevronUp, MapPin } from 'lucide-react'
-import ngeohash from 'ngeohash'
+import { ArrowLeft, Home, RefreshCw, Signal, Award, Grid3x3, Sparkles, Zap, SlidersHorizontal, MapPin } from 'lucide-react'
+import { resolveBasemap, registerPmtilesProtocol, needsPmtiles, OSM_RASTER } from '@/lib/mapStyle'
+import { registerPinSprites } from '@/lib/mapPins'
 import 'maplibre-gl/dist/maplibre-gl.css'
+// Must follow maplibre's own stylesheet — it re-tokenises the light-theme chrome
+// MapLibre ships (popup surface, tip, attribution, controls) for the dark system.
+import '@/components/map/map.css'
 import type { Map as MLMap, GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
-import { getMapCells, getMapProperties, getMapZips, getLead, getGeoHeatmap, getGeoClusters, prospectArea, getGeoEvents } from '@/lib/api'
+import { getMapCells, getMapProperties, getMapZips, getLead, getGeoHeatmap, getGeoClusters, prospectArea, getGeoEvents, putServiceArea, createGeoEvent, getBlastRadius, searchCustomers, archiveBulk } from '@/lib/api'
 import { serviceAreaBounds, serviceAreaLabel, clampToServiceArea, clampBoundsToServiceArea } from '@/lib/serviceArea'
 import { AuthGuard } from '@/components/AuthGuard'
 import { ContactDrawer } from '@/components/ContactDrawer'
 import { ToastStack, useToast } from '@/components/Toast'
-import type { MapCell, MapPoint, MapZip, Lead, LeadStatus, HeatmapCell, HeatmapMetric } from '@/lib/types'
-
-type ColorMode = 'signals' | 'score'
+import { useMediaQuery, MOBILE_BREAKPOINT } from '@/hooks/useMediaQuery'
+import { readPalette, pinPalette, type Palette } from '@/components/map/mapPalette'
+import {
+  cellsToGeoJSON, pointsToGeoJSON, heatToGeoJSON, clustersToGeoJSON, eventsToGeoJSON, blastToGeoJSON,
+  type ColorMode,
+} from '@/components/map/geojson'
+import { circleRing, ringBounds, ringContains } from '@/components/map/draw'
+import { padBbox, contains, VIEWPORT_PAD, type Bbox } from '@/components/map/bbox'
+import { rampExpression } from '@/components/map/ramp'
+import { gradeClusterProperties, createDonutManager, type DonutManager } from '@/components/map/clusterDonuts'
+import { buildHoverCard, hoverFieldsFrom, buildCellCard, cellFieldsFrom } from '@/components/map/hoverCard'
+import { overlayBtn, fieldStyle } from '@/components/map/ui/controlStyles'
+import { useDrawTools } from '@/components/map/useDrawTools'
+import { DrawToolbar, DrawHint, DrawConfirm } from '@/components/map/ui/DrawTools'
+import { BlastPanel, NeighborsPrompt } from '@/components/map/ui/BlastPanel'
+import { Legend } from '@/components/map/ui/Legend'
+import { PlacePicker } from '@/components/map/ui/PlacePicker'
+import { ClusterActionPanel } from '@/components/map/ui/ClusterActionPanel'
+import { UnsupportedDevice } from '@/components/map/ui/UnsupportedDevice'
+import { TruncationNotice } from '@/components/map/ui/TruncationNotice'
+import { Sheet } from '@/components/ds/Sheet'
+import { statusTokens } from '@/lib/gradeColors'
+import { plural } from '@/lib/terminology'
+import type { MapCell, MapPoint, MapZip, Lead, LeadStatus, HeatmapMetric, NeighborHit, CustomerSearchResult } from '@/lib/types'
 
 // Below this zoom we show the choropleth; at/above it we swap to property pins.
 const PIN_ZOOM = 13
+// How many pins we're willing to draw at once. Matches the server's own default
+// so behaviour is unchanged; the difference is that we now *know* when we hit it
+// (we request PIN_LIMIT + 1) instead of silently showing the top slice.
+const PIN_LIMIT = 2000
+// Blast radius for "show neighbors". Matches the server's GEO_NEIGHBOR_RADIUS_M
+// default; ~150 m is the block a rep can work while the truck stays parked.
+const BLAST_RADIUS_M = 150
+// Matches `BulkIds`'s max_length in api/routes/leads.py. Exceeding it 422s the
+// whole request rather than truncating, so the client splits instead.
+const ARCHIVE_CHUNK = 500
 // Houston — the app's primary service area (matches the seed/HCAD data).
 const HOME: [number, number] = [-95.3698, 29.7604]
 
 const STATUSES: LeadStatus[] = [
   'new', 'contacted', 'qualified', 'quote_sent', 'won', 'lost', 'not_interested', 'converted',
 ]
-
-// Free, no-key default basemap (OpenStreetMap raster). Override with a provider
-// style URL via NEXT_PUBLIC_MAP_STYLE for production-grade tiles + vector glyphs.
-const ENV_STYLE = process.env.NEXT_PUBLIC_MAP_STYLE
-const OSM_STYLE = {
-  version: 8 as const,
-  glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
-  sources: {
-    osm: {
-      type: 'raster' as const,
-      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-      tileSize: 256,
-      attribution: '© OpenStreetMap contributors',
-    },
-  },
-  layers: [{ id: 'osm', type: 'raster' as const, source: 'osm' }],
-}
-
-// Resolve design-system CSS variables to concrete hex (WebGL can't read vars).
-function readPalette() {
-  const cs = getComputedStyle(document.documentElement)
-  const v = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback
-  return {
-    none:   v('--color-ink-200', '#e5e7eb'),
-    cool:   v('--color-ocean',   '#3b82f6'),
-    moss:   v('--color-moss',    '#16a34a'),
-    accent: v('--color-accent',  '#65a30d'),
-    gold:   v('--color-gold',    '#d97706'),
-    danger: v('--color-danger',  '#dc2626'),
-    line:   v('--color-ink-300', '#cbd5e1'),
-  }
-}
-type Palette = ReturnType<typeof readPalette>
-
-// ── color logic (shared by cells + pins) ─────────────────────────────────────────
-
-function cellColor(c: MapCell, mode: ColorMode, p: Palette): string {
-  if (mode === 'signals') {
-    if (c.signal_count <= 0) return p.none
-    if (c.signal_count <= 2) return p.gold
-    if (c.signal_count <= 5) return p.accent === p.gold ? p.danger : p.gold
-    return p.danger
-  }
-  // score: shade by the cell's average lead score (higher = better prospect)
-  const s = c.avg_score
-  if (s == null) return p.none
-  if (s >= 80) return p.moss
-  if (s >= 65) return p.accent
-  if (s >= 50) return p.gold
-  return p.danger
-}
-
-function pointColor(pt: MapPoint, mode: ColorMode, p: Palette): string {
-  if (mode === 'signals') return pt.signals.length > 0 ? p.danger : p.cool
-  switch (pt.score_grade) {
-    case 'A': return p.moss
-    case 'B': return p.accent
-    case 'C': return p.gold
-    case 'D': return p.danger
-    default:  return p.none
-  }
-}
-
-// ── GeoJSON builders ─────────────────────────────────────────────────────────────
-
-function cellsToGeoJSON(cells: MapCell[], mode: ColorMode, p: Palette) {
-  return {
-    type: 'FeatureCollection' as const,
-    features: cells.map(c => {
-      const [minLat, minLng, maxLat, maxLng] = ngeohash.decode_bbox(c.cell)
-      return {
-        type: 'Feature' as const,
-        properties: {
-          cell: c.cell,
-          name: c.name ?? '',
-          leads: c.leads,
-          signal_count: c.signal_count,
-          avg_score: c.avg_score ?? 0,
-          color: cellColor(c, mode, p),
-        },
-        geometry: {
-          type: 'Polygon' as const,
-          coordinates: [[
-            [minLng, minLat], [maxLng, minLat], [maxLng, maxLat],
-            [minLng, maxLat], [minLng, minLat],
-          ]],
-        },
-      }
-    }),
-  }
-}
-
-function pointsToGeoJSON(points: MapPoint[], mode: ColorMode, p: Palette) {
-  return {
-    type: 'FeatureCollection' as const,
-    features: points.map(pt => ({
-      type: 'Feature' as const,
-      properties: {
-        id: pt.id,
-        address: pt.address ?? '',
-        color: pointColor(pt, mode, p),
-      },
-      geometry: { type: 'Point' as const, coordinates: [pt.longitude, pt.latitude] },
-    })),
-  }
-}
-
-// H3 heatmap hexes → GeoJSON, with a normalized 0–1 `intensity` for shading.
-function heatToGeoJSON(cells: HeatmapCell[]) {
-  const max = Math.max(1, ...cells.map(c => c.value ?? 0))
-  return {
-    type: 'FeatureCollection' as const,
-    features: cells
-      .filter(c => c.boundary && c.boundary.length >= 3)
-      .map(c => ({
-        type: 'Feature' as const,
-        properties: {
-          h3: c.h3,
-          value: c.value ?? 0,
-          intensity: (c.value ?? 0) / max,
-          leads: c.leads,
-          customers: c.customers,
-        },
-        geometry: {
-          type: 'Polygon' as const,
-          coordinates: [[...c.boundary!, c.boundary![0]]],
-        },
-      })),
-  }
-}
-
-// Cluster hulls come back as a GeoJSON FeatureCollection; drop the null-geometry
-// (too-small) clusters before handing it to MapLibre.
-function clustersToGeoJSON(fc: { features: Array<{ geometry: unknown }> } | null) {
-  const features = (fc?.features ?? []).filter(f => f.geometry != null)
-  return { type: 'FeatureCollection' as const, features: features as GeoJSON.Feature[] }
-}
-
-// Event polygons come back as a GeoJSON FeatureCollection (properties carry an
-// `active` flag used to shade them); drop any null geometry.
-function eventsToGeoJSON(fc: { features: Array<{ geometry: unknown }> } | null) {
-  const features = (fc?.features ?? []).filter(f => f.geometry != null)
-  return { type: 'FeatureCollection' as const, features: features as GeoJSON.Feature[] }
-}
-
-// Tracks a media query on the client; `false` during SSR so the desktop layout
-// is the hydration baseline.
-function useMediaQuery(query: string) {
-  const subscribe = useCallback((onChange: () => void) => {
-    const mq = window.matchMedia(query)
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
-  }, [query])
-  return useSyncExternalStore(subscribe, () => window.matchMedia(query).matches, () => false)
-}
 
 // ── component ─────────────────────────────────────────────────────────────────────
 
@@ -207,6 +87,39 @@ function PropertyMapInner() {
   // Mirrors `heatmap` state so the zoom handler (created once at init) can keep
   // the choropleth hidden while the heatmap overlay is on.
   const heatmapRef = useRef(false)
+  // Mirrors `mode` for the same reason heatmapRef exists: setupLayers is built
+  // once, so it would otherwise bake the basis that was active at mount and a
+  // style swap would silently revert the choropleth's ramp.
+  const modeRef = useRef<ColorMode>('signals')
+  // Cluster donut markers. Held in a ref because the zoom/idle handlers are
+  // registered once at init and would otherwise close over the first render's
+  // value — the same reason loadPointsRef exists.
+  const donutsRef = useRef<DonutManager | null>(null)
+  // Control handlers are registered once inside the init effect, so they can't
+  // close over `showToast` directly — same stale-closure trap as loadPointsRef.
+  const showToastRef = useRef<(m: string, v?: 'success' | 'error') => void>(() => {})
+  // Whether the primary input is a finger. Kept live rather than sampled once,
+  // because it's the only thing sizing pins for touch.
+  const coarsePointerRef = useRef(false)
+  // Whether a draw tool currently owns the map surface. A ref because the
+  // interaction handlers are registered once and would otherwise close over the
+  // first render's value.
+  const drawActiveRef = useRef(false)
+  // The style-swap handler is registered once, so it reaches the draw session
+  // through a ref rather than closing over the hook's current teardown.
+  const drawTeardownRef = useRef<() => void>(() => {})
+  // The padded box the current pins were fetched for. A pan stays cached while
+  // the viewport is still inside it; null means "nothing trustworthy loaded".
+  const fetchedBoxRef = useRef<Bbox | null>(null)
+  // Monotonic request id: only the newest pin fetch may write results.
+  const pointsSeqRef = useRef(0)
+  // What that cached box knows about itself — whether the server had more rows
+  // than we drew, and the zoom it was fetched at.
+  const truncatedRef = useRef(false)
+  const fetchedZoomRef = useRef(0)
+  // Reused hover Popup. One instance for the lifetime of the map: constructing
+  // one per hover leaks DOM and makes the card flicker as you cross pins.
+  const hoverRef = useRef<{ setLngLat: (c: [number, number]) => { setDOMContent: (n: Node) => { addTo: (m: MLMap) => void } }; remove: () => void } | null>(null)
 
   const [mode, setMode] = useState<ColorMode>('signals')
   const [vertical, setVertical] = useState('')
@@ -229,20 +142,44 @@ function PropertyMapInner() {
   const [zipOpen, setZipOpen] = useState(false)
   const [zipQuery, setZipQuery] = useState('')
   const [zipsLoading, setZipsLoading] = useState(false)
+  const [leadHits, setLeadHits] = useState<CustomerSearchResult[]>([])
+  const [leadsLoading, setLeadsLoading] = useState(false)
   const [activeZip, setActiveZip] = useState<string | null>(null)
   const { toasts, show: showToast, dismiss: dismissToast } = useToast()
   // Mobile layout: controls collapse behind a Filters button, legend collapses.
-  const isMobile = useMediaQuery('(max-width: 767px)')
+  const isMobile = useMediaQuery(MOBILE_BREAKPOINT)
   const [showControls, setShowControls] = useState(false)
+  // MapLibre v6 dropped the WebGL1 fallback path, so on a device without WebGL2
+  // (iOS 14, older Androids — roughly 4% of traffic) the Map constructor throws.
+  // Track it so the surface explains itself instead of showing a blank rectangle.
+  const [glUnsupported, setGlUnsupported] = useState(false)
+  // Id of the pin under the cursor / currently open in the drawer. Drives the
+  // `pin-highlight` layer's filter.
+  const [activePin, setActivePin] = useState<number | null>(null)
+  // True when the viewport holds more leads than PIN_LIMIT, so the map is
+  // showing a slice. Surfaced rather than hidden — see the note in loadPoints.
+  const [truncated, setTruncated] = useState(false)
+  // Bumped whenever setupLayers actually (re)creates the layers — i.e. after the
+  // basemap fallback swaps the style. Every effect that owns a layer's
+  // visibility or data depends on it, so each one re-applies itself rather than
+  // setupLayers having to know about all of them (and drifting the first time
+  // someone adds an overlay).
+  const [styleEpoch, setStyleEpoch] = useState(0)
 
   const filters = { vertical: vertical || undefined, status: status || undefined, signal_days: signalDays }
 
-  // Recolor existing GeoJSON in place — used by the toggle (no refetch).
+  // Switch the color basis in place — the toggle never refetches, because both
+  // metrics ride along in every payload.
   const recolor = useCallback((m: ColorMode) => {
     const map = mapRef.current, pal = paletteRef.current
     if (!map || !pal) return
-    ;(map.getSource('cells') as GeoJSONSource | undefined)
-      ?.setData(cellsToGeoJSON(cellsRef.current, m, pal))
+    // Cells: one paint-property update. No data churn — the ramp reads
+    // signal_count / avg_score straight off features that already carry both.
+    if (map.getLayer('cell-fill')) {
+      map.setPaintProperty('cell-fill', 'fill-color', rampExpression(m, pal) as never)
+    }
+    // Pins do need new data: each feature's `sprite` depends on the mode, and
+    // that's resolved in JS rather than by an expression.
     ;(map.getSource('points') as GeoJSONSource | undefined)
       ?.setData(pointsToGeoJSON(pointsRef.current, m, pal))
   }, [])
@@ -254,7 +191,7 @@ function PropertyMapInner() {
     try {
       const cells = await getMapCells(filters)
       cellsRef.current = cells
-      ;(map.getSource('cells') as GeoJSONSource | undefined)?.setData(cellsToGeoJSON(cells, mode, pal))
+      ;(map.getSource('cells') as GeoJSONSource | undefined)?.setData(cellsToGeoJSON(cells))
       // Fit to the data once on first load so users land on their territory.
       // Clamped to the service area: a handful of mis-geocoded rows (a lat/lng
       // in another state) would otherwise drag the opening view out to a
@@ -279,22 +216,66 @@ function PropertyMapInner() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vertical, status, signalDays, mode, showToast])
 
-  const loadPoints = useCallback(async () => {
+  const loadPoints = useCallback(async (opts?: { force?: boolean }) => {
     const map = mapRef.current, pal = paletteRef.current
     if (!map || !pal || map.getZoom() < PIN_ZOOM) return
+
     const b = map.getBounds()
+    const view: Bbox = {
+      min_lat: b.getSouth(), min_lng: b.getWest(),
+      max_lat: b.getNorth(), max_lng: b.getEast(),
+    }
+
+    // Skip the request when the last fetch already covers where we are.
+    //
+    // Every pan used to refetch up to 2,000 rows the client already held, even
+    // for a nudge of a few pixels. We now fetch a padded box and only go back to
+    // the server once the viewport leaves it — so small pans are instant because
+    // the pins are already there. `force` is for filter changes, where the
+    // cached box is still geometrically valid but semantically stale.
+    //
+    // One exception, or the cache defeats a feature it shares a phase with: when
+    // the last result was truncated the notice tells the user to zoom in for the
+    // rest, and zooming in *shrinks* the viewport — which stays inside the
+    // cached box, so the request the notice just asked for would be skipped and
+    // the missing pins would never arrive. A truncated cache therefore expires
+    // as soon as the user actually zooms deeper.
+    const zoomedPastTruncation =
+      truncatedRef.current && map.getZoom() > fetchedZoomRef.current + 0.5
+    if (!opts?.force && !zoomedPastTruncation
+        && fetchedBoxRef.current && contains(fetchedBoxRef.current, view)) return
+
+    const padded = padBbox(view, VIEWPORT_PAD)
+    // Responses can land out of order — a filtered fetch is fast, the unfiltered
+    // one it replaced may still be in flight — and the loser used to win by
+    // arriving last, overwriting newer pins *and* stamping its own box into the
+    // cache, which then suppressed the correction. Only the newest request may
+    // write anything.
+    const seq = ++pointsSeqRef.current
     setLoading(true)
     try {
-      const points = await getMapProperties(
-        { min_lat: b.getSouth(), min_lng: b.getWest(), max_lat: b.getNorth(), max_lng: b.getEast() },
-        filters,
-      )
+      // Ask for one more than we draw: if the server can fill it, there are more
+      // leads here than we're showing, and the user deserves to know.
+      const rows = await getMapProperties(padded, filters, PIN_LIMIT + 1)
+      if (seq !== pointsSeqRef.current) return
+      const truncated = rows.length > PIN_LIMIT
+      const points = truncated ? rows.slice(0, PIN_LIMIT) : rows
+
       pointsRef.current = points
+      fetchedBoxRef.current = padded
+      truncatedRef.current = truncated
+      fetchedZoomRef.current = map.getZoom()
+      setTruncated(truncated)
       ;(map.getSource('points') as GeoJSONSource | undefined)?.setData(pointsToGeoJSON(points, mode, pal))
     } catch (e) {
+      if (seq !== pointsSeqRef.current) return
+      // Drop the cached box so the next pan retries rather than trusting a
+      // fetch that never landed.
+      fetchedBoxRef.current = null
+      truncatedRef.current = false
       showToast(e instanceof Error ? e.message : 'Failed to load properties', 'error')
     } finally {
-      setLoading(false)
+      if (seq === pointsSeqRef.current) setLoading(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vertical, status, signalDays, mode, showToast])
@@ -304,8 +285,32 @@ function PropertyMapInner() {
   // filters/mode that were active at mount — silently undoing a filter as soon as
   // the user pans, or jumps to a ZIP. Mirror the live callback in a ref (the same
   // trick heatmapRef uses above) so the handler always calls the current one.
+  // Same stale-closure guard as loadPointsRef, and for the same reason:
+  // setupLayers lives in the mount-once init effect, so a style-swap re-setup
+  // would otherwise call the *first* render's loadCells and refetch the
+  // choropleth with the filters that were active at mount.
+  const loadCellsRef = useRef(loadCells)
+  useEffect(() => { loadCellsRef.current = loadCells }, [loadCells])
   const loadPointsRef = useRef(loadPoints)
   useEffect(() => { loadPointsRef.current = loadPoints }, [loadPoints])
+  useEffect(() => { showToastRef.current = showToast }, [showToast])
+
+  // Keep the pointer-coarseness ref current and restyle the pins in place when
+  // it flips. `icon-size` is a layout property, so this is a cheap update — no
+  // re-registering sprites, no source churn.
+  useEffect(() => {
+    const mq = window.matchMedia('(pointer: coarse)')
+    const apply = () => {
+      coarsePointerRef.current = mq.matches
+      const map = mapRef.current
+      if (map?.getLayer('pin')) {
+        map.setLayoutProperty('pin', 'icon-size', mq.matches ? 1 : 0.82)
+      }
+    }
+    apply()
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
+  }, [])
 
   const loadZips = useCallback(async () => {
     setZipsLoading(true)
@@ -318,7 +323,7 @@ function PropertyMapInner() {
     }
   }, [vertical, status, showToast])
 
-  const toggleZipPicker = useCallback(() => {
+  const togglePlacePicker = useCallback(() => {
     const opening = !zipOpen
     setZipOpen(opening)
     if (opening) {
@@ -326,6 +331,40 @@ function PropertyMapInner() {
       loadZips()
     }
   }, [zipOpen, loadZips])
+
+  // Lead search, debounced.
+  //
+  // Reuses `GET /api/leads/search` rather than adding `/api/map/search`: it is
+  // already account-scoped, already excludes archived rows, and already ranks
+  // exact account-number hits first. The only thing it was missing was
+  // coordinates, which is now two columns on its SELECT rather than a new
+  // endpoint. One consequence taken deliberately: `/leads/*` is ungated while
+  // `/map/*` sits behind require_module("map"), so map search inherits the
+  // looser gate — correct, since it is the same data the lead list already
+  // shows.
+  // Whether the term is long enough to search is derived, not stored: clearing
+  // the hits with a setState in the effect body is a cascading render, and the
+  // stale-results case it was there to handle is better answered by not
+  // rendering them.
+  const searchTerm = zipQuery.trim()
+  const leadSearchArmed = zipOpen && searchTerm.length >= 2
+
+  useEffect(() => {
+    if (!leadSearchArmed) return
+    let cancelled = false
+    const t = setTimeout(async () => {
+      setLeadsLoading(true)
+      try {
+        const rows = await searchCustomers(searchTerm, 8)
+        if (!cancelled) setLeadHits(rows)
+      } catch {
+        if (!cancelled) setLeadHits([])
+      } finally {
+        if (!cancelled) setLeadsLoading(false)
+      }
+    }, 250)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [searchTerm, leadSearchArmed])
 
   // Fit to the ZIP's actual extent rather than flying to a centroid at a guessed
   // zoom, so the whole ZIP frames correctly whatever its shape. The resulting
@@ -343,11 +382,28 @@ function PropertyMapInner() {
 
   const openLead = useCallback(async (id: number) => {
     try {
+      // Keep the pin lit while its drawer is open, so it's obvious which house
+      // the panel is describing.
+      setActivePin(id)
       setSelectedLead(await getLead(id))
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Failed to open lead', 'error')
     }
   }, [showToast])
+
+  const jumpToLead = useCallback((l: CustomerSearchResult) => {
+    const map = mapRef.current
+    if (!map) return
+    if (l.latitude == null || l.longitude == null) {
+      // Not an error: `properties` doubles as the contact book, so an inbound
+      // call or web-form lead genuinely has nowhere to fly to.
+      showToast('That lead has no map location yet.', 'success')
+      return
+    }
+    setZipOpen(false)
+    map.easeTo({ center: [l.longitude, l.latitude], zoom: Math.max(map.getZoom(), PIN_ZOOM + 2), duration: 600 })
+    openLead(l.id)
+  }, [showToast, openLead])
 
   const loadHeatmap = useCallback(async () => {
     const map = mapRef.current
@@ -398,9 +454,11 @@ function PropertyMapInner() {
         showToast(`Prospected: ${r.ingested ?? 0} new lead(s) ingested, ${r.scored ?? 0} scored.`, 'success')
       }
       setSelectedCluster(null)
-      // Reflect the freshly ingested leads.
+      // Reflect the freshly ingested leads. Forced: prospecting adds rows inside
+      // the box we already fetched, so the cache is geometrically valid and
+      // semantically stale — exactly the case `force` exists for.
       loadCells()
-      loadPoints()
+      loadPoints({ force: true })
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Prospecting failed', 'error')
     } finally {
@@ -408,27 +466,244 @@ function PropertyMapInner() {
     }
   }, [vertical, showToast, loadCells, loadPoints])
 
+  // ── blast radius ──────────────────────────────────────────────────────────────
+  //
+  // `getBlastRadius` has had an API client since the geo phase and no caller at
+  // all. It ranks open leads around a completed job — the door-knock list for
+  // verticals where the work is visible from the street — which is exactly the
+  // question a map should be able to answer and couldn't.
+  const [blast, setBlast] = useState<{ lead: Lead; hits: NeighborHit[]; radius: number } | null>(null)
+  const [blastLoading, setBlastLoading] = useState(false)
+
+  const clearBlast = useCallback(() => setBlast(null), [])
+  // Reached from the once-bound hull click handler, which must not close over
+  // a render's callback.
+  const clearBlastRef = useRef(clearBlast)
+  useEffect(() => { clearBlastRef.current = clearBlast }, [clearBlast])
+
+  const showNeighbors = useCallback(async (lead: Lead) => {
+    const map = mapRef.current, pal = paletteRef.current
+    if (!map || !pal || lead.latitude == null || lead.longitude == null) return
+    setBlastLoading(true)
+    try {
+      const r = await getBlastRadius(lead.id, BLAST_RADIUS_M)
+      // `POST /geo/neighbors` returns [] both for "no open leads nearby" and for
+      // a job with no coordinates, so the client cannot tell them apart. Say the
+      // true thing — that nothing came back — rather than inventing a cause.
+      if (!r.neighbors.length) {
+        showToast('No open leads within a short walk of this job.', 'success')
+        return
+      }
+      const center: [number, number] = [lead.longitude, lead.latitude]
+      setBlast({ lead, hits: r.neighbors, radius: r.radius_m })
+      const b = ringBounds(circleRing(center, r.radius_m))
+      if (b) map.fitBounds(b, { padding: 80, maxZoom: 17, duration: 600 })
+      setSelectedLead(null)     // the drawer covers the answer it just produced
+      setSelectedCluster(null)  // both panels own the bottom-centre slot
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Could not load neighbors', 'error')
+    } finally {
+      setBlastLoading(false)
+    }
+  }, [showToast])
+
+  // ── draw tools ────────────────────────────────────────────────────────────────
+  const drawTools = useDrawTools({
+    mapRef, paletteRef,
+    // `cell-fill` is added by setupLayers on the first 'styledata', so its
+    // presence is proof the style accepts addSource — including after the
+    // basemap fallback rebuilds the style from scratch.
+    layersReady: () => !!mapRef.current?.getLayer('cell-fill'),
+    // `pointsRef` is the honest bound: only pins actually drawn can be
+    // selected, which the confirm panel says out loud rather than implying the
+    // polygon caught everything inside it.
+    resolveSelection: (polygon) => {
+      const ring = polygon.coordinates[0]
+      return pointsRef.current
+        .filter(pt => ringContains(ring, pt.longitude, pt.latitude))
+        .map(pt => pt.id)
+    },
+    onError: (m) => showToastRef.current(m, 'error'),
+    onActiveChange: (active) => {
+      drawActiveRef.current = active
+      // A card left hanging while the user starts drawing points at a lead they
+      // are no longer looking at.
+      if (active) { hoverRef.current?.remove(); clearBlast() }
+    },
+  })
+  const [savingDraw, setSavingDraw] = useState(false)
+  useEffect(() => { drawTeardownRef.current = drawTools.teardown }, [drawTools.teardown])
+
+  // `?? []` would allocate a new array every render and so change saveDrawing's
+  // identity every render; the pending object is already stable between draws.
+  const selection = useMemo(() => drawTools.pending?.selection ?? [], [drawTools.pending])
+
+  const saveDrawing = useCallback(async ({ eventType, name }: { eventType: string; name: string }) => {
+    const p = drawTools.pending
+    if (!p || savingDraw) return
+    setSavingDraw(true)
+    try {
+      if (p.tool === 'territory' && p.polygon) {
+        await putServiceArea(p.polygon)
+        // The save rescored every lead in the account before it returned, so
+        // both layers are stale by definition. Forced for the same reason
+        // prospecting forces: the box is right, the contents aren't.
+        showToast('Service area saved. Leads rescored.', 'success')
+        loadCells()
+        loadPoints({ force: true })
+      } else if (p.tool === 'event' && p.polygon) {
+        await createGeoEvent({ event_type: eventType, name: name || undefined, polygon: p.polygon })
+        showToast('Event area saved.', 'success')
+        if (showEvents) loadEvents()
+        else setShowEvents(true)     // no point saving one you can't see
+      } else if (p.tool === 'select') {
+        if (!selection.length) return
+        // Chunked because `BulkIds` caps `ids` at 500 (api/routes/leads.py) and
+        // a lasso can hold up to PIN_LIMIT = 2000 — the whole request 422s at
+        // 501, archiving nothing and showing the user a raw Pydantic error.
+        // Chunking client-side rather than raising the server bound: that cap
+        // also bounds the interpolated placeholder list in `archive_bulk`.
+        let archived = 0
+        for (let i = 0; i < selection.length; i += ARCHIVE_CHUNK) {
+          const r = await archiveBulk(selection.slice(i, i + ARCHIVE_CHUNK))
+          archived += r.archived_count
+        }
+        showToast(`Archived ${plural(archived, 'lead', 'leads')}.`, 'success')
+        loadCells()
+        loadPoints({ force: true })
+      } else if (p.tool === 'pin' && p.point) {
+        const [lng, lat] = p.point
+        const r = await prospectArea({ seed: { lat, lng }, vertical: vertical || undefined })
+        if (r.status === 'skipped_recent_cell') {
+          showToast('Already prospected this area in the last 14 days.', 'success')
+        } else {
+          showToast(`Prospected: ${r.ingested ?? 0} new lead(s) ingested, ${r.scored ?? 0} scored.`, 'success')
+        }
+        loadCells()
+        loadPoints({ force: true })
+      }
+      drawTools.cancel()
+    } catch (e) {
+      // Deliberately keep the drawing: a failed save with the shape thrown away
+      // means redrawing a territory by hand.
+      showToast(e instanceof Error ? e.message : 'Could not save', 'error')
+    } finally {
+      setSavingDraw(false)
+    }
+  }, [drawTools, savingDraw, selection, showToast, loadCells, loadPoints, loadEvents, showEvents, vertical])
+
   // ── map init (once) ───────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false
     let map: MLMap | null = null
+    // One-shot latch: interaction listeners must survive a style swap without
+    // being registered twice. See the note in setupLayers.
+    let handlersBound = false
+    let viewportHandlersBound = false
+    // The basemap fallback is one-way and one-time; without this a flapping
+    // provider could ping-pong the style.
+    let basemapFellBack = false
+    // Set on the first 'styledata'. The basemap fallback keys off this rather
+    // than off isStyleLoaded(), which is about tiles, not about the style.
+    let styleEverLoaded = false
 
     ;(async () => {
-      const maplibregl = (await import('maplibre-gl')).default
+      // MapLibre v6 ships ESM with NO default export — `(await import(...)).default`
+      // is `undefined` and every `maplibregl.X` below would throw. Take the module
+      // namespace instead. (v4 had a default; this is the v4→v6 break.)
+      const maplibregl = await import('maplibre-gl')
       if (cancelled || !containerRef.current) return
+
+      // Point the worker at the copy in /public. Next's bundlers rewrite the
+      // worker URL without emitting its `maplibre-gl-shared.mjs` sibling, so the
+      // worker throws on its first import and the map mounts but never requests a
+      // tile — a silent, production-only failure. scripts/copy-maplibre-worker.mjs
+      // puts both files there via prebuild/predev. Idempotent: setting the same
+      // URL twice is harmless, and this effect runs once.
+      maplibregl.setWorkerUrl('/maplibre/maplibre-gl-worker.mjs')
+
       paletteRef.current = readPalette()
 
-      map = new maplibregl.Map({
-        container: containerRef.current,
-        style: (ENV_STYLE as string) || (OSM_STYLE as unknown as string),
-        center: HOME,
-        zoom: 10,
-        // Hard-constrain panning/zooming to the configured service area. Widening
-        // coverage is a one-entry change in lib/serviceArea.ts — see SERVICE_REGIONS.
-        maxBounds: serviceAreaBounds(),
-      })
+      // No layer requests glyphs any more — the only text on the map is the
+      // cluster count, and that moved into the donut markers' SVG, where it
+      // renders in the app's own font instead of whatever the tile provider
+      // serves. That also removes a whole class of silent failure; see the
+      // fontstack note in lib/mapStyle for what it used to cost.
+      const basemap = resolveBasemap()
+      if (needsPmtiles(basemap.style)) await registerPmtilesProtocol(maplibregl)
+      if (cancelled) return
+
+      try {
+        map = new maplibregl.Map({
+          container: containerRef.current,
+          style: basemap.style as string,
+          center: HOME,
+          zoom: 10,
+          // Hard-constrain panning/zooming to the configured service area. Widening
+          // coverage is a one-entry change in lib/serviceArea.ts — see SERVICE_REGIONS.
+          maxBounds: serviceAreaBounds(),
+        })
+      } catch (err) {
+        // The constructor throws synchronously when a WebGL2 context can't be
+        // created. Nothing below can run, so bail to the explanatory fallback.
+        console.error('[map] WebGL2 unavailable', err)
+        setGlUnsupported(true)
+        // Nothing may sit above the explanatory panel — the picker is an overlay
+        // and would otherwise stay open over it with a dead search box.
+        setZipOpen(false)
+        setShowControls(false)
+        return
+      }
       mapRef.current = map
       map.addControl(new maplibregl.NavigationControl(), 'top-right')
+
+      // "Where am I relative to my A-grade leads" is the single most useful
+      // control for a rep standing on a street, and it's core MapLibre — no
+      // dependency. map.css already re-tokenises .maplibregl-ctrl-group, so
+      // these inherit the dark styling.
+      const geolocate = new maplibregl.GeolocateControl({
+        positionOptions: { enableHighAccuracy: true },
+        trackUserLocation: true,
+        showAccuracyCircle: true,
+      })
+      map.addControl(geolocate, 'top-right')
+      // The map is hard-bounded to the service area, so a fix outside it is a
+      // location we simply cannot pan to. Say so rather than leaving a button
+      // that appears to do nothing.
+      geolocate.on('outofmaxbounds', () => {
+        showToastRef.current(
+          `You're outside ${serviceAreaLabel()}, so the map can't jump to you.`,
+          'error',
+        )
+      })
+      // v6 types this event, so let the signature be inferred.
+      geolocate.on('error', (e) => {
+        // Code 1 is PERMISSION_DENIED — a decision, not a failure, so don't
+        // shout about it.
+        if (e.code === 1) return
+        showToastRef.current('Could not get your location.', 'error')
+      })
+
+      // Scale bar: imperial, because this ships to US contractors.
+      map.addControl(new maplibregl.ScaleControl({ maxWidth: 90, unit: 'imperial' }), 'bottom-right')
+
+      // One Popup, reused for every hover. MapLibre owns the anchoring and the
+      // edge-flipping; we only ever move it and swap its contents.
+      hoverRef.current = new maplibregl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        offset: 18,          // clears the pin, which is anchored at its lower vertex
+        maxWidth: 'none',    // the card sets its own max-width
+        className: 'map-hover-popup',
+      })
+
+      // Donut cluster markers. The manager owns marker lifecycle; it only needs
+      // a factory so it never imports maplibre itself (keeping it a plain module).
+      donutsRef.current = createDonutManager(
+        map,
+        (el, lngLat) => new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map!),
+        paletteRef.current!,
+      )
 
       // Add our data layers as soon as the *style JSON* is parsed — deliberately
       // NOT on 'load', which also waits for the basemap's first tiles. If the
@@ -443,54 +718,107 @@ function PropertyMapInner() {
       // Tile completion fires 'sourcedata', not 'styledata', so a handler that
       // bails on isStyleLoaded() is never retried and the overlay never appears.
       const setupLayers = () => {
+        // A 'styledata' at all means the style parsed; see the error handler.
+        styleEverLoaded = true
         if (!map || map.getLayer('cell-fill')) return
+        // Fire-and-forget: MapLibre draws symbols as their images arrive, so the
+        // layer can be added before registration finishes. Re-run after a style
+        // swap too, which drops registered images along with the layers.
+        void registerPinSprites(map, pinPalette(paletteRef.current!))
         // Choropleth (cells)
         map.addSource('cells', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
         map.addLayer({
           id: 'cell-fill', type: 'fill', source: 'cells',
-          paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.45 },
+          paint: {
+            // A continuous ramp evaluated by MapLibre, not a color baked per
+            // feature in JS. Average score and signal count are ordered values,
+            // so they get a gradient; switching basis is now a paint-property
+            // update rather than rebuilding and re-uploading every polygon.
+            'fill-color': rampExpression(modeRef.current, paletteRef.current!) as never,
+            'fill-opacity': 0.45,
+          },
         })
         map.addLayer({
           id: 'cell-line', type: 'line', source: 'cells',
           paint: { 'line-color': paletteRef.current!.line, 'line-width': 0.5 },
         })
 
-        // Pins (clustered)
+        // Pins (clustered).
+        //
+        // `clusterProperties` makes Supercluster tally the grade mix while it
+        // clusters, so the donut markers below get their proportions for free
+        // rather than us counting members every frame.
         map.addSource('points', {
           type: 'geojson', data: { type: 'FeatureCollection', features: [] },
           cluster: true, clusterRadius: 50, clusterMaxZoom: 16,
+          clusterProperties: gradeClusterProperties(),
         })
+        // Clusters are drawn as HTML donut markers (see components/map/
+        // clusterDonuts.ts), not as a circle+symbol layer pair. A proportional
+        // multi-segment arc isn't expressible as a circle paint property, and
+        // there are only ever a few dozen clusters on screen, so the DOM is
+        // affordable here in a way it isn't for the 2,000 pins.
+        //
+        // An invisible hit layer keeps click/cursor handling on the GL side, so
+        // the existing `click`/`mouseenter` wiring works unchanged and the
+        // markers themselves stay non-interactive.
         map.addLayer({
           id: 'clusters', type: 'circle', source: 'points', filter: ['has', 'point_count'],
           paint: {
             'circle-color': paletteRef.current!.cool,
-            'circle-opacity': 0.85,
-            'circle-radius': ['step', ['get', 'point_count'], 14, 25, 20, 100, 28],
+            'circle-opacity': 0,   // the donut marker is what you see
+            'circle-radius': ['step', ['get', 'point_count'], 17, 25, 21, 100, 26],
           },
         })
-        // `text-font` is pinned deliberately. MapLibre's style-spec default is
-        // ['Open Sans Regular', 'Arial Unicode MS Regular'], and it requests every
-        // stack entry from the `glyphs` endpoint. fonts.openmaptiles.org hosts the
-        // first but answers the second with an HTML error page under HTTP 200 —
-        // MapLibre sees a 200, hands the HTML to the pbf decoder, and it throws
-        // "Unimplemented type: 4" (wire type 4 = deprecated end-group). Requesting
-        // only the stack that actually exists keeps the console clean.
+        // Hover/selected highlight, drawn UNDER the pins.
+        //
+        // A separate layer rather than extra sprites: two more states across six
+        // grades would have doubled the sprite set for what is really one glow.
+        // It filters on the id in React state rather than using `feature-state`,
+        // because feature-state needs a stable feature id via `promoteId`, and
+        // this source also sets `cluster: true` — the two don't compose
+        // reliably. A filter costs nothing here and has no such dependency.
         map.addLayer({
-          id: 'cluster-count', type: 'symbol', source: 'points', filter: ['has', 'point_count'],
-          layout: {
-            'text-field': ['get', 'point_count_abbreviated'],
-            'text-size': 12,
-            'text-font': ['Open Sans Regular'],
-          },
-          paint: { 'text-color': '#ffffff' },
-        })
-        // Bigger pins on touch devices so they're tappable with a finger.
-        const coarsePointer = window.matchMedia('(pointer: coarse)').matches
-        map.addLayer({
-          id: 'pin', type: 'circle', source: 'points', filter: ['!', ['has', 'point_count']],
+          id: 'pin-highlight', type: 'circle', source: 'points',
+          // Both clauses matter. The id match is the actual selection; excluding
+          // clusters guards the case where a cluster feature carries an `id` —
+          // it doesn't today (clusters get `cluster_id`), but a highlight that
+          // can latch onto a cluster is a bug waiting for a schema change.
+          filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', 'id'], -1]],
           paint: {
-            'circle-color': ['get', 'color'], 'circle-radius': coarsePointer ? 9 : 6,
-            'circle-stroke-width': 1.5, 'circle-stroke-color': '#ffffff',
+            'circle-color': paletteRef.current!.accent,
+            'circle-opacity': 0.28,
+            'circle-radius': 20,
+            'circle-stroke-width': 2,
+            'circle-stroke-color': paletteRef.current!.accent,
+          },
+        })
+
+        // Branded pins. Bigger on touch so they're tappable with a thumb.
+        //
+        // Read from a ref that a listener keeps current, rather than sampled
+        // once at init: this is the only thing sizing pins for touch, and a
+        // device that changes input mode (or any hydration-order surprise) used
+        // to be stuck with the wrong size for the whole session.
+        const coarsePointer = coarsePointerRef.current
+        map.addLayer({
+          id: 'pin', type: 'symbol', source: 'points', filter: ['!', ['has', 'point_count']],
+          layout: {
+            'icon-image': ['get', 'sprite'],
+            'icon-size': coarsePointer ? 1 : 0.82,
+            // The diamond's lower vertex is the anchor, so the point sits on the
+            // coordinate rather than the shape's centre.
+            'icon-anchor': 'bottom',
+            // Collision detection is the single biggest symbol-layer cost, and
+            // clustering already handles decluttering. Skip it.
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+            // A-grade pins win any remaining overlap. With
+            // `icon-allow-overlap: true` nothing is dropped for collision, so
+            // the key is purely paint order and the HIGHER key draws on top —
+            // the opposite of the sort-key-as-priority reading, which had
+            // A-grade pins rendering *underneath* D-grade ones.
+            'symbol-sort-key': ['match', ['get', 'grade'], 'A', 5, 'B', 4, 'C', 3, 'D', 2, 1],
           },
         })
 
@@ -502,7 +830,7 @@ function PropertyMapInner() {
           layout: { visibility: 'none' },
           paint: {
             'fill-color': ['interpolate', ['linear'], ['get', 'intensity'],
-              0, paletteRef.current!.cool, 0.5, paletteRef.current!.gold, 1, paletteRef.current!.danger],
+              0, paletteRef.current!.heatLow, 0.5, paletteRef.current!.heatMid, 1, paletteRef.current!.heatHigh],
             'fill-opacity': 0.55,
           },
         })
@@ -512,12 +840,12 @@ function PropertyMapInner() {
         map.addLayer({
           id: 'cluster-hull-fill', type: 'fill', source: 'clusters-hull',
           layout: { visibility: 'none' },
-          paint: { 'fill-color': paletteRef.current!.moss, 'fill-opacity': 0.12 },
+          paint: { 'fill-color': paletteRef.current!.customer, 'fill-opacity': 0.12 },
         })
         map.addLayer({
           id: 'cluster-hull-line', type: 'line', source: 'clusters-hull',
           layout: { visibility: 'none' },
-          paint: { 'line-color': paletteRef.current!.moss, 'line-width': 2, 'line-dasharray': [2, 1] },
+          paint: { 'line-color': paletteRef.current!.customer, 'line-width': 2, 'line-dasharray': [2, 1] },
         })
 
         // Event polygons (Phase 4) — hidden until toggled. Active events shade
@@ -527,7 +855,7 @@ function PropertyMapInner() {
           id: 'event-fill', type: 'fill', source: 'events',
           layout: { visibility: 'none' },
           paint: {
-            'fill-color': ['case', ['get', 'active'], paletteRef.current!.danger, paletteRef.current!.line],
+            'fill-color': ['case', ['get', 'active'], paletteRef.current!.alert, paletteRef.current!.line],
             'fill-opacity': 0.18,
           },
         })
@@ -535,38 +863,140 @@ function PropertyMapInner() {
           id: 'event-line', type: 'line', source: 'events',
           layout: { visibility: 'none' },
           paint: {
-            'line-color': ['case', ['get', 'active'], paletteRef.current!.danger, paletteRef.current!.line],
+            'line-color': ['case', ['get', 'active'], paletteRef.current!.alert, paletteRef.current!.line],
             'line-width': 2,
           },
         })
 
-        // Interactions
-        map.on('click', 'pin', (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
-          const id = e.features?.[0]?.properties?.id
-          if (id != null) openLead(Number(id))
+        // Blast radius (Phase 6): the ring around a completed job and its ranked
+        // door-knock targets. Added last so it sits above the pins it annotates.
+        //
+        // The ring is a real polygon, not a `circle` layer: circle-radius is in
+        // screen pixels, so a 150 m ring would grow and shrink against the
+        // streets as you zoom — backwards for a "how far can I walk" overlay.
+        map.addSource('blast', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
+        map.addLayer({
+          id: 'blast-fill', type: 'fill', source: 'blast',
+          filter: ['==', ['get', 'kind'], 'ring'],
+          paint: { 'fill-color': paletteRef.current!.accent, 'fill-opacity': 0.08 },
         })
-        map.on('click', 'cell-fill', (e: MapMouseEvent) => {
-          map!.easeTo({ center: e.lngLat, zoom: Math.max(map!.getZoom() + 2, PIN_ZOOM) })
+        map.addLayer({
+          id: 'blast-ring', type: 'line', source: 'blast',
+          filter: ['==', ['get', 'kind'], 'ring'],
+          paint: {
+            'line-color': paletteRef.current!.accent, 'line-width': 2, 'line-dasharray': [3, 2],
+          },
         })
-        map.on('click', 'clusters', async (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
-          const f = e.features?.[0]
-          const cid = f?.properties?.cluster_id
-          if (cid == null) return
-          const src = map!.getSource('points') as GeoJSONSource
-          const zoom = await src.getClusterExpansionZoom(cid as number)
-          map!.easeTo({ center: (f!.geometry as GeoJSON.Point).coordinates as [number, number], zoom })
+        map.addLayer({
+          id: 'blast-hit', type: 'circle', source: 'blast',
+          filter: ['==', ['get', 'kind'], 'hit'],
+          paint: {
+            'circle-radius': coarsePointer ? 9 : 7,
+            'circle-color': ['get', 'color'],
+            'circle-stroke-color': paletteRef.current!.body,
+            'circle-stroke-width': 2,
+          },
         })
-        // Clicking a customer-cluster hull opens the "prospect this area" panel.
-        map.on('click', 'cluster-hull-fill', (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
-          const props = e.features?.[0]?.properties
-          if (!props) return
-          setSelectedCluster({ label: Number(props.cluster_label), count: Number(props.customer_count) })
-        })
-        for (const layer of ['pin', 'cell-fill', 'clusters', 'cluster-hull-fill']) {
-          map.on('mouseenter', layer, () => { map!.getCanvas().style.cursor = 'pointer' })
-          map.on('mouseleave', layer, () => { map!.getCanvas().style.cursor = '' })
+
+        // Interactions.
+        //
+        // Layers are recreated whenever the style is replaced (see the basemap
+        // fallback below), and `map.on(...)` accumulates rather than replaces,
+        // so these must bind exactly once for the lifetime of the map. The
+        // `getLayer('cell-fill')` guard at the top of setupLayers doesn't cover
+        // this: after setStyle the layers are genuinely gone, so setupLayers is
+        // supposed to run again — it's only the listeners that must not.
+        if (!handlersBound) {
+          handlersBound = true
+          // While a draw tool is armed, the map surface belongs to the gesture:
+          // a tap is a vertex, not a lead. Terra Draw draws its own layers over
+          // ours and doesn't stop MapLibre's feature clicks, so without this a
+          // tap that places a corner also opens a contact drawer over the map
+          // the user is drawing on.
+          map.on('click', 'pin', (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+            if (drawActiveRef.current) return
+            const id = e.features?.[0]?.properties?.id
+            if (id != null) openLead(Number(id))
+          })
+          map.on('click', 'blast-hit', (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+            if (drawActiveRef.current) return
+            const id = e.features?.[0]?.properties?.id
+            if (id != null) openLead(Number(id))
+          })
+          map.on('click', 'cell-fill', (e: MapMouseEvent) => {
+            if (drawActiveRef.current) return
+            map!.easeTo({ center: e.lngLat, zoom: Math.max(map!.getZoom() + 2, PIN_ZOOM) })
+          })
+          map.on('click', 'clusters', async (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+            if (drawActiveRef.current) return
+            const f = e.features?.[0]
+            const cid = f?.properties?.cluster_id
+            if (cid == null) return
+            const src = map!.getSource('points') as GeoJSONSource
+            const zoom = await src.getClusterExpansionZoom(cid as number)
+            map!.easeTo({ center: (f!.geometry as GeoJSON.Point).coordinates as [number, number], zoom })
+          })
+          // Clicking a customer-cluster hull opens the "prospect this area" panel.
+          map.on('click', 'cluster-hull-fill', (e: MapMouseEvent & { features?: GeoJSON.Feature[] }) => {
+            if (drawActiveRef.current) return
+            const props = e.features?.[0]?.properties
+            if (!props) return
+            clearBlastRef.current()   // the two panels share one slot
+            setSelectedCluster({ label: Number(props.cluster_label), count: Number(props.customer_count) })
+          })
+          for (const layer of ['pin', 'cell-fill', 'clusters', 'cluster-hull-fill', 'blast-hit']) {
+            map.on('mouseenter', layer, () => { map!.getCanvas().style.cursor = 'pointer' })
+            map.on('mouseleave', layer, () => { map!.getCanvas().style.cursor = '' })
+          }
+          // Highlight + preview the pin under the cursor. `mousemove` rather
+          // than `mouseenter`: with pins this dense, sliding from one to its
+          // neighbour doesn't re-fire enter, so both the highlight and the card
+          // would stick on the wrong lead.
+          //
+          // Everything the card shows already rides in the feature's properties,
+          // so hovering costs no request — which is the point. Clicking still
+          // fetches the full lead for the drawer.
+          map.on('mousemove', 'pin', (e) => {
+            if (drawActiveRef.current) return
+            const f = e.features?.[0]
+            const id = f?.properties?.id
+            if (id == null) return
+            setActivePin(Number(id))
+
+            const fields = hoverFieldsFrom(f?.properties)
+            const coords = (f?.geometry as GeoJSON.Point | undefined)?.coordinates
+            if (!fields || !coords) return
+            hoverRef.current
+              ?.setLngLat(coords as [number, number])
+              .setDOMContent(buildHoverCard(fields))
+              .addTo(map!)
+          })
+          map.on('mouseleave', 'pin', () => {
+            setActivePin(null)
+            hoverRef.current?.remove()
+          })
+          // A hover card left hanging over a cluster reads as belonging to it.
+          map.on('mouseenter', 'clusters', () => hoverRef.current?.remove())
+
+          // Same treatment for choropleth cells, using the grade counts that
+          // have been in every /api/map/cells response since it was written and
+          // were never drawn. The cell's fill shows one average; the card shows
+          // what that average is made of.
+          map.on('mousemove', 'cell-fill', (e) => {
+            if (drawActiveRef.current) return
+            const f = e.features?.[0]
+            const fields = cellFieldsFrom(f?.properties)
+            if (!fields) return
+            hoverRef.current
+              ?.setLngLat([e.lngLat.lng, e.lngLat.lat])
+              .setDOMContent(buildCellCard(fields))
+              .addTo(map!)
+          })
+          map.on('mouseleave', 'cell-fill', () => hoverRef.current?.remove())
         }
 
+        // Visibility + the first data load must run on EVERY setup, including a
+        // re-setup after a style swap — only the listeners above are one-shot.
         const applyZoom = () => {
           if (!map) return
           const inPins = map.getZoom() >= PIN_ZOOM
@@ -576,18 +1006,45 @@ function PropertyMapInner() {
           const cellVis = (inPins || heatmapRef.current) ? 'none' : 'visible'
           const pinVis = inPins ? 'visible' : 'none'
           for (const l of ['cell-fill', 'cell-line']) map.setLayoutProperty(l, 'visibility', cellVis)
-          for (const l of ['clusters', 'cluster-count', 'pin']) map.setLayoutProperty(l, 'visibility', pinVis)
+          for (const l of ['clusters', 'pin-highlight', 'pin']) map.setLayoutProperty(l, 'visibility', pinVis)
+          // Donut markers are DOM, not layers, so `visibility` can't reach them —
+          // they have to be torn down by hand when we leave pin mode, or they
+          // float over the choropleth.
+          if (!inPins) donutsRef.current?.clear()
+          else donutsRef.current?.refresh()
         }
-        map.on('zoomend', applyZoom)
-        map.on('moveend', () => {
-          if (moveTimer.current) clearTimeout(moveTimer.current)
-          moveTimer.current = setTimeout(() => {
-            if (map && map.getZoom() >= PIN_ZOOM) loadPointsRef.current()
-          }, 350)
-        })
+        if (!viewportHandlersBound) {
+          viewportHandlersBound = true
+          map.on('zoomend', applyZoom)
+          map.on('moveend', () => {
+            if (moveTimer.current) clearTimeout(moveTimer.current)
+            moveTimer.current = setTimeout(() => {
+              if (map && map.getZoom() >= PIN_ZOOM) loadPointsRef.current()
+            }, 350)
+          })
+          // Clusters are recomputed by Supercluster whenever the source data or
+          // the zoom changes; `idle` is the point at which those results are
+          // actually queryable, so it's the right moment to resync the markers.
+          map.on('idle', () => {
+            if (map && map.getZoom() >= PIN_ZOOM) donutsRef.current?.refresh()
+          })
+        }
 
+        // Both run on every setup: after a style swap the layers are new, so
+        // their visibility has to be reapplied and their data refetched.
         applyZoom()
-        loadCells()
+        loadCellsRef.current()
+
+        // Pins come straight back from memory rather than from the network. The
+        // rows are still in `pointsRef`, and `fetchedBoxRef` still says we have
+        // them — so without this the cache correctly reports "already fetched"
+        // for a source that is now empty, and the pins never return no matter
+        // how far you pan.
+        ;(map.getSource('points') as GeoJSONSource | undefined)
+          ?.setData(pointsToGeoJSON(pointsRef.current, modeRef.current, paletteRef.current!))
+
+        // Let every layer-owning effect re-apply itself against the new layers.
+        setStyleEpoch(n => n + 1)
       }
 
       // Registered synchronously after construction, so the 'styledata' emitted
@@ -595,6 +1052,55 @@ function PropertyMapInner() {
       // (guards on cell-fill), so later style events — sprite loads, style
       // swaps — are harmless no-ops. The direct call covers the edge case of a
       // style that was somehow already fully loaded by this point.
+      // Basemap fallback.
+      //
+      // The default basemap is a remote vector style, so it can be unreachable:
+      // a provider outage, a corporate network that blocks it, an operator
+      // typo in NEXT_PUBLIC_MAP_STYLE. Without this the map degrades to a blank
+      // canvas — the data layers still draw (that's the 'styledata'-not-'load'
+      // contract above), but with no streets under them they're unreadable.
+      //
+      // So: on a style-load failure, fall back once to the bundled raster style,
+      // which needs no key and no configuration. One-way and one-time, so a
+      // flapping provider can't ping-pong the basemap. Swapping the style drops
+      // every layer, which is why setupLayers is re-entrant and why the listener
+      // latches above exist.
+      // v6 fully types map events, so let the listener signature be inferred
+      // rather than hand-rolling one.
+      map.on('error', (e) => {
+        // `!isStyleLoaded()` is NOT "the style failed to load".
+        //
+        // MapLibre's Style.loaded() additionally requires every source's tiles
+        // and the sprite to have finished — so it is false during any ordinary
+        // pan, and false again for a moment after each setData on the pin
+        // source. Meanwhile every non-404 tile failure fires this same 'error'.
+        // Together those meant one flaky tile — a rep losing signal in a truck
+        // for a second — permanently swapped the basemap, cleared the cluster
+        // markers and threw away a half-drawn territory, with no way back short
+        // of a reload.
+        //
+        // What we actually want to detect is a style that never loaded at all,
+        // so latch that instead: a style URL that is unreachable or malformed
+        // never fires 'styledata', and nothing else can set the latch.
+        const failedToLoadStyle = !basemapFellBack && !styleEverLoaded
+        if (!failedToLoadStyle) return
+        basemapFellBack = true
+        console.warn(
+          `[map] basemap "${basemap.label}" failed to load; falling back to ${OSM_RASTER.label}.`,
+          e.error,
+        )
+        // Markers are DOM and survive setStyle, but the clusters they describe
+        // don't — the source is rebuilt, so stale donuts would hang over the new
+        // basemap until the next idle. Clear them and let setupLayers re-sync.
+        donutsRef.current?.clear()
+        // Same reason, one step further: setStyle drops the adapter's five
+        // layers too, and a later draw.stop() would then try to remove layers
+        // that no longer exist. Tear the session down while it can still clean
+        // up after itself.
+        drawTeardownRef.current()
+        map!.setStyle(OSM_RASTER.style as unknown as string)
+      })
+
       map.on('styledata', setupLayers)
       if (map.isStyleLoaded()) setupLayers()
     })()
@@ -602,6 +1108,12 @@ function PropertyMapInner() {
     return () => {
       cancelled = true
       if (moveTimer.current) clearTimeout(moveTimer.current)
+      // Markers and the Popup live outside the map's own node, so `map.remove()`
+      // does not take them with it.
+      donutsRef.current?.clear()
+      donutsRef.current = null
+      hoverRef.current?.remove()
+      hoverRef.current = null
       map?.remove()
       mapRef.current = null
     }
@@ -613,12 +1125,34 @@ function PropertyMapInner() {
   useEffect(() => {
     if (!mapRef.current) return
     loadCells()
-    if (zoomedIn) loadPoints()
+    // Forced: the viewport hasn't moved, but which leads belong in it has.
+    if (zoomedIn) loadPoints({ force: true })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vertical, status, signalDays])
 
+  // Push the hovered/selected pin into the highlight layer's filter. Cheap:
+  // one filter update, no source data churn.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !map.getLayer('pin-highlight')) return
+    map.setFilter('pin-highlight', ['==', ['get', 'id'], activePin ?? -1])
+  }, [activePin, styleEpoch])
+
+  // The blast overlay's source, kept in step with its state — and re-applied on
+  // a style swap, which recreates the source empty.
+  useEffect(() => {
+    const map = mapRef.current, pal = paletteRef.current
+    const src = map?.getSource('blast') as GeoJSONSource | undefined
+    if (!src || !pal) return
+    src.setData(
+      blast && blast.lead.longitude != null && blast.lead.latitude != null
+        ? blastToGeoJSON([blast.lead.longitude, blast.lead.latitude], blast.radius, blast.hits, pal)
+        : { type: 'FeatureCollection', features: [] },
+    )
+  }, [blast, styleEpoch])
+
   // Toggle recolors in place — instant, no refetch.
-  useEffect(() => { recolor(mode) }, [mode, recolor])
+  useEffect(() => { modeRef.current = mode; recolor(mode) }, [mode, recolor])
 
   // Heatmap overlay: show/hide the hex layer, keep the choropleth suppressed
   // while it's on, and (re)load when turned on or the metric changes.
@@ -631,7 +1165,7 @@ function PropertyMapInner() {
     const cellVis = (inPins || heatmap) ? 'none' : 'visible'
     for (const l of ['cell-fill', 'cell-line']) map.setLayoutProperty(l, 'visibility', cellVis)
     if (heatmap) loadHeatmap()
-  }, [heatmap, heatMetric, loadHeatmap])
+  }, [heatmap, heatMetric, loadHeatmap, styleEpoch])
 
   // Cluster-hull overlay: show/hide and load on demand.
   useEffect(() => {
@@ -640,7 +1174,7 @@ function PropertyMapInner() {
     const vis = showClusters ? 'visible' : 'none'
     for (const l of ['cluster-hull-fill', 'cluster-hull-line']) map.setLayoutProperty(l, 'visibility', vis)
     if (showClusters) loadClusters()
-  }, [showClusters, loadClusters])
+  }, [showClusters, loadClusters, styleEpoch])
 
   // Event-polygon overlay: show/hide and load on demand.
   useEffect(() => {
@@ -649,11 +1183,12 @@ function PropertyMapInner() {
     const vis = showEvents ? 'visible' : 'none'
     for (const l of ['event-fill', 'event-line']) map.setLayoutProperty(l, 'visibility', vis)
     if (showEvents) loadEvents()
-  }, [showEvents, loadEvents])
+  }, [showEvents, loadEvents, styleEpoch])
 
   const refresh = () => {
     loadCells()
-    if (zoomedIn) loadPoints()
+    // The refresh button means "go and ask again", so it must bypass the cache.
+    if (zoomedIn) loadPoints({ force: true })
     if (heatmap) loadHeatmap()
     if (showClusters) loadClusters()
     if (showEvents) loadEvents()
@@ -664,22 +1199,56 @@ function PropertyMapInner() {
 
   // Filter + overlay controls, rendered inline in the header on desktop and in
   // a collapsible panel below it on mobile.
+  // Color basis. On a phone this lives in the sheet with the other controls:
+  // the header is a fixed 52px single row, and back + title + a two-button
+  // toggle + ZIP + Filters + Refresh does not fit a 320px screen — it used to
+  // overflow into `overflow: hidden` and clip the trailing controls away
+  // entirely rather than wrapping.
+  const modeToggle = (
+    <div style={{
+      display: 'flex', gap: 2, background: 'var(--color-ink-100)',
+      borderRadius: 'var(--radius-pill)', padding: 2, marginLeft: isMobile ? 0 : 8,
+    }}>
+      {([['signals', Signal, 'Intent signals'], ['score', Award, 'Score grade']] as const).map(([key, Icon, label]) => (
+        <button
+          key={key}
+          onClick={() => setMode(key)}
+          title={label}
+          aria-label={label}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            padding: isMobile ? '9px 14px' : '5px 12px', minHeight: isMobile ? 40 : undefined,
+            fontSize: 12, fontWeight: 500, borderRadius: 'var(--radius-pill)', border: 'none', cursor: 'pointer',
+            background: mode === key ? 'var(--color-paper)' : 'transparent',
+            color: mode === key ? 'var(--color-ink-900)' : 'var(--color-ink-400)',
+            boxShadow: mode === key ? 'var(--shadow-card)' : 'none',
+          }}
+        >
+          <Icon size={13} strokeWidth={1.5} /> {label}
+        </button>
+      ))}
+    </div>
+  )
+
   const filterControls = (
     <>
       <input
         value={vertical}
         onChange={e => setVertical(e.target.value)}
         placeholder="Vertical"
-        style={{ width: 120, padding: '6px 10px', fontSize: 12, borderRadius: 'var(--radius-pill)', border: '1px solid var(--color-ink-200)', background: 'var(--color-paper)' }}
+        style={{ ...fieldStyle(isMobile), width: 120 }}
       />
       <select value={status} onChange={e => setStatus(e.target.value)}
-        style={{ padding: '6px 10px', fontSize: 12, borderRadius: 'var(--radius-pill)', border: '1px solid var(--color-ink-200)', background: 'var(--color-paper)' }}>
+        style={fieldStyle(isMobile)}>
         <option value="">All statuses</option>
-        {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+        {/* The label, not the enum: this dropdown used to read `quote_sent` and
+            `not_interested` while every other status surface in the app showed
+            "Quote Sent" and "Not Interested" from the same shared source. */}
+        {STATUSES.map(s => <option key={s} value={s}>{statusTokens(s).label}</option>)}
       </select>
       {mode === 'signals' && (
         <select value={signalDays} onChange={e => setSignalDays(Number(e.target.value))}
-          style={{ padding: '6px 10px', fontSize: 12, borderRadius: 'var(--radius-pill)', border: '1px solid var(--color-ink-200)', background: 'var(--color-paper)' }}>
+          style={fieldStyle(isMobile)}>
           <option value={30}>30 days</option>
           <option value={60}>60 days</option>
           <option value={90}>90 days</option>
@@ -691,13 +1260,13 @@ function PropertyMapInner() {
       <button
         onClick={() => setHeatmap(v => !v)}
         title="Toggle the H3 heatmap overlay"
-        style={overlayBtn(heatmap)}
+        style={overlayBtn(heatmap, isMobile)}
       >
         <Grid3x3 size={13} strokeWidth={1.5} /> Heatmap
       </button>
       {heatmap && (
         <select value={heatMetric} onChange={e => setHeatMetric(e.target.value as HeatmapMetric)}
-          style={{ padding: '6px 10px', fontSize: 12, borderRadius: 'var(--radius-pill)', border: '1px solid var(--color-ink-200)', background: 'var(--color-paper)' }}>
+          style={fieldStyle(isMobile)}>
           <option value="density">Customer density</option>
           <option value="avg_score">Avg score</option>
         </select>
@@ -705,27 +1274,39 @@ function PropertyMapInner() {
       <button
         onClick={() => { if (showClusters) setSelectedCluster(null); setShowClusters(v => !v) }}
         title="Toggle customer clusters"
-        style={overlayBtn(showClusters)}
+        style={overlayBtn(showClusters, isMobile)}
       >
         <Sparkles size={13} strokeWidth={1.5} /> Clusters
       </button>
       <button
         onClick={() => setShowEvents(v => !v)}
         title="Toggle event polygons (hail swaths, new construction, …)"
-        style={overlayBtn(showEvents)}
+        style={overlayBtn(showEvents, isMobile)}
       >
         <Zap size={13} strokeWidth={1.5} /> Events
       </button>
+
+      {/* Draw tools. Three endpoints that shipped with no way to reach them:
+          the service-area polygon, the event layer, and /geo/prospect's
+          lat/lng seed. */}
+      <DrawToolbar tool={drawTools.tool} onPick={drawTools.start} touch={isMobile} />
     </>
   )
 
   return (
     <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column' }}>
       <header style={{
-        minHeight: isMobile ? 52 : 64, padding: isMobile ? '8px 12px' : '0 16px',
+        // Fixed height on mobile, not minHeight: paired with flexWrap this used
+        // to grow to two or three rows at 320px and take that height straight
+        // out of the map — the opposite of what a phone needs. Filters live in
+        // the sheet now, so the row has little enough in it to stay on one line.
+        height: isMobile ? 52 : undefined,
+        minHeight: isMobile ? undefined : 64,
+        padding: isMobile ? '8px 12px' : '0 16px',
         display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 10,
         borderBottom: '1px solid var(--color-ink-200)', background: 'var(--color-paper)', flexShrink: 0,
-        flexWrap: 'wrap',
+        flexWrap: isMobile ? 'nowrap' : 'wrap',
+        overflow: isMobile ? 'hidden' : undefined,
       }}>
         <Link href="/dashboard" className="dash-icon-btn" style={{ textDecoration: 'none', color: 'inherit' }}>
           <ArrowLeft size={15} strokeWidth={1.5} />
@@ -735,46 +1316,29 @@ function PropertyMapInner() {
             <Home size={15} strokeWidth={1.5} />
           </Link>
         )}
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600, color: 'var(--color-ink-900)', margin: 0 }}>
-          Map
-        </h1>
+        {!isMobile && (
+          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600, color: 'var(--color-ink-900)', margin: 0 }}>
+            Map
+          </h1>
+        )}
 
-        {/* Color-basis toggle (icon-only on mobile to fit one row) */}
-        <div style={{ display: 'flex', gap: 2, background: 'var(--color-ink-100)', borderRadius: 'var(--radius-pill)', padding: 2, marginLeft: 8 }}>
-          {([['signals', Signal, 'Intent signals'], ['score', Award, 'Score grade']] as const).map(([key, Icon, label]) => (
-            <button
-              key={key}
-              onClick={() => setMode(key)}
-              title={label}
-              aria-label={label}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '7px 12px' : '5px 12px',
-                fontSize: 12, fontWeight: 500, borderRadius: 'var(--radius-pill)', border: 'none', cursor: 'pointer',
-                background: mode === key ? 'var(--color-paper)' : 'transparent',
-                color: mode === key ? 'var(--color-ink-900)' : 'var(--color-ink-400)',
-                boxShadow: mode === key ? 'var(--shadow-card)' : 'none',
-              }}
-            >
-              <Icon size={13} strokeWidth={1.5} /> {!isMobile && label}
-            </button>
-          ))}
-        </div>
+        {!glUnsupported && !isMobile && modeToggle}
 
         {/* ZIP jump — deliberately outside `filterControls` so it stays visible on
             mobile instead of collapsing behind the Filters button. Navigating to a
             ZIP is the primary way to move around the map on a phone. */}
-        <button
-          onClick={toggleZipPicker}
-          title="Jump to a ZIP code"
-          aria-label="Jump to a ZIP code"
+        {!glUnsupported && <button
+          onClick={togglePlacePicker}
+          title="Jump to a ZIP, address, or lead"
+          aria-label="Jump to a ZIP, address, or lead"
           aria-expanded={zipOpen}
           aria-haspopup="listbox"
-          style={{ ...overlayBtn(zipOpen || activeZip != null), minHeight: isMobile ? 36 : undefined }}
+          style={overlayBtn(zipOpen || activeZip != null, isMobile)}
         >
           <MapPin size={13} strokeWidth={1.5} /> {activeZip ?? 'ZIP'}
-        </button>
+        </button>}
 
-        {!isMobile && filterControls}
+        {!glUnsupported && !isMobile && filterControls}
 
         <div style={{ flex: 1 }} />
         {!isMobile && (
@@ -782,38 +1346,58 @@ function PropertyMapInner() {
             {zoomedIn ? 'Properties' : 'Regions'} · zoom {zoomedIn ? 'out for blocks' : 'in for pins'}
           </span>
         )}
-        {isMobile && (
+        {!glUnsupported && isMobile && (
           <button
             onClick={() => setShowControls(v => !v)}
             title="Filters & overlays"
             aria-expanded={showControls}
-            style={{ ...overlayBtn(showControls || activeOverlays > 0), position: 'relative' }}
+            style={{ ...overlayBtn(showControls || activeOverlays > 0, true), position: 'relative' }}
           >
             <SlidersHorizontal size={13} strokeWidth={1.5} /> Filters
             {activeOverlays > 0 && !showControls && ` · ${activeOverlays}`}
           </button>
         )}
-        <button onClick={refresh} className="dash-icon-btn" title="Refresh">
+        {!glUnsupported && <button onClick={refresh} className="dash-icon-btn" title="Refresh">
           <RefreshCw size={13} strokeWidth={1.5} className={loading ? 'animate-spin' : ''} />
-        </button>
+        </button>}
       </header>
 
-      {/* Mobile: collapsible filter panel below the header */}
-      {isMobile && showControls && (
-        <div style={{
-          padding: '10px 12px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8,
-          borderBottom: '1px solid var(--color-ink-200)', background: 'var(--color-paper)', flexShrink: 0,
-        }}>
-          {filterControls}
-        </div>
+      {/* Mobile: filters and overlays in a bottom sheet.
+          Previously a static block in this flex column, so opening it *took
+          height away from the map* — the opposite of what a phone needs. The
+          sheet floats over the map instead, and peeks at 45% so a rep can see
+          both the controls and where they are. */}
+      {isMobile && (
+        <Sheet
+          open={showControls}
+          onClose={() => setShowControls(false)}
+          label="Filters and overlays"
+          title="Filters & overlays"
+          snapPoints={[0.45, 0.85]}
+        >
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+            {modeToggle}
+            {filterControls}
+          </div>
+        </Sheet>
       )}
 
       <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
         <div ref={containerRef} style={{ position: 'absolute', inset: 0 }} />
-        <Legend key={isMobile ? 'mobile' : 'desktop'} mode={mode} collapsible={isMobile} />
-        {isMobile && (
+        {glUnsupported && <UnsupportedDevice />}
+        {!glUnsupported && <Legend key={isMobile ? 'mobile' : 'desktop'} mode={mode} collapsible={isMobile} />}
+        {!glUnsupported && truncated && zoomedIn && (
+          <TruncationNotice limit={PIN_LIMIT} isMobile={isMobile} />
+        )}
+        {/* Two stacked pills 34px apart is noise. The truncation notice is the
+            more important message — "you're only seeing part of the data"
+            outranks "zoom out for blocks" — so the hint yields to it. */}
+        {isMobile && !glUnsupported && !truncated && (
           <span style={{
-            position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
+            // z-index declared, and the pill yields to the truncation notice:
+            // "you're only seeing part of the data" outranks "zoom out for
+            // blocks". They sit 34px apart and used to stack silently.
+            position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 2,
             fontSize: 11, color: 'var(--color-ink-700)', background: 'var(--color-paper)',
             border: '1px solid var(--color-ink-200)', borderRadius: 'var(--radius-pill)',
             padding: '3px 10px', boxShadow: 'var(--shadow-card)', pointerEvents: 'none', whiteSpace: 'nowrap',
@@ -822,18 +1406,21 @@ function PropertyMapInner() {
           </span>
         )}
         {zipOpen && (
-          <ZipPicker
+          <PlacePicker
             zips={zips}
-            loading={zipsLoading}
+            zipsLoading={zipsLoading}
             query={zipQuery}
             onQuery={setZipQuery}
-            onPick={jumpToZip}
+            onPickZip={jumpToZip}
+            leads={leadSearchArmed ? leadHits : []}
+            leadsLoading={leadSearchArmed && leadsLoading}
+            onPickLead={jumpToLead}
             onClose={() => setZipOpen(false)}
             isMobile={isMobile}
             areaLabel={serviceAreaLabel()}
           />
         )}
-        {showClusters && selectedCluster && (
+        {showClusters && selectedCluster && !drawTools.tool && (
           <ClusterActionPanel
             cluster={selectedCluster}
             busy={prospecting}
@@ -841,234 +1428,47 @@ function PropertyMapInner() {
             onClose={() => setSelectedCluster(null)}
           />
         )}
+        {drawTools.tool && !drawTools.pending && (
+          <DrawHint tool={drawTools.tool} onCancel={drawTools.cancel} />
+        )}
+        {/* Blast radius. Mutually exclusive with the draw panels — they share the
+            bottom-centre slot, and a draw session clears the overlay anyway. */}
+        {!drawTools.tool && blast && (
+          <BlastPanel
+            address={blast.lead.address ?? ''}
+            hits={blast.hits}
+            radiusM={blast.radius}
+            onPick={openLead}
+            onClose={clearBlast}
+          />
+        )}
+        {drawTools.pending && (
+          <DrawConfirm
+            pending={drawTools.pending}
+            busy={savingDraw}
+            selectionCount={selection.length}
+            onSave={saveDrawing}
+            onRedraw={drawTools.redraw}
+            onCancel={drawTools.cancel}
+          />
+        )}
       </div>
 
       <ContactDrawer
         lead={selectedLead}
-        onClose={() => setSelectedLead(null)}
+        // "Show neighbors" belongs to the lead being viewed, so it renders in
+        // the drawer rather than floating over a map the drawer covers.
+        actions={l => (
+          l.status === 'won' && l.latitude != null && l.longitude != null
+            ? <NeighborsPrompt busy={blastLoading} onShow={() => showNeighbors(l)} />
+            : null
+        )}
+        onClose={() => { setSelectedLead(null); setActivePin(null) }}
         onStatusChange={() => refresh()}
         onLeadChange={updated => { setSelectedLead(updated); refresh() }}
         onToast={showToast}
       />
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
-    </div>
-  )
-}
-
-// Pill style for the geo-overlay toggles, active state matching the mode toggle.
-function overlayBtn(active: boolean): CSSProperties {
-  return {
-    display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px',
-    fontSize: 12, fontWeight: 500, borderRadius: 'var(--radius-pill)', cursor: 'pointer',
-    border: '1px solid var(--color-ink-200)',
-    background: active ? 'var(--color-ink-900)' : 'var(--color-paper)',
-    color: active ? 'var(--color-paper)' : 'var(--color-ink-700)',
-  }
-}
-
-// Floating panel shown when a customer cluster is clicked — fires the Section 5
-// "prospect this area" flow with the map's current vertical filter.
-function ClusterActionPanel({
-  cluster, busy, onProspect, onClose,
-}: {
-  cluster: { label: number; count: number }
-  busy: boolean
-  onProspect: () => void
-  onClose: () => void
-}) {
-  return (
-    <div style={{
-      position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
-      background: 'var(--color-paper)', border: '1px solid var(--color-ink-200)',
-      borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)',
-      padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12, maxWidth: '92%',
-      flexWrap: 'wrap', justifyContent: 'center',
-    }}>
-      <div>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-ink-900)' }}>
-          Cluster #{cluster.label}
-        </div>
-        <div style={{ fontSize: 11, color: 'var(--color-ink-500)' }}>
-          {cluster.count} active customer{cluster.count === 1 ? '' : 's'} here
-        </div>
-      </div>
-      <button
-        onClick={onProspect}
-        disabled={busy}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
-          fontSize: 12, fontWeight: 600, borderRadius: 'var(--radius-pill)', border: 'none',
-          cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1,
-          background: 'var(--color-accent)', color: '#ffffff',
-        }}
-      >
-        <Sparkles size={13} strokeWidth={1.5} /> {busy ? 'Prospecting…' : 'Prospect this area'}
-      </button>
-      <button onClick={onClose} className="dash-icon-btn borderless" title="Close">
-        <X size={15} strokeWidth={1.5} />
-      </button>
-    </div>
-  )
-}
-
-/**
- * ZIP jump control — a bottom sheet on mobile, a dropdown on desktop.
- *
- * The list is the account's *own* ZIPs (GET /api/map/zips), so every entry is
- * guaranteed to contain leads and picking one fits the map to that ZIP's real
- * extent. Mobile affordances: full-width sheet with 44px rows, a numeric keypad
- * via inputMode, a 16px font so iOS Safari doesn't auto-zoom the page on focus,
- * and a tap-anywhere backdrop to dismiss.
- */
-function ZipPicker({
-  zips, loading, query, onQuery, onPick, onClose, isMobile, areaLabel,
-}: {
-  zips: MapZip[]
-  loading: boolean
-  query: string
-  onQuery: (v: string) => void
-  onPick: (z: MapZip) => void
-  onClose: () => void
-  isMobile: boolean
-  areaLabel: string
-}) {
-  const term = query.trim()
-  const filtered = term ? zips.filter(z => z.zip.startsWith(term)) : zips
-
-  const panel: CSSProperties = isMobile
-    ? {
-        position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 6,
-        maxHeight: '62%', display: 'flex', flexDirection: 'column',
-        background: 'var(--color-paper)', borderTop: '1px solid var(--color-ink-200)',
-        borderTopLeftRadius: 16, borderTopRightRadius: 16,
-        boxShadow: 'var(--shadow-card)', padding: '10px 12px 14px',
-      }
-    : {
-        position: 'absolute', top: 12, left: 16, zIndex: 6,
-        width: 280, maxHeight: 380, display: 'flex', flexDirection: 'column',
-        background: 'var(--color-paper)', border: '1px solid var(--color-ink-200)',
-        borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)',
-        padding: '10px 12px 12px',
-      }
-
-  return (
-    <>
-      <div
-        onClick={onClose}
-        style={{
-          position: 'absolute', inset: 0, zIndex: 5,
-          background: isMobile ? 'rgba(0,0,0,0.28)' : 'transparent',
-        }}
-      />
-      <div style={panel} role="dialog" aria-label="Jump to a ZIP code">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-ink-900)' }}>Jump to ZIP</div>
-            <div style={{ fontSize: 11, color: 'var(--color-ink-500)' }}>{areaLabel}</div>
-          </div>
-          <button onClick={onClose} className="dash-icon-btn borderless" title="Close" aria-label="Close">
-            <X size={15} strokeWidth={1.5} />
-          </button>
-        </div>
-
-        <input
-          autoFocus={!isMobile}
-          value={query}
-          onChange={e => onQuery(e.target.value.replace(/[^0-9]/g, '').slice(0, 5))}
-          onKeyDown={e => { if (e.key === 'Enter' && filtered.length) onPick(filtered[0]) }}
-          placeholder="Search ZIP…"
-          inputMode="numeric"
-          enterKeyHint="go"
-          aria-label="Filter ZIP codes"
-          style={{
-            width: '100%', padding: isMobile ? '11px 12px' : '8px 10px',
-            fontSize: 16, borderRadius: 'var(--radius-pill)',
-            border: '1px solid var(--color-ink-200)',
-            background: 'var(--color-paper)', color: 'var(--color-ink-900)',
-          }}
-        />
-
-        <div role="listbox" style={{ overflowY: 'auto', marginTop: 8, flex: 1 }}>
-          {loading && <ZipHint>Loading ZIP codes…</ZipHint>}
-          {!loading && !zips.length && <ZipHint>No mapped ZIP codes yet.</ZipHint>}
-          {!loading && zips.length > 0 && !filtered.length && (
-            <ZipHint>No ZIP starts with “{term}”.</ZipHint>
-          )}
-          {!loading && filtered.map(z => (
-            <button
-              key={z.zip}
-              role="option"
-              aria-selected={false}
-              onClick={() => onPick(z)}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                width: '100%', minHeight: 44, gap: 10, padding: '8px 10px', marginTop: 2,
-                border: 'none', borderRadius: 'var(--radius-card)', background: 'transparent',
-                cursor: 'pointer', textAlign: 'left',
-              }}
-            >
-              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-ink-900)' }}>{z.zip}</span>
-              <span style={{ fontSize: 11, color: 'var(--color-ink-500)' }}>
-                {z.leads.toLocaleString()} lead{z.leads === 1 ? '' : 's'}
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-    </>
-  )
-}
-
-function ZipHint({ children }: { children: ReactNode }) {
-  return <div style={{ padding: '10px 4px', fontSize: 12, color: 'var(--color-ink-500)' }}>{children}</div>
-}
-
-function Legend({ mode, collapsible }: { mode: ColorMode; collapsible?: boolean }) {
-  // Collapsed by default on mobile so it doesn't cover the map (the parent
-  // remounts this via `key` when crossing the breakpoint).
-  const [open, setOpen] = useState(!collapsible)
-  const items = mode === 'signals'
-    ? [
-        { c: 'var(--color-danger)', t: 'Hot — recent signals' },
-        { c: 'var(--color-gold)',   t: 'Some signal activity' },
-        { c: 'var(--color-ink-200)', t: 'No recent signals' },
-      ]
-    : [
-        { c: 'var(--color-moss)',   t: 'A — strong' },
-        { c: 'var(--color-accent)', t: 'B' },
-        { c: 'var(--color-gold)',   t: 'C' },
-        { c: 'var(--color-danger)', t: 'D — weak' },
-      ]
-  return (
-    <div style={{
-      position: 'absolute', bottom: 16, left: 16, background: 'var(--color-paper)',
-      border: '1px solid var(--color-ink-200)', borderRadius: 'var(--radius-card)',
-      boxShadow: 'var(--shadow-card)', padding: '10px 12px', fontSize: 11, color: 'var(--color-ink-700)',
-    }}>
-      {collapsible ? (
-        <button
-          onClick={() => setOpen(v => !v)}
-          aria-expanded={open}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6, padding: 0, margin: open ? '0 0 6px' : 0,
-            border: 'none', background: 'transparent', cursor: 'pointer',
-            fontSize: 11, fontWeight: 600, color: 'var(--color-ink-900)',
-          }}
-        >
-          {mode === 'signals' ? 'Intent signals' : 'Lead score'}
-          {open ? <ChevronDown size={12} strokeWidth={1.5} /> : <ChevronUp size={12} strokeWidth={1.5} />}
-        </button>
-      ) : (
-        <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--color-ink-900)' }}>
-          {mode === 'signals' ? 'Intent signals' : 'Lead score'}
-        </div>
-      )}
-      {open && items.map(i => (
-        <div key={i.t} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
-          <span style={{ width: 12, height: 12, borderRadius: 3, background: i.c, flexShrink: 0 }} />
-          {i.t}
-        </div>
-      ))}
     </div>
   )
 }

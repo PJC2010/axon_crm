@@ -450,6 +450,11 @@ class CustomerSearchResult(BaseModel):
     contact_phone: Optional[str] = None
     status: str = "new"
     score_grade: Optional[str] = None
+    # Present so a map can fly to a hit without a second round trip. Nullable:
+    # `properties` is also the contact book, and an inbound call or web-form lead
+    # has no address to geocode.
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 
 # ── Score explanation ─────────────────────────────────────────────────────────

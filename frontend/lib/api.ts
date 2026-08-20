@@ -346,9 +346,19 @@ export function getMapCells(filters: MapFilters = {}): Promise<MapCell[]> {
 
 // Property pins inside the current viewport (zoomed-in view). The bbox + hard
 // server-side limit keep payloads small.
-export function getMapProperties(bounds: MapBounds, filters: MapFilters = {}): Promise<MapPoint[]> {
+//
+// `limit` is now sent explicitly. It was always a query param (server default
+// 2000, max 5000) that the frontend never set, so a dense viewport silently
+// returned the top-scoring 2,000 rows with nothing to say the rest existed.
+// Callers ask for one more than they intend to draw and use the overflow as the
+// signal — see PIN_LIMIT in components/PropertyMap.tsx.
+export function getMapProperties(
+  bounds: MapBounds,
+  filters: MapFilters = {},
+  limit?: number,
+): Promise<MapPoint[]> {
   const p = new URLSearchParams()
-  Object.entries({ ...bounds, ...filters }).forEach(([k, v]) => {
+  Object.entries({ ...bounds, ...filters, ...(limit ? { limit } : {}) }).forEach(([k, v]) => {
     if (v !== undefined && v !== '') p.set(k, String(v))
   })
   return req<MapPoint[]>(`/map/properties?${p}`)

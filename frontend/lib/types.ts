@@ -120,6 +120,10 @@ export interface CustomerSearchResult {
   contact_phone: string | null
   status: LeadStatus
   score_grade: ScoreGrade | null
+  // So the map can fly to a hit without a second fetch. Null for the rows that
+  // have no address to geocode — `properties` is the contact book too.
+  latitude: number | null
+  longitude: number | null
 }
 
 // ── Property map ──────────────────────────────────────────────────────────────
