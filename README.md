@@ -223,7 +223,7 @@ axon-crm/
 │   │   │   map/, settings/                # Authenticated app sections
 │   │   ├── leads/[id]/                    # Lead detail (dynamic route)
 │   │   ├── pay/[token]/, q/[token]/       # Public, token-addressed pay page + quote page
-│   │   └── preview/                       # Public mock-data demo dashboard
+│   │   └── preview/                       # Public interactive demo (sample-data workspace, no login)
 │   ├── components/
 │   │   ├── ds/                            # Design-system primitives (Button, Card, Input, KpiCard, …)
 │   │   ├── home/, lead/                   # Home-dashboard and lead-detail sub-components
@@ -856,7 +856,7 @@ Cross-tenant operator surface, guarded by `users.is_platform_admin` (grant via `
 |---|---|---|
 | `/` | Public landing / marketing page | No |
 | `/login` | Sign in (password + Google/Apple) | No |
-| `/preview` | Public mock-data demo dashboard | No |
+| `/preview` | Public interactive demo — live dashboard, drag-and-drop pipeline, scored leads, map, all on sample data | No |
 | `/pay/[token]` | Public invoice payment page (Stripe Checkout) | No |
 | `/q/[token]` | Public quote accept/decline page | No |
 | `/home` | Home dashboard (post-login landing) | Yes |

@@ -36,9 +36,12 @@ interface Props {
   /** Job value + label for the won-deal celebration; pass when available. */
   jobValue?: number | null
   celebrateLabel?: string | null
+  /** When false, skip the API write and only report through onChange — used by
+   *  the no-login /preview demo, where state lives in the page. */
+  persist?: boolean
 }
 
-export function StatusSelect({ leadId, value, onChange, jobValue, celebrateLabel }: Props) {
+export function StatusSelect({ leadId, value, onChange, jobValue, celebrateLabel, persist = true }: Props) {
   const [saving, setSaving] = useState(false)
   const [celebrating, setCelebrating] = useState(false)
 
@@ -46,7 +49,7 @@ export function StatusSelect({ leadId, value, onChange, jobValue, celebrateLabel
     const next = e.target.value as LeadStatus
     setSaving(true)
     try {
-      await updateStatus(leadId, next)
+      if (persist) await updateStatus(leadId, next)
       if (next === 'won') setCelebrating(true)
       onChange?.(next)
     } finally {
@@ -60,6 +63,8 @@ export function StatusSelect({ leadId, value, onChange, jobValue, celebrateLabel
       <WonCelebration
         deal={{ value: jobValue ?? null, label: celebrateLabel ?? null }}
         onDone={() => setCelebrating(false)}
+        // Demo mode (persist=false) has no signed-in app to invoice from.
+        invoiceHref={persist ? undefined : null}
       />
     )}
     <select

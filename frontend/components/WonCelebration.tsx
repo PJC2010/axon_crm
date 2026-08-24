@@ -20,7 +20,13 @@ export interface WonDeal {
 
 const AUTO_DISMISS_MS = 4000
 
-export function WonCelebration({ deal, onDone }: { deal: WonDeal; onDone: () => void }) {
+export function WonCelebration({ deal, onDone, invoiceHref = '/bookkeeping' }: {
+  deal: WonDeal
+  onDone: () => void
+  /** Where "Create invoice" points; null hides it (the no-login demo passes
+   *  null so the celebration never routes a visitor into the auth wall). */
+  invoiceHref?: string | null
+}) {
   const { hasModule } = useEntitlements()
   const [visible, setVisible] = useState(false)
   const animated = useCountUp(deal.value ?? 0, 900)
@@ -66,9 +72,9 @@ export function WonCelebration({ deal, onDone }: { deal: WonDeal; onDone: () => 
           </p>
         )}
       </div>
-      {hasModule('invoicing') && (
+      {invoiceHref != null && hasModule('invoicing') && (
         <Link
-          href="/bookkeeping"
+          href={invoiceHref}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
             padding: '0 14px', minHeight: 44,

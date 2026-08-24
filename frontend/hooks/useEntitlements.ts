@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { getAccountFeatures } from '@/lib/api'
+import { getToken } from '@/lib/auth'
 import type { AccountFeatures, ModuleKey, ScoringQuota } from '@/lib/types'
 
 /**
@@ -20,6 +21,11 @@ const listeners = new Set<(f: AccountFeatures) => void>()
 
 function load(): Promise<AccountFeatures> {
   if (cache) return Promise.resolve(cache)
+  // No session → nothing to fetch. This matters on public pages (/preview
+  // renders entitlements-aware components like WonCelebration): the request
+  // would 401 and api.ts's 401 handler hard-redirects to /login. Rejecting
+  // here keeps the hook on its permissive no-features path instead.
+  if (!getToken()) return Promise.reject(new Error('not signed in'))
   if (!inflight) {
     inflight = getAccountFeatures()
       .then((f) => { cache = f; return f })
@@ -41,8 +47,8 @@ export function clearEntitlementsCache(): void {
  */
 export async function refreshEntitlements(): Promise<void> {
   clearEntitlementsCache()
-  const f = await load()
-  listeners.forEach((l) => l(f))
+  const f = await load().catch(() => null)
+  if (f) listeners.forEach((l) => l(f))
 }
 
 export interface Entitlements {

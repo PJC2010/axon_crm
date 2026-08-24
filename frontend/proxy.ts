@@ -11,11 +11,17 @@ import type { NextRequest } from 'next/server'
 // 03-file-conventions/proxy.md).
 const INDEXABLE_PATHS = ['/', '/hcad-data', '/login', '/signup', '/privacy', '/terms']
 
+// Exact-match only: the /preview interactive demo is a marketing surface, but
+// its /preview/dev component gallery stays out of the index.
+const INDEXABLE_EXACT = ['/preview']
+
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
-  const isIndexable = INDEXABLE_PATHS.some(
-    p => pathname === p || (p !== '/' && pathname.startsWith(p + '/')),
-  )
+  const isIndexable =
+    INDEXABLE_EXACT.includes(pathname) ||
+    INDEXABLE_PATHS.some(
+      p => pathname === p || (p !== '/' && pathname.startsWith(p + '/')),
+    )
   if (isIndexable) return NextResponse.next()
 
   const response = NextResponse.next()

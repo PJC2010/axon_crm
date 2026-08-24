@@ -14,6 +14,9 @@ interface Props {
   onToggleSelect: (id: number) => void
   onClick: (lead: Lead) => void
   onStatusChange: (id: number, s: LeadStatus) => void
+  /** Forwarded to StatusSelect; false = report the change without an API write
+   *  (the no-login /preview demo owns lead state itself). */
+  persistStatus?: boolean
 }
 
 function fmtCompactCurrency(n: number | null | undefined): string | null {
@@ -29,7 +32,7 @@ function fmtCompactCurrency(n: number | null | undefined): string | null {
  * scroll on a phone; this stacks the same facts into a tappable card with the
  * primary label and score up top, so a rep can scan the list one-thumb.
  */
-export function LeadCard({ lead, propertyBased, categories, selected, onToggleSelect, onClick, onStatusChange }: Props) {
+export function LeadCard({ lead, propertyBased, categories, selected, onToggleSelect, onClick, onStatusChange, persistStatus = true }: Props) {
   const Icon = propertyBased ? Home : User
   const primary = propertyBased
     ? (lead.address || lead.contact_name || '—')
@@ -94,6 +97,7 @@ export function LeadCard({ lead, propertyBased, categories, selected, onToggleSe
               value={lead.status}
               jobValue={lead.estimated_job_value}
               celebrateLabel={primary}
+              persist={persistStatus}
               onChange={s => onStatusChange(lead.id, s)}
             />
           </span>
