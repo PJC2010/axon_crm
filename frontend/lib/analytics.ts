@@ -43,3 +43,10 @@ export function trackLogin(method: AuthMethod) {
 export function trackBeginCheckout(plan: string) {
   trackEvent('begin_checkout', { item_name: plan })
 }
+
+/** Visitor interacted with the /preview live demo (moved a deal, opened a
+ *  lead, added one, visited the map…). One event name with an `action` param
+ *  so the demo engagement funnel reads out of a single GA4 report. */
+export function trackDemoInteraction(action: string, params?: Record<string, unknown>) {
+  trackEvent('demo_interaction', { action, ...params })
+}
