@@ -26,13 +26,22 @@ export const DEMO_CATEGORIES: Category[] = [
 
 // Same keys/colors as the real board's fallback stages (app/pipeline/page.tsx).
 export const DEMO_STAGES: { key: LeadStatus; label: string; color: string }[] = [
-  { key: 'new',        label: 'New',        color: 'var(--color-ink-300)' },
-  { key: 'contacted',  label: 'Contacted',  color: 'var(--color-ocean)' },
-  { key: 'qualified',  label: 'Qualified',  color: 'var(--color-accent)' },
-  { key: 'quote_sent', label: 'Quote Sent', color: 'var(--color-gold)' },
-  { key: 'won',        label: 'Won',        color: 'var(--color-moss)' },
-  { key: 'lost',       label: 'Lost',       color: 'var(--color-danger)' },
+  { key: 'new',            label: 'New',            color: 'var(--color-ink-300)' },
+  { key: 'contacted',      label: 'Contacted',      color: 'var(--color-ocean)' },
+  { key: 'qualified',      label: 'Qualified',      color: 'var(--color-accent)' },
+  { key: 'quote_sent',     label: 'Quote Sent',     color: 'var(--color-gold)' },
+  { key: 'won',            label: 'Won',            color: 'var(--color-moss)' },
+  { key: 'lost',           label: 'Lost',           color: 'var(--color-danger)' },
+  { key: 'not_interested', label: 'Not Interested', color: 'var(--color-ink-200)' },
 ]
+
+/** StatusSelect offers the full product vocabulary; the board doesn't carry a
+ *  'converted' column (it's the non-property preset's word for won), so fold
+ *  it into 'won' wherever leads are bucketed by stage. Without this a lead
+ *  marked Converted silently vanishes from the board and every stat. */
+export function canonicalStage(status: LeadStatus | string): string {
+  return status === 'converted' ? 'won' : status
+}
 
 export const OPEN_STAGES: LeadStatus[] = ['new', 'contacted', 'qualified', 'quote_sent']
 
@@ -330,7 +339,8 @@ export function groupByStage(leads: Lead[]): Record<string, PipelineCardLead[]> 
   const groups: Record<string, PipelineCardLead[]> = {}
   for (const stage of DEMO_STAGES) groups[stage.key] = []
   for (const l of leads) {
-    if (groups[l.status]) groups[l.status].push(toPipelineCard(l))
+    const key = canonicalStage(l.status)
+    if (groups[key]) groups[key].push(toPipelineCard(l))
   }
   for (const key of Object.keys(groups)) {
     groups[key].sort((a, b) => (b.lead_score ?? 0) - (a.lead_score ?? 0))
@@ -342,7 +352,7 @@ export function stageStats(leads: Lead[]): Record<string, { count: number; total
   const stats: Record<string, { count: number; total_value: number }> = {}
   for (const stage of DEMO_STAGES) stats[stage.key] = { count: 0, total_value: 0 }
   for (const l of leads) {
-    const s = stats[l.status]
+    const s = stats[canonicalStage(l.status)]
     if (!s) continue
     s.count += 1
     s.total_value += l.estimated_job_value ?? 0
@@ -375,7 +385,7 @@ export function openPipelineValue(leads: Lead[]): number {
 }
 
 export function winStats(leads: Lead[]): { won: number; lost: number; wonValue: number; ratePct: number | null } {
-  const won = leads.filter(l => l.status === 'won')
+  const won = leads.filter(l => canonicalStage(l.status) === 'won')
   const lost = leads.filter(l => l.status === 'lost')
   const closed = won.length + lost.length
   return {

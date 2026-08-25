@@ -99,6 +99,27 @@ describe('derivations', () => {
   })
 })
 
+describe('status vocabulary', () => {
+  it("folds 'converted' into the won bucket everywhere leads are bucketed", () => {
+    const leads = makeDemoLeads().map(l =>
+      l.status === 'won' ? { ...l, status: 'converted' as const } : l)
+    const groups = groupByStage(leads)
+    const stats = stageStats(leads)
+    expect(groups.won.length).toBeGreaterThan(0)
+    expect(stats.won.count).toBe(groups.won.length)
+    expect(winStats(leads).won).toBe(groups.won.length)
+    const counted = Object.values(stats).reduce((s, r) => s + r.count, 0)
+    expect(counted).toBe(leads.length)
+  })
+
+  it("carries a 'not_interested' column like the product's fallback board", () => {
+    expect(DEMO_STAGES.some(s => s.key === 'not_interested')).toBe(true)
+    const leads = makeDemoLeads().map((l, i) =>
+      i === 0 ? { ...l, status: 'not_interested' as const } : l)
+    expect(groupByStage(leads).not_interested.length).toBe(1)
+  })
+})
+
 describe('buildDemoExplanation', () => {
   const lead = makeDemoLeads()[0]
   const exp = buildDemoExplanation(lead)

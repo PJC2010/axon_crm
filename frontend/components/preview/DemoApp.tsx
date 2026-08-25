@@ -9,6 +9,7 @@ import { ProspectCaptureForm } from '@/components/ProspectCaptureForm'
 import { ToastStack, useToast } from '@/components/Toast'
 import { WonCelebration, type WonDeal } from '@/components/WonCelebration'
 import { trackDemoInteraction, trackEvent } from '@/lib/analytics'
+import { statusTokens } from '@/lib/gradeColors'
 import {
   DEMO_STAGES, SEED_ACTIVITY, makeDemoLeads, makeVisitorLead, openPipelineValue,
   type DemoActivityItem,
@@ -59,6 +60,7 @@ export function DemoApp() {
   const { toasts, show: showToast, dismiss: dismissToast } = useToast()
   const nextIdRef = useRef(100)
   const completedRef = useRef(false)
+  const drawerClearRef = useRef<number | null>(null)
 
   useEffect(() => {
     const check = () => setWide(window.innerWidth >= 640)
@@ -84,7 +86,9 @@ export function DemoApp() {
     setActivity(prev => [item, ...prev])
   }, [])
 
-  const stageLabel = (key: string) => DEMO_STAGES.find(s => s.key === key)?.label ?? key
+  // Falls back to the shared status vocabulary for keys the board doesn't
+  // carry as a column (e.g. 'converted').
+  const stageLabel = (key: string) => DEMO_STAGES.find(s => s.key === key)?.label ?? statusTokens(key).label
 
   /** All status changes funnel here — board drops and StatusSelect changes. */
   const moveLead = useCallback((id: number, toStage: LeadStatus, source: 'drag' | 'select') => {
@@ -113,6 +117,12 @@ export function DemoApp() {
   }, [leads, markTried, pushActivity, showToast])
 
   const openLead = useCallback((id: number) => {
+    // A close within the last 260ms left a pending clear behind — cancel it,
+    // or it would blank the drawer we're about to open.
+    if (drawerClearRef.current != null) {
+      window.clearTimeout(drawerClearRef.current)
+      drawerClearRef.current = null
+    }
     setSelectedId(id)
     setDrawerOpen(true)
     markTried('open')
@@ -123,7 +133,10 @@ export function DemoApp() {
   // content while it slides away.
   const closeDrawer = useCallback(() => {
     setDrawerOpen(false)
-    window.setTimeout(() => setSelectedId(null), 260)
+    drawerClearRef.current = window.setTimeout(() => {
+      drawerClearRef.current = null
+      setSelectedId(null)
+    }, 260)
   }, [])
 
   const addLead = useCallback((input: NewLeadInput) => {
