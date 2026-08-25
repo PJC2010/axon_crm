@@ -310,7 +310,9 @@ NEXT_PUBLIC_GA_MEASUREMENT_ID=G-XXXXXXXXXX
 # Leave unset to skip loading the pixel entirely. Mounted by
 # components/MetaPixel; the same lib/analytics.ts helpers fan the conversion
 # events out to Meta (CompleteRegistration, StartTrial, InitiateCheckout,
-# ViewContent). Browser-side only — there is no Conversions API counterpart.
+# ViewContent). Pair it with the server-side Conversions API by setting
+# META_PIXEL_ID (same value) and META_CAPI_TOKEN in the backend .env — the two
+# share an event_id so Meta dedups rather than double-counts.
 NEXT_PUBLIC_META_PIXEL_ID=1234567890123456
 ```
 
