@@ -1,5 +1,5 @@
 
-import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, StripeStatus, PublicPayInfo, BillingInfo, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, MessageTemplate, MessageTemplateCreate, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType, HeatmapMetric, HeatmapResponse, ClusterCollection, ProspectSeed, ProspectResult, BlastRadiusResult, ServiceArea, EventCollection, EventCreate, LeadEvent, LeadEventCreate, CallSettings, CallSettingsResponse, TrackingNumber, AvailableNumber, CallOutcome, CallLogPage, CallDisposition, DialerQueueResponse, DialerTokenResponse, DispositionResult, ScoreGrade } from './types'
+import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, StripeStatus, PublicPayInfo, BillingInfo, ARSummary, AgingBucket, PnLReport, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, MessageTemplate, MessageTemplateCreate, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType, HeatmapMetric, HeatmapResponse, ClusterCollection, ProspectSeed, ProspectResult, BlastRadiusResult, ServiceArea, EventCollection, EventCreate, LeadEvent, LeadEventCreate, CallSettings, CallSettingsResponse, TrackingNumber, AvailableNumber, CallOutcome, CallLogPage, CallDisposition, DialerQueueResponse, DialerTokenResponse, DispositionResult, ScoreGrade } from './types'
 import type { AdminSummary, AdminPage, AdminAccountRow, AdminAccountDetail, AdminOrgActivityRow, AdminMember, AdminUserRow, AdminUserCreate, AdminUserUpdate, AdminResetLinkResult, AdminDeleteUserResult, AdminDeleteAccountResult, AdminBillingState, AdminSecurityReport, AuthEventRow, AuthEventFilters, AdminAuditRow, AdminProspectRow } from './types'
 import { getToken, clearToken } from './auth'
 
@@ -893,12 +893,6 @@ export function createPublicCheckout(token: string): Promise<{ url: string }> {
 
 export function getPnL(year: number): Promise<PnLReport> {
   return req(`/bookkeeping/pnl?year=${year}`)
-}
-
-export function getJobCosting(year?: number): Promise<JobCostRow[]> {
-  const p = new URLSearchParams()
-  if (year) p.set('year', String(year))
-  return req<JobCostRow[]>(`/bookkeeping/job-costing?${p}`)
 }
 
 // ── Workflows ────────────────────────────────────────────────────────────────

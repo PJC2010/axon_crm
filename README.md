@@ -91,7 +91,6 @@ The platform is self-hosted, multi-tenant, and data-sovereign: every table is is
 
 ### Bookkeeping
 - P&L report by month for any year (revenue vs. expenses vs. net profit)
-- Job costing table: revenue, expenses, profit margin per property
 
 ### Vertical Child Objects (Policies / Orders / Appointments)
 - Independently gated per-vertical record types associated with a core lead/customer record: insurance **Policies**, retail **Orders** (with a Square/Shopify CSV import), and **Appointments**
@@ -184,7 +183,7 @@ axon-crm/
 │       ├── messaging.py                              # Message templates + per-record send
 │       ├── tasks.py, pipeline.py                     # Tasks, Kanban/analytics + data-acquisition runs
 │       ├── expenses.py, invoices.py, quotes.py        # Expenses, invoicing/AR, quotes
-│       ├── bookkeeping.py                             # P&L, job costing
+│       ├── bookkeeping.py                             # P&L
 │       ├── policies.py, orders.py, order_imports.py,
 │       │   appointments.py, objects.py                # Vertical child objects + roll-up KPIs
 │       ├── ml.py                                       # Predictive lead scoring
@@ -233,7 +232,7 @@ axon-crm/
 │   │   ├── TaskList.tsx, TaskForm.tsx            # Tasks
 │   │   ├── ExpenseTracker.tsx, …                  # Expenses
 │   │   ├── InvoiceList.tsx, QuoteList.tsx, ARDashboard.tsx,
-│   │   │   BookkeepingDashboard.tsx, JobCostingTable.tsx,
+│   │   │   BookkeepingDashboard.tsx,
 │   │   │   StripeConnectSection.tsx              # Invoicing/quotes/bookkeeping/payments
 │   │   ├── AIInsightsPanel.tsx                   # Predictive-scoring insights
 │   │   ├── PropertyMap.tsx                       # Map orchestrator
@@ -768,7 +767,6 @@ Cross-tenant operator surface, guarded by `users.is_platform_admin` (grant via `
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/bookkeeping/pnl` | Monthly P&L report for a given year |
-| GET | `/api/bookkeeping/job-costing` | Revenue, expenses, margin per property |
 
 ### Vertical Child Objects
 | Method | Path | Description |
@@ -874,7 +872,7 @@ Cross-tenant operator surface, guarded by `users.is_platform_admin` (grant via `
 | `/pipeline` | Kanban board + analytics | Yes |
 | `/tasks` | Task list | Yes |
 | `/expenses` | Expense tracker | Yes |
-| `/bookkeeping` | Quotes + Invoices + P&L + AR + job costing (tabbed) | Yes |
+| `/bookkeeping` | Quotes + Invoices + P&L + AR (tabbed) | Yes |
 | `/map` | Service-area property map | Yes, and gated on the `map` module |
 | `/settings` | Pipeline schedules/runs, workflows, custom fields, message templates, order import, rescoring, Stripe Connect | Yes |
 

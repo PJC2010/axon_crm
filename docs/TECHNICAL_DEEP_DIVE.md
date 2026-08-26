@@ -832,8 +832,6 @@ application fee.
 
 - `/pnl` — monthly P&L for a year (revenue from paid invoices vs. expenses vs.
   net).
-- `/job-costing` — revenue, expenses, and margin **per property**, joining
-  invoices and expenses by their property linkage.
 
 ### Expenses (`routes/expenses.py`, module `bookkeeping`)
 

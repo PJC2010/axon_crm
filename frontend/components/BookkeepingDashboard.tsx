@@ -7,13 +7,12 @@ import { InvoiceList } from './InvoiceList'
 import { QuoteList } from './QuoteList'
 import { ARDashboard } from './ARDashboard'
 import { PnLChart } from './PnLChart'
-import { JobCostingTable } from './JobCostingTable'
 import { PerformanceBreakdown } from './PerformanceBreakdown'
 import { ToastStack, useToast } from './Toast'
 import { getLead } from '@/lib/api'
 import type { Lead } from '@/lib/types'
 
-type Tab = 'overview' | 'quotes' | 'invoices' | 'ar' | 'pnl' | 'jobs' | 'performance'
+type Tab = 'overview' | 'quotes' | 'invoices' | 'ar' | 'pnl' | 'performance'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview',    label: 'Overview' },
@@ -23,7 +22,6 @@ const TABS: { id: Tab; label: string }[] = [
   // "Cash summary", not "P&L": Axon-derived estimates, deliberately not pitched
   // as accounting — the accountant's books stay the source of truth.
   { id: 'pnl',         label: 'Cash summary' },
-  { id: 'jobs',        label: 'Job Costing' },
   { id: 'performance', label: 'Performance' },
 ]
 
@@ -115,7 +113,6 @@ export function BookkeepingDashboard({ initialTab, prefillLeadId }: Props = {}) 
         {tab === 'invoices' && leadLoaded && <InvoiceList year={year} prefillLead={prefillLead} onToast={showToast} />}
         {tab === 'ar'       && <ARDashboard year={year} />}
         {tab === 'pnl'      && <PnLChart year={year} />}
-        {tab === 'jobs'     && <JobCostingTable year={year} />}
         {tab === 'performance' && <PerformanceBreakdown />}
       </div>
 

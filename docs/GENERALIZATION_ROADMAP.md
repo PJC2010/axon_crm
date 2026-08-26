@@ -184,7 +184,7 @@ categories.
 From `CODEBASE_REVIEW.md` §2, these become more urgent as account types multiply:
 tenant-isolation API tests (zero endpoint coverage today), JWT-secret hard-fail, rate
 limiting on login/import/pipeline-run, the missing `properties(account_id, status)`
-index, and kanban/job-costing pagination.
+index, and kanban pagination.
 
 ---
 

@@ -1345,17 +1345,6 @@ export interface Segment {
   updated_at: string
 }
 
-export interface JobCostRow {
-  property_id: number
-  address: string
-  estimated_value: number
-  revenue: number
-  amount_paid: number
-  expenses: number
-  profit: number
-  margin_pct: number
-}
-
 // ── Non-residential audit (pipeline/residential.py) ─────────────────────────
 // Reasons come in two tiers: `exclude` is structurally impossible for a home
 // and is what the archive acts on; `review` is reported only, because a

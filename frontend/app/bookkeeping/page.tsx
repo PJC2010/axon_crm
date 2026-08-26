@@ -3,7 +3,7 @@ import { use } from 'react'
 import { AuthGuard } from '@/components/AuthGuard'
 import { BookkeepingDashboard } from '@/components/BookkeepingDashboard'
 
-const TABS = ['overview', 'quotes', 'invoices', 'ar', 'pnl', 'jobs'] as const
+const TABS = ['overview', 'quotes', 'invoices', 'ar', 'pnl'] as const
 type Tab = (typeof TABS)[number]
 
 export default function BookkeepingPage({

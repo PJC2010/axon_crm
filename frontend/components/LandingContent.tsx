@@ -625,7 +625,7 @@ export default function LandingContent() {
             <div className="lp-feature">
               <div className="lp-feature-ic" style={{ background: 'var(--color-plum-soft)', color: 'var(--color-plum)' }}><FileText size={18} /></div>
               <h3>Invoicing &amp; payments</h3>
-              <p>Build invoices with line items, take payments, and pull an AR aging report with one click — with job costing and expenses tracked against every job.</p>
+              <p>Build invoices with line items, take payments, and pull an AR aging report with one click — with receipts and expenses tracked against every job.</p>
               <div className="lp-feature-demo lp-demo-invoice" aria-hidden="true">
                 <span className="lp-demo-inv-stamp">Paid</span>
                 <div className="lp-demo-inv-line"><span>HVAC replacement</span><span>$18,400</span></div>
@@ -838,7 +838,7 @@ export default function LandingContent() {
                 <li><Check size={15} /> Everything in Starter</li>
                 <li><Check size={15} /> Quotes with public accept links</li>
                 <li><Check size={15} /> Invoicing, online payments &amp; AR aging</li>
-                <li><Check size={15} /> Job costing, receipts &amp; expenses</li>
+                <li><Check size={15} /> Receipt scanning &amp; expense tracking</li>
                 <li><Check size={15} /> Automatic follow-ups &amp; appointments</li>
               </ul>
               <a className="lp-btn lp-btn-outline" href="/signup">Start Free</a>

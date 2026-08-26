@@ -29,7 +29,7 @@ MODULE_KEYS: tuple[str, ...] = (
     "prospecting",   # property data acquisition + scoring ("pipeline refresh")
     "map",           # geographic property map
     "invoicing",     # invoices + accounts-receivable
-    "bookkeeping",   # expenses, P&L, job costing
+    "bookkeeping",   # expenses, P&L
     "quotes",        # quote builder + convert-to-invoice
     "automation",    # workflow rules engine
     # Associated child objects (Phase 5 of the generalization roadmap). Existing
