@@ -1507,6 +1507,25 @@ export interface AdminOrgActivityRow {
   logins: number
 }
 
+export interface AdminAccountCreate {
+  name: string
+  business_type?: string
+  owner: { email: string; password: string; username?: string }
+}
+
+// POST /admin/accounts response: the fresh org (list-row fields) + its owner.
+export interface AdminAccountCreateResult {
+  id: number
+  name: string
+  business_type: string
+  created_at: string
+  review_link: string | null
+  plan_name: string | null
+  billing_status: string | null
+  trial_ends_at: string | null
+  owner: AdminMember
+}
+
 export interface AdminUserCreate {
   email: string
   password: string
