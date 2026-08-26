@@ -45,9 +45,10 @@ import logging
 
 import psycopg2.extras
 
+from pipeline.addr import sql_normalize
 from pipeline.residential import (
     ALL_REASONS, EXCLUDE, EXCLUDE_REASONS, REASON_LABELS, REASON_TIERS,
-    sql_non_residential, sql_reason,
+    sql_reason,
 )
 
 log = logging.getLogger(__name__)
@@ -117,6 +118,51 @@ def _guard_sample_cols() -> None:
 _guard_sample_cols()
 
 
+# ── Evaluating the rule at account scale ─────────────────────────────────────
+# The audit and the archive run the full reason battery over every scoped row.
+# Two structural rules keep that scan inside DB_STATEMENT_TIMEOUT_MS — the 30s
+# request cap the account-wide audit used to blow through, returning
+# QueryCanceled (a 500) to the data-quality page instead of a report:
+#
+#   1. owner_name is normalized ONCE per row. Without `owner_norm`, sql_reason
+#      embeds the double-REGEXP_REPLACE normalization into every token/phrase
+#      strpos, and Postgres does not common-subexpression-eliminate scalar
+#      expressions — across the totals FILTERs that was ~440 regex evaluations
+#      per row, milliseconds each thousand, minutes per account. The inner
+#      subquery projects `__owner_norm` once and every fragment reads it.
+#   2. Each reason is evaluated ONCE per row, as a boolean column of the
+#      middle subquery; the aggregates then combine booleans instead of
+#      re-deriving the battery in every FILTER clause.
+#
+# Both subqueries end in OFFSET 0 — the optimizer fence. Without it Postgres
+# pulls the subquery up and substitutes the __owner_norm / r_* expressions
+# back into each of their references, silently restoring the per-reference
+# cost this structure exists to remove.
+
+def _scoped_rows(scope_sql: str) -> str:
+    """FROM-clause source: the scoped rows plus owner_name normalized once.
+
+    Aliased back to `properties` so every fragment written against the bare
+    table — sql_reason(prefix=""), _gap_clause, UNWORKED_ONLY_SQL's
+    `properties.account_id` correlation — resolves unchanged.
+    """
+    return (f"(SELECT *, {sql_normalize('owner_name')} AS __owner_norm\n"
+            f"                 FROM properties WHERE {scope_sql}\n"
+            f"                 OFFSET 0) AS properties")
+
+
+def _flag_cols(reasons) -> str:
+    """Each reason once, as a boolean column: `<expr> AS r_<reason>`."""
+    return ",\n                       ".join(
+        f"{sql_reason(r, owner_norm='__owner_norm')} AS r_{r}" for r in reasons
+    )
+
+
+def _any(reasons) -> str:
+    """Boolean OR over already-computed reason columns."""
+    return "(" + " OR ".join(f"r_{r}" for r in reasons) + ")"
+
+
 def _scope(account_id: int, zip_code: str | None,
            include_archived: bool = False) -> tuple[str, list]:
     """WHERE fragment + params for 'this account's live leads'.
@@ -159,20 +205,20 @@ def audit(conn, account_id: int, *, zip_code: str | None = None,
     scope_sql, scope_params = _scope(account_id, zip_code)
 
     # One pass over the account's rows: totals and every per-reason count in a
-    # single scan, rather than a query per reason. FILTER (WHERE …) keeps each
-    # count independent while sharing the scan.
-    reason_counts = ",\n            ".join(
-        f"COUNT(*) FILTER (WHERE {sql_reason(r)}) AS n_{r}" for r in ALL_REASONS
+    # single scan, rather than a query per reason. The middle subquery computes
+    # each reason exactly once (see _scoped_rows above); FILTER (WHERE …) then
+    # combines the booleans, keeping each count independent while sharing the
+    # scan.
+    reason_counts = ",\n                ".join(
+        f"COUNT(*) FILTER (WHERE r_{r}) AS n_{r}" for r in ALL_REASONS
     )
-    any_excl = sql_non_residential(tier=EXCLUDE)
-    any_reason = sql_non_residential(tier=None)
+    any_excl = _any(EXCLUDE_REASONS)
+    any_reason = _any(ALL_REASONS)
 
-    # Every predicate here re-normalizes owner_name, so each extra pass over the
-    # account is expensive and this runs behind a page load. The spend-at-risk
-    # and protected counts are therefore FILTERs on the same scan rather than
-    # queries of their own. Neither fragment binds a parameter, so scope_params
-    # is unchanged — psycopg2 binds %s positionally by statement text, and a
-    # parameter in the SELECT list would bind ahead of the WHERE.
+    # The spend-at-risk and protected counts are FILTERs on the same scan
+    # rather than queries of their own. No fragment here binds a parameter, so
+    # scope_params is unchanged — psycopg2 binds %s positionally by statement
+    # text, and a parameter in the SELECT list would bind ahead of the WHERE.
     from pipeline.backfill import _gap_clause
 
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -182,12 +228,17 @@ def audit(conn, account_id: int, *, zip_code: str | None = None,
                 COUNT(*) AS properties,
                 COUNT(*) FILTER (WHERE {any_reason}) AS flagged,
                 COUNT(*) FILTER (WHERE {any_excl})   AS excludable,
-                COUNT(*) FILTER (WHERE {any_excl} AND {_gap_clause()}) AS billable,
-                COUNT(*) FILTER (WHERE {any_excl} AND NOT {UNWORKED_ONLY_SQL})
+                COUNT(*) FILTER (WHERE {any_excl} AND has_gap) AS billable,
+                COUNT(*) FILTER (WHERE {any_excl} AND NOT unworked)
                     AS protected,
                 {reason_counts}
-            FROM properties
-            WHERE {scope_sql}
+            FROM (
+                SELECT {_flag_cols(ALL_REASONS)},
+                       {_gap_clause()} AS has_gap,
+                       {UNWORKED_ONLY_SQL} AS unworked
+                FROM {_scoped_rows(scope_sql)}
+                OFFSET 0
+            ) flags
             """,
             scope_params,
         )
@@ -197,15 +248,20 @@ def audit(conn, account_id: int, *, zip_code: str | None = None,
         # clear-cut, and the highest-scoring ones are the leads actively wasting
         # a rep's time.
         reason_score = " + ".join(
-            f"(CASE WHEN {sql_reason(r)} THEN 1 ELSE 0 END)" for r in EXCLUDE_REASONS
+            f"(CASE WHEN r_{r} THEN 1 ELSE 0 END)" for r in EXCLUDE_REASONS
         )
         cols = ", ".join(_SAMPLE_COLS)
         cur.execute(
             f"""
             SELECT {cols},
                    {reason_score} AS reason_count
-            FROM properties
-            WHERE {scope_sql} AND {any_reason}
+            FROM (
+                SELECT {cols},
+                       {_flag_cols(ALL_REASONS)}
+                FROM {_scoped_rows(scope_sql)}
+                OFFSET 0
+            ) flags
+            WHERE {any_reason}
             ORDER BY reason_count DESC, lead_score DESC NULLS LAST, id
             LIMIT %s
             """,
@@ -223,8 +279,12 @@ def audit(conn, account_id: int, *, zip_code: str | None = None,
                 SELECT zip,
                        COUNT(*) AS properties,
                        COUNT(*) FILTER (WHERE {any_excl}) AS excludable
-                FROM properties
-                WHERE {scope_sql}
+                FROM (
+                    SELECT zip,
+                           {_flag_cols(EXCLUDE_REASONS)}
+                    FROM {_scoped_rows(scope_sql)}
+                    OFFSET 0
+                ) flags
                 GROUP BY zip
                 HAVING COUNT(*) FILTER (WHERE {any_excl}) > 0
                 ORDER BY excludable DESC, zip
@@ -305,8 +365,11 @@ def archive(conn, account_id: int, *, zip_code: str | None = None,
     """
     # `is None` rather than falsiness: [] is what a checkbox UI sends when the
     # operator has deselected every reason, and on a destructive bulk endpoint
-    # that must mean "nothing", never "the default set".
-    picked = list(EXCLUDE_REASONS) if reasons is None else list(reasons)
+    # that must mean "nothing", never "the default set". De-duplicated because
+    # each reason becomes one named column of the flags subquery — a repeated
+    # reason would make that name ambiguous.
+    picked = (list(EXCLUDE_REASONS) if reasons is None
+              else list(dict.fromkeys(reasons)))
     if not picked:
         return {"archived_count": 0, "would_archive": 0, "reasons": [],
                 "dry_run": dry_run, "zip": zip_code}
@@ -321,27 +384,38 @@ def archive(conn, account_id: int, *, zip_code: str | None = None,
         )
 
     scope_sql, scope_params = _scope(account_id, zip_code)
-    predicate = ("(" + " OR ".join(sql_reason(r) for r in picked) + ")"
-                 + f" AND {UNWORKED_ONLY_SQL}")
+    # Same normalize-once / evaluate-once structure as the audit (see
+    # _scoped_rows above): an account-wide archive runs the battery over every
+    # scoped row and would hit the same statement timeout the audit did. The
+    # UPDATE joins the flags back by primary key; `flags` is already scoped, so
+    # the join adds no rows the WHERE hasn't bound to this account.
+    flags = (f"""(
+                SELECT id,
+                       {_flag_cols(picked)},
+                       {UNWORKED_ONLY_SQL} AS unworked
+                FROM {_scoped_rows(scope_sql)}
+                OFFSET 0
+            ) flags""")
+    predicate = _any(picked) + " AND unworked"
 
     if dry_run:
         with conn.cursor() as cur:
             cur.execute(
-                f"SELECT COUNT(*) FROM properties WHERE {scope_sql} AND {predicate}",
+                f"SELECT COUNT(*) FROM {flags} WHERE {predicate}",
                 scope_params,
             )
             n = cur.fetchone()[0]
         return {"archived_count": 0, "would_archive": int(n),
                 "reasons": picked, "dry_run": True, "zip": zip_code}
 
-    # The deciding reason is recomputed per row in SQL rather than carried over
-    # from the audit's sample, so a row that changed since the audit ran is
-    # stamped with what is true of it now. `picked` is ordered by REASON_TIERS,
-    # so the CASE arms fall through most- to least-decisive and the stored reason
-    # is the best single explanation for a human.
+    # The deciding reason is recomputed in the same statement rather than
+    # carried over from the audit's sample, so a row that changed since the
+    # audit ran is stamped with what is true of it now. `picked` is ordered by
+    # REASON_TIERS, so the CASE arms fall through most- to least-decisive and
+    # the stored reason is the best single explanation for a human.
     ordered = [r for r in ALL_REASONS if r in picked]
     arms = "\n                    ".join(
-        f"WHEN {sql_reason(r)} THEN '{r}'" for r in ordered
+        f"WHEN r_{r} THEN '{r}'" for r in ordered
     )
     with conn.cursor() as cur:
         cur.execute(
@@ -356,8 +430,9 @@ def archive(conn, account_id: int, *, zip_code: str | None = None,
                 -- stays selected keeps its slot until the next selection pass,
                 -- so an archive during a run would otherwise still be billed.
                 enrichment_selected = FALSE
-            WHERE {scope_sql} AND {predicate}
-            RETURNING id
+            FROM {flags}
+            WHERE properties.id = flags.id AND {predicate}
+            RETURNING properties.id
             """,
             scope_params,
         )

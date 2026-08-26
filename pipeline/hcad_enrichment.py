@@ -36,6 +36,7 @@ def enrich_hcad(zip_code: str, account_id: int) -> int:
     rows = fetch_by_zip(conn, zip_code, account_id)
     updates = []
     findings: list[tuple[int, dict]] = []
+    mismatch_examples: list[str] = []
 
     for row in rows:
         addr_norm = hcad_store.normalize(row["address"])
@@ -51,13 +52,18 @@ def enrich_hcad(zip_code: str, account_id: int) -> int:
             # seeding) but address-matches an HCAD parcel with a different acct
             # is the same wrong-parcel signal the RentCast step measures, seen
             # from the other side. Recorded under source "hcad", never enforced.
+            # Per-row lines are DEBUG — a roll-vintage change can disagree on
+            # hundreds of addresses per ZIP, and at WARNING that drowned the
+            # log; the summary after the loop carries the count.
             finding = parcel_finding(row.get("parcel_apn"),
                                      normalize_apn(hcad.get("parcel_apn")))
             if finding:
-                log.warning("[4b] HCAD acct %r disagrees with stored parcel %r "
-                            "for %r — recorded.", finding["remote"],
-                            finding["stored"], row["address"])
+                log.debug("[4b] HCAD acct %r disagrees with stored parcel %r "
+                          "for %r — recorded.", finding["remote"],
+                          finding["stored"], row["address"])
                 findings.append((row["id"], finding))
+                if len(mismatch_examples) < 3:
+                    mismatch_examples.append(row["address"])
 
         update: dict = {"address": row["address"], "zip": zip_code}
         changed = False
@@ -131,5 +137,10 @@ def enrich_hcad(zip_code: str, account_id: int) -> int:
     n = upsert_properties(conn, updates, account_id)
     record_findings(conn, account_id, findings, source="hcad")
     conn.close()
+    if findings:
+        log.warning("[4b] HCAD acct disagrees with the stored parcel_apn on "
+                    "%d row(s) in ZIP %s — recorded to property_field_audits "
+                    "(e.g. %s)", len(findings), zip_code,
+                    ", ".join(repr(a) for a in mismatch_examples))
     log.info("[4b] HCAD: backfilled %d properties in ZIP %s", n, zip_code)
     return n

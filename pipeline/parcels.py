@@ -111,16 +111,28 @@ def _classify_residential(cur, zip_code: str) -> int:
     4.1s per seed on a 47k-parcel ZIP. IS DISTINCT FROM keeps the pass
     write-free (and trigger/bloat-free) for rows whose verdict stands.
 
+    Most of that 4.1s was owner_name being re-normalized inside every strpos
+    of the owner battery, and this pass still paid it once per reclassify. The
+    inner subquery now normalizes once per row and the rule reads the result
+    (`owner_norm=`, pipeline/residential.py); the OFFSET 0 fences stop the
+    planner substituting the expressions back into their references. The
+    county build runs this for every ZIP, so the saving is county × 4s.
+
     Returns rows whose verdict changed.
     """
+    from pipeline.addr import sql_normalize
     from pipeline.residential import sql_non_residential
     cur.execute(
         f"""
         UPDATE parcels SET non_residential = v.verdict
         FROM (
-            SELECT p.id, {sql_non_residential('p.')} AS verdict
-            FROM parcels p
-            WHERE p.zip = %s
+            SELECT p.id,
+                   {sql_non_residential('p.', owner_norm='p.__owner_norm')}
+                       AS verdict
+            FROM (SELECT *, {sql_normalize('owner_name')} AS __owner_norm
+                  FROM parcels WHERE zip = %s
+                  OFFSET 0) p
+            OFFSET 0
         ) v
         WHERE parcels.id = v.id
           AND parcels.non_residential IS DISTINCT FROM v.verdict

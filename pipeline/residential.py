@@ -98,6 +98,10 @@ from pipeline.addr import has_situs, normalize, sql_has_situs, sql_normalize
 # validate, never quote.
 _ALIAS = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\.$")
 
+# A bare column, or one qualified by a table alias — the `owner_norm` argument
+# below. Same pattern as addr._SQL_IDENT / parcel_id._SQL_IDENT.
+_NORM_COL = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$")
+
 # ── Reason tiers ─────────────────────────────────────────────────────────────
 # EXCLUDE: structurally impossible for a residence. Safe to archive in bulk.
 # REVIEW:  suspicious, but a legitimate home can look like this. Report only.
@@ -406,12 +410,28 @@ def _q(prefix: str, column: str) -> str:
     return f"{prefix}{column}"
 
 
-def sql_reason(reason: str, prefix: str = "") -> str:
+def sql_reason(reason: str, prefix: str = "", *,
+               owner_norm: str | None = None) -> str:
     """One reason as a **Postgres** boolean expression over the properties columns.
 
     `prefix` qualifies the table ("p." for a joined query). Raises for an unknown
     reason rather than silently producing FALSE — a typo must break loudly, the
     same posture as backfill._guard_columns.
+
+    `owner_norm` names a column that ALREADY holds `addr.normalize(owner_name)`
+    — i.e. one the caller projected with `addr.sql_normalize("owner_name")` in
+    the same statement, so byte-compatibility holds by construction. When given,
+    the owner reasons read it directly instead of embedding the normalization
+    into every strpos. That embedding is the expensive part of this rule:
+    engines do not common-subexpression-eliminate scalar expressions, so the
+    owner battery otherwise re-runs the double REGEXP_REPLACE once per token
+    and phrase — ~76 times per row, the measured 4.1s-per-47k-parcel-ZIP cost
+    migration 0077 exists to avoid. Callers scanning many rows (the audit, the
+    verdict re-derivation) precompute the column once per row behind an
+    optimizer fence and pass its name here. When None, the fragment is
+    self-contained and byte-identical to what it always produced — which also
+    keeps parcels._rule_hash stable, so adding this parameter reclassifies
+    nothing.
 
     Postgres-only, and specifically because of `no_situs`: it delegates to
     addr.sql_has_situs, whose `!~` is an anchored *partial* match in Postgres but
@@ -424,6 +444,8 @@ def sql_reason(reason: str, prefix: str = "") -> str:
     """
     if reason not in REASON_TIERS:
         raise ValueError(f"unknown reason: {reason!r}")
+    if owner_norm is not None and not _NORM_COL.match(owner_norm):
+        raise ValueError(f"Not a plain SQL identifier: {owner_norm!r}")
 
     address = _q(prefix, "address")
     owner = _q(prefix, "owner_name")
@@ -441,7 +463,7 @@ def sql_reason(reason: str, prefix: str = "") -> str:
         return f"(LEFT(UPPER(TRIM(COALESCE({sclass}, ''))), 1) IN ({classes}))"
 
     if reason == "commercial_owner":
-        norm = sql_normalize(owner)
+        norm = owner_norm if owner_norm is not None else sql_normalize(owner)
         # strpos rather than LIKE, deliberately. psycopg2 interpolates the query
         # string whenever parameters are bound, so a literal '%' in the SQL is
         # read as the start of a placeholder: LIKE '%city of%' dies with
@@ -463,14 +485,15 @@ def sql_reason(reason: str, prefix: str = "") -> str:
         return f"(({phrases}) OR ({words}))"
 
     if reason == "possible_commercial_owner":
-        norm = sql_normalize(owner)
+        norm = owner_norm if owner_norm is not None else sql_normalize(owner)
         maybe = " OR ".join(
             f"strpos(' ' || {norm} || ' ', ' {t} ') > 0"
             for t in sorted(AMBIGUOUS_OWNER_TOKENS)
         )
         # `elif` in classify(), so the two reasons stay mutually exclusive and
         # the audit's per-reason counts do not double-count one owner name.
-        return f"(({maybe}) AND NOT {sql_reason('commercial_owner', prefix)})"
+        return (f"(({maybe}) AND NOT "
+                f"{sql_reason('commercial_owner', prefix, owner_norm=owner_norm)})")
 
     if reason == "non_residential_type":
         keys = ", ".join(f"'{k}'" for k in sorted(NON_RESIDENTIAL_PROPERTY_TYPES))
@@ -499,11 +522,13 @@ def sql_reason(reason: str, prefix: str = "") -> str:
     raise AssertionError(f"unhandled reason: {reason}")   # pragma: no cover
 
 
-def sql_non_residential(prefix: str = "", *, tier: str = EXCLUDE) -> str:
+def sql_non_residential(prefix: str = "", *, tier: str = EXCLUDE,
+                        owner_norm: str | None = None) -> str:
     """Postgres boolean: does this row carry any reason at `tier`?
 
     `tier=EXCLUDE` is what the seed filter and the bulk archive use. Pass
     `tier=None` for "any reason at all", which is what the audit counts.
+    `owner_norm` is passed through to every reason — see sql_reason.
     """
     if tier is None:
         reasons = ALL_REASONS
@@ -511,4 +536,5 @@ def sql_non_residential(prefix: str = "", *, tier: str = EXCLUDE) -> str:
         reasons = [r for r, t in REASON_TIERS.items() if t == tier]
     if not reasons:
         return "(FALSE)"
-    return "(" + " OR ".join(sql_reason(r, prefix) for r in reasons) + ")"
+    return "(" + " OR ".join(sql_reason(r, prefix, owner_norm=owner_norm)
+                             for r in reasons) + ")"
