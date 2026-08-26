@@ -325,16 +325,19 @@ def _normalize_rentcast(p: dict, origin_zip: str | None = None) -> dict:
 def _normalize_hcad(p: dict, region_id: str | None = None) -> dict:
     """Map a DuckDB property_summary parcel to the upsert_properties shape.
 
-    HCAD has no site-city or lat/lng: `city` falls back to the owner's mailing
-    city (harmless — rows key on address+zip) and lat/lng stay NULL for the
-    geocode step to fill. `region_id` is recorded only when seeding by region.
+    `city` is the parcel's own situs city (real_acct.site_addr_2), NULL when
+    the source predates it — never the owner's mail_city, which is a fact
+    about the owner: an absentee owner's mailing city once displayed a Houston
+    lead as "LAKE DALLAS, TX" and fed that city to the geocoder. lat/lng stay
+    NULL for the geocode step to fill. `region_id` is recorded only when
+    seeding by region.
     """
     flags = {"seed": "hcad"}
     if region_id:
         flags["hcad_region"] = region_id
     return {
         "address":                p.get("site_address", ""),
-        "city":                   p.get("mail_city"),
+        "city":                   p.get("site_city"),
         "state":                  "TX",
         "zip":                    p.get("site_zip", ""),
         "latitude":               None,

@@ -28,7 +28,8 @@ The files are tab-delimited with a header row, encoded latin-1 (Windows-1252).
 |---|---|---|
 | `acct` | `real_acct.acct` | parcel id, join key |
 | `site_address` | `real_acct.site_addr_1` | parcel street address |
-| `site_zip` | `real_acct.site_addr_3` | (`site_addr_2` = city) |
+| `site_city` | `real_acct.site_addr_2` | parcel's own (situs) city — the display city; **never** substitute `mail_city` |
+| `site_zip` | `real_acct.site_addr_3` | |
 | `year_built` | `building_res.date_erected`, else `real_acct.yr_impr` | **proxy** unless `Real_building_land.zip` is present |
 | `building_sqft` | `real_acct.bld_ar` | total building area |
 | `land_sqft` | `real_acct.land_ar` | total land area (sq ft) |

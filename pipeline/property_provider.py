@@ -129,10 +129,11 @@ class RentCastProvider(PropertyDataProvider):
         # lookups and left property_type and garage_spaces at 0% everywhere.
         #
         # City is deliberately NOT sent. It is not required, and a wrong one is
-        # tolerated — while the value we hold is often wrong, since HCAD-seeded
-        # rows take `city` from the owner's MAILING city (seed._normalize_hcad),
-        # which names another town for exactly the absentee owners worth the
-        # most. Sending nothing beats sending that.
+        # tolerated — and the value we hold may still be wrong or NULL:
+        # HCAD-seeded rows once took `city` from the owner's MAILING city
+        # (fixed in seed._normalize_hcad, repaired by migration 0079), and rows
+        # awaiting the situs-city refill hold NULL. Sending nothing beats
+        # sending either.
         if state:
             params["state"] = state
         data, answered = get_json_result(

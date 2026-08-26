@@ -220,7 +220,13 @@ def ensure_from_hcad(conn, zip_code: str) -> int:
             SELECT
                 h.site_address,
                 h.site_zip,
-                h.mail_city,
+                -- The parcel's OWN city (real_acct.site_addr_2, migration
+                -- 0079) — never the owner's mailing city, which is a fact
+                -- about the owner: cached here once, an absentee owner's city
+                -- fanned out to every tenant's lead card and geocode query.
+                -- NULL until the mirror is reloaded with site_city; the
+                -- conflict branch below gap-fills it on the ZIP's next seed.
+                h.site_city,
                 'TX',
                 -- Storage form of pipeline/parcel_id.py::normalize_apn:
                 -- alphanumerics only, uppercased, and — load-bearing — NULL for

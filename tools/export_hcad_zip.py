@@ -18,21 +18,22 @@ import duckdb
 
 from config import PERMIT_DB_PATH
 
-def _state_class_expr(con, alias: str = "") -> str:
-    """`state_class` projection, or a typed NULL when the DuckDB predates it.
+def _optional_col_expr(con, column: str, alias: str = "") -> str:
+    """Projection for a property_summary column, or a typed NULL when the
+    DuckDB predates it (state_class arrived with migration 0072, site_city
+    with 0079).
 
-    A file built before migration 0072 has no such column, and naming a missing
-    column raises duckdb.BinderException — which would abort the export/load for
-    every ZIP. Same degrade-gracefully posture, and same probe, as
-    pipeline/hcad_store.py::_state_class_expr.
+    Naming a missing column raises duckdb.BinderException — which would abort
+    the export/load for every ZIP. Same degrade-gracefully posture, and same
+    probe, as pipeline/hcad_store.py::_state_class_expr / _site_city_expr.
     """
     try:
         cols = con.execute("SELECT * FROM property_summary LIMIT 0").description or []
-        if "state_class" in {str(c[0]).lower() for c in cols}:
-            return f"{alias}state_class"
+        if column in {str(c[0]).lower() for c in cols}:
+            return f"{alias}{column}"
     except Exception:
         pass
-    return "NULL AS state_class"
+    return f"NULL AS {column}"
 
 EXPORT_DIR = Path(__file__).parent / "hcad_export"
 
@@ -41,11 +42,12 @@ def export_zip(con, zip_code: str) -> tuple[int, int]:
     EXPORT_DIR.mkdir(exist_ok=True)
 
     # Properties
-    _sc = _state_class_expr(con)
+    _sc = _optional_col_expr(con, "state_class")
+    _scity = _optional_col_expr(con, "site_city")
     props_path = EXPORT_DIR / f"properties_{zip_code}.csv"
     con.execute(f"""
         COPY (
-            SELECT acct, site_address, site_zip, year_built, building_sqft, land_sqft,
+            SELECT acct, site_address, {_scity}, site_zip, year_built, building_sqft, land_sqft,
                    tot_appr_val, last_sale_date, owner_name, likely_owner_occupied,
                    mail_addr, mail_city, mail_state, mail_zip, {_sc}
             FROM property_summary

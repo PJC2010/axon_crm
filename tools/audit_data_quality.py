@@ -12,6 +12,11 @@ Answers, across every account at once:
      verifies zero after).
   3. owner_name fill — per account: filled, NULL-and-eligible for the next
      RentCast run, and NULL-but-stamped (waiting out PROPERTY_RECHECK_DAYS).
+  4. City sanity — HCAD-seeded rows still carrying the OWNER'S mailing city as
+     the property's city (the bug migration 0079 repairs: an absentee owner in
+     Lake Dallas once labeled a Houston lead "LAKE DALLAS, TX"), how much of
+     the mirror carries the real situs city (site_addr_2), and disagreements
+     between stored cities and the mirror's situs city.
 
 Usage:
     python tools/audit_data_quality.py             # whole database
@@ -152,6 +157,104 @@ def owner_fill(conn, zip_code: str | None):
     print("  null+stamped:  re-eligible after PROPERTY_RECHECK_DAYS from stamp")
 
 
+def _col_exists(conn, table: str, column: str) -> bool:
+    return _one(conn, """
+        SELECT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name = %s AND column_name = %s)
+    """, (table, column))[0]
+
+
+def city_sanity(conn, zip_code: str | None):
+    _print_header("4. CITY SANITY (situs city vs owner mailing city)")
+
+    # The polluted cohort migration 0079 NULLs: HCAD-seeded, absentee-owner
+    # rows whose city appears verbatim inside their own mailing_address —
+    # i.e. the city on the card is where the OWNER gets mail, not where the
+    # property is. Non-zero here after 0079 means new pollution (a writer
+    # regressed to mail_city) — that must never happen again.
+    for table in ("properties", "parcels"):
+        if not _exists(conn, table):
+            continue
+        where, params = ("AND zip = %s", (zip_code,)) if zip_code else ("", ())
+        n, cities = _one(conn, f"""
+            SELECT COUNT(*), ARRAY_AGG(DISTINCT UPPER(city))
+            FROM {table}
+            WHERE enrichment_flags->>'seed' = 'hcad'
+              AND owner_occupied IS NOT TRUE
+              AND city IS NOT NULL
+              AND mailing_address IS NOT NULL
+              AND POSITION(UPPER(city) IN UPPER(mailing_address)) > 0
+              {where}
+        """, params)
+        cities = cities or []
+        shown = ", ".join(cities[:8]) + (" …" if len(cities) > 8 else "")
+        flag = "  ⚠ regression — no writer may use mail_city" if n else ""
+        print(f"\n{table}: {n:,} mailing-derived city value(s) "
+              f"[0 after migration 0079]{flag}")
+        if n:
+            print(f"    cities seen: {shown}")
+
+    # NULLed cities waiting on a refill (mirror reload → ensure_from_hcad
+    # gap-fill → sync, or a RentCast lookup).
+    for table in ("properties", "parcels"):
+        if not _exists(conn, table):
+            continue
+        where, params = ("AND zip = %s", (zip_code,)) if zip_code else ("", ())
+        n, = _one(conn, f"""
+            SELECT COUNT(*) FROM {table}
+            WHERE enrichment_flags->>'seed' = 'hcad' AND city IS NULL {where}
+        """, params)
+        print(f"{table}: {n:,} HCAD-seeded row(s) with NULL city (awaiting "
+              "situs-city refill)")
+
+    if not _exists(conn, "hcad_properties"):
+        return
+    if not _col_exists(conn, "hcad_properties", "site_city"):
+        print("\nhcad_properties has no site_city column — run migrations "
+              "(migration 0079), then rebuild the DuckDB and reload the mirror.")
+        return
+
+    where, params = ("WHERE site_zip = %s", (zip_code,)) if zip_code else ("", ())
+    filled, total = _one(conn, f"""
+        SELECT COUNT(site_city), COUNT(*) FROM hcad_properties {where}
+    """, params)
+    pct = f"{100 * filled / total:.1f}%" if total else "n/a"
+    print(f"\nHCAD mirror: {filled:,} of {total:,} rows carry site_city ({pct})")
+    if not filled:
+        print("  → rebuild the DuckDB (tools/build_hcad_duckdb.py) and reload "
+              "(tools/load_hcad_to_postgres.py or per-ZIP re-upload) so NULLed "
+              "cities can refill with the parcel's own city.")
+        return
+
+    # Disagreements between what tenants display and the county's situs city.
+    # Joined on the same (address_norm, zip) identity ensure_from_hcad uses.
+    where, params = ("AND pc.zip = %s", (zip_code,)) if zip_code else ("", ())
+    n, = _one(conn, f"""
+        SELECT COUNT(*)
+        FROM parcels pc
+        JOIN hcad_properties h
+          ON h.site_zip = pc.zip
+         AND axon_normalize_address(h.site_address) = pc.address_norm
+        WHERE pc.city IS NOT NULL AND h.site_city IS NOT NULL
+          AND UPPER(pc.city) <> UPPER(h.site_city)
+          {where}
+    """, params)
+    print(f"parcels.city vs mirror site_city disagreements: {n:,}")
+    if n:
+        for zipc, stored, situs, cnt in _rows(conn, f"""
+            SELECT pc.zip, UPPER(pc.city), UPPER(h.site_city), COUNT(*)
+            FROM parcels pc
+            JOIN hcad_properties h
+              ON h.site_zip = pc.zip
+             AND axon_normalize_address(h.site_address) = pc.address_norm
+            WHERE pc.city IS NOT NULL AND h.site_city IS NOT NULL
+              AND UPPER(pc.city) <> UPPER(h.site_city)
+              {where}
+            GROUP BY 1, 2, 3 ORDER BY 4 DESC LIMIT 10
+        """, params):
+            print(f"    {cnt:>7,}  ZIP {zipc}: stored {stored!r} vs situs {situs!r}")
+
+
 def main():
     ap = argparse.ArgumentParser(description="Free read-only data-quality audit.")
     ap.add_argument("--zip", dest="zip_code", help="restrict to one ZIP")
@@ -162,6 +265,7 @@ def main():
         zip_coverage(conn, args.zip_code)
         junk_owner_names(conn, args.zip_code)
         owner_fill(conn, args.zip_code)
+        city_sanity(conn, args.zip_code)
         print()
     finally:
         conn.close()

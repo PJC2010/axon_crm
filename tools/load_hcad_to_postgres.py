@@ -42,8 +42,8 @@ from config import PERMIT_DB_PATH  # noqa: E402
 
 # (postgres table, postgres columns, duckdb SELECT). Each SELECT is run only if
 # its source table exists in the DuckDB; columns are written in this exact order.
-def _table_specs(duckdb_tables: set[str], state_class: str = "ps.state_class"
-                 ) -> list[tuple[str, str, str]]:
+def _table_specs(duckdb_tables: set[str], state_class: str = "ps.state_class",
+                 site_city: str = "ps.site_city") -> list[tuple[str, str, str]]:
     has_nbhd = "neighborhood_codes" in duckdb_tables
     nbhd_name = "nc.dscr" if has_nbhd else "NULL"
     nbhd_join = ("LEFT JOIN neighborhood_codes nc ON nc.cd = ps.neighborhood_code"
@@ -51,12 +51,13 @@ def _table_specs(duckdb_tables: set[str], state_class: str = "ps.state_class"
 
     specs = [(
         "hcad_properties",
-        "acct, site_address, site_zip, year_built, building_sqft, land_sqft, "
+        "acct, site_address, site_city, site_zip, year_built, building_sqft, land_sqft, "
         "tot_appr_val, last_sale_date, owner_name, likely_owner_occupied, "
         "mail_addr, mail_city, mail_state, mail_zip, neighborhood_code, neighborhood_name, "
         "state_class",
         f"""
-        SELECT ps.acct, ps.site_address, ps.site_zip, ps.year_built, ps.building_sqft,
+        SELECT ps.acct, ps.site_address, {site_city}, ps.site_zip, ps.year_built,
+               ps.building_sqft,
                ps.land_sqft, ps.tot_appr_val, ps.last_sale_date, ps.owner_name,
                ps.likely_owner_occupied, ps.mail_addr, ps.mail_city, ps.mail_state,
                ps.mail_zip, ps.neighborhood_code, {nbhd_name} AS neighborhood_name,
@@ -120,19 +121,26 @@ def load(duckdb_path: str, dsn: str) -> None:
     pg = psycopg2.connect(dsn)
     try:
         with pg.cursor() as cur:
-            # A DuckDB built before migration 0072 has no state_class column,
-            # and naming a missing column raises BinderException — which would
-            # abort the load for every table. Degrade to NULL, exactly as
-            # pipeline/hcad_store.py does at query time.
+            # A DuckDB built before migration 0072 has no state_class column
+            # (0079: site_city), and naming a missing column raises
+            # BinderException — which would abort the load for every table.
+            # Degrade to NULL, exactly as pipeline/hcad_store.py does at
+            # query time.
             ps_cols = {str(c[0]).lower() for c in
                        con.execute("SELECT * FROM property_summary LIMIT 0").description}
             if "state_class" not in ps_cols:
                 print("note: DuckDB predates state_class — loading it as NULL; "
                       "rebuild with tools/build_hcad_duckdb.py to populate it.")
+            if "site_city" not in ps_cols:
+                print("note: DuckDB predates site_city — loading it as NULL "
+                      "(leads seed without a city; the owner's mail_city is "
+                      "never used); rebuild with tools/build_hcad_duckdb.py.")
             specs = _table_specs(
                 duckdb_tables,
                 state_class=("ps.state_class" if "state_class" in ps_cols
                              else "NULL AS state_class"),
+                site_city=("ps.site_city" if "site_city" in ps_cols
+                           else "NULL AS site_city"),
             )
             for table, _cols, _q in specs:
                 if not _pg_table_exists(cur, table):

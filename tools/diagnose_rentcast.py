@@ -180,12 +180,13 @@ def address_format_test(zip_code: str) -> None:
     print("  own records, and scan-and-match is the only workable path.")
 
     # Which component actually carries the lookup, and how much a wrong one
-    # costs. This is not academic: HCAD-seeded rows take `city` from the OWNER'S
-    # mailing city (pipeline/seed.py::_normalize_hcad), and the geocode step
-    # reads `city` without ever writing back the one Google resolved. So for an
-    # absentee owner — the most valuable lead — the stored city names the wrong
-    # town. If a wrong city still resolves, the fix is to pass what we hold; if
-    # it does not, the fix must first learn each property's real city.
+    # costs. This is not academic: HCAD-seeded rows once took `city` from the
+    # OWNER'S mailing city (fixed in pipeline/seed.py::_normalize_hcad — city
+    # is now the situs city, site_addr_2 — with existing pollution repaired by
+    # migration 0079), and the geocode step reads `city` without ever writing
+    # back the one Google resolved. Rows awaiting the situs-city refill hold
+    # NULL. If a wrong/missing city still resolves, passing what we hold is
+    # fine; if not, the lookup must wait for the refill.
     print(f"\n{'-' * 70}\nWHICH PARAMETER CARRIES THE LOOKUP\n{'-' * 70}")
     _show("[E] state + zip, NO city",
           {"address": line, "state": state, "zipCode": zc, "limit": 1})

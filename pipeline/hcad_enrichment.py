@@ -72,6 +72,10 @@ def enrich_hcad(zip_code: str, account_id: int) -> int:
             # The parcel number this address matched to — the identity the
             # RentCast step later verifies its assessorID against.
             _backfill("parcel_apn",              normalize_apn(hcad.get("parcel_apn")))
+            # The situs city (site_addr_2, migration 0079). Fill-only, so rows
+            # whose mailing-city-polluted value the 0079 repair NULLed pick up
+            # the parcel's real city on their ZIP's next run.
+            _backfill("city",                    hcad.get("site_city"))
             _backfill("year_built",              hcad.get("year_built"))
             _backfill("square_footage",          hcad.get("square_footage"))
             _backfill("lot_size",                hcad.get("lot_size"))

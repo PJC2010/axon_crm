@@ -146,6 +146,18 @@ def build(src_dir: Path, out_db: Path, encoding: str) -> None:
         print("  note: real_acct.txt has no state_class column — "
               "non-residential filtering will fall back to heuristics")
 
+    # The parcel's own city (site_addr_2 — see docs/hcad_real_property_mapping.md).
+    # This is the SITUS city, distinct from the owner's mail_city: dropping it
+    # here is what once made the seed "fall back" to the owner's mailing city,
+    # so an absentee owner in Lake Dallas put "LAKE DALLAS" on a Houston lead.
+    has_site_city = _has_column(con, real_acct, "site_addr_2")
+    site_city_expr = (
+        "NULLIF(TRIM(ra.site_addr_2), '')" if has_site_city else "NULL::VARCHAR"
+    )
+    if not has_site_city:
+        print("  note: real_acct.txt has no site_addr_2 column — "
+              "site_city will be NULL (leads display without a city)")
+
     # ── property_summary ────────────────────────────────────────────────────
     # owner_occupied heuristic: the owner's mailing street line matches the
     # parcel's site street line (same normalization the pipeline uses for
@@ -161,6 +173,7 @@ def build(src_dir: Path, out_db: Path, encoding: str) -> None:
             SELECT
                 ra.acct,
                 NULLIF(TRIM(ra.site_addr_1), '')                       AS site_address,
+                {site_city_expr}                                       AS site_city,
                 NULLIF(TRIM(ra.site_addr_3), '')                       AS site_zip,
                 COALESCE(yb.year_built,
                          TRY_CAST(NULLIF(ra.yr_impr, '') AS INTEGER))  AS year_built,
@@ -184,7 +197,7 @@ def build(src_dir: Path, out_db: Path, encoding: str) -> None:
             LEFT JOIN yb ON yb.acct = ra.acct
         )
         SELECT
-            acct, site_address, site_zip, year_built, building_sqft, land_sqft,
+            acct, site_address, site_city, site_zip, year_built, building_sqft, land_sqft,
             tot_appr_val, last_sale_date, owner_name,
             mail_addr, mail_city, mail_state, mail_zip,
             state_class, neighborhood_code, neighborhood_grp,
