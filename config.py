@@ -25,6 +25,18 @@ DB_CONNECT_TIMEOUT_SECONDS = int(os.getenv("DB_CONNECT_TIMEOUT_SECONDS", "5"))
 # query must not hold a worker + connection forever. 0 disables.
 DB_STATEMENT_TIMEOUT_MS = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "30000"))
 
+# Purging an organization (DELETE /admin/accounts/{id}) is legitimately the
+# longest-running statement the API issues: Postgres runs one referential-
+# integrity query per deleted row per foreign key, and `properties` alone has
+# nineteen children. The endpoint deletes leads in batches so each statement's
+# cost is proportional to ACCOUNT_DELETE_BATCH rather than to the org's size,
+# but the batch still needs more headroom than an ordinary request gets — the
+# 30s cap above is what returned QueryCanceled to the operator instead of a
+# deleted org. Applied with SET LOCAL, so it expires with that transaction and
+# no other request on the pooled connection inherits it.
+ACCOUNT_DELETE_TIMEOUT_MS = int(os.getenv("ACCOUNT_DELETE_TIMEOUT_MS", "120000"))
+ACCOUNT_DELETE_BATCH = int(os.getenv("ACCOUNT_DELETE_BATCH", "5000"))
+
 # ── Harris County Appraisal District DuckDB ───────────────────────────────────
 PERMIT_DB_PATH = os.getenv("PERMIT_DB_PATH", "/Users/petecastillo/property_data/harris_county.duckdb")
 

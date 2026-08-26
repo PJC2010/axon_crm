@@ -105,6 +105,15 @@ function DeleteOrgModal({ detail, onClose, onDeleted }: {
         style={{ width: '100%' }}
       />
       {error && <p style={ERR}>{error}</p>}
+      {/* A purge is one transaction and Postgres does the work per row, so a
+       *  big org takes tens of seconds. Say so while it runs — an operator who
+       *  reads a still spinner as a hang closes the tab and rolls it back. */}
+      {working && (detail.counts.leads ?? 0) > 25_000 && (
+        <p style={{ margin: '10px 0 0', fontSize: 12.5, color: 'var(--color-ink-600)', lineHeight: 1.5 }}>
+          {detail.counts.leads.toLocaleString()} leads — this can take a minute. Leave this
+          tab open; closing it cancels the delete and the organization stays.
+        </p>
+      )}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
         <button className="btn-secondary" onClick={onClose} disabled={working}>Cancel</button>
         <DangerButton onClick={remove} disabled={!matches || working}>
