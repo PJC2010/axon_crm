@@ -41,9 +41,9 @@ from psycopg2.extras import Json
 from pydantic import BaseModel
 
 from config import (
-    ADMIN_NOTIFICATION_EMAIL, APP_BASE_URL, RESEND_API_KEY, RESEND_FROM_EMAIL,
-    SELF_SERVE_SIGNUP, STRIPE_BILLING_WEBHOOK_SECRET, TWILIO_ACCOUNT_SID,
-    TWILIO_AUTH_TOKEN,
+    ACCOUNT_DELETE_BATCH, ACCOUNT_DELETE_TIMEOUT_MS, ADMIN_NOTIFICATION_EMAIL,
+    APP_BASE_URL, RESEND_API_KEY, RESEND_FROM_EMAIL, SELF_SERVE_SIGNUP,
+    STRIPE_BILLING_WEBHOOK_SECRET, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN,
 )
 from api.accounts import provision_owner
 from api.admin_audit import record_admin_action
@@ -251,6 +251,47 @@ def _assert_account_purged(db: PGConn, account_id: int) -> None:
             status_code=500,
             detail="Delete aborted — rows survived in: " + ", ".join(leftovers),
         )
+
+
+def _delete_account_leads(cur, account_id: int, batch: int) -> int:
+    """Delete the org's ``properties`` rows in bounded batches. Returns the count.
+
+    ``DELETE FROM accounts`` cascades to everything (migration 0074) and that is
+    still the authority here — this only takes the one table out of its way
+    first, because of how Postgres actually performs a cascade.
+
+    A referential-integrity action is an AFTER-ROW trigger, not a set operation:
+    for every deleted parent row, and for every FK pointing at it, the server
+    runs one more query against the child. ``properties`` has nineteen children,
+    so purging an org runs nineteen queries per lead inside a single
+    ``DELETE FROM accounts`` statement — and ``statement_timeout`` caps
+    statements, which is what cancelled the delete at 30s (api/deps.py,
+    DB_STATEMENT_TIMEOUT_MS) and put ``QueryCanceled`` in front of the operator.
+
+    Batching moves the org's size out of any one statement: each of these costs
+    ``batch`` leads' worth of trigger work regardless of whether the org holds
+    ten thousand or a million, so one timeout value is correct for every org
+    instead of needing to exceed the largest one. The batches share the caller's
+    transaction, so the purge is still all-or-nothing and
+    ``_assert_account_purged`` still gets to veto the commit.
+
+    Bounding the statement is not a substitute for indexing the children: an
+    unindexed child column makes each of those nineteen queries a sequential
+    scan, which no batch size rescues. Migration 0080 indexes them and asserts
+    that the next one added is indexed too.
+    """
+    batch = max(1, batch)
+    deleted = 0
+    while True:
+        cur.execute(
+            "DELETE FROM properties WHERE id IN "
+            "(SELECT id FROM properties WHERE account_id = %s LIMIT %s)",
+            (account_id, batch),
+        )
+        if not cur.rowcount:
+            return deleted
+        deleted += cur.rowcount
+        log.info("account %s purge: %s leads deleted so far", account_id, deleted)
 
 
 def _finish_page(cur, rows: list[dict], page: int, page_size: int,
@@ -673,12 +714,17 @@ def admin_delete_account(
     called ``token`` — that name collides with get_current_user's ?token=
     CSV-export fallback.)
 
-    The teardown itself is one statement. Migration 0074 made every FK into
+    The teardown is still the database's. Migration 0074 made every FK into
     ``accounts(id)`` ON DELETE CASCADE precisely so this endpoint does not carry
     a hand-ordered list of forty DELETEs that goes stale the first time someone
     adds a table — Postgres owns the ordering, and the tenant-parent FKs beneath
     it (contact_history → properties, invoice_line_items → invoices, …) carry
-    the sweep down to the leaves.
+    the sweep down to the leaves. The one concession to size is that leads go
+    first, in batches (``_delete_account_leads``), because a cascade is per-row
+    trigger work and ``properties`` has nineteen children — enough of them, on a
+    real org, to run the single ``DELETE FROM accounts`` past
+    ``statement_timeout``. That is a bound on one statement's cost, not a second
+    opinion about the order: the cascade still deletes anything the batches miss.
 
     Two things sit outside the cascade and are handled here. ``auth_events``
     carries ``account_id`` with no FK by design (0073), so it is deleted
@@ -722,8 +768,12 @@ def admin_delete_account(
     with db.cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM users WHERE account_id = %s", (account_id,))
         counts["users"] = cur.fetchone()[0]
+        # SET LOCAL: reverts when this transaction ends, so the next request to
+        # borrow this pooled connection is back under the ordinary 30s cap.
+        cur.execute(f"SET LOCAL statement_timeout = {int(ACCOUNT_DELETE_TIMEOUT_MS)}")
         cur.execute("DELETE FROM auth_events WHERE account_id = %s", (account_id,))
         counts["auth_events"] = cur.rowcount
+        _delete_account_leads(cur, account_id, ACCOUNT_DELETE_BATCH)
         cur.execute("DELETE FROM accounts WHERE id = %s", (account_id,))
 
     record_admin_action(
