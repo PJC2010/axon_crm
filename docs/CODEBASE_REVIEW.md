@@ -2,11 +2,18 @@
 
 *Review date: June 2026 · Scope: full repository (API, pipeline, frontend, schema)*
 
+> **Amended 2026-08-26** — Job Costing (`GET /api/bookkeeping/job-costing` and
+> `frontend/components/JobCostingTable.tsx`) was removed from the product on this
+> date. Findings that referenced it are struck from this review: **D6**
+> (job-costing pagination), its half of the §2.5 fix list item, and its mentions
+> in §1 and §2.4. `D6` is retired rather than renumbered, so the gap between D5
+> and D7 is intentional.
+
 ---
 
 ## 1. Executive summary
 
-Axon CRM v1 is a multi-tenant CRM for small service businesses built on FastAPI + PostgreSQL (raw SQL via psycopg2) with a Next.js 16 / React 19 frontend. Its differentiator is the **property-data enrichment pipeline**: a 9-step ETL (RentCast seed → Census income → Google geocode → HCAD permits/features → volume selection → ATTOM detail → permit counts → vertical-weighted scoring → skip-trace) that turns a ZIP code into graded, explainable leads. Around that core sit a solid set of operations features: kanban pipeline with custom stages, tasks with assignment, invoicing/AR with aging, expense tracking, monthly P&L, job costing, CSV import/export, email/SMS invoice delivery, and a status-change workflow automation engine.
+Axon CRM v1 is a multi-tenant CRM for small service businesses built on FastAPI + PostgreSQL (raw SQL via psycopg2) with a Next.js 16 / React 19 frontend. Its differentiator is the **property-data enrichment pipeline**: a 9-step ETL (RentCast seed → Census income → Google geocode → HCAD permits/features → volume selection → ATTOM detail → permit counts → vertical-weighted scoring → skip-trace) that turns a ZIP code into graded, explainable leads. Around that core sit a solid set of operations features: kanban pipeline with custom stages, tasks with assignment, invoicing/AR with aging, expense tracking, monthly P&L, CSV import/export, email/SMS invoice delivery, and a status-change workflow automation engine.
 
 **What's strong:** the enrichment pipeline and explainable scoring (no competitor in the Jobber/Housecall Pro tier generates leads — they only manage them), clean multi-tenant isolation (`account_id` on every table), cost controls on paid APIs (Top-N caps, radius filters, grade gating on skip-trace), and a complete invoice → payment → AR loop.
 
@@ -31,7 +38,6 @@ Axon CRM v1 is a multi-tenant CRM for small service businesses built on FastAPI 
 | D3 | Medium | **Onboarding checklist runs 5 sequential `COUNT(*)` queries** (leads, contact history, invoices, workflows, expenses) on a per-page-load endpoint. One query with five `EXISTS` subselects does the same work in a single round trip — and `EXISTS` is also far cheaper than `COUNT(*)` on large tables since it stops at the first row. | `api/routes/auth.py:98-122` |
 | D4 | Medium | **Invoice aging buckets computed in Python.** All open invoices are fetched, then date math and bucketing run in app code. A single `SUM(...) FILTER (WHERE ...)` or `CASE` query returns the five buckets directly with no row transfer. | `api/routes/invoices.py:115-149` |
 | D5 | Medium | **Kanban board fetches every lead, then groups in Python — unpaginated.** `SELECT ... FROM properties WHERE account_id = ...` with no `LIMIT`, then a Python loop assigns rows to stages. With a few thousand leads this is a multi-MB payload on every board view. Add a per-stage limit (e.g., top 50 by score with a "load more") via a window function (`ROW_NUMBER() OVER (PARTITION BY status ORDER BY lead_score DESC)`). Note it also doesn't exclude archived leads at the SQL level. | `api/routes/pipeline.py:172-182` |
-| D6 | Medium | **Job costing has no pagination.** The revenue/expense join returns every property that has ever had an invoice or expense; the frontend table renders all rows without virtualization. | `api/routes/bookkeeping.py:96-131`; `frontend/components/JobCostingTable.tsx` |
 | D7 | Low | **`/api/zips` returns all distinct ZIPs unpaginated** — fine at current scale, worth a typeahead once orgs span many ZIPs. | `api/routes/leads.py` (`list_zips`) |
 | D8 | Low | **CSV import inserts row-by-row** with a savepoint per row. Correct (one bad row doesn't kill the batch) but slow for large files; batching with `execute_values` plus per-batch fallback would be ~10-50× faster. | `api/routes/imports.py:87-99` |
 
@@ -57,7 +63,7 @@ Axon CRM v1 is a multi-tenant CRM for small service businesses built on FastAPI 
 - **Home dashboard fires 7 API calls on mount** (`frontend/components/HomeDashboard.tsx:93-101`). `Promise.allSettled` is the right call, but everything blocks the initial paint. Render the shell immediately, load KPIs first, and lazy-load analytics/forecast below the fold.
 - **Lead table refetches on every filter change with no debounce** (`frontend/components/Dashboard.tsx:61`) and no caching of previously fetched pages.
 - **Inline style objects throughout components** create new objects every render and defeat `React.memo`; extract to module-level constants or CSS classes.
-- **No virtualization** on potentially large tables (job costing, lead table).
+- **No virtualization** on the lead table, which grows unbounded with the account.
 
 ### 2.5 Prioritized fix list
 
@@ -65,7 +71,7 @@ Axon CRM v1 is a multi-tenant CRM for small service businesses built on FastAPI 
 2. JWT secret hard-fail + login/import/pipeline-run rate limiting + import size cap (S1-S3).
 3. Fix workflow N+1 and surface workflow action failures (D2, S5).
 4. Collapse checklist to one `EXISTS` query; move aging buckets to SQL (D3, D4).
-5. Paginate kanban and job costing (D5, D6).
+5. Paginate the kanban board (D5).
 6. Add API tests, starting with tenant isolation and invoice payment-state logic.
 
 ---
