@@ -95,8 +95,9 @@ def test_normalize_geocode_provenance_only_with_coordinates():
 
 def _hcad_parcel(**over):
     base = {
-        "site_address": "7003 PINETEX DR", "site_zip": "77396",
-        "mail_city": "HUMBLE", "year_built": 1960, "square_footage": 1849,
+        "site_address": "7003 PINETEX DR", "site_city": "HUMBLE",
+        "site_zip": "77396",
+        "year_built": 1960, "square_footage": 1849,
         "lot_size": 7480, "estimated_value": 234193,
         "last_sale_date": "2014-10-02", "owner_name": "CAPUCHINA LIZETTE",
         "owner_occupied": True, "mailing_address": "7003 PINETEX DR, HUMBLE TX 77396",
@@ -147,11 +148,25 @@ def test_normalize_hcad_zip_seed_omits_region_flag():
     assert "hcad_region" not in row["enrichment_flags"]
 
 
-def test_normalize_hcad_city_falls_back_to_mail_city():
-    # HCAD has no site-city; city mirrors the owner's mailing city (harmless —
-    # rows key on address+zip and geocode doesn't need city).
-    row = _normalize_hcad(_hcad_parcel(mail_city="ATASCOCITA"), region_id="r")
-    assert row["city"] == "ATASCOCITA"
+def test_normalize_hcad_city_is_situs_never_mail_city():
+    # city is the parcel's OWN city (site_addr_2). The owner's mailing city is
+    # a fact about the owner, not the parcel: an absentee owner who gets mail
+    # in Lake Dallas once labeled a Houston lead (ZIP 77073) "LAKE DALLAS, TX"
+    # on the card and in every geocode query built from the row.
+    row = _normalize_hcad(
+        _hcad_parcel(site_city="HOUSTON", mail_city="LAKE DALLAS"),
+        region_id="r")
+    assert row["city"] == "HOUSTON"
+
+
+def test_normalize_hcad_missing_site_city_stays_null():
+    # A source predating site_city (old DuckDB / mirror row) must yield NULL —
+    # the UI drops empty address parts ("ADDRESS, TX") and enrichment or a
+    # RentCast lookup fills the real city later. Never substitute mail_city.
+    p = _hcad_parcel(mail_city="LAKE DALLAS")
+    p.pop("site_city")
+    row = _normalize_hcad(p)
+    assert row["city"] is None
 
 
 # ── _wanted_type (property-type filter) ───────────────────────────────────────

@@ -42,10 +42,10 @@ async def upload_hcad(
         for row in props_reader:
             cur.execute(
                 """INSERT INTO hcad_properties
-                   (acct, site_address, site_zip, year_built, building_sqft, land_sqft,
+                   (acct, site_address, site_city, site_zip, year_built, building_sqft, land_sqft,
                     tot_appr_val, last_sale_date, owner_name, likely_owner_occupied,
                     mail_addr, mail_city, mail_state, mail_zip, state_class)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT (acct) DO UPDATE SET
                      site_address = EXCLUDED.site_address,
                      site_zip = EXCLUDED.site_zip,
@@ -64,14 +64,17 @@ async def upload_hcad(
                      -- an acct whose site_zip changed between exports, so the
                      -- DELETE above (scoped to the uploaded ZIP) did not remove
                      -- it. Within a ZIP the DELETE runs first, so re-uploading a
-                     -- pre-0072 CSV DOES clear state_class for that ZIP — rebuild
-                     -- the DuckDB before re-uploading, or reload via
+                     -- pre-0072 CSV DOES clear state_class (and pre-0079,
+                     -- site_city) for that ZIP — rebuild the DuckDB before
+                     -- re-uploading, or reload via
                      -- tools/load_hcad_to_postgres.py.
-                     state_class = COALESCE(EXCLUDED.state_class, hcad_properties.state_class)
+                     state_class = COALESCE(EXCLUDED.state_class, hcad_properties.state_class),
+                     site_city = COALESCE(EXCLUDED.site_city, hcad_properties.site_city)
                 """,
                 (
                     row["acct"],
                     row.get("site_address"),
+                    row.get("site_city") or None,
                     row.get("site_zip") or zip_code,
                     row.get("year_built") or None,
                     int(row["building_sqft"]) if row.get("building_sqft") else None,

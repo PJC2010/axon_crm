@@ -348,6 +348,21 @@ def test_ensure_from_hcad_skips_blank_normalized_addresses():
     assert "axon_normalize_address(site_address) <> ''" in cur.sql
 
 
+def test_ensure_from_hcad_city_is_situs_never_mail_city():
+    """parcels.city is the parcel's own city (h.site_city, migration 0079).
+    h.mail_city is where the OWNER gets mail: cached as the city once, an
+    absentee owner's mailing city fanned out to every tenant's lead card and
+    geocode query ("LAKE DALLAS" on a Houston lead). It may appear only inside
+    the mailing_address concat."""
+    cur = _FakeCursor(rowcount=0)
+    parcels.ensure_from_hcad(_FakeConn(cur), "77449")
+    assert "h.site_city" in cur.sql
+    # Bare "h.mail_city," is the select-list form the bug used; the sanctioned
+    # occurrence is wrapped as NULLIF(TRIM(h.mail_city), '') in the concat.
+    assert "h.mail_city," not in cur.sql
+    assert "TRIM(h.mail_city)" in cur.sql
+
+
 def test_link_existing_matches_on_normalized_address():
     cur = _FakeCursor(rowcount=3)
     assert parcels.link_existing(_FakeConn(cur), "77449", 1) == 3

@@ -70,6 +70,29 @@ def _state_class_expr(con, alias: str = "") -> str:
     return "NULL::VARCHAR AS state_class"
 
 
+# ── site_city on an older DuckDB ─────────────────────────────────────────────
+# The parcel's own city (real_acct.site_addr_2), projected by
+# tools/build_hcad_duckdb.py since migration 0079. It is the ONLY source for
+# properties.city on HCAD-seeded rows: the owner's mail_city is a fact about
+# the owner, not the parcel, and using it as the display city once labeled a
+# Houston lead "LAKE DALLAS" after its absentee owner's mailing address. Same
+# probe-don't-assume posture as state_class above — a stale DuckDB degrades to
+# NULL (leads display without a city) instead of aborting every query.
+
+def _site_city_expr(con, alias: str = "") -> str:
+    """`site_city` projection for a DuckDB query, or a typed NULL if absent."""
+    try:
+        cols = con.execute("SELECT * FROM property_summary LIMIT 0").description or []
+        if "site_city" in {str(c[0]).lower() for c in cols}:
+            return f"{alias}site_city"
+    except Exception as e:
+        log.debug("site_city probe failed: %s", e)
+    log.info("hcad_store: this DuckDB predates site_city — rebuild with "
+             "tools/build_hcad_duckdb.py so seeded leads carry the parcel's "
+             "own city (never the owner's mailing city)")
+    return "NULL::VARCHAR AS site_city"
+
+
 _OWNER_CLEAN = sql_clean_owner_name("owner_name")
 
 
@@ -170,9 +193,11 @@ def query_properties(zip_code: str, db_path: str | None = None) -> dict[str, dic
         con = duckdb.connect(str(db_file), read_only=True)
         try:
             _sc = _state_class_expr(con, "ps.")
+            _scity = _site_city_expr(con, "ps.")
             rows = con.execute(f"""
                 SELECT
                     {_ADDR_NORM_PS} AS address_norm,
+                    {_scity},
                     TRY_CAST(ps.year_built AS INTEGER)   AS year_built,
                     ps.building_sqft                     AS square_footage,
                     ps.land_sqft                         AS lot_size,
@@ -196,7 +221,7 @@ def query_properties(zip_code: str, db_path: str | None = None) -> dict[str, dic
                   AND ps.site_address IS NOT NULL
             """, [zip_code]).fetchall()
 
-            cols = ["address_norm", "year_built", "square_footage", "lot_size",
+            cols = ["address_norm", "site_city", "year_built", "square_footage", "lot_size",
                     "estimated_value", "last_sale_date", "owner_name", "owner_occupied",
                     "mailing_address", "state_class", "neighborhood_code", "neighborhood_name",
                     "parcel_apn"]
@@ -220,9 +245,11 @@ def query_properties(zip_code: str, db_path: str | None = None) -> dict[str, dic
 
 def _duckdb_query_properties_no_nbhd(con, zip_code: str) -> dict[str, dict]:
     _sc = _state_class_expr(con)
+    _scity = _site_city_expr(con)
     rows = con.execute(f"""
         SELECT
             {_ADDR_NORM} AS address_norm,
+            {_scity},
             TRY_CAST(year_built AS INTEGER)   AS year_built,
             building_sqft                     AS square_footage,
             land_sqft                         AS lot_size,
@@ -245,7 +272,7 @@ def _duckdb_query_properties_no_nbhd(con, zip_code: str) -> dict[str, dict]:
           AND site_address IS NOT NULL
     """, [zip_code]).fetchall()
 
-    cols = ["address_norm", "year_built", "square_footage", "lot_size",
+    cols = ["address_norm", "site_city", "year_built", "square_footage", "lot_size",
             "estimated_value", "last_sale_date", "owner_name", "owner_occupied",
             "mailing_address", "state_class", "neighborhood_code", "neighborhood_name",
             "parcel_apn"]
@@ -383,8 +410,11 @@ def query_properties_for_region(region_id: str, zip_code: str,
                                 db_path: str | None = None) -> dict[str, dict]:
     """Parcels for one region within one ZIP, keyed by normalized address.
 
-    Same field set as query_properties(), plus the raw site_address / site_zip /
-    mail_city needed to seed the properties table directly from HCAD.
+    Same field set as query_properties(), plus the raw site_address / site_zip
+    needed to seed the properties table directly from HCAD. The owner's
+    mail_city is deliberately NOT in the payload: it reaches the seed only
+    inside mailing_address, so it can never again be mistaken for the parcel's
+    own city (site_city).
     """
     db_file = db_path or PERMIT_DB_PATH
     if db_exists(db_file):
@@ -400,14 +430,15 @@ def query_properties_for_region(region_id: str, zip_code: str,
 
 def _duckdb_query_region(con, region_id: str, zip_code: str, joined: bool) -> dict[str, dict]:
     _sc = _state_class_expr(con, "ps.")
+    _scity = _site_city_expr(con, "ps.")
     name_expr = "nc.dscr" if joined else "NULL::VARCHAR"
     join_clause = "LEFT JOIN neighborhood_codes nc ON nc.cd = ps.neighborhood_code" if joined else ""
     rows = con.execute(f"""
         SELECT
             {_ADDR_NORM_PS} AS address_norm,
             ps.site_address,
+            {_scity},
             ps.site_zip,
-            ps.mail_city,
             TRY_CAST(ps.year_built AS INTEGER)   AS year_built,
             ps.building_sqft                     AS square_footage,
             ps.land_sqft                         AS lot_size,
@@ -432,7 +463,7 @@ def _duckdb_query_region(con, region_id: str, zip_code: str, joined: bool) -> di
           AND ps.site_address IS NOT NULL
     """, [region_id, zip_code]).fetchall()
 
-    cols = ["address_norm", "site_address", "site_zip", "mail_city", "year_built",
+    cols = ["address_norm", "site_address", "site_city", "site_zip", "year_built",
             "square_footage", "lot_size", "estimated_value", "last_sale_date",
             "owner_name", "owner_occupied", "mailing_address",
             "state_class", "neighborhood_code", "neighborhood_name", "parcel_apn"]
@@ -448,10 +479,12 @@ def _duckdb_query_region(con, region_id: str, zip_code: str, joined: bool) -> di
 def query_parcels_for_zip(zip_code: str, db_path: str | None = None) -> dict[str, dict]:
     """All parcels in one ZIP, keyed by normalized address, for free HCAD seeding.
 
-    Same field set as query_properties(), plus the raw site_address / site_zip /
-    mail_city the seed normalizer (`pipeline.seed._normalize_hcad`) needs to build
-    a properties row. Reads the local DuckDB only — zero paid API calls — and
-    falls back to the Postgres hcad_* mirror when the DuckDB file is absent.
+    Same field set as query_properties(), plus the raw site_address / site_zip
+    the seed normalizer (`pipeline.seed._normalize_hcad`) needs to build a
+    properties row. The owner's mail_city stays out of the payload (it lives
+    only inside mailing_address) — the parcel's own city is site_city. Reads
+    the local DuckDB only — zero paid API calls — and falls back to the
+    Postgres hcad_* mirror when the DuckDB file is absent.
     """
     db_file = db_path or PERMIT_DB_PATH
     if db_exists(db_file):
@@ -467,14 +500,15 @@ def query_parcels_for_zip(zip_code: str, db_path: str | None = None) -> dict[str
 
 def _duckdb_query_zip(con, zip_code: str, joined: bool) -> dict[str, dict]:
     _sc = _state_class_expr(con, "ps.")
+    _scity = _site_city_expr(con, "ps.")
     name_expr = "nc.dscr" if joined else "NULL::VARCHAR"
     join_clause = "LEFT JOIN neighborhood_codes nc ON nc.cd = ps.neighborhood_code" if joined else ""
     rows = con.execute(f"""
         SELECT
             {_ADDR_NORM_PS} AS address_norm,
             ps.site_address,
+            {_scity},
             ps.site_zip,
-            ps.mail_city,
             TRY_CAST(ps.year_built AS INTEGER)   AS year_built,
             ps.building_sqft                     AS square_footage,
             ps.land_sqft                         AS lot_size,
@@ -498,7 +532,7 @@ def _duckdb_query_zip(con, zip_code: str, joined: bool) -> dict[str, dict]:
           AND ps.site_address IS NOT NULL
     """, [zip_code]).fetchall()
 
-    cols = ["address_norm", "site_address", "site_zip", "mail_city", "year_built",
+    cols = ["address_norm", "site_address", "site_city", "site_zip", "year_built",
             "square_footage", "lot_size", "estimated_value", "last_sale_date",
             "owner_name", "owner_occupied", "mailing_address",
             "state_class", "neighborhood_code", "neighborhood_name", "parcel_apn"]
@@ -589,6 +623,7 @@ def _pg_query_properties(zip_code: str) -> dict[str, dict]:
             cur.execute(f"""
                 SELECT
                     {_ADDR_NORM} AS address_norm,
+                    site_city,
                     CAST(NULLIF(year_built, '') AS INTEGER) AS year_built,
                     building_sqft AS square_footage,
                     land_sqft AS lot_size,
@@ -609,7 +644,7 @@ def _pg_query_properties(zip_code: str) -> dict[str, dict]:
                 FROM hcad_properties
                 WHERE site_zip = %s AND site_address IS NOT NULL
             """, (zip_code,))
-            cols = ["address_norm", "year_built", "square_footage", "lot_size",
+            cols = ["address_norm", "site_city", "year_built", "square_footage", "lot_size",
                     "estimated_value", "last_sale_date", "owner_name", "owner_occupied",
                     "mailing_address", "state_class", "neighborhood_code", "neighborhood_name",
                     "parcel_apn"]
@@ -689,8 +724,8 @@ def _pg_query_properties_for_region(region_id: str, zip_code: str) -> dict[str, 
                 SELECT
                     {_ADDR_NORM} AS address_norm,
                     site_address,
+                    site_city,
                     site_zip,
-                    mail_city,
                     CAST(NULLIF(year_built, '') AS INTEGER) AS year_built,
                     building_sqft AS square_footage,
                     land_sqft AS lot_size,
@@ -711,7 +746,7 @@ def _pg_query_properties_for_region(region_id: str, zip_code: str) -> dict[str, 
                 FROM hcad_properties
                 WHERE neighborhood_code = %s AND site_zip = %s AND site_address IS NOT NULL
             """, (region_id, zip_code))
-            cols = ["address_norm", "site_address", "site_zip", "mail_city", "year_built",
+            cols = ["address_norm", "site_address", "site_city", "site_zip", "year_built",
                     "square_footage", "lot_size", "estimated_value", "last_sale_date",
                     "owner_occupied", "owner_name", "mailing_address",
                     "state_class", "neighborhood_code", "neighborhood_name", "parcel_apn"]
@@ -738,8 +773,8 @@ def _pg_query_parcels_for_zip(zip_code: str) -> dict[str, dict]:
                 SELECT
                     {_ADDR_NORM} AS address_norm,
                     site_address,
+                    site_city,
                     site_zip,
-                    mail_city,
                     CAST(NULLIF(year_built, '') AS INTEGER) AS year_built,
                     building_sqft AS square_footage,
                     land_sqft AS lot_size,
@@ -760,7 +795,7 @@ def _pg_query_parcels_for_zip(zip_code: str) -> dict[str, dict]:
                 FROM hcad_properties
                 WHERE site_zip = %s AND site_address IS NOT NULL
             """, (zip_code,))
-            cols = ["address_norm", "site_address", "site_zip", "mail_city", "year_built",
+            cols = ["address_norm", "site_address", "site_city", "site_zip", "year_built",
                     "square_footage", "lot_size", "estimated_value", "last_sale_date",
                     "owner_name", "owner_occupied", "mailing_address",
                     "state_class", "neighborhood_code", "neighborhood_name", "parcel_apn"]

@@ -140,3 +140,71 @@ def test_query_extra_features_returns_spaces_not_sqft(tmp_path):
 
     out = hcad_store.query_extra_features("77064", db_path=str(db_file))
     assert out["9414 slate stone ct"]["garage_spaces"] == 2
+
+
+# ── site_city: the parcel's OWN city, never the owner's mail_city ────────────
+
+def _full_summary_db(tmp_path, with_site_city: bool):
+    """A minimal-but-complete property_summary for the seed queries.
+
+    One absentee-owner parcel: sits in HOUSTON (ZIP 77073), owner gets mail in
+    LAKE DALLAS — the exact shape that once put "LAKE DALLAS" on a Houston
+    lead card when the seed borrowed mail_city as the city.
+    """
+    duckdb = pytest.importorskip("duckdb")
+    db_file = tmp_path / "hcad.duckdb"
+    con = duckdb.connect(str(db_file))
+    site_city_col = "site_city VARCHAR," if with_site_city else ""
+    con.execute(f"""
+        CREATE TABLE property_summary (
+            acct VARCHAR, site_address VARCHAR, {site_city_col}
+            site_zip VARCHAR, year_built VARCHAR, building_sqft BIGINT,
+            land_sqft BIGINT, tot_appr_val BIGINT, last_sale_date DATE,
+            owner_name VARCHAR, likely_owner_occupied BOOLEAN,
+            mail_addr VARCHAR, mail_city VARCHAR, mail_state VARCHAR,
+            mail_zip VARCHAR, state_class VARCHAR, neighborhood_code VARCHAR
+        )
+    """)
+    site_city_val = "'HOUSTON'," if with_site_city else ""
+    con.execute(f"""
+        INSERT INTO property_summary VALUES (
+            '123', '21919 INVERNESS FOREST BLVD', {site_city_val}
+            '77073', '2004', 15231,
+            60000, 4749071, DATE '2020-01-15',
+            'KSW HOLDINGS AG PROPERTIES', FALSE,
+            '1851 TURBEVILLE RD', 'LAKE DALLAS', 'TX',
+            '75065', 'F1', '8901.44'
+        )
+    """)
+    con.close()
+    return db_file
+
+
+def test_query_parcels_for_zip_carries_situs_city_not_mail_city(tmp_path):
+    db_file = _full_summary_db(tmp_path, with_site_city=True)
+    out = hcad_store.query_parcels_for_zip("77073", db_path=str(db_file))
+    rec = out["21919 inverness forest blvd"]
+    assert rec["site_city"] == "HOUSTON"
+    # The owner's mailing city reaches the seed only inside mailing_address,
+    # where it belongs — never as a top-level key a mapper could mistake for
+    # the property's city.
+    assert "mail_city" not in rec
+    assert "LAKE DALLAS" in rec["mailing_address"]
+
+
+def test_query_parcels_for_zip_degrades_on_a_pre_site_city_duckdb(tmp_path):
+    # A DuckDB built before migration 0079 has no site_city column — the probe
+    # must degrade it to NULL, not abort the query or fall back to mail_city.
+    db_file = _full_summary_db(tmp_path, with_site_city=False)
+    out = hcad_store.query_parcels_for_zip("77073", db_path=str(db_file))
+    rec = out["21919 inverness forest blvd"]
+    assert rec["site_city"] is None
+    assert "mail_city" not in rec
+
+
+def test_query_properties_carries_situs_city_for_enrichment(tmp_path):
+    # The enrichment path (hcad_enrichment._backfill("city", ...)) heals rows
+    # whose polluted city the 0079 repair NULLed — it needs site_city too.
+    db_file = _full_summary_db(tmp_path, with_site_city=True)
+    out = hcad_store.query_properties("77073", db_path=str(db_file))
+    assert out["21919 inverness forest blvd"]["site_city"] == "HOUSTON"
