@@ -90,6 +90,7 @@ class TestDateOffsetRules:
             [_rule()],                                  # load rules
             [(42, 42, anchor)],                         # candidates (target, lead, anchor)
             [(100,)],                                   # claim INSERT returns a row
+            [(None, "new", None)],                       # quota probe: unscored → not a candidate
             [(5, "Call about renewal", date(2026, 7, 3), "high")],  # task INSERT
         ])
         results = we.execute_date_offset_rules(conn, 3)
@@ -134,6 +135,7 @@ class TestDateOffsetRules:
             [rule],
             [(8, 8, date(2026, 6, 25))],
             [(101,)],
+            [(None, "new", None)],                       # quota probe
             [(6, "Call about renewal", date(2026, 7, 3), "high")],
         ])
         results = we.execute_date_offset_rules(conn, 3)
@@ -199,6 +201,7 @@ class TestDateOffsetRules:
             [rule],
             [(77, 42, date(2026, 8, 1))],
             [(100,)],                                    # claim ok
+            [(None, "new", None)],                       # quota probe
             [(6, "Call about renewal", date(2026, 7, 3), "high")],   # task insert directly
         ])
         results = we.execute_date_offset_rules(conn, 3)
@@ -218,6 +221,7 @@ class TestInactivityRules:
             [self._rule()],
             [(42, last_touch)],                          # candidates
             [(100,)],                                    # claim
+            [(None, "new", None)],                       # quota probe
             [(5, "Call about renewal", date(2026, 7, 3), "high")],
         ])
         results = we.execute_inactivity_rules(conn, 3)

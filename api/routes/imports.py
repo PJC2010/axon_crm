@@ -408,8 +408,15 @@ def _upsert_row(cur, account_id: int, row: dict) -> tuple[bool, int | None]:
         if existing:
             lead_id, existing_zip = existing
             # Never rewrite the address we matched on; fill the ZIP only when
-            # the stored row hasn't got one.
-            skip = {"address"} | ({"zip"} if existing_zip else set())
+            # the stored row hasn't got one. `status` and `lead_source` are
+            # frozen too: a re-import must not drag a lead out of the pipeline
+            # stage the user moved it to, and — load-bearing for the scoring
+            # quota (api/scoring_quota.py) — must not be able to move a seeded
+            # engine candidate off 'new' or relabel its provenance as the
+            # tenant's own book, which would unmask it for free. A guessed
+            # address in a CSV therefore reveals nothing (the import returns
+            # only counts, and the matched candidate stays a masked candidate).
+            skip = {"address", "status", "lead_source"} | ({"zip"} if existing_zip else set())
             _update_existing(cur, account_id, lead_id, row, skip)
             return False, lead_id
         key_cols = {"address", "zip"}

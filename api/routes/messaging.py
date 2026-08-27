@@ -22,7 +22,7 @@ from api.deps import (
     require_verified_sender,
 )
 from api.ratelimit import message_send_limiter
-from api import messaging, notifications
+from api import messaging, notifications, scoring_quota
 from api.models import (
     MessageTemplate, MessageTemplateCreate, MessageTemplateUpdate,
     SendMessageRequest, MESSAGE_CHANNELS,
@@ -118,13 +118,17 @@ def send_lead_message(lead_id: int, body: SendMessageRequest,
 
     with db.cursor() as cur:
         cur.execute(
-            "SELECT id, contact_name, contact_email, contact_phone, address, owner_name "
+            "SELECT id, contact_name, contact_email, contact_phone, address, owner_name, "
+            "       lead_score, status, lead_source "
             "FROM properties WHERE id = %s AND account_id = %s",
             (lead_id, account_id),
         )
         record = dict_fetchone(cur)
     if not record:
         raise HTTPException(status_code=404, detail="Lead not found")
+    # Sending consumes a reveal: the response echoes the recipient, which is
+    # exactly the contact detail a masked lead withholds (api/scoring_quota.py).
+    scoring_quota.require_actionable(db, account_id, record)
 
     # Resolve channel/subject/body from the template or the ad-hoc payload.
     channel, subject, template = body.channel or "email", body.subject, None

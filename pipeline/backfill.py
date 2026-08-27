@@ -390,7 +390,8 @@ def list_discrepancies(conn, account_id: int, *, field: str | None = None,
                        zip_code: str | None = None, limit: int = 100) -> list[dict]:
     """The disagreement report: what we hold vs. what RentCast says, per lead."""
     sql = ("SELECT a.id, a.property_id, a.field, a.stored_value, a.remote_value, "
-           "       a.resolution, a.checked_at, p.address, p.zip, p.owner_name "
+           "       a.resolution, a.checked_at, p.address, p.zip, p.owner_name, "
+           "       p.lead_score, p.status, p.lead_source "
            "FROM property_field_audits a "
            "JOIN properties p ON p.id = a.property_id AND p.account_id = a.account_id "
            "WHERE a.account_id = %s AND a.verdict = %s")

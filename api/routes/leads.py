@@ -41,6 +41,20 @@ SORT_MAP = {
 }
 
 
+def _require_lead_actionable(db: PGConn, lead_id: int, account_id: int) -> None:
+    """404 when the lead isn't the caller's; 403 when it is an unrevealed quota
+    candidate the month's allowance can't cover (api/scoring_quota.py)."""
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT id, lead_score, status, lead_source FROM properties WHERE id = %s AND account_id = %s",
+            (lead_id, account_id),
+        )
+        row = dict_fetchone(cur)
+    if not row:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    scoring_quota.require_actionable(db, account_id, row)
+
+
 @router.get("/leads", response_model=LeadPage)
 def list_leads(
     zip: str | None = Query(None),
@@ -139,7 +153,8 @@ def search_leads(
         cur.execute(
             """
             SELECT id, account_number, contact_name, owner_name, address, city, zip,
-                   contact_phone, status, score_grade, latitude, longitude,
+                   contact_phone, status, score_grade, latitude, longitude, lead_score,
+                   lead_source,
                    CASE
                        WHEN UPPER(account_number) = UPPER(%(term)s)     THEN 0
                        WHEN account_number ILIKE %(prefix)s             THEN 1
@@ -162,6 +177,17 @@ def search_leads(
             params,
         )
         rows = dict_fetchall(cur)
+
+    # Search matches on the very fields the quota withholds, so an unrevealed
+    # candidate is dropped outright rather than returned masked: a masked hit
+    # for "1842 Westheimer" would confirm the house number behind the list's
+    # "18XX Westheimer Rd" teaser. consume=False — a lookup tool for the
+    # user's own book must never spend the month's reveals on stray matches.
+    limit_ = get_scoring_limit(user["account_id"], db)
+    if limit_ is not None:
+        rows, _ = scoring_quota.apply_quota(db, user["account_id"], rows, limit_,
+                                            consume=False)
+        rows = [r for r in rows if not r.get("quota_masked")]
     return [CustomerSearchResult(**r) for r in rows]
 
 
@@ -177,6 +203,11 @@ def get_lead_by_number(account_number: str, db: PGConn = Depends(get_db), user: 
         row = dict_fetchone(cur)
     if not row:
         raise HTTPException(status_code=404, detail="Lead not found")
+    # Same reveal semantics as the id-addressed detail below — an account
+    # number in hand doesn't buy a way around the monthly allowance.
+    limit = get_scoring_limit(user["account_id"], db)
+    if limit is not None and scoring_quota.is_quota_candidate(row):
+        (row,), _ = scoring_quota.apply_quota(db, user["account_id"], [row], limit)
     return Lead(**row)
 
 
@@ -260,6 +291,9 @@ def get_score_explanation(lead_id: int, db: PGConn = Depends(get_db), user: dict
 @router.patch("/leads/{lead_id}/status")
 def update_status(lead_id: int, body: StatusUpdate, db: PGConn = Depends(get_db), user: dict = Depends(get_current_user)):
     body.validate_status()
+    # Moving a candidate off 'new' ends its quota candidacy, so the move itself
+    # is a reveal — otherwise one drag on the board unmasks a lead for free.
+    _require_lead_actionable(db, lead_id, user["account_id"])
     # Shared with quote-event automations (api/lead_logic.py): stage_transitions
     # audit, status_change rules, neighbor door-knock task on a win.
     from api.lead_logic import apply_status_change
@@ -279,6 +313,8 @@ def update_contact(lead_id: int, body: LeadContactUpdate, db: PGConn = Depends(g
     fields = body.model_dump(exclude_unset=True)
     if not fields:
         raise HTTPException(status_code=400, detail="Nothing to update")
+    # The updated row is returned in full, so editing is a reveal too.
+    _require_lead_actionable(db, lead_id, user["account_id"])
     sets = [f"{k} = %s" for k in fields]
     params = list(fields.values()) + [lead_id, user["account_id"]]
     with db.cursor() as cur:
@@ -315,6 +351,10 @@ def enrich_lead(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depends
         row = dict_fetchone(cur)
     if not row:
         raise HTTPException(status_code=404, detail="Lead not found")
+    # Skip-tracing buys identity/contact data — exactly what a masked lead
+    # withholds — so enriching consumes a reveal (and is refused past the
+    # allowance) before any provider spend.
+    scoring_quota.require_actionable(db, user["account_id"], row)
 
     if not row.get("owner_name"):
         raise HTTPException(
@@ -359,6 +399,13 @@ def get_neighbors(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depen
 
     from api.neighbors import find_neighbors
     neighbors = find_neighbors(db, lead_id, user["account_id"])
+    # Neighbors are status-'new' scored rows — quota candidates almost by
+    # definition. The panel loads with the detail view, so consume=False:
+    # unrevealed neighbors render masked instead of spending reveals.
+    limit = get_scoring_limit(user["account_id"], db)
+    if limit is not None:
+        neighbors, _ = scoring_quota.apply_quota(db, user["account_id"], neighbors,
+                                                 limit, consume=False)
     return {"count": len(neighbors), "neighbors": neighbors}
 
 
@@ -479,6 +526,12 @@ def archive_lead(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depend
     if not row:
         raise HTTPException(404, "Lead not found")
     db.commit()
+    # Dismissing a masked lead is allowed (and free), but the RETURNING echo
+    # must not unmask it — read-only check, same as the passive surfaces.
+    limit = get_scoring_limit(user["account_id"], db)
+    if limit is not None and scoring_quota.is_quota_candidate(row):
+        (row,), _ = scoring_quota.apply_quota(db, user["account_id"], [row], limit,
+                                              consume=False)
     return Lead(**row)
 
 
@@ -501,6 +554,11 @@ def unarchive_lead(lead_id: int, db: PGConn = Depends(get_db), user: dict = Depe
     if not row:
         raise HTTPException(404, "Lead not found")
     db.commit()
+    # Same masked echo as archive above — restoring doesn't reveal.
+    limit = get_scoring_limit(user["account_id"], db)
+    if limit is not None and scoring_quota.is_quota_candidate(row):
+        (row,), _ = scoring_quota.apply_quota(db, user["account_id"], [row], limit,
+                                              consume=False)
     return Lead(**row)
 
 

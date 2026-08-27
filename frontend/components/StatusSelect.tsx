@@ -52,6 +52,15 @@ export function StatusSelect({ leadId, value, onChange, jobValue, celebrateLabel
       if (persist) await updateStatus(leadId, next)
       if (next === 'won') setCelebrating(true)
       onChange?.(next)
+    } catch (err) {
+      // A masked, past-allowance scored lead can't be worked without a reveal:
+      // the API answers 403 (api/scoring_quota.py). Surface it instead of
+      // leaving an unhandled rejection, and don't move the control — the select
+      // is uncontrolled-adjacent (value prop unchanged), so it snaps back.
+      const msg = err instanceof Error ? err.message : String(err)
+      alert(msg.includes('403')
+        ? "This scored lead is past your monthly reveal allowance. Upgrade your plan to work more scored leads."
+        : "Couldn't update the status. Please try again.")
     } finally {
       setSaving(false)
     }

@@ -29,7 +29,7 @@ def find_neighbors(conn, lead_id: int, account_id: int, limit: int = NEIGHBOR_LI
         cell = row[0][:GEOHASH_PRECISION]
 
         cur.execute(
-            "SELECT id, address, zip, lead_score, score_grade, vertical "
+            "SELECT id, address, zip, lead_score, score_grade, vertical, lead_source "
             "FROM properties "
             "WHERE account_id = %s AND id != %s AND archived_at IS NULL "
             "  AND status = 'new' AND geohash IS NOT NULL "

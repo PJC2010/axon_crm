@@ -61,7 +61,10 @@ def export_leads(
 
     with db.cursor() as cur:
         cur.execute(
-            f"SELECT {', '.join(EXPORT_COLS)} FROM properties {where} ORDER BY {order}",
+            # lead_source rides along for the scoring-quota provenance check
+            # (api/scoring_quota.py) so the tenant's own book isn't masked; the
+            # CSV writer drops it (extrasaction="ignore"), so output is unchanged.
+            f"SELECT {', '.join(EXPORT_COLS)}, lead_source FROM properties {where} ORDER BY {order}",
             params,
         )
         rows = dict_fetchall(cur)

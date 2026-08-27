@@ -527,10 +527,60 @@ def _get_lead_vertical(conn, lead_id: int, account_id: int) -> str | None:
     return row[0] if row else None
 
 
+def _quota_locked(conn, account_id: int, lead_id: int) -> bool:
+    """True when the lead is a scored-lead quota candidate this month's ledger
+    hasn't revealed (api/scoring_quota.py).
+
+    Automation must not touch what the tenant can't see: every action either
+    copies masked fields somewhere readable (merge-rendered templates and the
+    lead's name in task titles land in contact_history/tasks) or ends candidacy
+    outright (move_lead_status), and a server-side rule firing across the whole
+    account (signal_event, inactivity) must never spend the tenant's monthly
+    reveals for them. The ledger probe rides a savepoint so a pre-migration
+    database degrades open without poisoning the caller's transaction.
+    """
+    from api import scoring_quota
+    from api.entitlements import get_scoring_limit
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT lead_score, status, lead_source FROM properties WHERE id = %s AND account_id = %s",
+            (lead_id, account_id),
+        )
+        row = cur.fetchone()
+    if not row or not scoring_quota.is_quota_candidate(
+            {"lead_score": row[0], "status": row[1], "lead_source": row[2]}):
+        return False
+    if get_scoring_limit(account_id, conn) is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SAVEPOINT quota_probe")
+            cur.execute(
+                "SELECT 1 FROM scoring_reveals "
+                "WHERE account_id = %s AND property_id = %s AND month = %s",
+                (account_id, lead_id, scoring_quota.month_start()),
+            )
+            revealed = cur.fetchone() is not None
+            cur.execute("RELEASE SAVEPOINT quota_probe")
+        return not revealed
+    except Exception:
+        try:
+            with conn.cursor() as cur:
+                cur.execute("ROLLBACK TO SAVEPOINT quota_probe")
+        except Exception:
+            pass
+        log.exception("scoring quota probe failed for lead %d — rule allowed", lead_id)
+        return False
+
+
 def _execute_action(conn, rule: dict, lead_id: int, user_id: int, account_id: int,
                     extra: dict | None = None) -> dict | None:
     """`extra` carries trigger context (e.g. {"policy": row} from a date_offset
     firing on the policies table) for actions that render merge fields."""
+    if lead_id is not None and _quota_locked(conn, account_id, lead_id):
+        return {"action": "skipped_quota_masked", "rule_name": rule["name"],
+                "lead_id": lead_id}
     action_type = rule["action_type"]
     cfg = rule["action_config"]
     if isinstance(cfg, str):
