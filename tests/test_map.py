@@ -22,6 +22,7 @@ class _FakeCursor:
     rows in the dict_fetchall shape (description + tuple rows)."""
     def __init__(self, rows):
         self._rows = rows
+        self._last = ""
         self.executed = []
 
     def __enter__(self):
@@ -31,14 +32,29 @@ class _FakeCursor:
         return False
 
     def execute(self, sql, params=None):
+        self._last = sql
         self.executed.append((sql, list(params) if params is not None else None))
+
+    def _is_plan_probe(self):
+        # get_scoring_limit (api/entitlements.py) probes account_plans; no row
+        # here means "unlimited", so the quota masking on /map/properties is a
+        # no-op and these tests keep exercising the pin query alone.
+        return "account_plans" in self._last
 
     @property
     def description(self):
-        return [(k,) for k in self._rows[0].keys()] if self._rows else []
+        if self._is_plan_probe() or not self._rows:
+            return []
+        return [(k,) for k in self._rows[0].keys()]
 
     def fetchall(self):
+        if self._is_plan_probe():
+            return []
         return [tuple(r.values()) for r in self._rows]
+
+    def fetchone(self):
+        rows = self.fetchall()
+        return rows[0] if rows else None
 
 
 class _FakeConn:

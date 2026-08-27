@@ -42,6 +42,24 @@ _ADDR_NORM = sql_normalize("site_address")
 # lives in pipeline/owner.py.
 _OWNER_CLEAN_PS = sql_clean_owner_name("ps.owner_name")
 
+# ── One account per situs address ────────────────────────────────────────────
+# HCAD's roll carries several accounts at one situs address (multi-tract lots,
+# replats, condo-style developments where each unit is its own account). Every
+# per-address dict below keys on the normalized address, so one account has to
+# win — and it must be the SAME one parcels.ensure_from_hcad keeps
+# (DISTINCT ON … ORDER BY tot_appr_val DESC NULLS LAST, acct), because a
+# seeded row's stored parcel_apn comes from that cache. These dicts used to
+# keep whichever row the engine happened to emit last (no ORDER BY at all), so
+# enrichment matched a different account than seeding had stored, and step 4b
+# logged and recorded a parcel disagreement for every such address on every
+# run — self-inflicted tie-break noise polluting the shadow-verification
+# metric that exists to measure real wrong-parcel matches. Queries below emit
+# the winner first; each dict build keeps the first row per key.
+
+def _winner_order(alias: str = "") -> str:
+    """ORDER BY that puts ensure_from_hcad's winner first for each address."""
+    return f"ORDER BY {alias}tot_appr_val DESC NULLS LAST, {alias}acct"
+
 # ── state_class on an older DuckDB ───────────────────────────────────────────
 # `property_summary.state_class` (the county's residential/commercial category,
 # migration 0072) is projected by tools/build_hcad_duckdb.py — but a DuckDB file
@@ -219,6 +237,7 @@ def query_properties(zip_code: str, db_path: str | None = None) -> dict[str, dic
                 LEFT JOIN neighborhood_codes nc ON nc.cd = ps.neighborhood_code
                 WHERE ps.site_zip = ?
                   AND ps.site_address IS NOT NULL
+                {_winner_order('ps.')}
             """, [zip_code]).fetchall()
 
             cols = ["address_norm", "site_city", "year_built", "square_footage", "lot_size",
@@ -229,7 +248,7 @@ def query_properties(zip_code: str, db_path: str | None = None) -> dict[str, dic
             for row in rows:
                 d = dict(zip(cols, row))
                 addr = d.pop("address_norm")
-                if addr:
+                if addr and addr not in result:
                     result[addr] = d
             return result
         except duckdb.CatalogException:
@@ -270,6 +289,7 @@ def _duckdb_query_properties_no_nbhd(con, zip_code: str) -> dict[str, dict]:
         FROM property_summary
         WHERE site_zip = ?
           AND site_address IS NOT NULL
+        {_winner_order()}
     """, [zip_code]).fetchall()
 
     cols = ["address_norm", "site_city", "year_built", "square_footage", "lot_size",
@@ -280,7 +300,7 @@ def _duckdb_query_properties_no_nbhd(con, zip_code: str) -> dict[str, dict]:
     for row in rows:
         d = dict(zip(cols, row))
         addr = d.pop("address_norm")
-        if addr:
+        if addr and addr not in result:
             result[addr] = d
     return result
 
@@ -461,6 +481,7 @@ def _duckdb_query_region(con, region_id: str, zip_code: str, joined: bool) -> di
         WHERE ps.neighborhood_code = ?
           AND ps.site_zip = ?
           AND ps.site_address IS NOT NULL
+        {_winner_order('ps.')}
     """, [region_id, zip_code]).fetchall()
 
     cols = ["address_norm", "site_address", "site_city", "site_zip", "year_built",
@@ -471,7 +492,7 @@ def _duckdb_query_region(con, region_id: str, zip_code: str, joined: bool) -> di
     for row in rows:
         d = dict(zip(cols, row))
         addr = d.get("address_norm")
-        if addr:
+        if addr and addr not in result:
             result[addr] = d
     return result
 
@@ -530,6 +551,7 @@ def _duckdb_query_zip(con, zip_code: str, joined: bool) -> dict[str, dict]:
         {join_clause}
         WHERE ps.site_zip = ?
           AND ps.site_address IS NOT NULL
+        {_winner_order('ps.')}
     """, [zip_code]).fetchall()
 
     cols = ["address_norm", "site_address", "site_city", "site_zip", "year_built",
@@ -540,7 +562,7 @@ def _duckdb_query_zip(con, zip_code: str, joined: bool) -> dict[str, dict]:
     for row in rows:
         d = dict(zip(cols, row))
         addr = d.get("address_norm")
-        if addr:
+        if addr and addr not in result:
             result[addr] = d
     return result
 
@@ -643,6 +665,7 @@ def _pg_query_properties(zip_code: str) -> dict[str, dict]:
                     acct AS parcel_apn
                 FROM hcad_properties
                 WHERE site_zip = %s AND site_address IS NOT NULL
+                {_winner_order()}
             """, (zip_code,))
             cols = ["address_norm", "site_city", "year_built", "square_footage", "lot_size",
                     "estimated_value", "last_sale_date", "owner_name", "owner_occupied",
@@ -652,7 +675,7 @@ def _pg_query_properties(zip_code: str) -> dict[str, dict]:
             for row in cur.fetchall():
                 d = dict(zip(cols, row))
                 addr = d.pop("address_norm")
-                if addr:
+                if addr and addr not in result:
                     result[addr] = d
         conn.close()
         if result:
@@ -745,6 +768,7 @@ def _pg_query_properties_for_region(region_id: str, zip_code: str) -> dict[str, 
                     acct AS parcel_apn
                 FROM hcad_properties
                 WHERE neighborhood_code = %s AND site_zip = %s AND site_address IS NOT NULL
+                {_winner_order()}
             """, (region_id, zip_code))
             cols = ["address_norm", "site_address", "site_city", "site_zip", "year_built",
                     "square_footage", "lot_size", "estimated_value", "last_sale_date",
@@ -754,7 +778,7 @@ def _pg_query_properties_for_region(region_id: str, zip_code: str) -> dict[str, 
             for row in cur.fetchall():
                 d = dict(zip(cols, row))
                 addr = d.get("address_norm")
-                if addr:
+                if addr and addr not in result:
                     result[addr] = d
         conn.close()
         return result
@@ -794,6 +818,7 @@ def _pg_query_parcels_for_zip(zip_code: str) -> dict[str, dict]:
                     acct AS parcel_apn
                 FROM hcad_properties
                 WHERE site_zip = %s AND site_address IS NOT NULL
+                {_winner_order()}
             """, (zip_code,))
             cols = ["address_norm", "site_address", "site_city", "site_zip", "year_built",
                     "square_footage", "lot_size", "estimated_value", "last_sale_date",
@@ -803,7 +828,7 @@ def _pg_query_parcels_for_zip(zip_code: str) -> dict[str, dict]:
             for row in cur.fetchall():
                 d = dict(zip(cols, row))
                 addr = d.get("address_norm")
-                if addr:
+                if addr and addr not in result:
                     result[addr] = d
         conn.close()
         return result

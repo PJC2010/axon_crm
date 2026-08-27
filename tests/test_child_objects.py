@@ -229,7 +229,9 @@ class TestAppointments:
             "status": "scheduled", "notes": None, "created_by": 9,
             "created_at": datetime(2026, 7, 2), "updated_at": datetime(2026, 7, 2),
         }
-        conn = _ScriptedConn([[(1,)], [row], []])   # ownership probe first
+        # Ownership probe now also returns the scoring-quota candidacy row
+        # (unscored -> never a candidate, so no plan lookup follows).
+        conn = _ScriptedConn([[{"id": 42, "lead_score": None, "status": "new"}], [row], []])
         appointments_route.create_appointment(self._body(), current_user=USER, db=conn)
         history_sql, history_params = conn.executed[2]
         assert "contact_history" in history_sql
@@ -258,6 +260,7 @@ class TestObjectEventRules:
         conn = _ScriptedConn([
             [self._rule()],                               # rules
             [("auto",)],                                  # _get_lead_vertical
+            [(None, "new", None)],                        # quota probe: unscored → not a candidate
             [(5, "Send welcome kit", date(2026, 7, 5), "normal")],  # task INSERT
         ])
         results = we.execute_object_event_rules(conn, 3, 42, "policy", "active", 9)
@@ -302,6 +305,7 @@ class TestChildDateSources:
             [rule],
             [(5, 42, date(2026, 8, 1))],                  # policy 5 on lead 42
             [(100,)],                                     # claim
+            [(None, "new", None)],                        # quota probe
             [(6, "Renewal outreach", date(2026, 7, 5), "normal")],
         ])
         results = we.execute_date_offset_rules(conn, 3)

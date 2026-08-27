@@ -14,7 +14,9 @@ import logging
 from fastapi import APIRouter, Depends, Query
 from psycopg2.extensions import connection as PGConn
 
+from api import scoring_quota
 from api.deps import get_db, dict_fetchall, get_current_user
+from api.entitlements import get_scoring_limit
 from api.models import MapCell, MapPoint, MapZip
 from api.routes.leads import _build_filters
 
@@ -99,7 +101,7 @@ def map_properties(
     # Correlated subquery (rather than a join) keeps the unqualified `where`
     # columns unambiguous, since signal_events also has account_id.
     sql = f"""
-        SELECT id, address, latitude, longitude, lead_score, score_grade, status,
+        SELECT id, address, latitude, longitude, lead_score, score_grade, status, lead_source,
                COALESCE((
                    SELECT array_agg(DISTINCT se.signal_type)
                    FROM signal_events se
@@ -116,6 +118,16 @@ def map_properties(
     with db.cursor() as cur:
         cur.execute(sql, params)
         rows = dict_fetchall(cur)
+    # A pin carries the full address and exact coordinates — MASKED_FIELDS the
+    # scoring quota withholds — and MapPoint requires non-null lat/long, so an
+    # unrevealed engine candidate past the allowance is dropped from the map
+    # rather than masked. consume=False: viewing the map never spends reveals.
+    # Only bites a metered map-enabled account (a per-account scoring override);
+    # normal map plans are unlimited, so this is a no-op there.
+    limit_ = get_scoring_limit(user["account_id"], db)
+    if limit_ is not None:
+        rows, _ = scoring_quota.apply_quota(db, user["account_id"], rows, limit_, consume=False)
+        rows = [r for r in rows if not r.get("quota_masked")]
     return [MapPoint(**r) for r in rows]
 
 

@@ -451,6 +451,9 @@ export interface PipelineCardLead {
   zip: string | null
   /** When the lead last changed stage — drives the cooling indicator. */
   stage_moved_at: string | null
+  /** Past the monthly scored-lead allowance (api/scoring_quota.py): address
+      partially masked, identity/contact nulled. */
+  quota_masked?: boolean
 }
 
 export type PipelineGroup = Record<string, PipelineCardLead[]>
@@ -1056,6 +1059,7 @@ export interface StuckDeal {
   zip: string | null
   stage_moved_at: string | null
   days_in_stage: number
+  quota_masked?: boolean
 }
 
 export interface OverdueFollowup {
@@ -1068,6 +1072,7 @@ export interface OverdueFollowup {
   address: string | null
   owner_name: string | null
   days_overdue: number
+  quota_masked?: boolean
 }
 
 export interface CoolingLead {
@@ -1083,6 +1088,7 @@ export interface CoolingLead {
   vertical: string | null
   zip: string | null
   last_activity_at: string | null
+  quota_masked?: boolean
 }
 
 export interface PipelineAlerts {
@@ -1505,6 +1511,25 @@ export interface AdminOrgActivityRow {
   lead_events: number
   calls: number
   logins: number
+}
+
+export interface AdminAccountCreate {
+  name: string
+  business_type?: string
+  owner: { email: string; password: string; username?: string }
+}
+
+// POST /admin/accounts response: the fresh org (list-row fields) + its owner.
+export interface AdminAccountCreateResult {
+  id: number
+  name: string
+  business_type: string
+  created_at: string
+  review_link: string | null
+  plan_name: string | null
+  billing_status: string | null
+  trial_ends_at: string | null
+  owner: AdminMember
 }
 
 export interface AdminUserCreate {

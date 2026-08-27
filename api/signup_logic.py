@@ -41,14 +41,23 @@ def password_problem(password: str) -> str | None:
     return None
 
 
+def company_problem(company: str) -> str | None:
+    """One shared rule for every path that names an organization (signup, both
+    admin org-creation endpoints). Returns a human-readable problem or None."""
+    if not (company or "").strip():
+        return "Company or business name is required."
+    if len(company.strip()) > MAX_COMPANY_LEN:
+        return f"Company name must be {MAX_COMPANY_LEN} characters or fewer."
+    return None
+
+
 def validate_signup(*, company: str, email: str, password: str,
                     username: str | None = None) -> list[str]:
     """Return human-readable problems with a signup request (empty = valid)."""
     problems: list[str] = []
-    if not (company or "").strip():
-        problems.append("Company or business name is required.")
-    elif len(company.strip()) > MAX_COMPANY_LEN:
-        problems.append(f"Company name must be {MAX_COMPANY_LEN} characters or fewer.")
+    company_prob = company_problem(company)
+    if company_prob:
+        problems.append(company_prob)
     if not EMAIL_RE.match(normalize_email(email)):
         problems.append("A valid email address is required.")
     pw_problem = password_problem(password)

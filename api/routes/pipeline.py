@@ -16,8 +16,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from psycopg2.extensions import connection as PGConn
 from pydantic import BaseModel
 
+from api import scoring_quota
 from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user, require_owner
-from api.entitlements import require_module
+from api.entitlements import get_scoring_limit, require_module
 
 router = APIRouter()
 
@@ -28,7 +29,11 @@ _prospecting = Depends(require_module("prospecting"))
 
 PIPELINE_STAGES = ["new", "contacted", "qualified", "quote_sent", "won", "lost", "not_interested"]
 
-CARD_COLS = "id, address, owner_name, contact_name, contact_phone, lead_score, score_grade, estimated_job_value, status, vertical, zip, stage_moved_at"
+# lead_source rides along so the scoring-quota check (api/scoring_quota.py) can
+# tell an engine-seeded candidate from the tenant's own book (imports, inbound
+# calls, web forms) and only meter the former. It is not a sensitive field, so
+# mask_lead_row leaves it in place.
+CARD_COLS = "id, address, owner_name, contact_name, contact_phone, lead_score, score_grade, estimated_job_value, status, vertical, zip, stage_moved_at, lead_source"
 
 # The board is a triage view, not a full export. Ingested prospecting datasets can
 # hold tens of thousands of properties (all defaulting to status 'new'), and
@@ -218,6 +223,14 @@ def get_pipeline(
         )
         rows = dict_fetchall(cur)
 
+    # The 'new' column is the quota-candidate set, so the board honors the same
+    # monthly reveal allowance as the lead list (api/scoring_quota.py). The rows
+    # arrive score-descending, so reveals go to the best candidates first —
+    # board-first users spend the allowance exactly like list-first users do.
+    quota_limit = get_scoring_limit(user["account_id"], db)
+    if quota_limit is not None:
+        rows, _ = scoring_quota.apply_quota(db, user["account_id"], rows, quota_limit)
+
     grouped: dict[str, list] = {s: [] for s in stage_keys}
     for row in rows:
         stage = row["status"] if row["status"] in grouped else stage_keys[0]
@@ -402,7 +415,8 @@ def pipeline_alerts(
         # ── Overdue follow-ups ──
         cur.execute(
             "SELECT t.id, t.title, t.due_date, t.priority, t.property_id, t.assigned_to, "
-            "  p.address, p.owner_name, (CURRENT_DATE - t.due_date) AS days_overdue "
+            "  p.address, p.owner_name, (CURRENT_DATE - t.due_date) AS days_overdue, "
+            "  p.lead_score AS _lead_score, p.status AS _lead_status, p.lead_source AS _lead_source "
             "FROM tasks t "
             "LEFT JOIN properties p ON p.id = t.property_id AND p.account_id = t.account_id "
             "WHERE t.account_id = %s AND t.is_complete = FALSE AND t.due_date < CURRENT_DATE "
@@ -427,6 +441,35 @@ def pipeline_alerts(
             (acct, COOLING_GRADES, COOLING_ACTIVE_STATUSES, cooling_days, limit),
         )
         cooling = dict_fetchall(cur)
+
+    # A notification widget must honor the reveal allowance but never spend it:
+    # this loads with the dashboard, and the stuck bucket is ordered by stage
+    # age, not score, so consuming here would burn the month on arbitrary rows.
+    # consume=False shows already-revealed leads and masks the rest.
+    quota_limit = get_scoring_limit(acct, db)
+    if quota_limit is not None:
+        stuck, _ = scoring_quota.apply_quota(db, acct, stuck, quota_limit, consume=False)
+        cooling, _ = scoring_quota.apply_quota(db, acct, cooling, quota_limit, consume=False)
+        # Overdue rows are tasks, not leads — run their joined lead columns
+        # through the same check keyed on the property id.
+        pseudo = [
+            {"id": t["property_id"], "lead_score": t["_lead_score"],
+             "status": t["_lead_status"], "lead_source": t["_lead_source"],
+             "address": t["address"], "owner_name": t["owner_name"]}
+            for t in overdue if t.get("property_id") is not None
+        ]
+        checked, _ = scoring_quota.apply_quota(db, acct, pseudo, quota_limit, consume=False)
+        masked_leads = {r["id"]: r for r in checked if r.get("quota_masked")}
+        for t in overdue:
+            hidden = masked_leads.get(t.get("property_id"))
+            if hidden:
+                t["address"] = hidden["address"]
+                t["owner_name"] = None
+                t["quota_masked"] = True
+    for t in overdue:
+        t.pop("_lead_score", None)
+        t.pop("_lead_status", None)
+        t.pop("_lead_source", None)
 
     return {
         "stuck_deals":       {"count": len(stuck),   "items": stuck},
@@ -507,6 +550,19 @@ def pipeline_performance(
 
 @router.patch("/leads/{lead_id}/job-value")
 def update_job_value(lead_id: int, body: JobValueUpdate, user: dict = Depends(get_current_user), db: PGConn = Depends(get_db)):
+    # RETURNING hands back the full card (address, owner, contact) — the same
+    # identity fields the quota withholds — so editing a candidate is a reveal.
+    quota_limit = get_scoring_limit(user["account_id"], db)
+    if quota_limit is not None:
+        with db.cursor() as cur:
+            cur.execute(
+                "SELECT id, lead_score, status, lead_source FROM properties WHERE id = %s AND account_id = %s",
+                (lead_id, user["account_id"]),
+            )
+            probe = dict_fetchone(cur)
+        if not probe:
+            raise HTTPException(status_code=404, detail="Lead not found")
+        scoring_quota.require_actionable(db, user["account_id"], probe)
     with db.cursor() as cur:
         cur.execute(
             f"UPDATE properties SET estimated_job_value = %s WHERE id = %s AND account_id = %s RETURNING {CARD_COLS}",

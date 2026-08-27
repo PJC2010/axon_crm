@@ -13,6 +13,7 @@ transaction as the change. No endpoint here may declare a query param named
 
 GET    /admin/summary                     — platform KPI tiles
 GET    /admin/accounts                    — org list w/ plan, billing, usage aggregates
+POST   /admin/accounts                    — provision a fresh org + its owner login
 GET    /admin/accounts/{id}               — org drill-down (members, counts, recent activity)
 GET    /admin/accounts/{id}/activity      — per-user activity inside one org
 POST   /admin/accounts/{id}/plan          — assign plan + module overrides
@@ -40,9 +41,9 @@ from psycopg2.extras import Json
 from pydantic import BaseModel
 
 from config import (
-    ADMIN_NOTIFICATION_EMAIL, APP_BASE_URL, RESEND_API_KEY, RESEND_FROM_EMAIL,
-    SELF_SERVE_SIGNUP, STRIPE_BILLING_WEBHOOK_SECRET, TWILIO_ACCOUNT_SID,
-    TWILIO_AUTH_TOKEN,
+    ACCOUNT_DELETE_BATCH, ACCOUNT_DELETE_TIMEOUT_MS, ADMIN_NOTIFICATION_EMAIL,
+    APP_BASE_URL, RESEND_API_KEY, RESEND_FROM_EMAIL, SELF_SERVE_SIGNUP,
+    STRIPE_BILLING_WEBHOOK_SECRET, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN,
 )
 from api.accounts import provision_owner
 from api.admin_audit import record_admin_action
@@ -61,7 +62,8 @@ from api.routes.signup import _issue_token, _send_reset_email
 from api.security import hash_password
 from api.signup_logic import (
     EMAIL_RE, MIN_PASSWORD_LEN, RESET_PASSWORD_TTL, USERNAME_RE,
-    derive_username, normalize_email, username_candidates,
+    company_problem, derive_username, normalize_email, password_problem,
+    username_candidates, validate_signup,
 )
 
 log = logging.getLogger(__name__)
@@ -84,6 +86,18 @@ class TrialUpdate(BaseModel):
 class AdminNewAccount(BaseModel):
     name: str
     business_type: str = DEFAULT_BUSINESS_TYPE
+
+
+class AdminAccountOwner(BaseModel):
+    email: str
+    password: str
+    username: str | None = None              # derived from email when omitted
+
+
+class AdminAccountCreate(BaseModel):
+    name: str
+    business_type: str = DEFAULT_BUSINESS_TYPE
+    owner: AdminAccountOwner
 
 
 class AdminUserCreate(BaseModel):
@@ -135,6 +149,47 @@ def _require_account(db: PGConn, account_id: int) -> dict:
     if not row:
         raise HTTPException(status_code=404, detail="Account not found")
     return row
+
+
+def _provision_org_with_owner(db: PGConn, admin: dict, *, name: str,
+                              business_type: str, email: str, password: str,
+                              username: str | None) -> dict:
+    """Fresh org + its owner in one transaction, through the same
+    provision_owner as self-serve signup (stages, fields, plan, trial row,
+    workflows), plus the audit rows. Shared by POST /admin/accounts and
+    POST /admin/users' new_account mode so the two ways an admin can create an
+    org cannot drift. Caller owns the transaction (commits).
+    Returns provision_owner's {"user_id", "account_id", "username"}.
+    """
+    try:
+        created = provision_owner(
+            db,
+            company=name,
+            email=email,
+            username_base=username or derive_username(email),
+            hashed_pw=hash_password(password),
+            business_type=business_type,
+            email_verified=True,
+        )
+    except psycopg2.errors.UniqueViolation:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="A user with that email already exists.")
+    except RuntimeError as exc:
+        # provision_owner exhausted its numbered username candidates — the only
+        # RuntimeError it raises. Logged in case that ever stops being true.
+        db.rollback()
+        log.warning("org provisioning failed for %r: %s", name, exc)
+        raise HTTPException(status_code=409, detail="Could not find a free username.")
+    record_admin_action(
+        db, admin, "account.create", "account", created["account_id"],
+        {"name": name, "business_type": business_type},
+    )
+    record_admin_action(
+        db, admin, "user.create", "user", created["user_id"],
+        {"email": email, "role": "owner", "account_id": created["account_id"],
+         "new_account": True},
+    )
+    return created
 
 
 # Per-table row counts for one org. Heavy enough that it is deliberately absent
@@ -196,6 +251,47 @@ def _assert_account_purged(db: PGConn, account_id: int) -> None:
             status_code=500,
             detail="Delete aborted — rows survived in: " + ", ".join(leftovers),
         )
+
+
+def _delete_account_leads(cur, account_id: int, batch: int) -> int:
+    """Delete the org's ``properties`` rows in bounded batches. Returns the count.
+
+    ``DELETE FROM accounts`` cascades to everything (migration 0074) and that is
+    still the authority here — this only takes the one table out of its way
+    first, because of how Postgres actually performs a cascade.
+
+    A referential-integrity action is an AFTER-ROW trigger, not a set operation:
+    for every deleted parent row, and for every FK pointing at it, the server
+    runs one more query against the child. ``properties`` has nineteen children,
+    so purging an org runs nineteen queries per lead inside a single
+    ``DELETE FROM accounts`` statement — and ``statement_timeout`` caps
+    statements, which is what cancelled the delete at 30s (api/deps.py,
+    DB_STATEMENT_TIMEOUT_MS) and put ``QueryCanceled`` in front of the operator.
+
+    Batching moves the org's size out of any one statement: each of these costs
+    ``batch`` leads' worth of trigger work regardless of whether the org holds
+    ten thousand or a million, so one timeout value is correct for every org
+    instead of needing to exceed the largest one. The batches share the caller's
+    transaction, so the purge is still all-or-nothing and
+    ``_assert_account_purged`` still gets to veto the commit.
+
+    Bounding the statement is not a substitute for indexing the children: an
+    unindexed child column makes each of those nineteen queries a sequential
+    scan, which no batch size rescues. Migration 0080 indexes them and asserts
+    that the next one added is indexed too.
+    """
+    batch = max(1, batch)
+    deleted = 0
+    while True:
+        cur.execute(
+            "DELETE FROM properties WHERE id IN "
+            "(SELECT id FROM properties WHERE account_id = %s LIMIT %s)",
+            (account_id, batch),
+        )
+        if not cur.rowcount:
+            return deleted
+        deleted += cur.rowcount
+        log.info("account %s purge: %s leads deleted so far", account_id, deleted)
 
 
 def _finish_page(cur, rows: list[dict], page: int, page_size: int,
@@ -353,6 +449,51 @@ def admin_accounts(
         r["lead_count"] = leads_by.get(r["id"], 0)
         r["last_activity_at"] = activity_by.get(r["id"])
     return envelope
+
+
+@router.post("/admin/accounts", status_code=201)
+def admin_create_account(
+    body: AdminAccountCreate,
+    admin: dict = Depends(require_platform_admin),
+    db: PGConn = Depends(get_db),
+):
+    """Provision a fresh organization with its owner login.
+
+    The org-first twin of POST /admin/users' new_account mode — both run
+    _provision_org_with_owner, and the request is validated by validate_signup
+    itself, so an admin-created org cannot drift from a self-serve one (same
+    name/email/password rules, same stages, fields, plan, trial and workflows).
+    The owner starts email-verified: an admin-created login shouldn't begin
+    life gated behind a verification email.
+    """
+    email = normalize_email(body.owner.email)
+    problems = validate_signup(
+        company=body.name, email=email, password=body.owner.password,
+        username=body.owner.username,
+    )
+    if body.business_type not in BUSINESS_TYPES:
+        problems.append(f"Unknown business type '{body.business_type}'.")
+    if problems:
+        raise HTTPException(status_code=400, detail=" ".join(problems))
+
+    created = _provision_org_with_owner(
+        db, admin, name=body.name.strip(), business_type=body.business_type,
+        email=email, password=body.owner.password, username=body.owner.username,
+    )
+    db.commit()
+
+    account = _require_account(db, created["account_id"])
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT p.plan_name, b.status AS billing_status, b.trial_ends_at "
+            "FROM accounts a "
+            "LEFT JOIN account_plans p ON p.account_id = a.id "
+            "LEFT JOIN account_billing b ON b.account_id = a.id "
+            "WHERE a.id = %s",
+            (created["account_id"],),
+        )
+        plan_billing = dict_fetchone(cur) or {}
+    return {**account, **plan_billing, "owner": _get_user(db, created["user_id"])}
 
 
 @router.get("/admin/accounts/{account_id}")
@@ -573,12 +714,17 @@ def admin_delete_account(
     called ``token`` — that name collides with get_current_user's ?token=
     CSV-export fallback.)
 
-    The teardown itself is one statement. Migration 0074 made every FK into
+    The teardown is still the database's. Migration 0074 made every FK into
     ``accounts(id)`` ON DELETE CASCADE precisely so this endpoint does not carry
     a hand-ordered list of forty DELETEs that goes stale the first time someone
     adds a table — Postgres owns the ordering, and the tenant-parent FKs beneath
     it (contact_history → properties, invoice_line_items → invoices, …) carry
-    the sweep down to the leaves.
+    the sweep down to the leaves. The one concession to size is that leads go
+    first, in batches (``_delete_account_leads``), because a cascade is per-row
+    trigger work and ``properties`` has nineteen children — enough of them, on a
+    real org, to run the single ``DELETE FROM accounts`` past
+    ``statement_timeout``. That is a bound on one statement's cost, not a second
+    opinion about the order: the cascade still deletes anything the batches miss.
 
     Two things sit outside the cascade and are handled here. ``auth_events``
     carries ``account_id`` with no FK by design (0073), so it is deleted
@@ -622,8 +768,12 @@ def admin_delete_account(
     with db.cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM users WHERE account_id = %s", (account_id,))
         counts["users"] = cur.fetchone()[0]
+        # SET LOCAL: reverts when this transaction ends, so the next request to
+        # borrow this pooled connection is back under the ordinary 30s cap.
+        cur.execute(f"SET LOCAL statement_timeout = {int(ACCOUNT_DELETE_TIMEOUT_MS)}")
         cur.execute("DELETE FROM auth_events WHERE account_id = %s", (account_id,))
         counts["auth_events"] = cur.rowcount
+        _delete_account_leads(cur, account_id, ACCOUNT_DELETE_BATCH)
         cur.execute("DELETE FROM accounts WHERE id = %s", (account_id,))
 
     record_admin_action(
@@ -709,41 +859,37 @@ def admin_create_user(
     problems: list[str] = []
     if not EMAIL_RE.match(email):
         problems.append("A valid email address is required.")
-    if len(body.password or "") < MIN_PASSWORD_LEN:
-        problems.append(f"Password must be at least {MIN_PASSWORD_LEN} characters.")
+    pw_problem = password_problem(body.password)
+    if pw_problem:
+        problems.append(pw_problem)
     if body.username is not None and not USERNAME_RE.match(body.username):
         problems.append("Username must be 3–32 chars: lowercase letters, digits, . _ -")
     if (body.account_id is None) == (body.new_account is None):
         problems.append("Provide exactly one of account_id or new_account.")
     if body.role not in ADMIN_ROLES:
         problems.append(f"Role must be one of: {', '.join(ADMIN_ROLES)}.")
-    if body.new_account and body.new_account.business_type not in BUSINESS_TYPES:
-        problems.append(f"Unknown business type '{body.new_account.business_type}'.")
+    if body.new_account:
+        name_problem = company_problem(body.new_account.name)
+        if name_problem:
+            problems.append(name_problem)
+        if body.new_account.business_type not in BUSINESS_TYPES:
+            problems.append(f"Unknown business type '{body.new_account.business_type}'.")
     if problems:
         raise HTTPException(status_code=400, detail=" ".join(problems))
 
-    try:
-        if body.new_account:
-            # Fresh org: identical provisioning to self-serve signup (stages,
-            # fields, plan, trial row, workflows) — the first user is its owner.
-            created = provision_owner(
-                db,
-                company=body.new_account.name.strip(),
-                email=email,
-                username_base=body.username or derive_username(email),
-                hashed_pw=hash_password(body.password),
-                business_type=body.new_account.business_type,
-                email_verified=True,
-            )
-            user_id, new_account_id = created["user_id"], created["account_id"]
-            record_admin_action(
-                db, admin, "account.create", "account", new_account_id,
-                {"name": body.new_account.name.strip(),
-                 "business_type": body.new_account.business_type},
-            )
-        else:
-            _require_account(db, body.account_id)
-            user_id = None
+    if body.new_account:
+        # Fresh org: identical provisioning to self-serve signup (stages,
+        # fields, plan, trial row, workflows) — the first user is its owner.
+        created = _provision_org_with_owner(
+            db, admin, name=body.new_account.name.strip(),
+            business_type=body.new_account.business_type,
+            email=email, password=body.password, username=body.username,
+        )
+        user_id = created["user_id"]
+    else:
+        _require_account(db, body.account_id)
+        user_id = None
+        try:
             with db.cursor() as cur:
                 for candidate in username_candidates(body.username or derive_username(email)):
                     cur.execute("SELECT 1 FROM users WHERE username = %s", (candidate,))
@@ -757,18 +903,17 @@ def admin_create_user(
                     )
                     user_id = cur.fetchone()[0]
                     break
-            if user_id is None:
-                raise HTTPException(status_code=409, detail="Could not find a free username.")
-            new_account_id = body.account_id
-    except psycopg2.errors.UniqueViolation:
-        db.rollback()
-        raise HTTPException(status_code=409, detail="A user with that email already exists.")
+        except psycopg2.errors.UniqueViolation:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="A user with that email already exists.")
+        if user_id is None:
+            raise HTTPException(status_code=409, detail="Could not find a free username.")
+        record_admin_action(
+            db, admin, "user.create", "user", user_id,
+            {"email": email, "role": body.role, "account_id": body.account_id,
+             "new_account": False},
+        )
 
-    record_admin_action(
-        db, admin, "user.create", "user", user_id,
-        {"email": email, "role": "owner" if body.new_account else body.role,
-         "account_id": new_account_id, "new_account": bool(body.new_account)},
-    )
     db.commit()
     return _get_user(db, user_id)
 

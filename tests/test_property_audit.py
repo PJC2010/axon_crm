@@ -157,6 +157,46 @@ def test_audit_writes_nothing():
     assert conn.commits == 0
 
 
+# ── Statement cost shape ─────────────────────────────────────────────────────
+# The regression behind these: sql_reason's self-contained form embeds the
+# owner_name normalization (a double REGEXP_REPLACE) into every token/phrase
+# strpos, and engines do not common-subexpression-eliminate — across the totals
+# FILTERs that was ~440 regex evaluations per row, which pushed the
+# account-wide audit past DB_STATEMENT_TIMEOUT_MS and returned QueryCanceled
+# (a 500) to the data-quality page. Each statement must normalize owner_name
+# exactly once, behind the OFFSET 0 fences that stop the planner substituting
+# the expression back into its references.
+
+def _norm_expr():
+    from pipeline.addr import sql_normalize
+    return sql_normalize("owner_name")
+
+
+def test_audit_normalizes_owner_name_once_per_statement():
+    cur = _FakeCursor(_audit_results())
+    audit(_FakeConn(cur), 1)
+    totals_sql, samples_sql = cur.statements[0][0], cur.statements[1][0]
+    for sql in (totals_sql, samples_sql):
+        assert sql.count(_norm_expr()) == 1, sql[:200]
+        # Two fences: around the normalized source, and around the per-reason
+        # boolean columns the aggregates combine.
+        assert sql.count("OFFSET 0") == 2, sql[:200]
+
+
+def test_archive_normalizes_owner_name_once_per_statement():
+    cur = _FakeCursor([[]], rowcount=0)
+    archive(_FakeConn(cur), 7)
+    update_sql = cur.statements[0][0]
+
+    dry = _FakeCursor([[(0,)]])
+    archive(_FakeConn(dry), 7, dry_run=True)
+    dry_sql = dry.statements[0][0]
+
+    for sql in (update_sql, dry_sql):
+        assert sql.count(_norm_expr()) == 1, sql[:200]
+        assert sql.count("OFFSET 0") == 2, sql[:200]
+
+
 # ── Return shape ─────────────────────────────────────────────────────────────
 
 def test_audit_return_shape():

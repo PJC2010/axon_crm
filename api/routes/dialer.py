@@ -103,7 +103,7 @@ def get_queue(
             "SELECT p.id, p.contact_name, p.owner_name, p.address, p.city, p.zip, "
             "       p.contact_phone, p.contact_phone_alt, p.contact_email, "
             "       p.best_time_to_call, p.preferred_contact_method, p.vertical, "
-            "       p.status, p.lead_score, p.score_grade, p.estimated_job_value, "
+            "       p.status, p.lead_score, p.score_grade, p.estimated_job_value, p.lead_source, "
             "       lc.started_at AS last_call_at, lc.disposition AS last_disposition, "
             "       lc.outcome AS last_outcome "
             "FROM properties p "

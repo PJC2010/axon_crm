@@ -1,5 +1,5 @@
 'use client'
-import { Plus } from 'lucide-react'
+import { Lock, Plus } from 'lucide-react'
 import type { PipelineCardLead } from '@/lib/types'
 import { ScoreBadge } from './ScoreBadge'
 import { CoolingChip } from './CoolingChip'
@@ -30,12 +30,17 @@ export function KanbanCard({ lead, onQuickTask, ghost = false }: Props) {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-ink-900)', lineHeight: 1.35, flex: 1 }}>
+        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-ink-900)', lineHeight: 1.35, flex: 1, display: 'flex', alignItems: 'center', gap: 6, opacity: lead.quota_masked ? 0.65 : 1 }}>
+          {/* Quota-masked cards (api/scoring_quota.py) arrive with the address
+              partially hidden server-side; the lock marks why. */}
+          {lead.quota_masked && <Lock size={13} strokeWidth={1.5} style={{ color: 'var(--color-ink-300)', flexShrink: 0 }} />}
           {lead.address || lead.contact_name || '—'}
         </span>
         {lead.score_grade && <ScoreBadge grade={lead.score_grade} score={lead.lead_score} />}
       </div>
-      {(lead.owner_name || lead.contact_name) && (
+      {lead.quota_masked ? (
+        <span style={{ fontSize: 12.5, color: 'var(--color-ink-500)' }}>Past this month&rsquo;s scored-lead allowance</span>
+      ) : (lead.owner_name || lead.contact_name) && (
         <span style={{ fontSize: 12.5, color: 'var(--color-ink-500)' }}>{lead.owner_name || lead.contact_name}</span>
       )}
       <CoolingChip

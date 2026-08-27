@@ -392,6 +392,60 @@ def test_sql_null_parity():
         con.close()
 
 
+def test_sql_expression_with_precomputed_owner_norm_matches_python():
+    """`owner_norm=` must be a pure optimization, never a second rule.
+
+    The audit and the verdict re-derivation project addr.sql_normalize(
+    "owner_name") once per row and hand the column's name to sql_reason (the
+    inline form otherwise re-runs that normalization inside every token and
+    phrase strpos — the cost that pushed the account-wide audit past the
+    statement timeout). Built that way, every reason must decide exactly as
+    the self-contained form — and therefore classify() — does.
+    """
+    from pipeline.addr import sql_normalize
+
+    con = _duckdb_fixture()
+    try:
+        con.execute(f"""CREATE TABLE flags AS
+            SELECT *, {sql_normalize('owner_name')} AS __owner_norm
+            FROM properties""")
+        for reason in _DUCKDB_REASONS:
+            got = [r[0] for r in con.execute(
+                f"SELECT {sql_reason(reason, owner_norm='__owner_norm')} "
+                f"FROM flags").fetchall()]
+            expected = [reason in classify(row) for _, row, _ in CASES]
+            assert got == expected, reason
+    finally:
+        con.close()
+
+
+def test_owner_norm_touches_only_the_owner_reasons():
+    """parcels._rule_hash fingerprints sql_non_residential's default output;
+    the parameter must leave the self-contained form byte-for-byte alone
+    (or every county ZIP would reclassify on deploy) and may only alter the
+    reasons that read owner_name."""
+    owner_reasons = {"commercial_owner", "possible_commercial_owner"}
+    for reason in ALL_REASONS:
+        changed = sql_reason(reason, owner_norm="n") != sql_reason(reason)
+        assert changed == (reason in owner_reasons), reason
+        # Still parameter-safe: psycopg2 reads a literal '%' as a placeholder.
+        assert "%" not in sql_reason(reason, owner_norm="n"), reason
+
+
+@pytest.mark.parametrize("bad", [
+    "x; DROP TABLE properties;--", "a' OR '1'='1", "p..", "1x", "", "f(n)",
+])
+def test_bad_owner_norm_identifier_is_rejected(bad):
+    with pytest.raises(ValueError):
+        sql_reason("commercial_owner", owner_norm=bad)
+
+
+def test_qualified_owner_norm_identifier_is_allowed():
+    """parcels._classify_residential passes an alias-qualified column."""
+    assert "p.__owner_norm" in sql_reason("commercial_owner",
+                                          owner_norm="p.__owner_norm")
+
+
 def test_sql_non_residential_tiers():
     con = _duckdb_fixture()
     try:
