@@ -208,3 +208,73 @@ def test_query_properties_carries_situs_city_for_enrichment(tmp_path):
     db_file = _full_summary_db(tmp_path, with_site_city=True)
     out = hcad_store.query_properties("77073", db_path=str(db_file))
     assert out["21919 inverness forest blvd"]["site_city"] == "HOUSTON"
+
+
+# ── Duplicate situs addresses: one account wins, deterministically ───────────
+
+def _dup_address_db(tmp_path):
+    """Two situs addresses that each appear on two HCAD accounts.
+
+    In both pairs the row that must win comes FIRST in insertion order, so a
+    dict built last-write-wins (what these queries did before they ordered)
+    picks the other account — the assertions distinguish the real rule from
+    both insertion order and accident.
+    """
+    duckdb = pytest.importorskip("duckdb")
+    db_file = tmp_path / "hcad_dup.duckdb"
+    con = duckdb.connect(str(db_file))
+    con.execute("""
+        CREATE TABLE property_summary (
+            acct VARCHAR, site_address VARCHAR, site_city VARCHAR,
+            site_zip VARCHAR, year_built VARCHAR, building_sqft BIGINT,
+            land_sqft BIGINT, tot_appr_val BIGINT, last_sale_date DATE,
+            owner_name VARCHAR, likely_owner_occupied BOOLEAN,
+            mail_addr VARCHAR, mail_city VARCHAR, mail_state VARCHAR,
+            mail_zip VARCHAR, state_class VARCHAR, neighborhood_code VARCHAR
+        )
+    """)
+    # Present so the joined (non-fallback) query paths run.
+    con.execute("CREATE TABLE neighborhood_codes (cd VARCHAR, dscr VARCHAR)")
+    rows = [
+        # Most-valued account first: the value decides.
+        ("0051740000014", "2316 WASHINGTON AVE", 900_000, "1968"),
+        ("0051740000001", "2316 WASHINGTON AVE", 150_000, "2001"),
+        # A value tie: the lowest acct decides.
+        ("1224460010011", "232 KNOX ST", 500_000, "1950"),
+        ("1224460010012", "232 KNOX ST", 500_000, "1955"),
+    ]
+    for acct, addr, val, yr in rows:
+        con.execute(
+            "INSERT INTO property_summary VALUES "
+            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [acct, addr, "HOUSTON", "77007", yr, 1500, 5000, val, None,
+             "SMITH JOHN", True, "1 MAIN ST", "HOUSTON", "TX", "77007",
+             "A1", "8901"],
+        )
+    con.close()
+    return db_file
+
+
+def test_duplicate_situs_address_winner_matches_the_parcels_cache(tmp_path):
+    """HCAD carries several accounts at one situs address (multi-tract lots,
+    condo-style developments, replats). parcels.ensure_from_hcad keeps one per
+    address — DISTINCT ON … ORDER BY tot_appr_val DESC NULLS LAST, acct — and
+    a seeded row's parcel_apn comes from that cache, so these dicts must pick
+    the SAME account. They used to keep whichever row the engine emitted last,
+    and every disagreeing address produced a phantom "[4b] HCAD acct …
+    disagrees with stored parcel" warning and property_field_audits row on
+    every single run.
+    """
+    db_file = _dup_address_db(tmp_path)
+
+    for query in (hcad_store.query_properties, hcad_store.query_parcels_for_zip):
+        out = query("77007", db_path=str(db_file))
+        assert out["2316 washington ave"]["parcel_apn"] == "0051740000014", query
+        assert out["232 knox st"]["parcel_apn"] == "1224460010011", query
+        # The whole row rides with the winning account, not just its number.
+        assert out["2316 washington ave"]["year_built"] == 1968, query
+
+    out = hcad_store.query_properties_for_region("8901", "77007",
+                                                 db_path=str(db_file))
+    assert out["2316 washington ave"]["parcel_apn"] == "0051740000014"
+    assert out["232 knox st"]["parcel_apn"] == "1224460010011"
