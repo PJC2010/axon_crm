@@ -90,7 +90,7 @@ export function PipelineAnalytics() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
         <KpiCard icon={<Trophy size={16} strokeWidth={1.5} />} label="Win Rate" value={`${data.win_rate}%`} color="var(--color-moss)" accent />
         <KpiCard icon={<Clock size={16} strokeWidth={1.5} />} label="Avg Cycle Time" value={data.avg_cycle_time != null ? `${data.avg_cycle_time}d` : '—'} color="var(--color-accent)" />
-        <KpiCard icon={<TrendingUp size={16} strokeWidth={1.5} />} label="Leads Won" value={String(data.leads_won)} color="var(--color-gold, #F59E0B)" />
+        <KpiCard icon={<TrendingUp size={16} strokeWidth={1.5} />} label="Leads Won" value={String(data.leads_won)} color="var(--color-gold)" />
         <KpiCard icon={<BarChart3 size={16} strokeWidth={1.5} />} label="Period" value={`${data.period_days} days`} color="var(--color-ink-400)" />
       </div>
 
@@ -105,7 +105,7 @@ export function PipelineAnalytics() {
             const convRate = prevCount && prevCount > 0 ? Math.round((count / prevCount) * 100) : null
             const isHovered = hoveredStage === stage
             const color = STAGE_COLORS[stage] ?? 'var(--color-ink-300)'
-            const bg = STAGE_BG[stage] ?? '#EDECEA'
+            const bg = STAGE_BG[stage] ?? 'var(--color-ink-50)'
 
             return (
               <div key={stage} style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -126,7 +126,7 @@ export function PipelineAnalytics() {
                     width: `${widthPct}%`,
                     minWidth: 100,
                     padding: '12px 16px',
-                    background: isHovered ? `color-mix(in srgb, ${color} 18%, white)` : bg,
+                    background: isHovered ? `color-mix(in srgb, ${color} 24%, var(--color-surface-hi))` : bg,
                     borderLeft: `4px solid ${color}`,
                     borderRadius: 'var(--radius-card)',
                     display: 'flex',
@@ -184,14 +184,16 @@ export function PipelineAnalytics() {
                         <div style={{ width: '100%', height: 8, background: 'var(--color-ink-100)', borderRadius: 4, overflow: 'hidden' }}>
                           <div style={{
                             height: '100%',
-                            width: `${Math.min((avgDays / 30) * 100, 100)}%`,
+                            width: '100%',
+                            transform: `scaleX(${Math.min(avgDays / 30, 1)})`,
+                            transformOrigin: 'left',
                             background: avgDays > 14
-                              ? 'linear-gradient(90deg, var(--color-danger), #C96B5F)'
+                              ? 'linear-gradient(90deg, var(--color-danger), color-mix(in srgb, var(--color-danger) 60%, var(--color-surface)))'
                               : avgDays > 7
-                              ? 'linear-gradient(90deg, var(--color-gold), #D4B04D)'
-                              : 'linear-gradient(90deg, var(--color-moss), #6B9E66)',
+                              ? 'linear-gradient(90deg, var(--color-gold), color-mix(in srgb, var(--color-gold) 60%, var(--color-surface)))'
+                              : 'linear-gradient(90deg, var(--color-moss), color-mix(in srgb, var(--color-moss) 60%, var(--color-surface)))',
                             borderRadius: 4,
-                            transition: 'width 0.4s ease',
+                            transition: 'transform 0.4s ease',
                           }} />
                         </div>
                       )}

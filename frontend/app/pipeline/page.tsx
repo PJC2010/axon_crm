@@ -16,7 +16,7 @@ import { WonCelebration, type WonDeal } from '@/components/WonCelebration'
 const FALLBACK_STAGES: { key: string; label: string; color: string }[] = [
   { key: 'new',            label: 'New',           color: 'var(--color-ink-300)' },
   { key: 'contacted',      label: 'Contacted',     color: 'var(--color-ocean)' },
-  { key: 'qualified',      label: 'Qualified',     color: 'var(--color-accent)' },
+  { key: 'qualified',      label: 'Qualified',     color: 'var(--color-accent-300)' },
   { key: 'quote_sent',     label: 'Quote Sent',    color: 'var(--color-gold)' },
   { key: 'won',            label: 'Won',           color: 'var(--color-moss)' },
   { key: 'lost',           label: 'Lost',          color: 'var(--color-danger)' },

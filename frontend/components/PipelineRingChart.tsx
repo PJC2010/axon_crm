@@ -5,7 +5,7 @@ import { getPipelineStats } from '@/lib/api'
 const STAGES: { key: string; label: string; color: string }[] = [
   { key: 'new',         label: 'New',        color: 'var(--color-ink-300)' },
   { key: 'contacted',   label: 'Contacted',  color: 'var(--color-ocean-d)' },
-  { key: 'qualified',   label: 'Qualified',  color: 'var(--color-accent)' },
+  { key: 'qualified',   label: 'Qualified',  color: 'var(--color-accent-300)' },
   { key: 'quote_sent',  label: 'Quote Sent', color: 'var(--color-gold)' },
   { key: 'won',         label: 'Won',        color: 'var(--color-moss)' },
 ]

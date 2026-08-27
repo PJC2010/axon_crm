@@ -264,7 +264,7 @@ function Examples({
 }) {
   return (
     <details style={{ marginBottom: 4 }}>
-      <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--color-accent)' }}>
+      <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--color-accent-300)' }}>
         Show {samples.length} example{samples.length === 1 ? '' : 's'}
       </summary>
       <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>

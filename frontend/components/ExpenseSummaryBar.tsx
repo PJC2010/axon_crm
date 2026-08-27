@@ -35,9 +35,9 @@ export function ExpenseSummaryBar({ summary }: Props) {
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <div style={{
           flex: '1 1 140px', background: 'var(--color-accent)', borderRadius: 'var(--radius-card)',
-          padding: '16px 20px', color: '#fff',
+          padding: '16px 20px', color: 'var(--text-on-accent)',
         }}>
-          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', opacity: 0.8, marginBottom: 4 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 4 }}>
             Total Spent
           </div>
           <div style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--font-display)', lineHeight: 1 }}>
@@ -79,7 +79,7 @@ export function ExpenseSummaryBar({ summary }: Props) {
                       <span className="tabular" style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-ink-900)' }}>{fmt(amount)}</span>
                     </div>
                     <div style={{ height: 4, background: 'var(--color-ink-100)', borderRadius: 2, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 2, transition: 'width 0.4s ease' }} />
+                      <div style={{ height: '100%', width: '100%', transform: `scaleX(${pct / 100})`, transformOrigin: 'left', background: color, borderRadius: 2, transition: 'transform 0.4s ease' }} />
                     </div>
                   </div>
                 </div>

@@ -74,7 +74,7 @@ export function ARDashboard({ year }: Props) {
                     <span className="tabular" style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-ink-900)' }}>{fmt(bucket.amount)}</span>
                   </div>
                   <div style={{ height: 6, background: 'var(--color-ink-100)', borderRadius: 3, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3, transition: 'width 0.4s ease' }} />
+                    <div style={{ height: '100%', width: '100%', transform: `scaleX(${pct / 100})`, transformOrigin: 'left', background: color, borderRadius: 3, transition: 'transform 0.4s ease' }} />
                   </div>
                 </div>
               </div>
@@ -93,7 +93,7 @@ export function ARDashboard({ year }: Props) {
         </div>
         <div style={{ height: 8, background: 'var(--color-ink-200)', borderRadius: 4, overflow: 'hidden' }}>
           <div style={{
-            height: '100%', width: `${collectionRate}%`, borderRadius: 4, transition: 'width 0.5s ease',
+            height: '100%', width: '100%', transform: `scaleX(${collectionRate / 100})`, transformOrigin: 'left', borderRadius: 4, transition: 'transform 0.5s ease',
             background: collectionRate >= 80 ? 'var(--color-moss)' : collectionRate >= 60 ? 'var(--color-gold)' : 'var(--color-danger)',
           }} />
         </div>

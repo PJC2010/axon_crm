@@ -138,12 +138,12 @@ export function NextStepHint({ status, leadId, onToast }: Props) {
       margin: '10px 0 4px',
       padding: '10px 14px',
       borderRadius: 'var(--radius-card)',
-      background: 'var(--color-accent-50, #EBF2F7)',
-      border: '1px solid var(--color-accent-200, #8ABBD4)',
+      background: 'var(--color-accent-50)',
+      border: '1px solid var(--color-accent-200)',
       display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
     }}>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ margin: 0, fontSize: 11, fontWeight: 600, color: 'var(--color-accent)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>
+        <p style={{ margin: 0, fontSize: 11, fontWeight: 600, color: 'var(--color-accent-300)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>
           Next step
         </p>
         <p style={{ margin: 0, fontSize: 12.5, color: 'var(--color-ink-700)', lineHeight: 1.4 }}>
@@ -164,7 +164,7 @@ export function NextStepHint({ status, leadId, onToast }: Props) {
             padding: '5px 10px', flexShrink: 0,
             borderRadius: 'var(--radius-pill)',
             background: saving || checking ? 'var(--color-ink-300)' : 'var(--color-accent)',
-            color: 'white', border: 'none',
+            color: saving || checking ? 'var(--color-ink-900)' : 'var(--text-on-accent)', border: 'none',
             fontSize: 11, fontWeight: 600,
             cursor: saving || checking ? 'not-allowed' : 'pointer',
             whiteSpace: 'nowrap',
@@ -179,7 +179,7 @@ export function NextStepHint({ status, leadId, onToast }: Props) {
             display: 'inline-flex', alignItems: 'center', gap: 4,
             padding: '5px 10px', flexShrink: 0,
             borderRadius: 'var(--radius-pill)',
-            background: 'var(--color-accent)', color: 'white',
+            background: 'var(--color-accent)', color: 'var(--text-on-accent)',
             fontSize: 11, fontWeight: 600, textDecoration: 'none',
             whiteSpace: 'nowrap',
           }}

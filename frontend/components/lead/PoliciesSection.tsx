@@ -97,7 +97,7 @@ export function PoliciesSection({ leadId }: { leadId: number }) {
           <input value={policyType} onChange={e => setPolicyType(e.target.value)} placeholder="Line (auto, home…)" className="drawer-input" style={{ flex: 1, minWidth: 110 }} />
           <input value={premium} onChange={e => setPremium(e.target.value)} placeholder="Premium" type="number" className="drawer-input" style={{ width: 90 }} />
           <input value={expiration} onChange={e => setExpiration(e.target.value)} type="date" title="Expiration / renewal date" className="drawer-input" style={{ width: 140 }} />
-          <button onClick={handleAdd} disabled={saving} className="dash-icon-btn" style={{ fontSize: 12, color: 'var(--color-accent)' }}>
+          <button onClick={handleAdd} disabled={saving} className="dash-icon-btn" style={{ fontSize: 12, color: 'var(--color-accent-300)' }}>
             {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
@@ -167,7 +167,7 @@ export function PoliciesSection({ leadId }: { leadId: number }) {
                     }}
                     disabled={reminderTemplateId === '' || sendingReminder}
                     className="dash-icon-btn"
-                    style={{ fontSize: 12, color: 'var(--color-accent)', opacity: reminderTemplateId === '' || sendingReminder ? 0.5 : 1 }}
+                    style={{ fontSize: 12, color: 'var(--color-accent-300)', opacity: reminderTemplateId === '' || sendingReminder ? 0.5 : 1 }}
                   >
                     {sendingReminder ? 'Sending…' : 'Send'}
                   </button>

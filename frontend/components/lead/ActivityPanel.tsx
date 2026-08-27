@@ -234,10 +234,10 @@ export function ActivityPanel({ leadId, contactPhone }: { leadId: number; contac
                           fontWeight: 600,
                           padding: '1px 6px',
                           borderRadius: 'var(--radius-pill)',
-                          background: entry.detail === 'urgent' ? 'var(--color-danger-100, #FEE2E2)' :
-                                      entry.detail === 'high' ? '#FEF3C7' : 'var(--color-ink-100)',
-                          color: entry.detail === 'urgent' ? 'var(--color-danger, #DC2626)' :
-                                 entry.detail === 'high' ? '#92400E' : 'var(--color-ink-500)',
+                          background: entry.detail === 'urgent' ? 'var(--color-danger-bg)' :
+                                      entry.detail === 'high' ? 'var(--color-warning-bg)' : 'var(--color-ink-100)',
+                          color: entry.detail === 'urgent' ? 'var(--color-danger)' :
+                                 entry.detail === 'high' ? 'var(--color-warning)' : 'var(--color-ink-500)',
                           textTransform: 'uppercase',
                           letterSpacing: '0.05em',
                         }}>
@@ -301,7 +301,7 @@ function TimelineIcon({ entry }: { entry: TimelineEntry }) {
   if (entry.type === 'task')
     return <CheckSquare size={13} strokeWidth={1.5} style={{ ...iconStyle, color: entry.detail === 'completed' ? 'var(--color-moss)' : 'var(--color-warning)' }} />
   if (entry.type === 'signal')
-    return <Zap size={13} strokeWidth={1.5} style={{ ...iconStyle, color: 'var(--color-gold, #B8860B)' }} />
+    return <Zap size={13} strokeWidth={1.5} style={{ ...iconStyle, color: 'var(--color-gold)' }} />
   const a = entry.title.toLowerCase()
   if (a.includes('call') || a.includes('voicemail'))
     return <Phone size={13} strokeWidth={1.5} style={{ ...iconStyle, color: 'var(--color-accent)' }} />

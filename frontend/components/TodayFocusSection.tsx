@@ -320,7 +320,7 @@ export function TodayFocusSection({ taskCounts, arSummary, loading, onToast }: P
             href="/pipeline"
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 4, alignSelf: 'flex-start',
-              fontSize: 13, fontWeight: 500, color: 'var(--color-accent)',
+              fontSize: 13, fontWeight: 500, color: 'var(--color-accent-300)',
               textDecoration: 'none', padding: '2px 0',
             }}
           >

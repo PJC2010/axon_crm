@@ -105,7 +105,7 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
       {selected.size > 0 && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: 12,
-          padding: '12px 16px', background: 'var(--color-accent)', color: 'white',
+          padding: '12px 16px', background: 'var(--color-accent)', color: 'var(--text-on-accent)',
           fontSize: 13, borderBottom: '1px solid var(--color-ink-200)',
         }}>
           <span style={{ flex: 1 }}>{selected.size} of {leads.length} selected</span>
@@ -182,7 +182,7 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
               </p>
               <Link href="/settings?tab=pipeline" style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 20px', minHeight: 44,
-                borderRadius: 'var(--radius-pill)', background: 'var(--color-accent)', color: 'white',
+                borderRadius: 'var(--radius-pill)', background: 'var(--color-accent)', color: 'var(--text-on-accent)',
                 fontSize: 14, fontWeight: 500, textDecoration: 'none',
               }}>
                 <Settings size={15} strokeWidth={1.5} /> Run your first import
@@ -248,7 +248,7 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
                   </p>
                   <Link href="/settings?tab=pipeline" style={{
                     display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 20px', minHeight: 44,
-                    borderRadius: 'var(--radius-pill)', background: 'var(--color-accent)', color: 'white',
+                    borderRadius: 'var(--radius-pill)', background: 'var(--color-accent)', color: 'var(--text-on-accent)',
                     fontSize: 13, fontWeight: 500, textDecoration: 'none',
                   }}>
                     <Settings size={14} strokeWidth={1.5} /> Run your first import

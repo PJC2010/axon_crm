@@ -88,7 +88,7 @@ export function AppointmentsSection({ leadId }: { leadId: number }) {
             <option value={90}>1.5 hours</option>
             <option value={120}>2 hours</option>
           </select>
-          <button onClick={handleAdd} disabled={saving} className="dash-icon-btn" style={{ fontSize: 12, color: 'var(--color-accent)' }}>
+          <button onClick={handleAdd} disabled={saving} className="dash-icon-btn" style={{ fontSize: 12, color: 'var(--color-accent-300)' }}>
             {saving ? 'Saving…' : 'Save'}
           </button>
         </div>

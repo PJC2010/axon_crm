@@ -116,9 +116,9 @@ export function AutomationTemplates({ workflows, onWorkflowsChange, onToast }: P
               style={{
                 padding: '14px 16px',
                 borderRadius: 'var(--radius-card)',
-                background: isOn ? 'var(--color-accent-50, #EBF2F7)' : 'var(--color-surface)',
+                background: isOn ? 'var(--color-accent-50)' : 'var(--color-surface)',
                 border: isOn
-                  ? '1.5px solid var(--color-accent-200, #8ABBD4)'
+                  ? '1.5px solid var(--color-accent-200)'
                   : '1.5px solid var(--color-ink-200)',
                 display: 'flex', alignItems: 'flex-start', gap: 12,
                 transition: 'border-color 0.2s, background 0.2s',

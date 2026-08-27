@@ -73,7 +73,7 @@ export default function HcadDataPage() {
           <Link
             href="/signup"
             style={{
-              background: 'var(--color-accent)', color: '#fff', fontSize: 13.5, fontWeight: 600,
+              background: 'var(--color-accent)', color: 'var(--text-on-accent)', fontSize: 13.5, fontWeight: 600,
               padding: '8px 16px', borderRadius: 6, textDecoration: 'none',
             }}
           >
@@ -144,7 +144,7 @@ export default function HcadDataPage() {
         <P>
           <strong>Is using HCAD data legal?</strong> Yes. Appraisal records are public by Texas
           law, and Axon uses them the way the county publishes them. How we handle property data
-          — including opt-outs — is covered plainly in our <Link href="/privacy" style={{ color: 'var(--color-accent)' }}>privacy policy</Link>.
+          — including opt-outs — is covered plainly in our <Link href="/privacy" style={{ color: 'var(--color-accent-300)' }}>privacy policy</Link>.
         </P>
         <P>
           <strong>What areas do you cover?</strong> Harris County today, with Greater Houston
@@ -171,7 +171,7 @@ export default function HcadDataPage() {
           <Link
             href="/signup"
             style={{
-              display: 'inline-block', background: 'var(--color-accent)', color: '#fff',
+              display: 'inline-block', background: 'var(--color-accent)', color: 'var(--text-on-accent)',
               fontSize: 14.5, fontWeight: 600, padding: '10px 20px', borderRadius: 6,
               textDecoration: 'none',
             }}

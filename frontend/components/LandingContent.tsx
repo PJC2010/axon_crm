@@ -337,7 +337,7 @@ export default function LandingContent() {
                   longer competes with hero text/CSS for bandwidth on first
                   paint (mobile LCP). The poster overlay's play button starts
                   it on demand. */}
-              <video ref={videoRef} controls muted loop playsInline poster="" preload="metadata">
+              <video ref={videoRef} controls muted loop playsInline preload="metadata">
                 <source src="/axon-promo.mp4" type="video/mp4" />
               </video>
               <div className="lp-video-poster" ref={posterRef}>
@@ -347,7 +347,7 @@ export default function LandingContent() {
                   aria-label="Play product demo"
                   onClick={() => videoRef.current?.play().catch(() => {})}
                 >
-                  <Play size={30} color="#fff" style={{ marginLeft: 4 }} />
+                  <Play size={30} color="var(--text-on-accent)" fill="var(--text-on-accent)" style={{ marginLeft: 4 }} />
                 </button>
                 <div className="lp-video-caption">See Axon in action</div>
               </div>
@@ -405,6 +405,7 @@ export default function LandingContent() {
             differently: it builds a ranked list from Harris County property data for one flat
             monthly price.
           </p>
+          <div className="lp-vs-shell">
           <div className="lp-vs-wrap">
             <div className="lp-vs" role="table" aria-label="How Axon compares with shared-lead marketplaces">
               <div className="lp-vs-row lp-vs-head" role="row">
@@ -441,6 +442,7 @@ export default function LandingContent() {
                 </div>
               ))}
             </div>
+          </div>
           </div>
           <p className="lp-section-sub" style={{ marginTop: 32 }}>
             <b>The problem isn&apos;t that you called too slowly. The same name went to several

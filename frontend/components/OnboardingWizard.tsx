@@ -437,7 +437,7 @@ export function OnboardingWizard({ onComplete }: Props) {
                   disabled={finishing}
                   style={{
                     padding: '14px 28px', borderRadius: 'var(--radius-pill)',
-                    background: 'var(--color-accent)', color: 'white',
+                    background: 'var(--color-accent)', color: 'var(--text-on-accent)',
                     border: 'none', fontSize: 15, fontWeight: 600,
                     cursor: finishing ? 'not-allowed' : 'pointer',
                     display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 28,
@@ -498,7 +498,7 @@ export function OnboardingWizard({ onComplete }: Props) {
               disabled={(stepName === 'Category' && !vertical) || applying}
               style={{
                 padding: '10px 24px', borderRadius: 'var(--radius-pill)',
-                background: 'var(--color-accent)', color: 'white',
+                background: 'var(--color-accent)', color: 'var(--text-on-accent)',
                 border: 'none', fontSize: 14, fontWeight: 500, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', gap: 6,
                 opacity: (stepName === 'Category' && !vertical) || applying ? 0.5 : 1,
@@ -512,7 +512,7 @@ export function OnboardingWizard({ onComplete }: Props) {
               disabled={finishing}
               style={{
                 padding: '10px 24px', borderRadius: 'var(--radius-pill)',
-                background: 'var(--color-accent)', color: 'white',
+                background: 'var(--color-accent)', color: 'var(--text-on-accent)',
                 border: 'none', fontSize: 14, fontWeight: 500, cursor: finishing ? 'not-allowed' : 'pointer',
                 display: 'flex', alignItems: 'center', gap: 6,
               }}

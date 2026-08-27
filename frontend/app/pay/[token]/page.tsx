@@ -132,7 +132,7 @@ export default function PublicPayPage({ params }: { params: Promise<{ token: str
 
           <div style={{ padding: '12px 24px', borderTop: '1px solid var(--color-ink-200)' }}>
             <a href={info.pdf_url} target="_blank" rel="noopener noreferrer"
-               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--color-accent)', textDecoration: 'none', fontWeight: 500 }}>
+               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--color-accent-300)', textDecoration: 'none', fontWeight: 500 }}>
               <FileText size={14} strokeWidth={1.5} /> View invoice PDF
             </a>
           </div>

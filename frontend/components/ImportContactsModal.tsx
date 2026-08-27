@@ -282,7 +282,7 @@ export function ImportContactsModal({ onImported }: Props) {
                       style={{
                         display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 16px',
                         borderRadius: 'var(--radius-button)', border: '1px solid transparent',
-                        background: 'var(--color-accent)', color: 'white', fontSize: 13, fontWeight: 500,
+                        background: 'var(--color-accent)', color: 'var(--text-on-accent)', fontSize: 13, fontWeight: 500,
                         cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.65 : 1,
                       }}
                     >

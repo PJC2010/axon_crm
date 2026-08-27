@@ -48,13 +48,13 @@ export default function TermsPage() {
         alerts), you agree that we may text the mobile number you provide. Message frequency
         varies with account activity, and message and data rates may apply. You can stop texts at
         any time by replying STOP, and get help by replying HELP or emailing{' '}
-        <a href="mailto:admin@axonhtx.com" style={{ color: 'var(--color-accent)' }}>
+        <a href="mailto:admin@axonhtx.com" style={{ color: 'var(--color-accent-300)' }}>
           admin@axonhtx.com
         </a>.
         Consent to receive texts is never a condition of using Axon, and carriers are not liable
         for delayed or undelivered messages. SMS opt-in consent and phone numbers are handled as
         described in our{' '}
-        <a href="/privacy" style={{ color: 'var(--color-accent)' }}>Privacy Policy</a> and are
+        <a href="/privacy" style={{ color: 'var(--color-accent-300)' }}>Privacy Policy</a> and are
         never shared with third parties or affiliates for their marketing purposes.
       </LegalP>
 
@@ -62,7 +62,7 @@ export default function TermsPage() {
       <LegalP>
         The records in your workspace are yours. You can export them to CSV at any time, and if
         you leave we&apos;ll delete your workspace on request (see the{' '}
-        <a href="/privacy" style={{ color: 'var(--color-accent)' }}>Privacy Policy</a>). You grant
+        <a href="/privacy" style={{ color: 'var(--color-accent-300)' }}>Privacy Policy</a>). You grant
         us only the license needed to host, process, and display that data to run the service.
       </LegalP>
 
@@ -95,7 +95,7 @@ export default function TermsPage() {
         These terms are governed by the laws of the State of Texas, with venue in Harris County.
         If we update the terms in a way that matters, we&apos;ll post the new version here with a
         new effective date and email active customers. Questions:{' '}
-        <a href="mailto:admin@axonhtx.com" style={{ color: 'var(--color-accent)' }}>
+        <a href="mailto:admin@axonhtx.com" style={{ color: 'var(--color-accent-300)' }}>
           admin@axonhtx.com
         </a>.
       </LegalP>

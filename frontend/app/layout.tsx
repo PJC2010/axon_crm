@@ -91,7 +91,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${robotoSlab.variable} ${geist.variable} ${geistMono.variable}`}>
-      <body>{children}</body>
+      <body>{children}{/* impeccable-live-start */}
+<script src="http://localhost:8400/live.js?token=115eba03-2808-4cef-af06-305777266e12"></script>
+{/* impeccable-live-end */}
+</body>
       {GA_ID && <GoogleAnalytics gaId={GA_ID} />}
       {/* Self-gating on NEXT_PUBLIC_META_PIXEL_ID — see components/MetaPixel. */}
       <MetaPixel />

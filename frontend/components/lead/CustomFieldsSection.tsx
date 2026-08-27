@@ -87,7 +87,7 @@ export function CustomFieldsSection({
             onClick={handleSave}
             disabled={saving}
             className="dash-icon-btn"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--color-accent)' }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--color-accent-300)' }}
           >
             <Check size={13} strokeWidth={2} /> {saving ? 'Saving…' : 'Save'}
           </button>

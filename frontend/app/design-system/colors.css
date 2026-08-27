@@ -22,7 +22,7 @@
   --color-ink-100: #383e47; /* faint border */
   --color-ink-200: #404854; /* border */
   --color-ink-300: #5f6b7c; /* divider / faint text */
-  --color-ink-400: #8f99a8; /* placeholder text */
+  --color-ink-400: #96a0ae; /* placeholder text (4.5:1 floor on surface) */
   --color-ink-500: #abb3bf; /* muted text */
   --color-ink-600: #c5cbd3; /* tertiary text */
   --color-ink-700: #d3d8de; /* secondary body text */
@@ -32,6 +32,7 @@
   /* ── Turquoise — signature accent ── */
   --color-accent-50:   #103330; /* faint turquoise fill */
   --color-accent-100:  #0c3a37; /* chip tint */
+  --color-accent-200:  #0f4f49; /* faint turquoise border on tinted fills */
   --color-accent:      #00a396; /* turquoise3 · filled controls (rest) */
   --color-accent-600:  #13c9ba; /* turquoise4 · bright/landing accent */
   --color-accent-700:  #007067; /* turquoise2 · hover */
@@ -39,7 +40,7 @@
   --color-accent-300:  #7ae1d8; /* turquoise5 · bright accent text on dark */
 
   /* ── Data-viz — extended palette (bright on dark) + soft chip tints ── */
-  --color-moss:       #32a467; /* green */
+  --color-moss:       #36b171; /* green (4.5:1 as text on surface) */
   --color-moss-soft:  #1c3527;
   --color-ocean:      #3fa6da; /* cerulean */
   --color-ocean-soft: #16313d;
@@ -51,11 +52,11 @@
   --color-rose-soft:  #3a1626;
 
   /* ── Semantic intents ── */
-  --color-success:    #32a467;
+  --color-success:    #36b171;
   --color-success-bg: #1c3527;
   --color-warning:    #ec9a3c;
   --color-warning-bg: #3a2a12;
-  --color-danger:     #e76a6e;
+  --color-danger:     #ec7a7e; /* 4.5:1 as text on surface */
   --color-danger-bg:  #3a1d1d;
   --color-info:       #3fa6da;
   --color-info-bg:    #16313d;
@@ -63,7 +64,7 @@
   /* ── RGB channels for translucent fills ── */
   --color-accent-rgb: 0, 163, 150;
   --color-gold-rgb:   240, 183, 38;
-  --color-moss-rgb:    50, 164, 103;
+  --color-moss-rgb:    54, 177, 113;
   --color-rose-rgb:   245,  73, 139;
 
   /* ── Semantic aliases (prefer these in product code) ── */
@@ -78,7 +79,10 @@
   --text-body:     var(--color-ink-700);
   --text-muted:    var(--color-ink-500);
   --text-faint:    var(--color-ink-400);
-  --text-on-accent:var(--color-cream);
+  /* Ink label on filled accents: cream on turquoise is 2.9:1 (fails AA);
+     Console Black reads 5.9:1. Filled controls brighten on hover, never darken,
+     so the label keeps contrast in every state. */
+  --text-on-accent:var(--color-black);
   --intent-primary:var(--color-accent);
   --intent-primary-hover:  var(--color-accent-700);
   --intent-primary-active: var(--color-accent-800);

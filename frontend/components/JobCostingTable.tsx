@@ -98,7 +98,7 @@ export function JobCostingTable({ year }: Props) {
                 </div>
                 {/* Mini profit bar */}
                 <div style={{ marginTop: 10, height: 4, background: 'var(--color-ink-100)', borderRadius: 2, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${Math.min(Math.max(row.margin_pct, 0), 100)}%`, background: marginColor, borderRadius: 2, transition: 'width 0.4s ease' }} />
+                  <div style={{ height: '100%', width: '100%', transform: `scaleX(${Math.min(Math.max(row.margin_pct, 0), 100) / 100})`, transformOrigin: 'left', background: marginColor, borderRadius: 2, transition: 'transform 0.4s ease' }} />
                 </div>
               </div>
             )

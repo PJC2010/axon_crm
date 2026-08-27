@@ -122,7 +122,10 @@ function SettingsPage() {
   useEffect(() => {
     const hasRunning = runs.some(r => r.status === 'running' || r.status === 'queued')
     if (!hasRunning) return
-    const id = setInterval(() => getPipelineRuns().then(setRuns).catch(() => {}), 5000)
+    const id = setInterval(() => {
+      if (document.hidden) return
+      getPipelineRuns().then(setRuns).catch(() => {})
+    }, 5000)
     return () => clearInterval(id)
   }, [runs])
 
@@ -202,7 +205,7 @@ function SettingsPage() {
           Settings
         </h1>
         {hasActive && (
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--color-accent)' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--color-accent-300)' }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--color-accent)', animation: 'pulse 1.5s infinite' }} />
             Pipeline running
           </span>
@@ -288,7 +291,7 @@ function SettingsPage() {
                 }
               }}
               style={{
-                padding: '0 16px', height: 36, background: 'var(--color-accent)', color: 'white',
+                padding: '0 16px', height: 36, background: 'var(--color-accent)', color: 'var(--text-on-accent)',
                 border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, cursor: rescoring ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6,
               }}
             >

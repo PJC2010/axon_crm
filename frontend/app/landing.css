@@ -39,8 +39,8 @@
 /* Buttons */
 .lp-btn { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-sans); font-size: 14px; font-weight: 500; padding: 9px 18px; border-radius: var(--radius-button); border: 1px solid transparent; cursor: pointer; text-decoration: none; transition: all var(--dur-fast) var(--ease-out); white-space: nowrap; }
 .lp-btn:active { transform: translateY(1px); }
-.lp-btn-accent { background: var(--color-accent); color: #fff; }
-.lp-btn-accent:hover { background: var(--color-accent-700); box-shadow: var(--shadow-card); }
+.lp-btn-accent { background: var(--color-accent); color: var(--text-on-accent); }
+.lp-btn-accent:hover { background: var(--color-accent-600); box-shadow: var(--shadow-card); }
 .lp-btn-ghost { background: transparent; color: var(--color-ink-700); }
 .lp-btn-ghost:hover { background: var(--color-surface-hi); color: var(--color-ink-900); }
 .lp-btn-outline { background: transparent; color: var(--color-ink-900); border-color: var(--color-ink-300); }
@@ -148,7 +148,7 @@
 /* Two-way texting */
 .lp-demo-sms { display: flex; flex-direction: column; gap: 8px; }
 .lp-demo-bubble { max-width: 88%; font-size: 12px; line-height: 1.45; padding: 7px 11px; border-radius: 12px; }
-.lp-demo-bubble-out { align-self: flex-end; background: var(--color-accent); color: #fff; border-bottom-right-radius: 4px; }
+.lp-demo-bubble-out { align-self: flex-end; background: var(--color-accent); color: var(--text-on-accent); border-bottom-right-radius: 4px; }
 .lp-demo-bubble-in { align-self: flex-start; background: var(--color-ink-100); color: var(--color-ink-700); border-bottom-left-radius: 4px; }
 
 /* Split */
@@ -184,7 +184,48 @@
 /* Competitor comparison table ("name the enemy": Axon vs. Angi & co.)
    A div-grid rather than <table> so rows can scroll-stagger in; the wrapper
    scrolls horizontally below ~800px, so no stacked-mobile variant is needed. */
-.lp-vs-wrap { margin-top: 44px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.lp-vs-shell { position: relative; margin-top: 44px; }
+.lp-vs-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* Narrow screens: keep the row labels pinned while the competitor columns
+   scroll under them, and hang a fade scrim on the right edge so the cut-off
+   column reads as "swipe for more", not as a rendering bug. */
+@media (max-width: 860px) {
+  /* Sticky inside a grid item is confined to its own grid area and never
+     pins, so rows become flex here — the row is the containing block and
+     the label cell can hold the left edge while the rest scrolls. The
+     table's own overflow must be `clip`, not `hidden`: hidden makes it a
+     scroll container and steals the sticky cells from the real scroller. */
+  .lp-vs { overflow: clip; }
+  .lp-vs-row { display: flex; }
+  .lp-vs-cell { flex: 0 0 143px; }
+  .lp-vs-cell:last-child { flex: 0 0 187px; }
+  .lp-vs-cell:first-child {
+    flex: 0 0 164px;
+    position: sticky; left: 0; z-index: 2;
+    background: var(--color-surface);
+    box-shadow: 1px 0 0 var(--color-ink-100);
+  }
+  .lp-vs-head .lp-vs-cell:first-child { background: var(--color-paper-deep); }
+  .lp-vs-shell::after {
+    content: '';
+    position: absolute; top: 0; right: 0; bottom: 0; width: 44px;
+    background: linear-gradient(270deg, rgba(17, 20, 24, 0.75), rgba(17, 20, 24, 0));
+    border-radius: 0 var(--radius-card) var(--radius-card) 0;
+    pointer-events: none;
+  }
+  /* Where scroll-driven animations exist, the scrim clears as the user
+     reaches the end of the table; elsewhere it simply stays. */
+  @supports (animation-timeline: scroll()) {
+    .lp-vs-shell { timeline-scope: --lp-vs-x; }
+    .lp-vs-wrap { scroll-timeline: --lp-vs-x x; }
+    .lp-vs-shell::after { animation: lp-vs-scrim linear both; animation-timeline: --lp-vs-x; }
+  }
+}
+@keyframes lp-vs-scrim {
+  0%, 75% { opacity: 1; }
+  100% { opacity: 0; }
+}
 .lp-vs { min-width: 780px; background: var(--color-surface); border-radius: var(--radius-card); box-shadow: var(--shadow-card); overflow: hidden; }
 .lp-vs-row { display: grid; grid-template-columns: 1.15fr 1fr 1fr 1fr 1.3fr; }
 .lp-vs-row + .lp-vs-row { border-top: 1px solid var(--color-ink-100); }
@@ -198,7 +239,7 @@
 .lp-vs-head span { font-size: 11px; color: var(--color-ink-500); }
 .lp-vs-head .lp-vs-brand { display: flex; align-items: center; gap: 7px; font-size: 16px; color: var(--color-ink-900); }
 .lp-vs-dim { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--color-ink-400); }
-.lp-vs-flag { align-self: flex-start; margin-bottom: 5px; background: var(--color-accent); color: #fff; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 3px 9px; border-radius: var(--radius-pill); }
+.lp-vs-flag { align-self: flex-start; margin-bottom: 5px; background: var(--color-accent); color: var(--text-on-accent); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 3px 9px; border-radius: var(--radius-pill); }
 /* Verdict marks — red X for the marketplaces, green check for Axon */
 .lp-vs-mark { width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .lp-vs-no { background: var(--color-danger-bg); color: var(--color-danger); }
@@ -233,7 +274,7 @@
 .lp-price-card li svg { flex-shrink: 0; margin-top: 2px; color: var(--color-moss); }
 .lp-price-card .lp-btn { justify-content: center; }
 .lp-price-featured { box-shadow: var(--shadow-pop), inset 0 0 0 1.5px var(--color-accent); }
-.lp-price-flag { position: absolute; top: -12px; left: 24px; background: var(--color-accent); color: #fff; font-size: 11px; font-weight: 600; letter-spacing: 0.03em; padding: 4px 12px; border-radius: var(--radius-pill); box-shadow: var(--shadow-card); }
+.lp-price-flag { position: absolute; top: -12px; left: 24px; background: var(--color-accent); color: var(--text-on-accent); font-size: 11px; font-weight: 600; letter-spacing: 0.03em; padding: 4px 12px; border-radius: var(--radius-pill); box-shadow: var(--shadow-card); }
 .lp-pricing-foot { margin: 28px 0 0; font-size: 14px; color: var(--color-ink-600); max-width: 560px; line-height: 1.55; }
 
 /* ZIP-sample widget (the 60-second personal proof) */
@@ -358,9 +399,9 @@
 /* Feature-card demos — each plays its "before" state below, then transitions
    to the settled look (defined above) once the card gets `.is-demo-in`
    (added on scroll-into-view, replayed on hover — see LandingContent.tsx). */
-.lp-anim .lp-demo-score-fill { width: 0%; transition: width 900ms var(--ease-out); }
+.lp-anim .lp-demo-score-fill { transform: scaleX(0); transform-origin: left; transition: transform 900ms var(--ease-out); }
 .lp-anim .lp-demo-score-grade { opacity: 0; transform: scale(0.5); transition: opacity 320ms var(--ease-out), transform 320ms var(--ease-out); transition-delay: 760ms; }
-.lp-anim .lp-feature.is-demo-in .lp-demo-score-fill { width: 94%; }
+.lp-anim .lp-feature.is-demo-in .lp-demo-score-fill { transform: none; }
 .lp-anim .lp-feature.is-demo-in .lp-demo-score-grade { opacity: 1; transform: none; }
 
 .lp-anim .lp-demo-pipe-chip { left: 2%; transition: left 1000ms var(--ease-out), background 1000ms var(--ease-out); }
@@ -373,12 +414,10 @@
 .lp-anim .lp-feature.is-demo-in .lp-demo-check { background: var(--color-moss); border-color: var(--color-moss); }
 .lp-anim .lp-feature.is-demo-in .lp-demo-check svg { opacity: 1; transform: none; }
 
-.lp-anim .lp-demo-bar { height: 0%; transition: height 700ms var(--ease-out); }
+.lp-anim .lp-demo-bar { transform: scaleY(0); transform-origin: bottom; transition: transform 700ms var(--ease-out); }
 .lp-anim .lp-demo-bar:nth-child(2) { transition-delay: 90ms; }
 .lp-anim .lp-demo-bar:nth-child(3) { transition-delay: 180ms; }
-.lp-anim .lp-feature.is-demo-in .lp-demo-bar:nth-child(1) { height: 38%; }
-.lp-anim .lp-feature.is-demo-in .lp-demo-bar:nth-child(2) { height: 70%; }
-.lp-anim .lp-feature.is-demo-in .lp-demo-bar:nth-child(3) { height: 52%; }
+.lp-anim .lp-feature.is-demo-in .lp-demo-bar { transform: none; }
 
 .lp-anim .lp-demo-inv-line { opacity: 0; transform: translateX(-8px); transition: opacity 340ms var(--ease-out), transform 340ms var(--ease-out); }
 .lp-anim .lp-demo-inv-line:nth-child(2) { transition-delay: 160ms; }
@@ -502,7 +541,7 @@
 /* Dim non-active steps only while the JS-driven pinned mode is on */
 .lp-anim .lp-pstep:not(.is-active) h3 { color: var(--color-ink-500); }
 .lp-anim .lp-pstep:not(.is-active) p { color: var(--color-ink-500); opacity: 0.55; }
-.lp-pstep.is-active .lp-pstep-n b { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
+.lp-pstep.is-active .lp-pstep-n b { background: var(--color-accent); border-color: var(--color-accent); color: var(--text-on-accent); }
 .lp-pstep.is-active .lp-pstep-n span { color: var(--color-accent-300); }
 .lp-pstep.is-active h3 { color: var(--color-ink-900); }
 .lp-pstep.is-active p { color: var(--color-ink-700); opacity: 1; }

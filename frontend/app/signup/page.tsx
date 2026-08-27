@@ -315,10 +315,10 @@ export default function SignupPage() {
               )}
 
               <p style={{ fontSize: 12, color: 'var(--color-ink-400)', margin: '18px 0 0', textAlign: 'center' }}>
-                Already have an account? <a href="/login" style={{ color: 'var(--color-accent)' }}>Sign in</a>
+                Already have an account? <a href="/login" style={{ color: 'var(--color-accent-300)' }}>Sign in</a>
               </p>
               <p style={{ fontSize: 12, color: 'var(--color-ink-400)', margin: '8px 0 0', textAlign: 'center' }}>
-                Just looking? <a href="/preview" style={{ color: 'var(--color-accent)' }}>Explore the live demo</a>
+                Just looking? <a href="/preview" style={{ color: 'var(--color-accent-300)' }}>Explore the live demo</a>
               </p>
               <p style={{ fontSize: 11, color: 'var(--color-ink-300)', margin: '14px 0 0', textAlign: 'center' }}>
                 By creating an account you agree to the{' '}

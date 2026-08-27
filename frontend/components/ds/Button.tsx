@@ -13,10 +13,10 @@ const SIZES: Record<Size, React.CSSProperties & { gap: number; minHeight: number
 const VARIANTS: Record<Variant, React.CSSProperties & Record<string, string>> = {
   primary: {
     background: 'var(--color-accent)',
-    color: 'var(--color-cream)',
+    color: 'var(--text-on-accent)',
     border: '1px solid transparent',
-    '--hover-bg': 'var(--color-accent-700)',
-    '--active-bg': 'var(--color-accent-800)',
+    '--hover-bg': 'var(--color-accent-600)',
+    '--active-bg': 'var(--color-accent-600)',
   },
   secondary: {
     background: 'var(--color-surface)',
@@ -41,10 +41,10 @@ const VARIANTS: Record<Variant, React.CSSProperties & Record<string, string>> = 
   },
   danger: {
     background: 'var(--color-danger)',
-    color: '#fff',
+    color: 'var(--text-on-accent)',
     border: '1px solid transparent',
-    '--hover-bg': 'color-mix(in srgb, var(--color-danger) 85%, #000)',
-    '--active-bg': 'color-mix(in srgb, var(--color-danger) 75%, #000)',
+    '--hover-bg': 'color-mix(in srgb, var(--color-danger) 85%, #fff)',
+    '--active-bg': 'color-mix(in srgb, var(--color-danger) 78%, #fff)',
   },
 }
 
@@ -57,7 +57,8 @@ export interface ButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonE
   children?: React.ReactNode
 }
 
-/** Axon primary button. Turquoise filled by default; depresses 1px on press. */
+/** Axon primary button. Turquoise filled with an ink label (AA contrast);
+ *  filled variants brighten on hover and depress 1px on press. */
 export function Button({
   variant = 'primary',
   size = 'md',
@@ -67,6 +68,7 @@ export function Button({
   disabled = false,
   children,
   style,
+  className,
   ...rest
 }: ButtonProps) {
   const s = SIZES[size] || SIZES.md
@@ -76,6 +78,7 @@ export function Button({
 
   return (
     <button
+      className={className ? `ds-btn ${className}` : 'ds-btn'}
       disabled={disabled}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => { setHover(false); setActive(false) }}

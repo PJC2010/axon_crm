@@ -106,7 +106,7 @@ export function SetupPill({ state }: { state: GettingStartedState }) {
         borderRadius: 'var(--radius-pill)',
         background: 'var(--color-accent-50)',
         border: '1px solid var(--color-accent-200)',
-        color: 'var(--color-accent)',
+        color: 'var(--color-accent-300)',
         fontSize: 12, fontWeight: 600,
         cursor: 'pointer', whiteSpace: 'nowrap',
       }}
@@ -143,9 +143,11 @@ export function GettingStartedChecklist({ state }: { state: GettingStartedState 
           <div style={{ width: 80, height: 6, background: 'var(--color-ink-100)', borderRadius: 3 }}>
             <div style={{
               height: '100%', borderRadius: 3,
-              width: `${(completed / total) * 100}%`,
+              width: '100%',
+              transform: `scaleX(${total > 0 ? completed / total : 0})`,
+              transformOrigin: 'left',
               background: 'var(--color-accent)',
-              transition: 'width 0.3s',
+              transition: 'transform 0.3s',
             }} />
           </div>
           <button

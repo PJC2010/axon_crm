@@ -78,7 +78,7 @@ export function OrdersSection({ leadId }: { leadId: number }) {
           <input value={total} onChange={e => setTotal(e.target.value)} placeholder="Total" type="number" className="drawer-input" style={{ width: 90 }} />
           <input value={orderDate} onChange={e => setOrderDate(e.target.value)} type="date" title="Order date" className="drawer-input" style={{ width: 140 }} />
           <input value={orderNumber} onChange={e => setOrderNumber(e.target.value)} placeholder="Order # (optional)" className="drawer-input" style={{ flex: 1, minWidth: 110 }} />
-          <button onClick={handleAdd} disabled={saving} className="dash-icon-btn" style={{ fontSize: 12, color: 'var(--color-accent)' }}>
+          <button onClick={handleAdd} disabled={saving} className="dash-icon-btn" style={{ fontSize: 12, color: 'var(--color-accent-300)' }}>
             {saving ? 'Saving…' : 'Save'}
           </button>
         </div>

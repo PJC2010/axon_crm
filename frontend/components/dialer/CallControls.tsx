@@ -49,7 +49,7 @@ export function CallControls({
             display: 'inline-flex', alignItems: 'center', gap: 8,
             padding: '10px 22px', minHeight: 44, borderRadius: 'var(--radius-button)',
             background: telHref ? 'var(--color-accent)' : 'var(--color-ink-200)',
-            color: 'var(--color-cream)', textDecoration: 'none',
+            color: telHref ? 'var(--text-on-accent)' : 'var(--color-ink-900)', textDecoration: 'none',
             fontSize: 15, fontWeight: 600,
             pointerEvents: telHref ? undefined : 'none',
           }}

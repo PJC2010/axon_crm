@@ -92,7 +92,7 @@ function CallsPage() {
           style={{
             marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6,
             padding: '7px 14px', borderRadius: 'var(--radius-button)',
-            background: 'var(--color-accent)', color: 'var(--color-cream)',
+            background: 'var(--color-accent)', color: 'var(--text-on-accent)',
             textDecoration: 'none', fontSize: 13, fontWeight: 600,
           }}
         >

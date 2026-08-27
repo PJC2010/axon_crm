@@ -51,7 +51,7 @@ export function TaskList({ tasks, onUpdate, showLeadLink }: Props) {
         <p style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 500, color: 'var(--color-ink-500)' }}>No tasks here</p>
         <p style={{ margin: 0, fontSize: 12, color: 'var(--color-ink-400)' }}>
           Tasks are created automatically when you move leads through your pipeline.{' '}
-          <Link href="/settings" style={{ color: 'var(--color-accent)', textDecoration: 'none' }}>Set up automations →</Link>
+          <Link href="/settings" style={{ color: 'var(--color-accent-300)', textDecoration: 'none' }}>Set up automations →</Link>
         </p>
       </div>
     )

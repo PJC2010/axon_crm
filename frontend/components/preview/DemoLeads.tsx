@@ -94,7 +94,7 @@ export function DemoLeads({ leads, onOpen, onStatusChange, onNewLead, onFakeActi
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
             padding: '0 16px', minHeight: 40, borderRadius: 'var(--radius-pill)',
-            background: 'var(--color-accent)', color: 'white', border: 'none',
+            background: 'var(--color-accent)', color: 'var(--text-on-accent)', border: 'none',
             fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
           }}
         >

@@ -16,8 +16,10 @@ export function TaskBell() {
       } catch { /* not authenticated yet */ }
     }
     fetch()
-    const id = setInterval(fetch, 60_000)
-    return () => { mounted = false; clearInterval(id) }
+    const id = setInterval(() => { if (!document.hidden) fetch() }, 60_000)
+    const onVisible = () => { if (!document.hidden) fetch() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => { mounted = false; clearInterval(id); document.removeEventListener('visibilitychange', onVisible) }
   }, [])
 
   const total = counts.today + counts.overdue
@@ -34,7 +36,7 @@ export function TaskBell() {
           height: 14,
           borderRadius: 7,
           background: counts.overdue > 0 ? 'var(--color-danger)' : 'var(--color-accent)',
-          color: '#fff',
+          color: 'var(--text-on-accent)',
           fontSize: 9,
           fontWeight: 700,
           display: 'flex',

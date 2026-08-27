@@ -122,7 +122,7 @@ export function NeighborsPrompt({
         fontSize: 12, fontWeight: 600, borderRadius: 'var(--radius-pill)',
         border: '1px solid var(--color-accent)',
         cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1,
-        background: 'transparent', color: 'var(--color-accent)',
+        background: 'transparent', color: 'var(--color-accent-300)',
       }}
     >
       <Footprints size={14} strokeWidth={1.5} />

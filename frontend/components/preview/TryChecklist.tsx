@@ -61,7 +61,7 @@ export function TryChecklist({ done }: { done: Set<TryKey> }) {
             display: 'inline-flex', alignItems: 'center', gap: 6,
             padding: '5px 14px', borderRadius: 'var(--radius-pill)', whiteSpace: 'nowrap',
             fontSize: 12, fontWeight: 700, textDecoration: 'none',
-            background: 'var(--color-accent)', color: 'white',
+            background: 'var(--color-accent)', color: 'var(--text-on-accent)',
           }}
         >
           You&apos;ve got the hang of it — start free <ArrowRight size={12} strokeWidth={2} />

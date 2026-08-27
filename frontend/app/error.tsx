@@ -76,7 +76,7 @@ export default function Error({
               border: 'none',
               cursor: 'pointer',
               background: 'var(--color-accent)',
-              color: 'white',
+              color: 'var(--text-on-accent)',
             }}
           >
             Try again

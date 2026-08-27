@@ -161,8 +161,8 @@ export function RevenueSparkChart({ year, height = 160 }: Props) {
           padding: '5px 10px', fontSize: 11, whiteSpace: 'nowrap', display: 'flex', gap: 12,
           boxShadow: 'var(--shadow-pop)',
         }}>
-          <span style={{ color: '#8FC98A' }}>Rev: {fmtCurrency(months[hoveredIdx].revenue)}</span>
-          <span style={{ color: '#E8959E' }}>Exp: {fmtCurrency(months[hoveredIdx].expenses)}</span>
+          <span style={{ color: 'var(--color-moss)' }}>Rev: {fmtCurrency(months[hoveredIdx].revenue)}</span>
+          <span style={{ color: 'var(--color-rose)' }}>Exp: {fmtCurrency(months[hoveredIdx].expenses)}</span>
           <span style={{ fontWeight: 600 }}>Net: {fmtCurrency(months[hoveredIdx].net)}</span>
         </div>
       )}

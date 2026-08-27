@@ -146,7 +146,7 @@ export function ContactInfoSection({ lead, onSaved, onToast }: Props) {
               onClick={save}
               disabled={saving}
               className="dash-icon-btn borderless"
-              style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--color-accent)' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--color-accent-300)' }}
             >
               <Check size={13} strokeWidth={1.5} /> Save
             </button>
@@ -247,7 +247,7 @@ function Row({ icon, children }: { icon: React.ReactNode; children: React.ReactN
 function LinkOrDash({ href, text }: { href: string; text: string | null }) {
   if (!text) return <dd style={{ fontSize: 13, color: 'var(--color-ink-400)', margin: 0 }}>—</dd>
   return (
-    <a href={href} style={{ fontSize: 13, color: 'var(--color-accent)', textDecoration: 'none' }}>{text}</a>
+    <a href={href} style={{ fontSize: 13, color: 'var(--color-accent-300)', textDecoration: 'none' }}>{text}</a>
   )
 }
 

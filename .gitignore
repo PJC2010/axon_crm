@@ -16,3 +16,6 @@ tools/sample_hcad_zip.py
 sample_zips.txt
 seed_all_zips.log
 hcad_centroids_work/
+.env.backup-20260819
+*.duckdb
+.impeccable/

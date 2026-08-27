@@ -209,7 +209,7 @@ export function DemoApp() {
       }}>
         <span>Live demo with sample data — everything here actually works. Drag deals, open scores, add a lead.</span>
         <Link href="/signup" style={{
-          color: 'var(--color-accent)', background: 'white', textDecoration: 'none',
+          color: 'var(--color-accent-700)', background: 'white', textDecoration: 'none',
           padding: '3px 12px', borderRadius: 999, fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap',
         }}>
           Start free trial
@@ -275,7 +275,7 @@ export function DemoApp() {
           </button>
           <Link href="/signup" style={{
             marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 6,
-            background: 'var(--color-accent)', color: 'white', textDecoration: 'none',
+            background: 'var(--color-accent)', color: 'var(--text-on-accent)', textDecoration: 'none',
             padding: '8px 14px', borderRadius: 'var(--radius-button)', fontSize: 13, fontWeight: 600,
             whiteSpace: 'nowrap',
           }}>
@@ -375,7 +375,7 @@ export function DemoApp() {
                       <span style={{ color: 'var(--color-accent)', display: 'flex' }}>{mod.icon}</span>
                       <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-ink-900)' }}>{mod.title}</span>
                       <span style={{ fontSize: 12.5, color: 'var(--color-ink-600)', lineHeight: 1.45 }}>{mod.desc}</span>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 600, color: 'var(--color-accent)', marginTop: 'auto' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 600, color: 'var(--color-accent-300)', marginTop: 'auto' }}>
                         {mod.action} <ArrowRight size={12} strokeWidth={1.8} />
                       </span>
                     </>
@@ -406,7 +406,7 @@ export function DemoApp() {
               </p>
               <Link href="/signup" style={{
                 display: 'inline-flex', alignItems: 'center', gap: 8, background: 'white',
-                color: 'var(--color-accent)', textDecoration: 'none', padding: '12px 26px',
+                color: 'var(--color-accent-300)', textDecoration: 'none', padding: '12px 26px',
                 borderRadius: 'var(--radius-button)', fontSize: 15, fontWeight: 700,
               }}>
                 Start free trial <ArrowRight size={15} strokeWidth={2} />

@@ -135,7 +135,7 @@ export function ContactDrawer({ lead, onClose, onStatusChange, onLeadChange, onT
                 href={`/leads/${lead.id}`}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 4,
-                  fontSize: 12, fontWeight: 500, color: 'var(--color-accent)', textDecoration: 'none',
+                  fontSize: 12, fontWeight: 500, color: 'var(--color-accent-300)', textDecoration: 'none',
                 }}
               >
                 Open full page <ArrowUpRight size={13} strokeWidth={1.5} />

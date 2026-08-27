@@ -56,7 +56,7 @@ export function ScoringQuotaBanner({ quota }: { quota?: ScoringQuota | null }) {
       </span>
       <Link
         href="/settings"
-        style={{ fontWeight: 600, color: 'var(--color-accent)', textDecoration: 'none' }}
+        style={{ fontWeight: 600, color: 'var(--color-accent-300)', textDecoration: 'none' }}
       >
         Upgrade for unlimited →
       </Link>

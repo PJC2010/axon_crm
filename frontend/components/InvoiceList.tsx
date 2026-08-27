@@ -143,7 +143,7 @@ export function InvoiceList({ year, prefillLead, onToast }: Props) {
                     <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--color-ink-500)' }}>{inv.invoice_number}</span>
                     <span style={{ padding: '2px 8px', borderRadius: 'var(--radius-pill)', fontSize: 11, fontWeight: 600, background: s.bg, color: s.text, textTransform: 'capitalize' }}>{inv.status}</span>
                     {inv.recurrence && (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', borderRadius: 'var(--radius-pill)', fontSize: 11, fontWeight: 600, background: 'var(--color-accent-50)', color: 'var(--color-accent)' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', borderRadius: 'var(--radius-pill)', fontSize: 11, fontWeight: 600, background: 'var(--color-accent-50)', color: 'var(--color-accent-300)' }}>
                         <Repeat size={10} strokeWidth={2} /> {inv.recurrence}
                       </span>
                     )}

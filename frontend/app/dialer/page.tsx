@@ -237,7 +237,7 @@ function DialerPage() {
                 padding: '5px 11px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
                 borderRadius: 'var(--radius-button)', border: '1px solid var(--color-ink-200)',
                 background: grade === g ? 'var(--color-accent)' : 'var(--color-surface)',
-                color: grade === g ? 'var(--color-cream)' : 'var(--color-ink-900)',
+                color: grade === g ? 'var(--text-on-accent)' : 'var(--color-ink-900)',
               }}
             >
               {g || 'All'}

@@ -179,7 +179,7 @@ export function LeadDetail({ leadId }: { leadId: number }) {
               style={{
                 flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
                 minHeight: 48, borderRadius: 'var(--radius-pill)',
-                background: 'var(--color-accent)', color: 'white',
+                background: 'var(--color-accent)', color: 'var(--text-on-accent)',
                 fontSize: 14, fontWeight: 600, textDecoration: 'none',
               }}
             >

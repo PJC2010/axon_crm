@@ -126,7 +126,7 @@ export function DemoNewLeadModal({ onClose, onCreate }: Props) {
             type="submit"
             style={{
               marginTop: 4, minHeight: 44, border: 'none', borderRadius: 'var(--radius-button)',
-              background: 'var(--color-accent)', color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+              background: 'var(--color-accent)', color: 'var(--text-on-accent)', fontSize: 14, fontWeight: 700, cursor: 'pointer',
             }}
           >
             Add & score it

@@ -240,10 +240,10 @@ export default function LoginPage() {
           )}
 
           <p style={{ fontSize: 12, color: 'var(--color-ink-400)', margin: '18px 0 0', textAlign: 'center' }}>
-            New to Axon? <a href="/signup" style={{ color: 'var(--color-accent)' }}>Start free</a>
+            New to Axon? <a href="/signup" style={{ color: 'var(--color-accent-300)' }}>Start free</a>
           </p>
           <p style={{ fontSize: 12, color: 'var(--color-ink-400)', margin: '8px 0 0', textAlign: 'center' }}>
-            Just looking? <a href="/preview" style={{ color: 'var(--color-accent)' }}>Explore the live demo</a>
+            Just looking? <a href="/preview" style={{ color: 'var(--color-accent-300)' }}>Explore the live demo</a>
           </p>
         </div>
       </Card>

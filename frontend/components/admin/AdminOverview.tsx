@@ -75,7 +75,7 @@ export function AdminOverview() {
               </div>
             ))}
             <div style={{ padding: '10px 0' }}>
-              <Link href="/admin/security" style={{ fontSize: 12.5, color: 'var(--color-accent)', textDecoration: 'none' }}>
+              <Link href="/admin/security" style={{ fontSize: 12.5, color: 'var(--color-accent-300)', textDecoration: 'none' }}>
                 All checks →
               </Link>
             </div>

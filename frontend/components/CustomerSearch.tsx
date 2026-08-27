@@ -145,7 +145,7 @@ export function CustomerSearch() {
                     {r.contact_name || r.owner_name || r.address || 'Unnamed lead'}
                   </span>
                   {r.account_number && (
-                    <span className="tabular" style={{ fontSize: 11, color: 'var(--color-accent)' }}>
+                    <span className="tabular" style={{ fontSize: 11, color: 'var(--color-accent-300)' }}>
                       {r.account_number}
                     </span>
                   )}

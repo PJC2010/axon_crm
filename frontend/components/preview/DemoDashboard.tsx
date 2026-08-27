@@ -144,7 +144,7 @@ export function DemoDashboard({ leads, activity, wide, onOpen, goTab, onNewLead 
           <button onClick={onNewLead} style={{
             display: 'inline-flex', alignItems: 'center', gap: 8,
             padding: '0 22px', minHeight: 44, borderRadius: 'var(--radius-pill)',
-            background: 'var(--color-accent)', color: 'white', border: 'none',
+            background: 'var(--color-accent)', color: 'var(--text-on-accent)', border: 'none',
             fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap',
             boxShadow: '0 1px 4px rgba(26,90,117,0.25)', cursor: 'pointer',
             fontFamily: 'var(--font-sans)',
@@ -403,13 +403,13 @@ export function DemoDashboard({ leads, activity, wide, onOpen, goTab, onNewLead 
               <span className="tabular" style={{ flex: 1, fontSize: 13, color: 'var(--color-ink-600)', textAlign: 'right' }}>{row.count}</span>
               <span className="tabular" style={{ flex: 1, fontSize: 13, color: 'var(--color-ink-600)', textAlign: 'right' }}>{fmtCurrency(row.raw_value)}</span>
               <span className="tabular" style={{ flex: 1, fontSize: 13, color: 'var(--color-ink-400)', textAlign: 'right' }}>{row.weight_pct}%</span>
-              <span className="tabular" style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--color-accent)', textAlign: 'right' }}>{fmtCurrency(row.weighted_value)}</span>
+              <span className="tabular" style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--color-accent-300)', textAlign: 'right' }}>{fmtCurrency(row.weighted_value)}</span>
             </div>
           ))}
           <div style={{ display: 'flex', padding: '10px 14px', background: 'var(--color-paper)', gap: 8 }}>
             <span style={{ flex: 2, fontSize: 13, fontWeight: 700, color: 'var(--color-ink-900)' }}>Total</span>
             <span style={{ flex: 1 }} /><span style={{ flex: 1 }} /><span style={{ flex: 1 }} />
-            <span className="tabular" style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--color-accent)', textAlign: 'right' }}>{fmtCurrency(forecast.weighted_total)}</span>
+            <span className="tabular" style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--color-accent-300)', textAlign: 'right' }}>{fmtCurrency(forecast.weighted_total)}</span>
           </div>
         </div>
       </div>
@@ -449,7 +449,7 @@ export function DemoDashboard({ leads, activity, wide, onOpen, goTab, onNewLead 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
           <p className="t-eyebrow" style={{ margin: 0 }}>Top Scored Leads</p>
           <button onClick={() => goTab('leads')} style={{
-            display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, color: 'var(--color-accent)',
+            display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, color: 'var(--color-accent-300)',
             fontWeight: 500, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)',
           }}>
             View all <ArrowRight size={13} strokeWidth={1.5} />

@@ -151,7 +151,7 @@ export function QuickAddFAB() {
                   onClick={submitTask}
                   disabled={!taskTitle.trim() || taskSaving}
                   style={{
-                    padding: '8px 16px', background: 'var(--color-accent)', color: 'white',
+                    padding: '8px 16px', background: 'var(--color-accent)', color: 'var(--text-on-accent)',
                     border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 600,
                     cursor: !taskTitle.trim() || taskSaving ? 'not-allowed' : 'pointer',
                     opacity: !taskTitle.trim() || taskSaving ? 0.6 : 1,
@@ -204,7 +204,7 @@ export function QuickAddFAB() {
                   onClick={submitExpense}
                   disabled={!expAmount || !expVendor.trim() || expSaving}
                   style={{
-                    padding: '8px 16px', background: 'var(--color-accent)', color: 'white',
+                    padding: '8px 16px', background: 'var(--color-accent)', color: 'var(--text-on-accent)',
                     border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 600,
                     cursor: !expAmount || !expVendor.trim() || expSaving ? 'not-allowed' : 'pointer',
                     opacity: !expAmount || !expVendor.trim() || expSaving ? 0.6 : 1,
@@ -263,7 +263,7 @@ export function QuickAddFAB() {
             width: 52, height: 52,
             borderRadius: '50%',
             background: open ? 'var(--color-ink-700)' : 'var(--color-accent)',
-            color: 'white', border: 'none',
+            color: 'var(--text-on-accent)', border: 'none',
             boxShadow: '0 4px 16px rgba(26,90,117,0.35)',
             cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center',

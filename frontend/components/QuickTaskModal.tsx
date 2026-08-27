@@ -88,7 +88,7 @@ export function QuickTaskModal({ leadId, leadLabel, onClose, onCreated }: Props)
               onClick={handleSubmit}
               disabled={!title.trim() || saving}
               style={{
-                padding: '7px 16px', background: 'var(--color-accent)', color: 'white',
+                padding: '7px 16px', background: 'var(--color-accent)', color: 'var(--text-on-accent)',
                 border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 600,
                 cursor: !title.trim() || saving ? 'not-allowed' : 'pointer',
                 opacity: !title.trim() || saving ? 0.6 : 1,

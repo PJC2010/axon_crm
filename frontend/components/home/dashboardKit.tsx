@@ -219,7 +219,7 @@ export function DrillDrawer({
               style={{
                 display: 'block', textAlign: 'center', width: '100%', padding: '11px 0',
                 borderRadius: 'var(--radius-button)', border: 'none', background: 'var(--color-accent)',
-                color: 'var(--color-cream)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer',
+                color: 'var(--text-on-accent)', fontSize: 13.5, fontWeight: 600, cursor: 'pointer',
                 fontFamily: 'var(--font-sans)', textDecoration: 'none',
               }}
             >

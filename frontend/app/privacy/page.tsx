@@ -57,7 +57,7 @@ export default function PrivacyPage() {
         <li>
           <strong>Consent.</strong> We only send text messages to phone numbers that have given
           consent. Customers using Axon to text their own contacts are required by our{' '}
-          <a href="/terms" style={{ color: 'var(--color-accent)' }}>Terms of Service</a> to have
+          <a href="/terms" style={{ color: 'var(--color-accent-300)' }}>Terms of Service</a> to have
           collected that recipient&apos;s consent first. Axon&apos;s own texts to customers (such as
           account and Storm Mode alerts) are sent only after the customer opts in during signup
           or in workspace settings.
@@ -71,7 +71,7 @@ export default function PrivacyPage() {
         <li>
           <strong>Opting out.</strong> Reply STOP to any Axon-sent message to unsubscribe from
           texts at any time. Reply HELP for help, or email{' '}
-          <a href="mailto:admin@axonhtx.com" style={{ color: 'var(--color-accent)' }}>
+          <a href="mailto:admin@axonhtx.com" style={{ color: 'var(--color-accent-300)' }}>
             admin@axonhtx.com
           </a>.
         </li>
@@ -89,7 +89,7 @@ export default function PrivacyPage() {
         it came from a licensed data provider. If you&apos;d like to know what an Axon-managed
         list holds about your property, correct it, or have your contact details suppressed from
         Axon-managed enrichment, email us at{' '}
-        <a href="mailto:admin@axonhtx.com" style={{ color: 'var(--color-accent)' }}>
+        <a href="mailto:admin@axonhtx.com" style={{ color: 'var(--color-accent-300)' }}>
           admin@axonhtx.com
         </a>{' '}
         and we will respond within 30 days. Residents of Texas and other states with consumer
@@ -99,7 +99,7 @@ export default function PrivacyPage() {
       <LegalP>
         Our customers are independent businesses and are responsible for how they contact people —
         including compliance with telemarketing laws such as the Telephone Consumer Protection Act
-        and the National Do-Not-Call Registry. Our <a href="/terms" style={{ color: 'var(--color-accent)' }}>Terms of Service</a>{' '}
+        and the National Do-Not-Call Registry. Our <a href="/terms" style={{ color: 'var(--color-accent-300)' }}>Terms of Service</a>{' '}
         require it.
       </LegalP>
 
@@ -122,7 +122,7 @@ export default function PrivacyPage() {
       <LegalP>
         If we change this policy in a way that matters, we&apos;ll note it here with a new
         effective date and tell active customers by email. Questions, requests, complaints:{' '}
-        <a href="mailto:admin@axonhtx.com" style={{ color: 'var(--color-accent)' }}>
+        <a href="mailto:admin@axonhtx.com" style={{ color: 'var(--color-accent-300)' }}>
           admin@axonhtx.com
         </a>.
       </LegalP>

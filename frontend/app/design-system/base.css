@@ -91,6 +91,14 @@ body {
   input, select, textarea, .drawer-input, .select-field { font-size: 16px !important; }
 }
 
+/* Touch-target floor — coarse pointers get 44px control heights. Same
+   `!important` rationale as the font floor above: the ds/Button component
+   sets min-height inline (28/32px), which outranks any normal class rule. */
+@media (pointer: coarse) {
+  .btn-primary, .btn-secondary, .ds-btn { min-height: 44px !important; }
+  .dash-icon-btn { min-width: 44px; min-height: 44px; }
+}
+
 /* ── Buttons ── */
 .btn-primary {
   display: inline-flex; align-items: center; gap: 6px;
@@ -98,13 +106,13 @@ body {
   border-radius: var(--radius-button);
   border: 1px solid transparent;
   background: var(--color-accent);
-  color: var(--color-cream);
+  color: var(--text-on-accent);
   font-family: var(--font-sans); font-size: var(--text-sm); font-weight: 500; line-height: 1;
   cursor: pointer;
   transition: background var(--dur-base);
 }
-.btn-primary:hover  { background: var(--color-accent-700); }
-.btn-primary:active { background: var(--color-accent-800); }
+.btn-primary:hover  { background: var(--color-accent-600); }
+.btn-primary:active { background: var(--color-accent-600); }
 .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .btn-secondary {

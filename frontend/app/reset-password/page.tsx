@@ -135,7 +135,7 @@ function ResetPasswordInner() {
           )}
 
           <p style={{ fontSize: 12, color: 'var(--color-ink-400)', margin: '18px 0 0', textAlign: 'center' }}>
-            <a href="/login" style={{ color: 'var(--color-accent)' }}>Back to sign in</a>
+            <a href="/login" style={{ color: 'var(--color-accent-300)' }}>Back to sign in</a>
           </p>
         </div>
       </Card>

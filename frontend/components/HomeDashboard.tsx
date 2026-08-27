@@ -423,7 +423,7 @@ export function HomeDashboard() {
               ['--d' as string]: '0ms',
               borderRadius: 'var(--radius-card)', overflow: 'hidden',
               boxShadow: 'var(--shadow-pop)', marginBottom: 20,
-              background: 'linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-700) 55%, #0a4d48 100%)',
+              background: 'linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-700) 55%, var(--color-accent-800) 100%)',
               padding: '26px', position: 'relative',
             }}
           >
@@ -461,7 +461,7 @@ export function HomeDashboard() {
             gridTemplateColumns: wide ? 'minmax(0,1.3fr) minmax(0,1fr)' : '1fr',
             borderRadius: 'var(--radius-card)', overflow: 'hidden',
             boxShadow: 'var(--shadow-pop)', marginBottom: 20,
-            background: 'linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-700) 55%, #0a4d48 100%)',
+            background: 'linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-700) 55%, var(--color-accent-800) 100%)',
             position: 'relative',
           }}
         >
@@ -482,8 +482,10 @@ export function HomeDashboard() {
                   <ArrowUpRight size={13} strokeWidth={2} /> {fmtCurrency(monthNet)} net this month
                 </span>
               )}
+              {/* Negative delta stays #FFC9C2: on the turquoise gradient card the danger
+                  token itself is too close in luminance to the fill. */}
               {monthDelta !== null && monthDelta !== 0 && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 12.5, fontWeight: 600, color: monthDelta > 0 ? '#bdeee8' : '#FFC9C2' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 12.5, fontWeight: 600, color: monthDelta > 0 ? 'var(--color-accent-300)' : '#FFC9C2' }}>
                   {monthDelta > 0 ? <ArrowUpRight size={13} strokeWidth={2} /> : <ArrowDownRight size={13} strokeWidth={2} />}
                   {fmtCurrency(Math.abs(monthDelta))} vs last
                 </span>
@@ -501,7 +503,7 @@ export function HomeDashboard() {
             <div>
               <p className="t-eyebrow" style={{ color: 'rgba(255,255,255,0.6)', margin: '0 0 8px' }}>Net trend · {year}</p>
               {netSpark.length >= 2
-                ? <Sparkline data={netSpark} w={220} h={42} color="#bdeee8" fill={false} strokeWidth={2} />
+                ? <Sparkline data={netSpark} w={220} h={42} color="var(--color-accent-300)" fill={false} strokeWidth={2} />
                 : <p style={{ margin: 0, fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>Not enough history yet</p>}
             </div>
             <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
