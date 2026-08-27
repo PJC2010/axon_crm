@@ -17,13 +17,22 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from psycopg2.extensions import connection as PGConn
 from pydantic import BaseModel, Field
 
+from api import scoring_quota
 from api.deps import dict_fetchone, get_current_user, get_db, require_owner
-from api.entitlements import require_module
+from api.entitlements import get_scoring_limit, require_module
 
 router = APIRouter()
 
 # Data-acquisition endpoints, gated like the rest of the prospecting surface.
 _prospecting = Depends(require_module("prospecting"))
+
+
+def _mask_candidate_rows(db: PGConn, account_id: int, rows: list, *,
+                         id_key: str, fields: tuple) -> None:
+    """Blank engine-contact fields on unrevealed quota candidates in a
+    diagnostic result set (api/scoring_quota.py). No-op on unlimited plans."""
+    scoring_quota.mask_named_fields(
+        db, account_id, rows, get_scoring_limit(account_id, db), id_key, fields)
 
 # `pipeline_runs.zip` is NOT NULL and holds a sentinel for non-ZIP runs (region
 # runs already use "region:<id>"). An account-wide sweep gets its own.
@@ -128,6 +137,16 @@ def property_data_discrepancies(
                                    zip_code=zip, limit=limit)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    # Each item joins the lead's address + owner_name AND carries the audit's
+    # own stored_value/remote_value — which, when the audited field is the
+    # address or owner name, ARE that withheld identity in full. Mask all four
+    # on unrevealed engine candidates (consume=False — a diagnostic report never
+    # spends reveals), keyed by the lead's property_id rather than the audit row
+    # id, then drop the candidacy helper columns so they don't ride out.
+    _mask_candidate_rows(db, user["account_id"], items, id_key="property_id",
+                         fields=("address", "owner_name", "stored_value", "remote_value"))
+    for it in items:                       # candidacy helpers, not part of the report
+        it.pop("lead_score", None); it.pop("status", None); it.pop("lead_source", None)
     return {"summary": discrepancy_summary(db, user["account_id"], zip_code=zip),
             "items": items}
 
@@ -169,8 +188,20 @@ def property_data_non_residential(
     usually trips several reasons at once.
     """
     from pipeline.property_audit import audit as non_residential_audit
-    return non_residential_audit(db, user["account_id"], zip_code=zip,
-                                 sample_limit=sample_limit)
+    result = non_residential_audit(db, user["account_id"], zip_code=zip,
+                                   sample_limit=sample_limit)
+    # Sample rows carry account_number, address and owner_name — engine contact
+    # data the scoring quota meters. Mask the samples that are unrevealed
+    # candidates so this cleanup view can't be paged for identities the lead
+    # list would withhold. consume=False: a free audit never spends reveals.
+    # Samples project lead_source (property_audit._SAMPLE_COLS) so the tenant's
+    # own imported book stays visible; strip it back out of the response.
+    samples = result.get("samples") or []
+    _mask_candidate_rows(db, user["account_id"], samples,
+                         id_key="id", fields=("account_number", "address", "owner_name"))
+    for s in samples:
+        s.pop("lead_source", None)
+    return result
 
 
 @router.post("/property-data/non-residential/archive")

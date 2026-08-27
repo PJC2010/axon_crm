@@ -99,6 +99,10 @@ _SAMPLE_COLS = (
     "id", "account_number", "address", "zip", "owner_name", "property_type",
     "state_class", "square_footage", "year_built", "estimated_value",
     "lead_score", "score_grade", "status",
+    # Carried so the scoring-quota masking on this cleanup view can tell an
+    # engine-seeded candidate from the tenant's own imported book (api/routes/
+    # data_quality.py); not a classifier input, stripped from the API response.
+    "lead_source",
 )
 
 # Columns the rule reads. Kept beside the projection it constrains.

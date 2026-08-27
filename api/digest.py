@@ -14,7 +14,9 @@ unit-tested without a DB — see tests/test_digest.py.
 """
 import logging
 
+from api import scoring_quota
 from api.deps import dict_fetchall, dict_fetchone
+from api.entitlements import get_scoring_limit
 
 log = logging.getLogger(__name__)
 
@@ -154,7 +156,8 @@ def build_digest_data(conn, account_id: int) -> dict:
         pipe = dict_fetchone(cur) or {}
 
         cur.execute(
-            "SELECT address, owner_name, contact_name, score_grade, lead_score "
+            "SELECT id, address, owner_name, contact_name, score_grade, lead_score, "
+            "       status, lead_source "
             "FROM properties WHERE account_id = %s AND archived_at IS NULL "
             "AND status IN ('new', 'contacted') AND lead_score IS NOT NULL "
             "ORDER BY lead_score DESC LIMIT %s",
@@ -174,13 +177,25 @@ def build_digest_data(conn, account_id: int) -> dict:
 
         cur.execute(
             "SELECT se.details->>'summary' AS summary, "
-            "       p.address, p.owner_name, p.contact_name "
+            "       p.id, p.address, p.owner_name, p.contact_name, "
+            "       p.lead_score, p.status, p.lead_source "
             "FROM signal_events se JOIN properties p ON p.id = se.property_id "
             "WHERE se.account_id = %s AND se.detected_at > NOW() - INTERVAL '1 day' "
             "ORDER BY se.detected_at DESC LIMIT %s",
             (account_id, TOP_SIGNALS),
         )
         recent_signals = dict_fetchall(cur)
+
+    # The email names each lead's contact/owner/address — engine-contact data
+    # the scoring quota meters. A daily push must honor the allowance but never
+    # spend it, so mask unrevealed candidates with consume=False: their label
+    # falls back to the partially-masked street (score/grade still shown), the
+    # same teaser contract as the lead list. No-op on unlimited plans.
+    quota_limit = get_scoring_limit(account_id, conn)
+    if quota_limit is not None:
+        leads, _ = scoring_quota.apply_quota(conn, account_id, leads, quota_limit, consume=False)
+        recent_signals, _ = scoring_quota.apply_quota(conn, account_id, recent_signals,
+                                                      quota_limit, consume=False)
 
     from config import APP_BASE_URL
     return {

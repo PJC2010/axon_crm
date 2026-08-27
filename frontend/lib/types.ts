@@ -451,6 +451,9 @@ export interface PipelineCardLead {
   zip: string | null
   /** When the lead last changed stage — drives the cooling indicator. */
   stage_moved_at: string | null
+  /** Past the monthly scored-lead allowance (api/scoring_quota.py): address
+      partially masked, identity/contact nulled. */
+  quota_masked?: boolean
 }
 
 export type PipelineGroup = Record<string, PipelineCardLead[]>
@@ -1056,6 +1059,7 @@ export interface StuckDeal {
   zip: string | null
   stage_moved_at: string | null
   days_in_stage: number
+  quota_masked?: boolean
 }
 
 export interface OverdueFollowup {
@@ -1068,6 +1072,7 @@ export interface OverdueFollowup {
   address: string | null
   owner_name: string | null
   days_overdue: number
+  quota_masked?: boolean
 }
 
 export interface CoolingLead {
@@ -1083,6 +1088,7 @@ export interface CoolingLead {
   vertical: string | null
   zip: string | null
   last_activity_at: string | null
+  quota_masked?: boolean
 }
 
 export interface PipelineAlerts {

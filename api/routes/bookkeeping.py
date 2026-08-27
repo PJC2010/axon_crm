@@ -7,7 +7,9 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from psycopg2.extensions import connection as PGConn
 
+from api import scoring_quota
 from api.deps import get_db, dict_fetchall, get_current_user
+from api.entitlements import get_scoring_limit
 
 router = APIRouter()
 
@@ -99,6 +101,7 @@ def job_costing(
             SELECT
                 p.id          AS property_id,
                 p.address,
+                p.lead_score, p.status, p.lead_source,
                 COALESCE(p.estimated_job_value, 0) AS estimated_value,
                 COALESCE(inv.total_invoiced, 0)  AS revenue,
                 COALESCE(inv.total_paid, 0)       AS amount_paid,
@@ -132,6 +135,16 @@ def job_costing(
             inv_params + exp_params + [acct],
         )
         rows = dict_fetchall(cur)
+
+    # A scored, unworked engine lead can surface here on estimated_job_value
+    # alone (no invoice/expense yet); mask its address for past-allowance
+    # candidates so job-costing can't hand out what the lead list withholds.
+    # consume=False — a P&L view must never spend the tenant's monthly reveals.
+    limit = get_scoring_limit(acct, db)
+    if limit is not None:
+        keyed = [{**r, "id": r["property_id"]} for r in rows]
+        keyed, _ = scoring_quota.apply_quota(db, acct, keyed, limit, consume=False)
+        rows = keyed
 
     result = []
     for r in rows:
