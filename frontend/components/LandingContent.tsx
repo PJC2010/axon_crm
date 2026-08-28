@@ -3,11 +3,12 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import {
   ArrowRight, Columns3, FileText, DollarSign, GitBranch, Layers, Download,
-  Crosshair, Map, Bell, Play, Star, Check, Users,
+  Map, Bell, Play, Star, Check, Users,
   Database, HelpCircle, X, Mail, MapPin, CloudLightning,
   MessageSquare, PenLine, Zap,
 } from 'lucide-react'
 import { ZipSampleWidget, WAITLIST_MAILTO } from '@/components/ZipSampleWidget'
+import { LandingPhoto } from '@/components/LandingPhoto'
 import { ProspectCaptureForm } from '@/components/ProspectCaptureForm'
 import { TESTIMONIALS, SHOW_TESTIMONIALS } from '@/lib/testimonials'
 import { getPublicStats } from '@/lib/api'
@@ -116,7 +117,6 @@ export default function LandingContent() {
       ['#pipeline .lp-split > div:first-child', null],
       ['#pipeline .lp-panel', null],
       ['.lp-proof-grid', '.lp-stat'],
-      ['.lp-strip-row', 'span'],
       ['#pricing .lp-eyebrow', null], ['#pricing .lp-h2', null], ['#pricing .lp-section-sub', null],
       ['.lp-pricing-grid', '.lp-price-card'],
       ['#faq .lp-eyebrow', null], ['#faq .lp-h2', null],
@@ -282,33 +282,60 @@ export default function LandingContent() {
       <header className="lp-hero">
         <div className="lp-container">
           <div className="lp-eyebrow" data-hero style={{ '--i': 0 } as CSSProperties}>
-            <Crosshair size={12} /> Territory intelligence for Harris County contractors
+            <MapPin size={12} /> Harris County, Texas
           </div>
           <h1 data-hero style={{ '--i': 1 } as CSSProperties}>
-            {/* nbsp keeps the em dash married to "calling" — without it the dash
-                wraps onto a line of its own at desktop widths. */}
-            Know which properties in your ZIP are worth calling&nbsp;—<br />
-            <em>before anyone raises a hand.</em>
+            Fewer calls. <em>Better jobs.</em>
           </h1>
           <p className="lp-hero-sub" data-hero style={{ '--i': 2 } as CSSProperties}>
-            Axon turns Harris County appraisal records, permits, equity, and storm data into a
-            ranked territory list. Every property shows the signals behind its score. No shared
-            leads. No contracts. Your data leaves with you.
+            Territory intelligence for Harris County contractors: every property in your service
+            area, scored and graded A&ndash;D from appraisal, permit, equity, and storm records.
+            Call the ones worth your time. Skip the ones that burn gas.
           </p>
-          <div className="lp-hero-ctas" data-hero style={{ '--i': 3 } as CSSProperties}>
-            <a className="lp-btn lp-btn-accent lp-btn-lg" href="#zip-sample">
-              Preview Your ZIP Free <ArrowRight size={16} />
-            </a>
-            <a className="lp-btn lp-btn-outline lp-btn-lg" href="/preview">
-              <Play size={16} /> Try the Live Demo
-            </a>
+
+          {/* The hero IS the demo. The ZIP widget was below the fold for a year;
+              a visitor now sees their own street ranked before they read a claim.
+              The id stays on this wrapper so every existing #zip-sample link
+              (closing CTA, old inbound links) still lands on the form. */}
+          <div className="lp-hero-demo" id="zip-sample" data-hero style={{ '--i': 3 } as CSSProperties}>
+            <ZipSampleWidget />
           </div>
-          <div className="lp-hero-trust" data-hero style={{ '--i': 4 } as CSSProperties}>
-            <Database size={15} style={{ flexShrink: 0 }} />
-            <span>
-              Exclusive territory list · Every score explained · Flat monthly price · Full CSV
-              export
-            </span>
+
+          <p className="lp-hero-terms" data-hero style={{ '--i': 4 } as CSSProperties}>
+            <Check size={14} aria-hidden="true" />
+            14 days free &middot; no credit card &middot; cancel anytime
+            <span>Previewing a ZIP needs no email and no account.</span>
+          </p>
+
+          {/* ── Proof, above the fold: a real count, sources anyone can check,
+                 and the person who built it. No testimonials until they're real. ── */}
+          <div className="lp-hero-proof" data-hero style={{ '--i': 5 } as CSSProperties}>
+            <div className="lp-hero-evidence">
+            {scoredCount != null && scoredCount >= MIN_PROOF_COUNT && (
+              <p className="lp-zip-proof-chip">
+                <Database size={13} />
+                <span><b>{scoredCount.toLocaleString()}</b> Harris County properties scored so far</span>
+              </p>
+            )}
+            <p className="lp-hero-sources">
+              Built from public records you can check yourself:{' '}
+              <a href="https://hcad.org" target="_blank" rel="noopener noreferrer">Harris County Appraisal District</a>,{' '}
+              <a href="https://www.ncei.noaa.gov/access/monitoring/storm-events/" target="_blank" rel="noopener noreferrer">NOAA storm events</a>,{' '}
+              <a href="https://data.census.gov" target="_blank" rel="noopener noreferrer">US Census</a>, and city building permits.{' '}
+              <a href="/hcad-data" className="lp-hero-sources-more">How HCAD data works <ArrowRight size={12} /></a>
+            </p>
+            </div>
+            {/* TODO(pete): edit this bio in your own words — it is the one place
+                on the page where a stranger meets a person instead of a claim. */}
+            <div className="lp-founder">
+              <LandingPhoto kind="founder" alt="Pete Castillo, who built Axon" className="lp-founder-photo" sizes="72px" />
+              <p>
+                <b>Built by Pete Castillo</b>{' — '}a data analyst in Houston. The same public
+                records that appraise your customers&apos; homes can tell you which doors are worth
+                knocking on. Axon is that, for one contractor at a time.{' '}
+                <a href="mailto:admin@axonhtx.com">Ask me anything about the data</a>.
+              </p>
+            </div>
           </div>
 
           {/* ── Social proof band — hidden for now via SHOW_TESTIMONIALS; the
@@ -355,44 +382,6 @@ export default function LandingContent() {
           </div>
         </div>
       </header>
-
-      {/* ── ZIP-sample widget: the 60-second personal proof ── */}
-      <section className="lp-section" id="zip-sample" style={{ paddingTop: 72, paddingBottom: 64 }}>
-        <div className="lp-container">
-          <div className="lp-eyebrow"><MapPin size={12} /> Try it on your own turf</div>
-          <h2 className="lp-h2">Enter your ZIP. See the list.</h2>
-          <p className="lp-section-sub">
-            See real Harris County properties ranked from local appraisal, permit, equity, and
-            storm data. Every row lists the signals behind its score. Addresses are partially
-            hidden until you create a free account. No email required to preview.
-          </p>
-          {scoredCount != null && scoredCount >= MIN_PROOF_COUNT && (
-            <p className="lp-zip-proof-chip">
-              <Database size={13} />
-              <span><b>{scoredCount.toLocaleString()}</b> properties scored across Harris County so far</span>
-            </p>
-          )}
-          <ZipSampleWidget />
-          <div className="lp-hero-trust" style={{ marginTop: 24 }}>
-            <Star size={15} style={{ flexShrink: 0 }} />
-            <span>
-              <b>Every property shows its work.</b> No black box — each row lists the signals
-              behind its score, drawn from the public records below.
-            </span>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Industry strip ── */}
-      <div className="lp-strip">
-        <div className="lp-container">
-          <p className="lp-strip-label">Built for Harris County service contractors</p>
-          <div className="lp-strip-row">
-            <span>HVAC Services</span><span>Pool &amp; Spa</span><span>Solar Install</span>
-            <span>Epoxy Flooring</span><span>Roofing Co.</span><span>Pressure Washing</span>
-          </div>
-        </div>
-      </div>
 
       {/* ── Name the model, not the company: Axon vs. shared-lead marketplaces ── */}
       <section className="lp-section" id="compare" style={{ paddingTop: 72, paddingBottom: 72 }}>
@@ -499,13 +488,6 @@ export default function LandingContent() {
                     <span>Every scored property plotted with grade heatmaps — plan a route through a neighborhood of A&apos;s instead of driving to scattered addresses.</span>
                   </div>
                 </div>
-                <div className="lp-point">
-                  <div className="lp-point-ic"><Crosshair size={16} /></div>
-                  <div>
-                    <strong>One-click pipeline entry</strong>
-                    <span>Promote any ranked property into your pipeline stages, assign a task, and add notes — all from one drawer.</span>
-                  </div>
-                </div>
               </div>
             </div>
             <div>
@@ -566,7 +548,7 @@ export default function LandingContent() {
       {/* ── Features ── */}
       <section className="lp-section" id="features" style={{ paddingTop: 24 }}>
         <div className="lp-container">
-          <div className="lp-eyebrow"><Layers size={12} /> What Axon does</div>
+          <div className="lp-eyebrow"><Layers size={12} /> After the list</div>
           <h2 className="lp-h2">The ranked territory list —<br />and everything to run the job after</h2>
           <p className="lp-section-sub">
             The ranked list is the part nobody else sells. Everything else — pipeline stages,
@@ -574,22 +556,6 @@ export default function LandingContent() {
             nothing drops between the first call and getting paid.
           </p>
           <div className="lp-features">
-            <div className="lp-feature">
-              <div className="lp-feature-ic" style={{ background: 'var(--color-accent-100)', color: 'var(--color-accent-300)' }}><Star size={18} /></div>
-              <h3>Property scoring</h3>
-              <p>Axon pulls public property records for your target ZIP codes and scores every address by opportunity size, condition signals, and fit for your trade.</p>
-              <div className="lp-feature-demo lp-demo-score" aria-hidden="true">
-                <div className="lp-demo-score-head">
-                  <span className="lp-demo-score-addr">1842 Westheimer Rd</span>
-                  <span className="lp-demo-score-grade">A</span>
-                </div>
-                <div className="lp-demo-score-track"><div className="lp-demo-score-fill" /></div>
-                <div className="lp-demo-score-foot">
-                  <span><b className="lp-demo-count">94</b> score</span>
-                  <span>Size · Condition · Fit</span>
-                </div>
-              </div>
-            </div>
             <div className="lp-feature">
               <div className="lp-feature-ic" style={{ background: 'var(--color-info-bg)', color: 'var(--color-ocean)' }}><Columns3 size={18} /></div>
               <h3>Visual pipeline</h3>
@@ -650,6 +616,13 @@ export default function LandingContent() {
                 </div>
               </div>
             </div>
+            <div className="lp-feature lp-feature-photo">
+              <LandingPhoto kind="doorstep" alt="An Axon customer at a Harris County front door" sizes="(max-width: 860px) 100vw, 33vw" />
+              <div className="lp-feature-photo-cap">
+                <strong>The list gets you to the door.</strong>
+                <span>The rest is still you.</span>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -668,6 +641,7 @@ export default function LandingContent() {
           {/* A day the data built — the route card tells the people story in the
               product's own language: the map points the way, the crew closes. */}
           <div className="lp-people-visual" data-reveal>
+            <LandingPhoto kind="crew" alt="A Houston crew on a job in their territory" className="lp-people-photo" />
             <div className="lp-route-card">
               <div className="lp-route-head">
                 <span className="t-eyebrow">Tuesday&apos;s route · 77007</span>
@@ -766,50 +740,14 @@ export default function LandingContent() {
         </div>
       </section>
 
-      {/* ── Ownership band: the no-lock-in proof, before anyone reads a price ── */}
-      <section className="lp-section" id="ownership" style={{ paddingTop: 8, paddingBottom: 0 }}>
-        <div className="lp-container">
-          <div className="lp-eyebrow"><Download size={12} /> What you keep</div>
-          <h2 className="lp-h2">Your territory. Your list.<br />Your customer history.</h2>
-          <p className="lp-section-sub">
-            Axon is month to month. Export your properties, contacts, notes, invoices, and
-            expenses to CSV at any time. No exit fee. No data hostage-taking.
-          </p>
-          <div className="lp-points">
-            <div className="lp-point">
-              <div className="lp-point-ic"><Check size={16} /></div>
-              <div>
-                <strong>Month to month</strong>
-                <span>No contract and no auto-renewal trap. Cancel anytime, and the advertised price is the price you pay.</span>
-              </div>
-            </div>
-            <div className="lp-point">
-              <div className="lp-point-ic"><Download size={16} /></div>
-              <div>
-                <strong>Full CSV export</strong>
-                <span>Properties, contacts, notes, invoices, and expenses export whenever you want them — not just on the way out.</span>
-              </div>
-            </div>
-            <div className="lp-point">
-              <div className="lp-point-ic"><DollarSign size={16} /></div>
-              <div>
-                <strong>No per-lead billing</strong>
-                <span>One flat monthly price, however many properties you work. Nothing is metered by the name.</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* ── Pricing ── */}
       <section className="lp-section" id="pricing" style={{ paddingTop: 72 }}>
         <div className="lp-container">
           <div className="lp-eyebrow"><DollarSign size={12} /> Pricing</div>
           <h2 className="lp-h2">The advertised price is the real price</h2>
           <p className="lp-section-sub">
-            Flat monthly plans. No per-lead charges. No contracts. No cancellation penalties.
-            Cancel anytime and export your data before you go. Every plan starts with 14 days
-            free, with no credit card required.
+            Flat monthly plans, and every plan starts with 14 days free — no credit card
+            required.
           </p>
           {/* Anchor against the model the ICP already pays into, before they read a tier. */}
           <div className="lp-price-anchor">
@@ -862,11 +800,40 @@ export default function LandingContent() {
               <a className="lp-btn lp-btn-accent" href="/signup">Start Free</a>
             </div>
           </div>
+          {/* ── item 8: the anchor with the arithmetic in it. Angi publishes no
+                 price list, so the figure is stated as the reported range it is,
+                 and the comparison is arithmetic the reader can redo. ── */}
+          <div className="lp-price-math">
+            <div className="lp-price-math-side">
+              <span className="lp-price-math-label">Shared leads</span>
+              <span className="lp-price-math-eq"><b>$80</b> &times; 3 leads = <b>$240</b></span>
+              <span className="lp-price-math-note">
+                Three names, each shared with up to four other contractors. Nothing left over
+                at the end of the month.
+              </span>
+            </div>
+            <div className="lp-price-math-vs">vs</div>
+            <div className="lp-price-math-side is-axon">
+              <span className="lp-price-math-label">Axon Pro</span>
+              <span className="lp-price-math-eq"><b>$249</b> / month</span>
+              <span className="lp-price-math-note">
+                Every property in your territory, scored, with the signals behind each grade —
+                yours to work for the whole month.
+              </span>
+            </div>
+          </div>
           <p className="lp-pricing-foot">
-            Compare Pro with your shared-lead budget. Marketplaces bill per name, win or lose;
-            Axon gives you the ranked territory list, the reason behind every score, and the tools
-            to work it for the whole month — at one price, for your whole team.
+            Angi does not publish a price list; contractors report paying roughly $15&ndash;$85 per
+            shared lead, with roofing and HVAC install leads at the top of that range. The math
+            above uses $80. Check it against your own last invoice from{' '}
+            <a href="https://www.angi.com/" target="_blank" rel="noopener noreferrer">angi.com</a>{' '}
+            — if your cost per lead is lower, run the same three lines again with your number.
           </p>
+          <div className="lp-keep-row">
+            <span><Check size={14} /> Month to month, cancel anytime</span>
+            <span><Download size={14} /> Full CSV export, not just on the way out</span>
+            <span><DollarSign size={14} /> One flat price, never per name</span>
+          </div>
         </div>
       </section>
 
