@@ -48,7 +48,7 @@ export function WonCelebration({ deal, onDone, invoiceHref = '/bookkeeping' }: {
     <div
       role="status"
       style={{
-        position: 'fixed', bottom: 24, left: '50%', zIndex: 400,
+        position: 'fixed', bottom: 24, left: '50%', zIndex: 'var(--z-toast)',
         transform: visible ? 'translate(-50%, 0)' : 'translate(-50%, 12px)',
         opacity: visible ? 1 : 0,
         transition: 'opacity 220ms, transform 220ms',

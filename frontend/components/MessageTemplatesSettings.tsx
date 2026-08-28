@@ -3,6 +3,7 @@ import { useEffect, useState, FormEvent } from 'react'
 import { Plus, Trash2, Mail, MessageSquare } from 'lucide-react'
 import { getMessageTemplates, createMessageTemplate, deleteMessageTemplate } from '@/lib/api'
 import type { MessageChannel, MessageTemplate } from '@/lib/types'
+import { useConfirm } from '@/hooks/useConfirm'
 
 const MERGE_FIELDS = ['first_name', 'contact_name', 'address', 'owner_name', 'business_name']
 // Resolve from the policy a send is about (renewal reminders); empty otherwise.
@@ -22,6 +23,7 @@ export function MessageTemplatesSettings() {
   const [body, setBody] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { confirm, confirmDialog } = useConfirm()
 
   useEffect(() => {
     getMessageTemplates().then(setTemplates).catch(() => setTemplates([]))
@@ -49,7 +51,13 @@ export function MessageTemplatesSettings() {
   }
 
   async function handleDelete(id: number) {
-    if (!confirm('Delete this template?')) return
+    const ok = await confirm({
+      title: 'Delete this template?',
+      message: 'Workflows that send this template will stop sending it.',
+      confirmLabel: 'Delete template',
+      danger: true,
+    })
+    if (!ok) return
     await deleteMessageTemplate(id)
     setTemplates(prev => prev.filter(t => t.id !== id))
   }
@@ -131,6 +139,7 @@ export function MessageTemplatesSettings() {
           </div>
         </form>
       )}
+      {confirmDialog}
     </section>
   )
 }

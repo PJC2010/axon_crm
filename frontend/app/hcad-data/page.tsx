@@ -62,7 +62,7 @@ function P({ children }: { children: ReactNode }) {
 
 export default function HcadDataPage() {
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--color-paper)' }}>
+    <div style={{ minHeight: '100dvh', background: 'var(--color-paper)' }}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       <nav style={{ height: 64, borderBottom: '1px solid var(--color-ink-200)', display: 'flex', alignItems: 'center' }}>
@@ -82,7 +82,7 @@ export default function HcadDataPage() {
         </div>
       </nav>
 
-      <main style={{ maxWidth: 760, margin: '0 auto', padding: '48px 24px 88px' }}>
+      <main id="main" style={{ maxWidth: 760, margin: '0 auto', padding: '48px 24px 88px' }}>
         <h1
           style={{
             fontFamily: 'var(--font-display)', fontSize: 34, fontWeight: 600,

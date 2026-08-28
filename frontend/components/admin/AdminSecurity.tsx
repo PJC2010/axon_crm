@@ -1,4 +1,5 @@
 'use client'
+import { Skeleton, SkeletonRows, EmptyRow } from '@/components/ds'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { adminAuthEvents, adminSecurity } from '@/lib/api'
 import type { AdminSecurityReport, AuthEventRow, ConfigCheck } from '@/lib/types'
@@ -82,7 +83,12 @@ export function AdminSecurity() {
   }, [loadEvents, ipFilter])
 
   if (error) return <p style={{ color: 'var(--color-danger)', fontSize: 13 }}>{error}</p>
-  if (!report) return <p style={{ color: 'var(--color-ink-400)', fontSize: 13 }}>Loading…</p>
+  if (!report) return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <Skeleton h={140} radius="var(--radius-card)" />
+      <Skeleton h={220} radius="var(--radius-card)" />
+    </div>
+  )
 
   return (
     <div>
@@ -204,7 +210,9 @@ export function AdminSecurity() {
           </thead>
           <tbody>
             {events.length === 0 && (
-              <tr><td colSpan={7} style={{ ...TD_STYLE, textAlign: 'center', padding: '24px 0', color: 'var(--color-ink-400)' }}>{eventsLoaded ? 'No events' : 'Loading…'}</td></tr>
+              eventsLoaded
+                ? <EmptyRow colSpan={7} size="sm" title="No sign-in events" hint="Successful and failed logins appear here as they happen." />
+                : <SkeletonRows rows={5} cols={7} />
             )}
             {events.map((ev, i) => (
               <tr key={ev.id} style={{ background: zebra(i) }}>

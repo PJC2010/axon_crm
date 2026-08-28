@@ -1,4 +1,5 @@
 'use client'
+import { SkeletonCards } from '@/components/ds'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
@@ -31,7 +32,12 @@ export function AdminOverview() {
   }, [])
 
   if (error) return <p style={{ color: 'var(--color-danger)', fontSize: 13 }}>{error}</p>
-  if (!summary) return <p style={{ color: 'var(--color-ink-400)', fontSize: 13 }}>Loading…</p>
+  if (!summary) return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <SkeletonCards count={4} columns={4} h={88} gap={12} />
+      <SkeletonCards count={2} columns={2} h={180} gap={12} />
+    </div>
+  )
 
   const icon = (I: typeof Users) => <I size={14} strokeWidth={1.5} color="var(--color-ink-400)" />
   const n = (v: number) => v.toLocaleString()

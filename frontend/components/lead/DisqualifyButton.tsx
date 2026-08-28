@@ -79,7 +79,7 @@ function ReasonPicker({
     <>
       <div
         onClick={onClose}
-        style={{ position: 'fixed', inset: 0, background: 'rgba(22,24,29,0.4)', backdropFilter: 'blur(2px)', zIndex: 300 }}
+        style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', backdropFilter: 'var(--scrim-blur)', zIndex: 'var(--z-alert)' }}
       />
       <div
         role="dialog"
@@ -87,7 +87,7 @@ function ReasonPicker({
         aria-labelledby="disqualify-title"
         style={{
           position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-          zIndex: 301, width: 'min(420px, calc(100vw - 32px))',
+          zIndex: 'var(--z-alert-surface)', width: 'min(420px, calc(100vw - 32px))',
           background: 'var(--color-surface)', borderRadius: 'var(--radius-modal)',
           boxShadow: 'var(--shadow-modal)', padding: '24px',
         }}

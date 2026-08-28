@@ -1,4 +1,5 @@
 'use client'
+import { SkeletonText, EmptyState } from '@/components/ds'
 import { useEffect, useState, useCallback, FormEvent } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Play, Trash2, RefreshCw, Home, XCircle, Zap, Plus } from 'lucide-react'
@@ -21,6 +22,8 @@ import { SmsAlertsSection } from '@/components/SmsAlertsSection'
 import { useEntitlements } from '@/hooks/useEntitlements'
 import { useTerminology } from '@/hooks/useTerminology'
 import type { PipelineSchedule, PipelineRun, WorkflowRule } from '@/lib/types'
+import { ToastStack, useToast } from '@/components/Toast'
+import { useConfirm } from '@/hooks/useConfirm'
 
 // Hick's law: the settings scroll had accreted a dozen sections — group them
 // into four stable tabs. Deep-linkable via /settings?tab=<key> (the getting-
@@ -67,6 +70,8 @@ function runSummary(run: PipelineRun): string | null {
 
 function SettingsPage() {
   const { hasModule } = useEntitlements()
+  const { toasts, show, dismiss } = useToast()
+  const { confirm, confirmDialog } = useConfirm()
   const { categories } = useTerminology()
   const [tab, setTab] = useState<SettingsTab>('business')
   const [schedules, setSchedules] = useState<PipelineSchedule[]>([])
@@ -161,7 +166,13 @@ function SettingsPage() {
   }
 
   async function handleDelete(id: number) {
-    if (!confirm('Delete this schedule?')) return
+    const ok = await confirm({
+      title: 'Delete this schedule?',
+      message: 'The pipeline stops running on this cadence. Runs already completed are kept.',
+      confirmLabel: 'Delete schedule',
+      danger: true,
+    })
+    if (!ok) return
     await deleteSchedule(id)
     setSchedules(prev => prev.filter(s => s.id !== id))
   }
@@ -190,7 +201,9 @@ function SettingsPage() {
   const activeTab = visibleTabs.some(t => t.key === tab) ? tab : 'business'
 
   return (
-    <div style={{ minHeight: '100vh', background: 'transparent' }}>
+    <div style={{ minHeight: '100dvh', background: 'transparent' }}>
+      <ToastStack toasts={toasts} onDismiss={dismiss} />
+      {confirmDialog}
       <header style={{
         height: 64, padding: '0 28px', display: 'flex', alignItems: 'center', gap: 16,
         borderBottom: '1px solid var(--color-ink-200)', background: 'var(--color-paper)',
@@ -283,9 +296,9 @@ function SettingsPage() {
                 setRescoring(true)
                 try {
                   const result = await rescoreZip(runZip.trim(), runVertical || undefined)
-                  alert(`Scored ${result.scored} leads in ZIP ${result.zip}`)
+                  show(`Scored ${result.scored} leads in ZIP ${result.zip}`)
                 } catch (e: unknown) {
-                  alert(e instanceof Error ? e.message : 'Rescore failed')
+                  show(e instanceof Error ? e.message : "We couldn't finish the rescore.", 'error')
                 } finally {
                   setRescoring(false)
                 }
@@ -301,19 +314,24 @@ function SettingsPage() {
               type="button"
               disabled={rescoringAll}
               onClick={async () => {
-                if (!confirm('Update scores for all leads across all ZIPs? This may take a minute.')) return
+                const ok = await confirm({
+                  title: 'Rescore every ZIP?',
+                  message: 'Scores and grades are recomputed for every lead in the account. This takes about a minute.',
+                  confirmLabel: 'Rescore all',
+                })
+                if (!ok) return
                 setRescoringAll(true)
                 try {
                   const result = await rescoreAll()
-                  alert(`Scored ${result.scored} leads across ${result.zips} ZIP codes`)
+                  show(`Scored ${result.scored} leads across ${result.zips} ZIP codes`)
                 } catch (e: unknown) {
-                  alert(e instanceof Error ? e.message : 'Rescore failed')
+                  show(e instanceof Error ? e.message : "We couldn't finish the rescore.", 'error')
                 } finally {
                   setRescoringAll(false)
                 }
               }}
               style={{
-                padding: '0 16px', height: 36, background: 'var(--color-moss)', color: 'white',
+                padding: '0 16px', height: 36, background: 'var(--color-moss)', color: 'var(--text-on-accent)',
                 border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, cursor: rescoringAll ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6,
               }}
             >
@@ -357,7 +375,7 @@ function SettingsPage() {
                       >
                         <span style={{
                           position: 'absolute', top: 2, left: s.is_active ? 18 : 2,
-                          width: 16, height: 16, borderRadius: '50%', background: '#fff',
+                          width: 16, height: 16, borderRadius: '50%', background: 'var(--color-cream)',
                           transition: 'left 0.2s',
                         }} />
                       </button>
@@ -419,7 +437,7 @@ function SettingsPage() {
                     const w = await getWorkflows()
                     setWorkflows(w)
                   } catch (err: unknown) {
-                    alert(err instanceof Error ? err.message : 'Failed to seed defaults')
+                    show(err instanceof Error ? err.message : "We couldn't seed the default rules.", 'error')
                   } finally {
                     setSeeding(false)
                   }
@@ -496,7 +514,7 @@ function SettingsPage() {
                       >
                         <span style={{
                           position: 'absolute', top: 2, left: w.is_active ? 18 : 2,
-                          width: 16, height: 16, borderRadius: '50%', background: '#fff',
+                          width: 16, height: 16, borderRadius: '50%', background: 'var(--color-cream)',
                           transition: 'left 0.2s',
                         }} />
                       </button>
@@ -504,7 +522,13 @@ function SettingsPage() {
                     <td style={{ padding: '8px' }}>
                       <button
                         onClick={async () => {
-                          if (!confirm(`Delete rule "${w.name}"?`)) return
+                          const ok = await confirm({
+                            title: `Delete “${w.name}”?`,
+                            message: 'The automation stops firing. Actions it already took are kept.',
+                            confirmLabel: 'Delete rule',
+                            danger: true,
+                          })
+                          if (!ok) return
                           await deleteWorkflow(w.id)
                           setWorkflows(prev => prev.filter(x => x.id !== w.id))
                         }}
@@ -567,9 +591,13 @@ function SettingsPage() {
             </button>
           </div>
           {loading ? (
-            <p style={{ fontSize: 13, color: 'var(--color-ink-400)' }}>Loading…</p>
+            <SkeletonText lines={4} />
           ) : runs.length === 0 ? (
-            <p style={{ fontSize: 13, color: 'var(--color-ink-400)' }}>No runs yet.</p>
+            <EmptyState
+              size="sm"
+              title="No pipeline runs yet"
+              hint="Seed a ZIP above and each run's progress and results land here."
+            />
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
@@ -600,12 +628,18 @@ function SettingsPage() {
                       {(r.status === 'running' || r.status === 'queued') && (
                         <button
                           onClick={async () => {
-                            if (!confirm('Stop this pipeline run?')) return
+                            const ok = await confirm({
+                              title: 'Stop this run?',
+                              message: 'Leads already seeded and scored are kept; the remaining steps are skipped.',
+                              confirmLabel: 'Stop run',
+                              danger: true,
+                            })
+                            if (!ok) return
                             try {
                               await cancelRun(r.id)
                               await getPipelineRuns().then(setRuns)
                             } catch (e: unknown) {
-                              alert(e instanceof Error ? e.message : 'Failed to cancel')
+                              show(e instanceof Error ? e.message : "We couldn't stop the run.", 'error')
                             }
                           }}
                           title="Stop run"

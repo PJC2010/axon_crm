@@ -97,12 +97,12 @@ export function ImportOrdersModal({ onImported }: Props) {
 
       {open && (
         <>
-          <div onClick={close} style={{ position: 'fixed', inset: 0, background: 'rgba(22,24,29,0.4)', backdropFilter: 'blur(2px)', zIndex: 300 }} />
+          <div onClick={close} style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', backdropFilter: 'var(--scrim-blur)', zIndex: 'var(--z-alert)' }} />
           <div
             role="dialog" aria-modal="true" aria-labelledby="order-import-title"
             style={{
               position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-              zIndex: 301, width: 'min(640px, calc(100vw - 32px))', maxHeight: 'calc(100vh - 64px)',
+              zIndex: 'var(--z-alert-surface)', width: 'min(640px, calc(100vw - 32px))', maxHeight: 'calc(100dvh - 64px)',
               display: 'flex', flexDirection: 'column',
               background: 'var(--color-surface)', borderRadius: 'var(--radius-modal)', boxShadow: 'var(--shadow-modal)',
             }}

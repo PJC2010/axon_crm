@@ -1,4 +1,5 @@
 'use client'
+import { SkeletonPanel } from './ds'
 import { useCallback, useEffect, useState } from 'react'
 import { BadgeCheck, Check, ExternalLink } from 'lucide-react'
 import { getBilling, startPlanCheckout, openBillingPortal } from '@/lib/api'
@@ -86,7 +87,7 @@ export function BillingSection() {
       </p>
 
       {loading ? (
-        <p style={{ fontSize: 13, color: 'var(--color-ink-400)' }}>Loading…</p>
+        <SkeletonPanel lines={2} />
       ) : !info ? (
         <p style={{ fontSize: 13, color: 'var(--color-ink-400)' }}>Billing info unavailable.</p>
       ) : (

@@ -200,7 +200,7 @@ export function DemoApp() {
   const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
 
   return (
-    <div style={{ minHeight: '100vh', background: 'transparent', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: '100dvh', background: 'transparent', display: 'flex', flexDirection: 'column' }}>
       {/* ── Preview Banner ── */}
       <div style={{
         background: 'linear-gradient(90deg, var(--color-accent), var(--color-ocean-d))',

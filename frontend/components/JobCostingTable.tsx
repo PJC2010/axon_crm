@@ -1,6 +1,8 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { getJobCosting } from '@/lib/api'
+import { Receipt } from 'lucide-react'
+import { Skeleton, SkeletonCards, EmptyState } from './ds'
 import type { JobCostRow } from '@/lib/types'
 
 function fmt(n: number) { return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }) }
@@ -20,14 +22,19 @@ export function JobCostingTable({ year }: Props) {
 
   useEffect(() => { load() }, [load])
 
-  if (loading) return <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-ink-400)' }}>Loading…</div>
+  if (loading) return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <SkeletonCards count={5} columns={5} h={62} gap={10} />
+      <Skeleton h={240} radius="var(--radius-card)" />
+    </div>
+  )
 
   if (rows.length === 0) return (
-    <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-      <div style={{ fontSize: 36, marginBottom: 10 }}>📊</div>
-      <div style={{ fontWeight: 600, color: 'var(--color-ink-700)', marginBottom: 6 }}>No job data yet</div>
-      <div style={{ fontSize: 14, color: 'var(--color-ink-400)' }}>Create invoices and expenses linked to leads to see job profitability</div>
-    </div>
+    <EmptyState
+      icon={<Receipt size={44} strokeWidth={1} />}
+      title="No job data yet"
+      hint="Link invoices and expenses to a lead and its profitability shows up here."
+    />
   )
 
   const totals = rows.reduce((acc, r) => ({

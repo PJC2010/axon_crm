@@ -141,7 +141,7 @@ export function OnboardingWizard({ onComplete }: Props) {
 
   return (
     <div style={{
-      position: 'fixed', inset: 0, zIndex: 100,
+      position: 'fixed', inset: 0, zIndex: 'var(--z-nav)',
       background: 'var(--color-paper)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }}>
@@ -325,7 +325,7 @@ export function OnboardingWizard({ onComplete }: Props) {
                 style={{
                   padding: '10px 20px', borderRadius: 'var(--radius-pill)',
                   background: imported ? 'var(--color-moss)' : 'var(--color-ink-900)',
-                  color: 'white', border: 'none', fontSize: 14, fontWeight: 500,
+                  color: 'var(--text-on-accent)', border: 'none', fontSize: 14, fontWeight: 500,
                   cursor: importing || !canImport ? 'not-allowed' : 'pointer',
                   opacity: !canImport ? 0.5 : 1,
                   display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -377,7 +377,7 @@ export function OnboardingWizard({ onComplete }: Props) {
                   style={{
                     padding: '12px 24px', borderRadius: 'var(--radius-pill)',
                     background: seeded ? 'var(--color-moss)' : 'var(--color-accent)',
-                    color: 'white', border: 'none', fontSize: 15, fontWeight: 500, cursor: seeding ? 'not-allowed' : 'pointer',
+                    color: 'var(--text-on-accent)', border: 'none', fontSize: 15, fontWeight: 500, cursor: seeding ? 'not-allowed' : 'pointer',
                     display: 'inline-flex', alignItems: 'center', gap: 8,
                   }}
                 >
@@ -406,7 +406,7 @@ export function OnboardingWizard({ onComplete }: Props) {
                 </p>
                 <div style={{
                   display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 24px',
-                  borderRadius: 'var(--radius-pill)', background: 'var(--color-moss)', color: 'white',
+                  borderRadius: 'var(--radius-pill)', background: 'var(--color-moss)', color: 'var(--text-on-accent)',
                   fontSize: 15, fontWeight: 500,
                 }}>
                   <CheckCircle2 size={16} /> Automations enabled

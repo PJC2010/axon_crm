@@ -289,7 +289,7 @@ export function HomeDashboard() {
   const dc = drawer ? drawerContent[drawer] : null
 
   return (
-    <div style={{ minHeight: '100vh', background: 'transparent', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: '100dvh', background: 'transparent', display: 'flex', flexDirection: 'column' }}>
 
       {/* ── Top Nav ── */}
       <header
@@ -361,7 +361,7 @@ export function HomeDashboard() {
         <>
           <div
             onClick={() => setMenuOpen(false)}
-            style={{ position: 'fixed', inset: 0, zIndex: 19, background: 'rgba(22,24,29,0.18)' }}
+            style={{ position: 'fixed', inset: 0, zIndex: 19, background: 'var(--scrim-soft)' }}
           />
           <nav style={{
             position: 'fixed', top: 64, left: 0, right: 0, zIndex: 20,
@@ -654,7 +654,7 @@ export function HomeDashboard() {
                 padding: '0 22px', minHeight: 44,
                 borderRadius: 'var(--radius-pill)',
                 background: 'var(--color-accent)',
-                color: 'white',
+                color: 'var(--text-on-accent)',
                 fontSize: 14, fontWeight: 600,
                 textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0,
                 boxShadow: '0 1px 4px rgba(0,0,0,0.25)',

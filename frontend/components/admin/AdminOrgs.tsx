@@ -5,6 +5,7 @@ import { Plus, Search } from 'lucide-react'
 import { adminAccounts, adminCreateAccount, getBusinessTypes } from '@/lib/api'
 import type { AdminAccountRow, BusinessTypeInfo } from '@/lib/types'
 import { TH_STYLE, TD_STYLE, zebra, fmtDate, fmtDateTime, Pagination } from './AdminTable'
+import { SkeletonRows, EmptyRow } from '@/components/ds'
 import { apiErr, ERR, LABEL, Modal } from './UserModals'
 
 const PLAN_OPTIONS = ['', 'starter', 'growth', 'pro']
@@ -186,11 +187,9 @@ export function AdminOrgs() {
             </tr>
           </thead>
           <tbody>
-            {loading && rows.length === 0 && (
-              <tr><td colSpan={8} style={{ ...TD_STYLE, textAlign: 'center', padding: '48px 0', color: 'var(--color-ink-400)' }}>Loading…</td></tr>
-            )}
+            {loading && rows.length === 0 && <SkeletonRows rows={8} cols={8} />}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={8} style={{ ...TD_STYLE, textAlign: 'center', padding: '48px 0', color: 'var(--color-ink-400)' }}>No orgs match</td></tr>
+              <EmptyRow colSpan={8} size="sm" title="No orgs match" hint="Clear the search or plan filter to see every organization." />
             )}
             {rows.map((r, i) => (
               <tr

@@ -144,7 +144,7 @@ export function Dashboard() {
               fontSize: 20,
               fontWeight: 600,
               letterSpacing: '-0.01em',
-              color: '#fff',
+              color: 'var(--color-ink-900)',
             }}>
               Axon
             </span>
@@ -202,7 +202,7 @@ export function Dashboard() {
         <>
           <div
             onClick={() => setMenuOpen(false)}
-            style={{ position: 'fixed', inset: 0, zIndex: 19, background: 'rgba(22,24,29,0.18)' }}
+            style={{ position: 'fixed', inset: 0, zIndex: 19, background: 'var(--scrim-soft)' }}
           />
           <nav style={{
             position: 'fixed', top: 64, left: 0, right: 0, zIndex: 20,
@@ -277,7 +277,7 @@ export function Dashboard() {
           lead-list response so it reflects reveals consumed by this render. */}
       <ScoringQuotaBanner quota={quota} />
 
-      <main className="flex-1 overflow-hidden">
+      <main id="main" className="flex-1 overflow-hidden">
         <LeadTable
           leads={leads}
           total={total}

@@ -1,4 +1,5 @@
 'use client'
+import { Skeleton } from './ds'
 import { useCallback, useEffect, useState } from 'react'
 import { Phone, Search, CheckCircle2, MessageSquare, Zap } from 'lucide-react'
 import {
@@ -194,7 +195,7 @@ export function CallTrackingSection() {
         border: '1px solid var(--color-ink-200)', borderRadius: 'var(--radius-card)',
       }}>
         {loading ? (
-          <span style={{ fontSize: 13, color: 'var(--color-ink-400)' }}>Loading…</span>
+          <Skeleton h={13} w={180} />
         ) : !settings?.configured ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <Phone size={18} strokeWidth={1.5} style={{ color: 'var(--color-ink-500)', flexShrink: 0 }} />

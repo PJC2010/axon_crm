@@ -13,7 +13,7 @@ export default function LegalPage({
   children: ReactNode
 }) {
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--color-paper)' }}>
+    <div style={{ minHeight: '100dvh', background: 'var(--color-paper)' }}>
       <nav
         style={{
           height: 64,
@@ -38,7 +38,7 @@ export default function LegalPage({
         </div>
       </nav>
 
-      <main className="legal-body" style={{ maxWidth: 760, margin: '0 auto', padding: '48px 24px 88px' }}>
+      <main id="main" className="legal-body" style={{ maxWidth: 760, margin: '0 auto', padding: '48px 24px 88px' }}>
         <h1
           style={{
             fontFamily: 'var(--font-display)',

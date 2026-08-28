@@ -3,6 +3,7 @@ import { useEffect, useState, FormEvent } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { getRecordFields, createRecordField, deleteRecordField } from '@/lib/api'
 import { useTerminology } from '@/hooks/useTerminology'
+import { useConfirm } from '@/hooks/useConfirm'
 import type { RecordFieldDef, RecordFieldType } from '@/lib/types'
 
 const TYPES: RecordFieldType[] = ['text', 'number', 'date', 'boolean', 'select']
@@ -13,6 +14,7 @@ const TYPES: RecordFieldType[] = ['text', 'number', 'date', 'boolean', 'select']
  */
 export function CustomFieldsSettings() {
   const { t } = useTerminology()
+  const { confirm, confirmDialog } = useConfirm()
   const [fields, setFields] = useState<RecordFieldDef[]>([])
   const [label, setLabel] = useState('')
   const [fieldType, setFieldType] = useState<RecordFieldType>('text')
@@ -42,7 +44,13 @@ export function CustomFieldsSettings() {
   }
 
   async function handleDelete(id: number) {
-    if (!confirm('Delete this field? Existing values are kept but no longer shown.')) return
+    const ok = await confirm({
+      title: 'Delete this field?',
+      message: 'Existing values are kept in the database but no longer shown on any record.',
+      confirmLabel: 'Delete field',
+      danger: true,
+    })
+    if (!ok) return
     await deleteRecordField(id)
     setFields(prev => prev.filter(f => f.id !== id))
   }
@@ -94,6 +102,7 @@ export function CustomFieldsSettings() {
           <Plus size={14} strokeWidth={1.5} /> {saving ? 'Adding…' : 'Add field'}
         </button>
       </form>
+      {confirmDialog}
     </section>
   )
 }

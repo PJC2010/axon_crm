@@ -36,10 +36,10 @@ export function Modal({ title, onClose, children, width = 400 }: {
   }, [onClose])
   return (
     <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(22,24,29,0.4)', backdropFilter: 'blur(2px)' }} />
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 'var(--z-overlay)', background: 'var(--scrim)', backdropFilter: 'var(--scrim-blur)' }} />
       <div role="dialog" aria-modal="true" style={{
-        position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 201,
-        width, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(100vh - 48px)', overflowY: 'auto',
+        position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 'var(--z-modal)',
+        width, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(100dvh - 48px)', overflowY: 'auto',
         background: 'var(--color-surface)', borderRadius: 'var(--radius-modal)',
         boxShadow: 'var(--shadow-modal)', padding: 20,
       }}>

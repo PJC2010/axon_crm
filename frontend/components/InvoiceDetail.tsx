@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { X, CreditCard, Trash2, Send, FileText, Link2, ExternalLink } from 'lucide-react'
 import { recordPayment, deletePayment, updateInvoice, sendInvoice, invoicePdfUrl, getStripeStatus } from '@/lib/api'
 import type { Invoice, InvoiceStatus, StripeStatus } from '@/lib/types'
+import { useConfirm } from '@/hooks/useConfirm'
 
 const STATUS_COLORS: Record<InvoiceStatus, { bg: string; text: string }> = {
   draft:   { bg: 'var(--color-ink-100)', text: 'var(--color-ink-600)' },
@@ -36,6 +37,7 @@ export function InvoiceDetail({ invoice, onUpdate, onClose }: Props) {
   const [payNote, setPayNote]         = useState('')
   const [saving, setSaving]           = useState(false)
   const [error, setError]             = useState<string | null>(null)
+  const { confirm, confirmDialog } = useConfirm()
 
   // Send-invoice state
   const [showSendForm, setShowSendForm] = useState(false)
@@ -93,13 +95,25 @@ export function InvoiceDetail({ invoice, onUpdate, onClose }: Props) {
   }
 
   async function handleDeletePayment(pid: number) {
-    if (!confirm('Remove this payment?')) return
+    const ok = await confirm({
+      title: 'Remove this payment?',
+      message: 'The invoice balance goes back up by this amount.',
+      confirmLabel: 'Remove payment',
+      danger: true,
+    })
+    if (!ok) return
     await deletePayment(invoice.id, pid)
     onUpdate()
   }
 
   async function handleVoid() {
-    if (!confirm('Void this invoice? This cannot be undone.')) return
+    const ok = await confirm({
+      title: `Void ${invoice.invoice_number}?`,
+      message: 'A voided invoice stays on the record but no longer counts toward revenue or A/R. This cannot be undone.',
+      confirmLabel: 'Void invoice',
+      danger: true,
+    })
+    if (!ok) return
     await updateInvoice(invoice.id, { status: 'void' })
     onUpdate(); onClose()
   }
@@ -111,12 +125,13 @@ export function InvoiceDetail({ invoice, onUpdate, onClose }: Props) {
 
   return (
     <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 200, backdropFilter: 'blur(2px)' }} />
+      {confirmDialog}
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 'var(--z-overlay)', backdropFilter: 'var(--scrim-blur)' }} />
       <div style={{
         position: 'fixed', left: 0, right: 0, bottom: 0, background: 'var(--color-paper)',
         borderTopLeftRadius: 20, borderTopRightRadius: 20,
         boxShadow: '0 -8px 40px rgba(0,0,0,0.18)',
-        zIndex: 201, maxHeight: '92dvh', overflowY: 'auto',
+        zIndex: 'var(--z-modal)', maxHeight: '92dvh', overflowY: 'auto',
         paddingBottom: 'env(safe-area-inset-bottom)',
       }}>
         <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 0' }}>

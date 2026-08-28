@@ -62,7 +62,7 @@ export function ContactDrawer({ lead, onClose, onStatusChange, onLeadChange, onT
     <>
       {/* Backdrop — 32% ink per design system */}
       <div
-        style={{ position: 'fixed', inset: 0, background: 'rgba(22,24,29,0.32)', zIndex: 40 }}
+        style={{ position: 'fixed', inset: 0, background: 'var(--scrim-soft)', zIndex: 'var(--z-drawer)' }}
         onClick={onClose}
       />
 
@@ -75,7 +75,7 @@ export function ContactDrawer({ lead, onClose, onStatusChange, onLeadChange, onT
           width: 'min(440px, 100vw)',
           maxWidth: '100vw',
           background: 'var(--color-surface)',
-          zIndex: 50,
+          zIndex: 'var(--z-drawer-surface)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',

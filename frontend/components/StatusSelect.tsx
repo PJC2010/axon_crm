@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import { ToastStack, useToast } from './Toast'
 import type { LeadStatus } from '@/lib/types'
 import { updateStatus } from '@/lib/api'
 import { statusTokens } from '@/lib/gradeColors'
@@ -42,6 +43,7 @@ interface Props {
 }
 
 export function StatusSelect({ leadId, value, onChange, jobValue, celebrateLabel, persist = true }: Props) {
+  const { toasts, show, dismiss } = useToast()
   const [saving, setSaving] = useState(false)
   const [celebrating, setCelebrating] = useState(false)
 
@@ -58,9 +60,9 @@ export function StatusSelect({ leadId, value, onChange, jobValue, celebrateLabel
       // leaving an unhandled rejection, and don't move the control — the select
       // is uncontrolled-adjacent (value prop unchanged), so it snaps back.
       const msg = err instanceof Error ? err.message : String(err)
-      alert(msg.includes('403')
-        ? "This scored lead is past your monthly reveal allowance. Upgrade your plan to work more scored leads."
-        : "Couldn't update the status. Please try again.")
+      show(msg.includes('403')
+        ? 'This scored lead is past your monthly reveal allowance. Upgrade your plan to work more scored leads.'
+        : "We couldn't update the status. Please try again.", 'error')
     } finally {
       setSaving(false)
     }
@@ -68,6 +70,7 @@ export function StatusSelect({ leadId, value, onChange, jobValue, celebrateLabel
 
   return (
     <>
+    <ToastStack toasts={toasts} onDismiss={dismiss} />
     {celebrating && (
       <WonCelebration
         deal={{ value: jobValue ?? null, label: celebrateLabel ?? null }}

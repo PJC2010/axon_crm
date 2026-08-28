@@ -8,6 +8,7 @@ import { ConfirmModal } from './ConfirmModal'
 import { useTerminology } from '@/hooks/useTerminology'
 import { resolveLeadColumns } from './lead/leadColumns'
 import { LeadCard } from './lead/LeadCard'
+import { SkeletonCards, SkeletonRows, EmptyState } from './ds'
 
 interface Props {
   leads: Lead[]
@@ -115,7 +116,7 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 padding: '6px 14px', background: 'rgba(255,255,255,0.2)', border: 'none',
-                borderRadius: 'var(--radius-pill)', color: 'white', fontSize: 12, fontWeight: 500,
+                borderRadius: 'var(--radius-pill)', color: 'var(--text-on-accent)', fontSize: 12, fontWeight: 500,
                 cursor: 'pointer',
               }}
             >
@@ -158,7 +159,7 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
           <button
             onClick={() => setSelected(new Set())}
             style={{
-              background: 'none', border: 'none', color: 'white', fontSize: 12,
+              background: 'none', border: 'none', color: 'var(--text-on-accent)', fontSize: 12,
               cursor: 'pointer', textDecoration: 'underline',
             }}
           >
@@ -170,29 +171,22 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
       {/* ── Mobile: stacked card list ── */}
       {!wide && (
         <div className="flex-1 overflow-auto" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {loading && (
-            <p style={{ textAlign: 'center', padding: '48px 0', fontSize: 13, color: 'var(--color-ink-400)' }}>Loading…</p>
-          )}
+          {loading && <SkeletonCards count={6} h={118} gap={10} />}
           {!loading && leads.length === 0 && total === 0 && (
-            <div style={{ textAlign: 'center', padding: '56px 20px' }}>
-              <Search size={44} strokeWidth={1} style={{ color: 'var(--color-ink-300)', marginBottom: 12 }} />
-              <p style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 600, color: 'var(--color-ink-700)' }}>No {t('leads').toLowerCase()} yet</p>
-              <p style={{ margin: '0 auto 16px', maxWidth: 320, fontSize: 13, color: 'var(--color-ink-400)' }}>
-                Run your first import to pull in scored {t('records').toLowerCase()} from your {t('territory').toLowerCase()} — it takes a couple of minutes.
-              </p>
-              <Link href="/settings?tab=pipeline" style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 20px', minHeight: 44,
-                borderRadius: 'var(--radius-pill)', background: 'var(--color-accent)', color: 'var(--text-on-accent)',
-                fontSize: 14, fontWeight: 500, textDecoration: 'none',
-              }}>
-                <Settings size={15} strokeWidth={1.5} /> Run your first import
-              </Link>
-            </div>
+            <EmptyState
+              icon={<Search size={44} strokeWidth={1} />}
+              title={`No ${t('leads').toLowerCase()} yet`}
+              hint={`Run your first import to pull in scored ${t('records').toLowerCase()} from your ${t('territory').toLowerCase()} — it takes a couple of minutes.`}
+              action={<ImportCta label="Run your first import" />}
+            />
           )}
           {!loading && leads.length === 0 && total > 0 && (
-            <p style={{ textAlign: 'center', padding: '48px 0', fontSize: 13, color: 'var(--color-ink-400)' }}>
-              No {t('leads').toLowerCase()} match the current filters.
-            </p>
+            <EmptyState
+              size="sm"
+              icon={<Search size={30} strokeWidth={1} />}
+              title={`No ${t('leads').toLowerCase()} match these filters`}
+              hint="Widen the grade, status, or ZIP filters to see more."
+            />
           )}
           {!loading && leads.map(lead => (
             <LeadCard
@@ -231,35 +225,28 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
             </tr>
           </thead>
           <tbody>
-            {loading && (
-              <tr>
-                <td colSpan={columns.length + 2} style={{ textAlign: 'center', padding: '64px 0', fontSize: 13, color: 'var(--color-ink-400)' }}>
-                  Loading…
-                </td>
-              </tr>
-            )}
+            {loading && <SkeletonRows rows={8} cols={columns.length + 2} />}
             {!loading && leads.length === 0 && total === 0 && (
               <tr>
-                <td colSpan={columns.length + 2} style={{ textAlign: 'center', padding: '64px 20px' }}>
-                  <Search size={48} strokeWidth={1} style={{ color: 'var(--color-ink-300)', marginBottom: 12 }} />
-                  <p style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 600, color: 'var(--color-ink-700)' }}>No {t('leads').toLowerCase()} yet</p>
-                  <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--color-ink-400)', maxWidth: 320, marginLeft: 'auto', marginRight: 'auto' }}>
-                    Run your first import to pull in scored {t('records').toLowerCase()} from your {t('territory').toLowerCase()} — it takes a couple of minutes.
-                  </p>
-                  <Link href="/settings?tab=pipeline" style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 20px', minHeight: 44,
-                    borderRadius: 'var(--radius-pill)', background: 'var(--color-accent)', color: 'var(--text-on-accent)',
-                    fontSize: 13, fontWeight: 500, textDecoration: 'none',
-                  }}>
-                    <Settings size={14} strokeWidth={1.5} /> Run your first import
-                  </Link>
+                <td colSpan={columns.length + 2} style={{ padding: 0 }}>
+                  <EmptyState
+                    icon={<Search size={48} strokeWidth={1} />}
+                    title={`No ${t('leads').toLowerCase()} yet`}
+                    hint={`Run your first import to pull in scored ${t('records').toLowerCase()} from your ${t('territory').toLowerCase()} — it takes a couple of minutes.`}
+                    action={<ImportCta label="Run your first import" />}
+                  />
                 </td>
               </tr>
             )}
             {!loading && leads.length === 0 && total > 0 && (
               <tr>
-                <td colSpan={columns.length + 2} style={{ textAlign: 'center', padding: '64px 0', fontSize: 13, color: 'var(--color-ink-400)' }}>
-                  No leads match the current filters.
+                <td colSpan={columns.length + 2} style={{ padding: 0 }}>
+                  <EmptyState
+                    size="sm"
+                    icon={<Search size={30} strokeWidth={1} />}
+                    title={`No ${t('leads').toLowerCase()} match these filters`}
+                    hint="Widen the grade, status, or ZIP filters to see more."
+                  />
                 </td>
               </tr>
             )}
@@ -374,5 +361,25 @@ export function LeadTable({ leads, total, filters, loading, onRowClick, onFilter
         />
       )}
     </div>
+  )
+}
+
+/** The single action that resolves an empty lead list, shared by the mobile
+ *  card list and the desktop table so the two can't drift apart. */
+function ImportCta({ label }: { label: string }) {
+  return (
+    <Link
+      href="/settings?tab=pipeline"
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        padding: '10px 20px', minHeight: 44,
+        borderRadius: 'var(--radius-pill)',
+        background: 'var(--color-accent)', color: 'var(--text-on-accent)',
+        fontSize: 14, fontWeight: 500, textDecoration: 'none',
+        transition: 'background var(--dur-base)',
+      }}
+    >
+      <Settings size={15} strokeWidth={1.5} /> {label}
+    </Link>
   )
 }

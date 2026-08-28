@@ -1,4 +1,5 @@
 'use client'
+import { Skeleton } from './ds'
 import { useCallback, useEffect, useState } from 'react'
 import { CreditCard, CheckCircle2, AlertCircle } from 'lucide-react'
 import { getStripeStatus, connectStripe } from '@/lib/api'
@@ -57,7 +58,7 @@ export function StripeConnectSection() {
         <CreditCard size={18} strokeWidth={1.5} style={{ color: 'var(--color-ink-500)', flexShrink: 0 }} />
 
         {loading ? (
-          <span style={{ fontSize: 13, color: 'var(--color-ink-400)' }}>Loading…</span>
+          <Skeleton h={13} w={200} />
         ) : !status?.available ? (
           <span style={{ fontSize: 13, color: 'var(--color-ink-400)' }}>
             Online payments aren&apos;t enabled on this server.

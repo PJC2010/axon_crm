@@ -1,4 +1,5 @@
 'use client'
+import { Skeleton, SkeletonCards } from '@/components/ds'
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -180,7 +181,13 @@ export function AdminOrgDetail({ accountId }: { accountId: number }) {
   }
 
   if (error) return <p style={{ color: 'var(--color-danger)', fontSize: 13 }}>{error}</p>
-  if (!detail) return <p style={{ color: 'var(--color-ink-400)', fontSize: 13 }}>Loading…</p>
+  if (!detail) return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <Skeleton h={24} w={220} />
+      <SkeletonCards count={3} columns={3} h={84} gap={12} />
+      <Skeleton h={220} radius="var(--radius-card)" />
+    </div>
+  )
 
   const billing = detail.billing
   const hasSubscription = billing?.has_subscription === true

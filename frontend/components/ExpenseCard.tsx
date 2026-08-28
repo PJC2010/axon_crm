@@ -5,6 +5,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { deleteExpense } from '@/lib/api'
+import { useConfirm } from '@/hooks/useConfirm'
 import type { Expense, ExpenseCategory } from '@/lib/types'
 
 const CATEGORY_COLORS: Record<ExpenseCategory, string> = {
@@ -45,13 +46,20 @@ interface Props {
 }
 
 export function ExpenseCard({ expense, onEdit, onDeleted }: Props) {
+  const { confirm, confirmDialog } = useConfirm()
   const cat = expense.category as ExpenseCategory
   const color = CATEGORY_COLORS[cat] ?? 'var(--color-ink-400)'
   const Icon = CATEGORY_ICON[cat] ?? ClipboardList
   const label = CATEGORY_LABELS[cat] ?? cat
 
   async function handleDelete() {
-    if (!confirm('Delete this expense?')) return
+    const ok = await confirm({
+      title: 'Delete this expense?',
+      message: `${fmt(expense.amount)} on ${fmtDate(expense.expense_date)} will be removed from your books.`,
+      confirmLabel: 'Delete expense',
+      danger: true,
+    })
+    if (!ok) return
     try {
       await deleteExpense(expense.id)
       onDeleted()
@@ -130,6 +138,7 @@ export function ExpenseCard({ expense, onEdit, onDeleted }: Props) {
           <Trash2 size={14} strokeWidth={1.5} />
         </button>
       </div>
+      {confirmDialog}
     </div>
   )
 }

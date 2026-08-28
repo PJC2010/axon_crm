@@ -12,7 +12,13 @@
    Keep the document exactly as wide as the viewport so phones never render a
    wider canvas and zoom out. Scroll regions (kanban board, wide tables) opt
    back in with their own `overflow-x: auto` on an inner wrapper. */
-html { -webkit-text-size-adjust: 100%; }
+html {
+  -webkit-text-size-adjust: 100%;
+  /* Anchor jumps (landing-page nav, in-page section links) glide instead of
+     teleporting. The reduced-motion block at the bottom of this file resets
+     this to `auto`, so the preference still wins. */
+  scroll-behavior: smooth;
+}
 html, body { max-width: 100%; overflow-x: hidden; }
 img, svg, video, canvas, iframe, table { max-width: 100%; }
 
@@ -142,6 +148,28 @@ body {
 /* app extra: borderless variant used by toolbar/nav icon buttons */
 .dash-icon-btn.borderless { border-color: transparent; background: transparent; }
 .dash-icon-btn.borderless:hover { background: var(--color-paper); border-color: transparent; }
+
+/* ── Accessibility: skip to content ──
+   Keyboard and screen-reader users otherwise tab through the whole nav on
+   every page. Off-screen until focused, then it lands as a normal control. */
+.skip-link {
+  position: absolute;
+  left: 8px;
+  top: -100px;
+  z-index: var(--z-toast);
+  padding: 10px 16px;
+  border-radius: var(--radius-button);
+  background: var(--color-accent);
+  color: var(--text-on-accent);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-decoration: none;
+  transition: top var(--dur-base) var(--ease-out);
+}
+/* `:focus`, not `:focus-visible` — the link must also appear when focus is
+   moved programmatically (e.g. after a client-side route change). */
+.skip-link:focus { top: 8px; }
 
 /* ── Accessibility: visible keyboard focus ── */
 a:focus-visible, button:focus-visible, [role="button"]:focus-visible,

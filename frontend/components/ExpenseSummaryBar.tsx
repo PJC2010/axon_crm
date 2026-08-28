@@ -48,7 +48,7 @@ export function ExpenseSummaryBar({ summary }: Props) {
 
         <div style={{
           flex: '1 1 140px', background: 'var(--color-moss)', borderRadius: 'var(--radius-card)',
-          padding: '16px 20px', color: '#fff',
+          padding: '16px 20px', color: 'var(--text-on-accent)',
         }}>
           <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', opacity: 0.8, marginBottom: 4 }}>
             Tax Deductible

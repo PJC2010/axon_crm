@@ -255,7 +255,7 @@ export function TodayFocusSection({ taskCounts, arSummary, loading, onToast }: P
               <span style={{
                 position: 'absolute', top: -9, left: 14,
                 padding: '1px 9px', borderRadius: 'var(--radius-pill)',
-                background: item.color, color: 'white',
+                background: item.color, color: 'var(--text-on-accent)',
                 fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
               }}>
                 Do this first
@@ -268,7 +268,7 @@ export function TodayFocusSection({ taskCounts, arSummary, loading, onToast }: P
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 flexShrink: 0, marginTop: 1,
               }}>
-                <span style={{ color: 'white', display: 'flex' }}>{item.icon}</span>
+                <span style={{ color: 'var(--text-on-accent)', display: 'flex' }}>{item.icon}</span>
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ margin: '0 0 2px', fontSize: 13.5, fontWeight: 600, color: 'var(--color-ink-900)', lineHeight: 1.35 }}>
@@ -288,7 +288,7 @@ export function TodayFocusSection({ taskCounts, arSummary, loading, onToast }: P
                   display: 'inline-flex', alignItems: 'center', gap: 4,
                   padding: '6px 12px',
                   borderRadius: 'var(--radius-pill)',
-                  background: item.color, color: 'white',
+                  background: item.color, color: 'var(--text-on-accent)',
                   fontSize: 12, fontWeight: 600,
                   textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0,
                 }}
@@ -304,7 +304,7 @@ export function TodayFocusSection({ taskCounts, arSummary, loading, onToast }: P
                   padding: '6px 12px',
                   borderRadius: 'var(--radius-pill)',
                   background: creatingFollowUps ? 'var(--color-ink-400)' : item.color,
-                  color: 'white', border: 'none',
+                  color: 'var(--text-on-accent)', border: 'none',
                   fontSize: 12, fontWeight: 600,
                   cursor: creatingFollowUps ? 'not-allowed' : 'pointer',
                   whiteSpace: 'nowrap', flexShrink: 0,

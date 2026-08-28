@@ -1,4 +1,5 @@
 'use client'
+import { SkeletonCards } from '@/components/ds'
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Home, Phone, PhoneMissed, PhoneIncoming, PhoneOutgoing, Settings } from 'lucide-react'
@@ -68,7 +69,7 @@ function CallsPage() {
   const noNumberYet = settings !== null && !settings.number
 
   return (
-    <div style={{ minHeight: '100vh', background: 'transparent' }}>
+    <div style={{ minHeight: '100dvh', background: 'transparent' }}>
       <header style={{
         height: 64, padding: '0 28px', display: 'flex', alignItems: 'center', gap: 16,
         borderBottom: '1px solid var(--color-ink-200)', background: 'var(--color-paper)',
@@ -100,7 +101,7 @@ function CallsPage() {
         </Link>
       </header>
 
-      <div style={{ maxWidth: 860, margin: '0 auto', padding: '28px 20px' }}>
+      <main id="main" style={{ maxWidth: 860, margin: '0 auto', padding: '28px 20px' }}>
         {/* Outcome filter */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
           {(['', 'answered', 'missed', 'busy'] as const).map(o => (
@@ -121,7 +122,7 @@ function CallsPage() {
         </div>
 
         {loading ? (
-          <p style={{ color: 'var(--color-ink-400)', fontSize: 13 }}>Loading…</p>
+          <SkeletonCards count={5} h={64} gap={8} />
         ) : noNumberYet ? (
           <div style={{
             padding: '32px 24px', textAlign: 'center',
@@ -224,7 +225,7 @@ function CallsPage() {
             )}
           </>
         )}
-      </div>
+      </main>
     </div>
   )
 }

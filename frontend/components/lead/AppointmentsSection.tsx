@@ -4,6 +4,7 @@ import { CalendarClock, Plus, Trash2 } from 'lucide-react'
 import type { Appointment, AppointmentPage, AppointmentStatus } from '@/lib/types'
 import { createAppointment, deleteAppointment, getAppointments, updateAppointment } from '@/lib/api'
 import { useEntitlements } from '@/hooks/useEntitlements'
+import { useConfirm } from '@/hooks/useConfirm'
 
 const SECTION_BORDER: React.CSSProperties = { borderBottom: '1px solid var(--color-ink-100)' }
 const STATUSES: AppointmentStatus[] = ['scheduled', 'completed', 'cancelled', 'no_show']
@@ -25,6 +26,8 @@ export function AppointmentsSection({ leadId }: { leadId: number }) {
   const [startsAt, setStartsAt] = useState('')
   const [durationMin, setDurationMin] = useState(60)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const { confirm, confirmDialog } = useConfirm()
 
   const load = useCallback(() => {
     getAppointments({ property_id: leadId, page_size: 50 }).then(setPage).catch(() => setPage(null))
@@ -39,6 +42,7 @@ export function AppointmentsSection({ leadId }: { leadId: number }) {
 
   async function handleAdd() {
     if (!title.trim() || !startsAt) return
+    setError(null)
     setSaving(true)
     try {
       const start = new Date(startsAt)
@@ -53,7 +57,7 @@ export function AppointmentsSection({ leadId }: { leadId: number }) {
       setShowForm(false)
       load()
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to add appointment')
+      setError(err instanceof Error ? err.message : "We couldn't add this appointment.")
     } finally {
       setSaving(false)
     }
@@ -111,7 +115,7 @@ export function AppointmentsSection({ leadId }: { leadId: number }) {
                 {STATUSES.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
               </select>
               <button
-                onClick={async () => { if (confirm('Delete this appointment?')) { await deleteAppointment(a.id); load() } }}
+                onClick={async () => { if (await confirm({ title: 'Delete this appointment?', message: 'The appointment is removed from the record.', confirmLabel: 'Delete appointment', danger: true })) { await deleteAppointment(a.id); load() } }}
                 className="dash-icon-btn" style={{ padding: 4 }} title="Delete"
               >
                 <Trash2 size={11} strokeWidth={1.5} />
@@ -120,6 +124,10 @@ export function AppointmentsSection({ leadId }: { leadId: number }) {
           ))}
         </div>
       )}
+      {error && (
+        <p role="alert" style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--color-danger)' }}>{error}</p>
+      )}
+      {confirmDialog}
     </section>
   )
 }

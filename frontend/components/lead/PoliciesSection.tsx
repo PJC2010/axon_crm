@@ -4,6 +4,7 @@ import { Plus, Send, ShieldCheck, Trash2 } from 'lucide-react'
 import type { MessageTemplate, Policy, PolicyPage, PolicyStatus } from '@/lib/types'
 import { createPolicy, deletePolicy, getMessageTemplates, getPolicies, sendLeadMessage, updatePolicy } from '@/lib/api'
 import { useEntitlements } from '@/hooks/useEntitlements'
+import { useConfirm } from '@/hooks/useConfirm'
 import { fmtCurrency } from './format'
 
 const SECTION_BORDER: React.CSSProperties = { borderBottom: '1px solid var(--color-ink-100)' }
@@ -29,6 +30,8 @@ export function PoliciesSection({ leadId }: { leadId: number }) {
   const [premium, setPremium] = useState('')
   const [expiration, setExpiration] = useState('')
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const { confirm, confirmDialog } = useConfirm()
   // Per-policy renewal reminder: which policy's composer is open + its state.
   const [templates, setTemplates] = useState<MessageTemplate[]>([])
   const [reminderFor, setReminderFor] = useState<number | null>(null)
@@ -52,6 +55,7 @@ export function PoliciesSection({ leadId }: { leadId: number }) {
 
   async function handleAdd() {
     if (!carrier.trim() && !policyType.trim()) return
+    setError(null)
     setSaving(true)
     try {
       await createPolicy({
@@ -65,7 +69,7 @@ export function PoliciesSection({ leadId }: { leadId: number }) {
       setShowForm(false)
       load()
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to add policy')
+      setError(err instanceof Error ? err.message : "We couldn't add this policy.")
     } finally {
       setSaving(false)
     }
@@ -135,7 +139,7 @@ export function PoliciesSection({ leadId }: { leadId: number }) {
                   </button>
                 )}
                 <button
-                  onClick={async () => { if (confirm('Delete this policy?')) { await deletePolicy(p.id); load() } }}
+                  onClick={async () => { if (await confirm({ title: 'Delete this policy?', message: `${p.policy_number || 'This policy'} and its renewal reminders are removed.`, confirmLabel: 'Delete policy', danger: true })) { await deletePolicy(p.id); load() } }}
                   className="dash-icon-btn" style={{ padding: 4 }} title="Delete"
                 >
                   <Trash2 size={11} strokeWidth={1.5} />
@@ -178,6 +182,10 @@ export function PoliciesSection({ leadId }: { leadId: number }) {
           ))}
         </div>
       )}
+      {error && (
+        <p role="alert" style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--color-danger)' }}>{error}</p>
+      )}
+      {confirmDialog}
     </section>
   )
 }

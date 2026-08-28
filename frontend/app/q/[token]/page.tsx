@@ -3,6 +3,7 @@ import { use, useEffect, useState } from 'react'
 import { CheckCircle2, XCircle, FileText } from 'lucide-react'
 import { getPublicQuote, acceptPublicQuote, declinePublicQuote } from '@/lib/api'
 import type { PublicQuote } from '@/lib/types'
+import { useConfirm } from '@/hooks/useConfirm'
 
 function fmt(n: number) { return n.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) }
 function fmtDate(s: string) {
@@ -17,6 +18,7 @@ export default function PublicQuotePage({ params }: { params: Promise<{ token: s
   const [busy, setBusy] = useState(false)
   const [declining, setDeclining] = useState(false)
   const [reason, setReason] = useState('')
+  const { confirm, confirmDialog } = useConfirm()
 
   useEffect(() => {
     let cancelled = false
@@ -27,7 +29,15 @@ export default function PublicQuotePage({ params }: { params: Promise<{ token: s
   }, [token])
 
   async function handleAccept() {
-    if (busy || !confirm('Accept this quote? The business will be notified and will follow up to schedule the work.')) return
+    if (busy) return
+    // This page is the customer's conversion moment — a native browser
+    // confirm() names the site like a security warning right at the accept.
+    const ok = await confirm({
+      title: 'Accept this quote?',
+      message: 'The business is notified right away and will follow up to schedule the work.',
+      confirmLabel: 'Accept quote',
+    })
+    if (!ok) return
     setBusy(true)
     try {
       setQuote(await acceptPublicQuote(token))
@@ -187,6 +197,7 @@ export default function PublicQuotePage({ params }: { params: Promise<{ token: s
           Questions? Reply to the message that sent you this quote.
         </p>
       </div>
+      {confirmDialog}
     </div>
   )
 }
