@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { Skeleton, SkeletonCards } from './ds'
 import { getPnL } from '@/lib/api'
 import type { PnLReport, PnLMonth } from '@/lib/types'
 
@@ -27,7 +28,12 @@ export function PnLChart({ year }: Props) {
 
   useEffect(() => { load() }, [load])
 
-  if (loading) return <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-ink-400)' }}>Loading…</div>
+  if (loading) return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <SkeletonCards count={3} columns={3} h={92} gap={12} />
+      <Skeleton h={220} radius="var(--radius-card)" />
+    </div>
+  )
   if (!report) return null
 
   const maxVal = Math.max(...report.months.flatMap(m => [m.revenue, m.expenses]), 1)

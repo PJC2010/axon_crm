@@ -36,9 +36,9 @@ export function ConfirmModal({
         onClick={onCancel}
         style={{
           position: 'fixed', inset: 0,
-          background: 'rgba(22,24,29,0.4)',
-          backdropFilter: 'blur(2px)',
-          zIndex: 300,
+          background: 'var(--scrim)',
+          backdropFilter: 'var(--scrim-blur)',
+          zIndex: 'var(--z-alert)',
         }}
       />
 
@@ -51,7 +51,7 @@ export function ConfirmModal({
           position: 'fixed',
           top: '50%', left: '50%',
           transform: 'translate(-50%, -50%)',
-          zIndex: 301,
+          zIndex: 'var(--z-alert-surface)',
           width: 'min(420px, calc(100vw - 32px))',
           background: 'var(--color-surface)',
           borderRadius: 'var(--radius-modal)',
@@ -113,10 +113,13 @@ export function ConfirmModal({
               borderRadius: 'var(--radius-button)',
               border: '1px solid transparent',
               background: danger ? 'var(--color-danger)' : 'var(--color-accent)',
-              color: 'white',
+              /* Ink label, not white: cream on turquoise is 2.9:1 and fails AA
+                 (see --text-on-accent in the color tokens). */
+              color: 'var(--text-on-accent)',
               fontSize: 13, fontWeight: 500, cursor: loading ? 'not-allowed' : 'pointer',
               opacity: loading ? 0.65 : 1,
-              transition: 'background 160ms',
+              minHeight: 32,
+              transition: 'background var(--dur-base), transform var(--dur-fast)',
             }}
           >
             {loading ? 'Working…' : confirmLabel}

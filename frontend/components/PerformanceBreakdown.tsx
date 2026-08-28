@@ -1,4 +1,5 @@
 'use client'
+import { Skeleton, EmptyState } from './ds'
 import { useCallback, useEffect, useState } from 'react'
 import { getPerformance } from '@/lib/api'
 import type { PerformanceBreakdown as Breakdown, PerformanceBucket, PerformanceDimension } from '@/lib/types'
@@ -60,11 +61,9 @@ export function PerformanceBreakdown() {
       </div>
 
       {loading ? (
-        <p style={{ fontSize: 13, color: 'var(--color-ink-400)' }}>Loading…</p>
+        <Skeleton h={180} radius="var(--radius-card)" />
       ) : buckets.length === 0 ? (
-        <p style={{ fontSize: 13, color: 'var(--color-ink-400)', padding: '12px 0' }}>
-          No data yet for this breakdown.
-        </p>
+        <EmptyState size="sm" title="No data yet for this breakdown" hint="Work a few leads and the split shows up here." />
       ) : (
         <div style={{ background: 'var(--color-surface)', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-card)', overflow: 'hidden' }}>
           <div style={{ display: 'flex', padding: '10px 14px', borderBottom: '1px solid var(--color-ink-100)', gap: 8 }}>

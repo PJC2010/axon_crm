@@ -118,8 +118,8 @@ export function ExpenseForm({ expense, onSaved, onClose }: Props) {
       <div
         onClick={onClose}
         style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)',
-          zIndex: 200, backdropFilter: 'blur(2px)',
+          position: 'fixed', inset: 0, background: 'var(--scrim)',
+          zIndex: 'var(--z-overlay)', backdropFilter: 'var(--scrim-blur)',
         }}
       />
 
@@ -129,7 +129,7 @@ export function ExpenseForm({ expense, onSaved, onClose }: Props) {
         background: 'var(--color-paper)',
         borderTopLeftRadius: 20, borderTopRightRadius: 20,
         boxShadow: '0 -8px 40px rgba(0,0,0,0.18)',
-        zIndex: 201, maxHeight: '92dvh', overflowY: 'auto',
+        zIndex: 'var(--z-modal)', maxHeight: '92dvh', overflowY: 'auto',
         padding: '0 0 env(safe-area-inset-bottom)',
       }}>
         {/* Handle */}

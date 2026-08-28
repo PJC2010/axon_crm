@@ -1,4 +1,5 @@
 'use client'
+import { Skeleton } from './ds'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -61,7 +62,7 @@ export function LeadDetail({ leadId }: { leadId: number }) {
   const eyebrow = lead ? (propertyBased ? lead.zip : lead.account_number) : null
 
   return (
-    <div style={{ minHeight: '100vh', background: 'transparent' }}>
+    <div style={{ minHeight: '100dvh', background: 'transparent' }}>
       {/* Top bar */}
       <header
         className="flex items-center"
@@ -81,8 +82,14 @@ export function LeadDetail({ leadId }: { leadId: number }) {
         </Link>
       </header>
 
-      <main style={{ maxWidth: 720, margin: '0 auto', padding: wide ? '24px 16px 64px' : '24px 16px 110px' }}>
-        {loading && <p style={{ color: 'var(--color-ink-400)', fontSize: 14 }}>Loading…</p>}
+      <main id="main" style={{ maxWidth: 720, margin: '0 auto', padding: wide ? '24px 16px 64px' : '24px 16px 110px' }}>
+        {loading && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <Skeleton h={26} w="55%" />
+            <Skeleton h={200} radius="var(--radius-card)" />
+            <Skeleton h={140} radius="var(--radius-card)" />
+          </div>
+        )}
         {error && <p style={{ color: 'var(--color-danger)', fontSize: 14 }}>{error}</p>}
 
         {lead && (

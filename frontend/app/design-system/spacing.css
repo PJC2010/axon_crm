@@ -41,3 +41,31 @@
   --nav-height:   64px;
   --container-max: 1200px;
 }
+
+/* ── Layering scale ──
+   Stacking was previously ad-hoc integers, and the tiers had drifted out of
+   order: the floating quick-add button sat at 300 while the invoice/quote/
+   expense forms sat at 201, so the FAB floated *over* an open form. Every
+   fixed-position surface now reads one of these, and the order below is the
+   intended visual order. Nothing else may invent a z-index. */
+:root {
+  --z-sticky:   10;  /* sticky table headers, in-flow toolbars */
+  --z-nav:     100;  /* app nav, in-page popovers/menus */
+  --z-drawer:   40;  /* slide-over scrim (contact drawer, dashboard panels) */
+  --z-drawer-surface: 41;
+  --z-overlay: 200;  /* modal scrim */
+  --z-modal:   201;  /* modal surface */
+  --z-fab:     250;  /* floating action button — above the page, below modals */
+  --z-alert:   300;  /* confirm/alert scrim — stacks over an open modal */
+  --z-alert-surface: 301;
+  --z-toast:   400;  /* transient feedback — always on top */
+
+  /* Scrim behind modals. Was three different colors across the app
+     (rgba(0,0,0,.35), rgba(22,24,29,.4), rgba(22,24,29,.32)); a pure-black
+     scrim also reads cold against the slate canvas. Tinted to the ink hue. */
+  --scrim: rgba(17, 20, 24, 0.55);
+  /* Light scrim for dismiss-catchers behind a dropdown or slide-over, where
+     the page underneath should stay legible rather than recede. */
+  --scrim-soft: rgba(17, 20, 24, 0.22);
+  --scrim-blur: blur(2px);
+}

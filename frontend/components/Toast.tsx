@@ -21,7 +21,7 @@ export function ToastStack({ toasts, onDismiss }: Props) {
     <div
       style={{
         position: 'fixed', bottom: 24, right: 24,
-        zIndex: 400,
+        zIndex: 'var(--z-toast)',
         display: 'flex', flexDirection: 'column', gap: 8,
         pointerEvents: 'none',
       }}

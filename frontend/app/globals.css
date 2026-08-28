@@ -23,3 +23,35 @@
   animation: axon-rise 460ms cubic-bezier(0.4, 1, 0.75, 0.9) both;
   animation-delay: var(--d, 0ms);
 }
+
+/* ── Skeleton loading ──
+   Replaces the app's bare "Loading…" text. A skeleton holds the shape of the
+   content that is coming, so the layout doesn't jump when data lands.
+
+   The sweep lives on ::after and travels left→right, so the reduced-motion
+   guard in base.css (which collapses every animation to 0.01ms and one
+   iteration) lands it off-canvas to the right — the block stays a clean static
+   surface rather than freezing mid-highlight. */
+@keyframes axon-shimmer {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
+}
+.axon-skel {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-surface-hi);
+  border-radius: var(--radius-input);
+}
+.axon-skel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.07) 45%,
+    rgba(255, 255, 255, 0.07) 55%,
+    transparent
+  );
+  animation: axon-shimmer 1.5s var(--ease-out) infinite;
+}

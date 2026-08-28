@@ -116,12 +116,12 @@ export function InvoiceForm({ invoice, prefill, onSaved, onClose }: Props) {
 
   return (
     <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 200, backdropFilter: 'blur(2px)' }} />
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 'var(--z-overlay)', backdropFilter: 'var(--scrim-blur)' }} />
       <div style={{
         position: 'fixed', left: 0, right: 0, bottom: 0, background: 'var(--color-paper)',
         borderTopLeftRadius: 20, borderTopRightRadius: 20,
         boxShadow: '0 -8px 40px rgba(0,0,0,0.18)',
-        zIndex: 201, maxHeight: '94dvh', display: 'flex', flexDirection: 'column',
+        zIndex: 'var(--z-modal)', maxHeight: '94dvh', display: 'flex', flexDirection: 'column',
         paddingBottom: 'env(safe-area-inset-bottom)',
       }}>
         {/* Handle */}

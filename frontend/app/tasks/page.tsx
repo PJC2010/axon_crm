@@ -1,4 +1,5 @@
 'use client'
+import { SkeletonCards } from '@/components/ds'
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Home } from 'lucide-react'
@@ -35,7 +36,7 @@ function TasksPage() {
   useEffect(() => { load() }, [load])
 
   return (
-    <div style={{ minHeight: '100vh', background: 'transparent' }}>
+    <div style={{ minHeight: '100dvh', background: 'transparent' }}>
       <header style={{
         height: 64, padding: '0 28px', display: 'flex', alignItems: 'center', gap: 16,
         borderBottom: '1px solid var(--color-ink-200)', background: 'var(--color-paper)',
@@ -51,14 +52,14 @@ function TasksPage() {
         </h1>
       </header>
 
-      <div style={{ maxWidth: 680, margin: '0 auto', padding: '28px 20px' }}>
+      <main id="main" style={{ maxWidth: 680, margin: '0 auto', padding: '28px 20px' }}>
         <div style={{ marginBottom: 28 }}>
           <h2 className="t-eyebrow" style={{ marginBottom: 10 }}>New task</h2>
           <TaskForm onCreated={load} />
         </div>
 
         {loading ? (
-          <p style={{ color: 'var(--color-ink-400)', fontSize: 13 }}>Loading…</p>
+          <SkeletonCards count={4} h={58} gap={8} />
         ) : (
           <>
             {overdue.length > 0 && (
@@ -87,7 +88,7 @@ function TasksPage() {
             )}
           </>
         )}
-      </div>
+      </main>
     </div>
   )
 }

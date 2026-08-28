@@ -4,6 +4,7 @@ import { Plus, ShoppingBag, Trash2 } from 'lucide-react'
 import type { Order, OrderPage, OrderStatus } from '@/lib/types'
 import { createOrder, deleteOrder, getOrders, updateOrder } from '@/lib/api'
 import { useEntitlements } from '@/hooks/useEntitlements'
+import { useConfirm } from '@/hooks/useConfirm'
 import { fmtCurrency } from './format'
 
 const SECTION_BORDER: React.CSSProperties = { borderBottom: '1px solid var(--color-ink-100)' }
@@ -21,6 +22,8 @@ export function OrdersSection({ leadId }: { leadId: number }) {
   const [orderDate, setOrderDate] = useState('')
   const [orderNumber, setOrderNumber] = useState('')
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const { confirm, confirmDialog } = useConfirm()
 
   const load = useCallback(() => {
     getOrders({ property_id: leadId, page_size: 50 }).then(setPage).catch(() => setPage(null))
@@ -35,6 +38,7 @@ export function OrdersSection({ leadId }: { leadId: number }) {
 
   async function handleAdd() {
     if (!total) return
+    setError(null)
     setSaving(true)
     try {
       await createOrder({
@@ -47,7 +51,7 @@ export function OrdersSection({ leadId }: { leadId: number }) {
       setShowForm(false)
       load()
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to add order')
+      setError(err instanceof Error ? err.message : "We couldn't add this order.")
     } finally {
       setSaving(false)
     }
@@ -105,7 +109,7 @@ export function OrdersSection({ leadId }: { leadId: number }) {
                 {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
               <button
-                onClick={async () => { if (confirm('Delete this order?')) { await deleteOrder(o.id); load() } }}
+                onClick={async () => { if (await confirm({ title: 'Delete this order?', message: `${o.order_number || 'This order'} is removed from the record.`, confirmLabel: 'Delete order', danger: true })) { await deleteOrder(o.id); load() } }}
                 className="dash-icon-btn" style={{ padding: 4 }} title="Delete"
               >
                 <Trash2 size={11} strokeWidth={1.5} />
@@ -114,6 +118,10 @@ export function OrdersSection({ leadId }: { leadId: number }) {
           ))}
         </div>
       )}
+      {error && (
+        <p role="alert" style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--color-danger)' }}>{error}</p>
+      )}
+      {confirmDialog}
     </section>
   )
 }

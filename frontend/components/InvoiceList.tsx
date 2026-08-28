@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Download, Repeat } from 'lucide-react'
+import { Plus, Download, Repeat, FileText } from 'lucide-react'
+import { SkeletonCards, EmptyState } from './ds'
 import { getInvoices, invoiceExportUrl } from '@/lib/api'
 import type { Invoice, InvoiceStatus, InvoiceFilters, InvoiceCreate, Lead } from '@/lib/types'
 import { InvoiceForm } from './InvoiceForm'
@@ -117,15 +118,18 @@ export function InvoiceList({ year, prefillLead, onToast }: Props) {
 
       {/* List */}
       {loading ? (
-        <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-ink-400)', fontSize: 14 }}>Loading…</div>
+        <SkeletonCards count={5} h={72} gap={8} />
       ) : invoices.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-          <div style={{ fontSize: 36, marginBottom: 10 }}>📄</div>
-          <div style={{ fontWeight: 600, color: 'var(--color-ink-700)', marginBottom: 8 }}>No invoices yet</div>
-          <button onClick={() => { setEditInv(null); setShowForm(true) }} className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 40, padding: '0 20px' }}>
-            <Plus size={13} strokeWidth={2} /> Create Invoice
-          </button>
-        </div>
+        <EmptyState
+          icon={<FileText size={44} strokeWidth={1} />}
+          title="No invoices yet"
+          hint="Bill a customer and the invoice, its payments, and its aging all track here."
+          action={
+            <button onClick={() => { setEditInv(null); setShowForm(true) }} className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 40, padding: '0 20px' }}>
+              <Plus size={14} strokeWidth={2} /> Create invoice
+            </button>
+          }
+        />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {invoices.map(inv => {

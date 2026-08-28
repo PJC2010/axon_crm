@@ -169,7 +169,7 @@ export function DrillDrawer({
         onClick={onClose}
         aria-hidden="true"
         style={{
-          position: 'fixed', inset: 0, zIndex: 40,
+          position: 'fixed', inset: 0, zIndex: 'var(--z-drawer)',
           background: 'rgba(17,20,24,0.55)', backdropFilter: 'blur(2px)',
           opacity: open ? 1 : 0, pointerEvents: open ? 'auto' : 'none',
           transition: 'opacity 180ms cubic-bezier(0.4,1,0.75,0.9)',
@@ -180,7 +180,7 @@ export function DrillDrawer({
         aria-modal="true"
         aria-label={title}
         style={{
-          position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(440px, 92vw)', zIndex: 41,
+          position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(440px, 92vw)', zIndex: 'var(--z-drawer-surface)',
           background: 'var(--color-paper)', borderLeft: '1px solid var(--color-ink-200)',
           boxShadow: 'var(--shadow-drawer)',
           transform: open ? 'translateX(0)' : 'translateX(100%)',

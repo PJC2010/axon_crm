@@ -1,4 +1,5 @@
 'use client'
+import { SkeletonCards } from './ds'
 import { useEffect, useState, useCallback } from 'react'
 import { Plus, Download, ChevronDown, ReceiptText, Receipt, Home } from 'lucide-react'
 import Link from 'next/link'
@@ -200,9 +201,7 @@ export function ExpenseTracker() {
 
         {/* Expense list */}
         {loadingList ? (
-          <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--color-ink-400)', fontSize: 14 }}>
-            Loading…
-          </div>
+          <SkeletonCards count={5} h={68} gap={8} />
         ) : expenses.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px 20px' }}>
             <Receipt size={48} strokeWidth={1} style={{ color: 'var(--color-ink-300)', marginBottom: 12 }} />

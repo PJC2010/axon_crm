@@ -4,6 +4,7 @@ import { Check, Trash2, Clock, Zap } from 'lucide-react'
 import Link from 'next/link'
 import type { Task } from '@/lib/types'
 import { completeTask, deleteTask } from '@/lib/api'
+import { useConfirm } from '@/hooks/useConfirm'
 
 interface Props {
   tasks: Task[]
@@ -32,6 +33,7 @@ function fmt(date: string | null) {
 
 export function TaskList({ tasks, onUpdate, showLeadLink }: Props) {
   const [busy, setBusy] = useState<number | null>(null)
+  const { confirm, confirmDialog } = useConfirm()
 
   async function handleComplete(id: number) {
     setBusy(id)
@@ -39,7 +41,13 @@ export function TaskList({ tasks, onUpdate, showLeadLink }: Props) {
   }
 
   async function handleDelete(id: number) {
-    if (!confirm('Delete this task?')) return
+    const ok = await confirm({
+      title: 'Delete this task?',
+      message: 'The task is removed from your list. This cannot be undone.',
+      confirmLabel: 'Delete task',
+      danger: true,
+    })
+    if (!ok) return
     setBusy(id)
     try { await deleteTask(id); onUpdate() } finally { setBusy(null) }
   }
@@ -58,6 +66,7 @@ export function TaskList({ tasks, onUpdate, showLeadLink }: Props) {
   }
 
   return (
+    <>
     <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
       {tasks.map(task => {
         const due = fmt(task.due_date)
@@ -112,5 +121,7 @@ export function TaskList({ tasks, onUpdate, showLeadLink }: Props) {
         )
       })}
     </ul>
+    {confirmDialog}
+    </>
   )
 }

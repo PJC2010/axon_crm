@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { AlertTriangle } from 'lucide-react'
+import { Skeleton, SkeletonCards } from './ds'
 import { getARSummary, getAgingReport } from '@/lib/api'
 import type { ARSummary, AgingBucket } from '@/lib/types'
 
@@ -25,7 +26,12 @@ export function ARDashboard({ year }: Props) {
 
   useEffect(() => { load() }, [load])
 
-  if (loading) return <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-ink-400)' }}>Loading…</div>
+  if (loading) return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <SkeletonCards count={3} columns={3} h={86} gap={10} />
+      <Skeleton h={200} radius="var(--radius-card)" />
+    </div>
+  )
   if (!summary) return null
 
   const collectionRate = summary.total_invoiced > 0

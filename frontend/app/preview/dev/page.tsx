@@ -27,7 +27,7 @@ export default function DevPreviewPage() {
   const frameWidth = mode === 'mobile' ? 390 : 760
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--color-paper)' }}>
+    <div style={{ minHeight: '100dvh', background: 'var(--color-paper)' }}>
       {/* Toolbar */}
       <header style={{
         position: 'sticky', top: 0, zIndex: 10,
@@ -75,7 +75,7 @@ export default function DevPreviewPage() {
         </div>
       </header>
 
-      <main style={{ padding: '28px 16px 64px', display: 'flex', flexDirection: 'column', gap: 40 }}>
+      <main id="main" style={{ padding: '28px 16px 64px', display: 'flex', flexDirection: 'column', gap: 40 }}>
         <Section title="Score badges" note="A–F grade with numeric score. Color + letter + dot stay distinct for colorblind readers.">
           <Frame width={frameWidth}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>

@@ -157,7 +157,7 @@ function PipelinePage() {
     v >= 1000 ? `$${(v / 1000).toFixed(0)}k` : `$${v}`
 
   return (
-    <div style={{ minHeight: '100vh', background: 'transparent', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: '100dvh', background: 'transparent', display: 'flex', flexDirection: 'column' }}>
       <header style={{
         height: 64, padding: wide ? '0 28px' : '0 14px', display: 'flex', alignItems: 'center', gap: wide ? 16 : 8,
         borderBottom: '1px solid var(--color-ink-200)', background: 'var(--color-paper)',

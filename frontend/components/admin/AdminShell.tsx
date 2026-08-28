@@ -29,7 +29,7 @@ export function AdminShell({ current, children }: { current: string; children: R
     href === '/admin' ? current === '/admin' : current.startsWith(href)
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--color-paper)' }}>
+    <div style={{ minHeight: '100dvh', background: 'var(--color-paper)' }}>
       <header
         style={{
           height: 64, padding: '0 20px',
@@ -95,7 +95,7 @@ export function AdminShell({ current, children }: { current: string; children: R
         ))}
       </nav>
 
-      <main style={{ maxWidth: 1100, margin: '0 auto', padding: '22px 20px 60px' }}>
+      <main id="main" style={{ maxWidth: 1100, margin: '0 auto', padding: '22px 20px 60px' }}>
         {children}
       </main>
     </div>

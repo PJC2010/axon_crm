@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { getARSummary, getPnL } from '@/lib/api'
+import { Skeleton, SkeletonCards } from './ds'
 import type { ARSummary, PnLReport } from '@/lib/types'
 
 function fmt(n: number) { return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }) }
@@ -24,7 +25,12 @@ export function BookkeepingOverview({ year }: Props) {
 
   useEffect(() => { load() }, [load])
 
-  if (loading) return <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-ink-400)' }}>Loading…</div>
+  if (loading) return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <SkeletonCards count={4} columns={4} h={90} gap={10} />
+      <Skeleton h={160} radius="var(--radius-card)" />
+    </div>
+  )
   if (!summary || !pnl) return null
 
   const netProfit = pnl.net_profit

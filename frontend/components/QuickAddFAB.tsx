@@ -93,7 +93,8 @@ export function QuickAddFAB() {
       <div
         ref={containerRef}
         style={{
-          position: 'fixed', bottom: 24, right: 24, zIndex: 300,
+          /* Below the modal tier: at 300 this floated over every open form. */
+          position: 'fixed', bottom: 24, right: 24, zIndex: 'var(--z-fab)',
           display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10,
         }}
       >

@@ -6,6 +6,7 @@ import type { AdminUserRow } from '@/lib/types'
 import { ToastStack, useToast } from '@/components/Toast'
 import { usePlatformAdmin } from '@/hooks/usePlatformAdmin'
 import { TH_STYLE, TD_STYLE, zebra, fmtDate, fmtDateTime, Pagination } from './AdminTable'
+import { SkeletonRows, EmptyRow } from '@/components/ds'
 import { CreateUserModal, DeleteUserModal, EditUserModal, ResetLinkModal, SetPasswordModal } from './UserModals'
 
 export function AdminUsers() {
@@ -125,11 +126,9 @@ export function AdminUsers() {
             </tr>
           </thead>
           <tbody>
-            {loading && rows.length === 0 && (
-              <tr><td colSpan={7} style={{ ...TD_STYLE, textAlign: 'center', padding: '48px 0', color: 'var(--color-ink-400)' }}>Loading…</td></tr>
-            )}
+            {loading && rows.length === 0 && <SkeletonRows rows={8} cols={7} />}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={7} style={{ ...TD_STYLE, textAlign: 'center', padding: '48px 0', color: 'var(--color-ink-400)' }}>No users match</td></tr>
+              <EmptyRow colSpan={7} size="sm" title="No users match" hint="Clear the search or role filter to see every user." />
             )}
             {rows.map((u, i) => (
               <tr key={u.id} style={{ background: zebra(i) }}>

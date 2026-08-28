@@ -1,9 +1,11 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Plus, Send, FileCheck2, XCircle, Trash2, Eye, Link2 } from 'lucide-react'
+import { Plus, Send, FileCheck2, XCircle, Trash2, Eye, Link2, ClipboardList } from 'lucide-react'
+import { SkeletonCards, EmptyState } from './ds'
 import { getQuotes, getQuote, sendQuote, convertQuote, updateQuote, deleteQuote } from '@/lib/api'
 import type { Quote, QuoteStatus, QuoteFilters, Lead } from '@/lib/types'
 import { QuoteForm } from './QuoteForm'
+import { useConfirm } from '@/hooks/useConfirm'
 
 const STATUS_OPTIONS: { value: QuoteStatus | ''; label: string }[] = [
   { value: '', label: 'All' },
@@ -41,6 +43,7 @@ export function QuoteList({ prefillLead, onToast }: Props) {
   const [showForm, setShowForm] = useState(() => !!prefillLead)
   const [editQuote, setEditQuote] = useState<Quote | null>(null)
   const [busyId, setBusyId]     = useState<number | null>(null)
+  const { confirm, confirmDialog } = useConfirm()
   const PAGE_SIZE = 20
 
   // Results are keyed by the filters that produced them, so "loading" is just
@@ -97,10 +100,10 @@ export function QuoteList({ prefillLead, onToast }: Props) {
   }
 
   async function handleConvert(q: Quote) {
-    const msg = q.status === 'accepted'
-      ? `Create an invoice for ${fmt(q.total)} from ${q.quote_number}?`
-      : `Accept ${q.quote_number} and create an invoice for ${fmt(q.total)}?`
-    if (!confirm(msg)) return
+    const ok = await confirm(q.status === 'accepted'
+      ? { title: `Invoice ${q.quote_number}?`, message: `Creates an invoice for ${fmt(q.total)}.`, confirmLabel: 'Create invoice' }
+      : { title: `Accept ${q.quote_number}?`, message: `Marks the quote accepted and creates an invoice for ${fmt(q.total)}.`, confirmLabel: 'Accept and invoice' })
+    if (!ok) return
     setBusyId(q.id)
     try {
       const inv = await convertQuote(q.id)
@@ -133,7 +136,13 @@ export function QuoteList({ prefillLead, onToast }: Props) {
   }
 
   async function handleDelete(q: Quote) {
-    if (!confirm(`Delete ${q.quote_number}? This cannot be undone.`)) return
+    const ok = await confirm({
+      title: `Delete ${q.quote_number}?`,
+      message: 'The quote and its public link are removed. This cannot be undone.',
+      confirmLabel: 'Delete quote',
+      danger: true,
+    })
+    if (!ok) return
     setBusyId(q.id)
     try {
       await deleteQuote(q.id)
@@ -169,15 +178,18 @@ export function QuoteList({ prefillLead, onToast }: Props) {
 
       {/* List */}
       {loading ? (
-        <div style={{ textAlign: 'center', padding: 40, color: 'var(--color-ink-400)', fontSize: 14 }}>Loading…</div>
+        <SkeletonCards count={5} h={72} gap={8} />
       ) : quotes.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-          <div style={{ fontSize: 36, marginBottom: 10 }}>📋</div>
-          <div style={{ fontWeight: 600, color: 'var(--color-ink-700)', marginBottom: 8 }}>No quotes yet</div>
-          <button onClick={() => { setEditQuote(null); setShowForm(true) }} className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 40, padding: '0 20px' }}>
-            <Plus size={13} strokeWidth={2} /> Create Quote
-          </button>
-        </div>
+        <EmptyState
+          icon={<ClipboardList size={44} strokeWidth={1} />}
+          title="No quotes yet"
+          hint="Send a quote and you'll see it here from draft through accepted."
+          action={
+            <button onClick={() => { setEditQuote(null); setShowForm(true) }} className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 40, padding: '0 20px' }}>
+              <Plus size={14} strokeWidth={2} /> Create quote
+            </button>
+          }
+        />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {quotes.map(q => {
@@ -276,6 +288,7 @@ export function QuoteList({ prefillLead, onToast }: Props) {
           onClose={() => { setShowForm(false); setEditQuote(null) }}
         />
       )}
+      {confirmDialog}
     </div>
   )
 }

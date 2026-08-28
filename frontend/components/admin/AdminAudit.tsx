@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { adminAuditLog } from '@/lib/api'
 import type { AdminAuditRow } from '@/lib/types'
 import { TH_STYLE, TD_STYLE, zebra, fmtDateTime, Pagination } from './AdminTable'
+import { SkeletonRows, EmptyRow } from '@/components/ds'
 
 export function AdminAudit() {
   const [rows, setRows] = useState<AdminAuditRow[]>([])
@@ -54,8 +55,14 @@ export function AdminAudit() {
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && (
-              <tr><td colSpan={5} style={{ ...TD_STYLE, textAlign: 'center', padding: '48px 0', color: 'var(--color-ink-400)' }}>{loaded ? 'No admin actions recorded yet' : 'Loading…'}</td></tr>
+            {rows.length === 0 && !loaded && <SkeletonRows rows={6} cols={5} />}
+            {rows.length === 0 && loaded && (
+              <EmptyRow
+                colSpan={5}
+                size="sm"
+                title="No admin actions recorded yet"
+                hint="Every platform-admin change is logged here as soon as one happens."
+              />
             )}
             {rows.map((r, i) => (
               <tr key={r.id} style={{ background: zebra(i) }}>

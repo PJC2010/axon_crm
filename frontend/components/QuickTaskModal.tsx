@@ -38,11 +38,11 @@ export function QuickTaskModal({ leadId, leadLabel, onClose, onCreated }: Props)
     <>
       <div
         onClick={onClose}
-        style={{ position: 'fixed', inset: 0, background: 'rgba(22,24,29,0.32)', zIndex: 200 }}
+        style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 'var(--z-overlay)' }}
       />
       <div style={{
         position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-        zIndex: 201,
+        zIndex: 'var(--z-modal)',
         background: 'var(--color-surface)', borderRadius: 'var(--radius-modal)',
         boxShadow: 'var(--shadow-modal)', padding: '20px 22px',
         width: 340, maxWidth: 'calc(100vw - 32px)',
