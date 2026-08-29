@@ -70,7 +70,7 @@ async def lifespan(app: FastAPI):
         schedule_workflow_tick, schedule_account_rescore, schedule_recurring_invoices,
         schedule_geo_rescore, schedule_trial_expiry, schedule_unverified_digest,
         schedule_user_digest, schedule_phone_append_sweep,
-        schedule_stale_run_reconcile,
+        schedule_stale_run_reconcile, schedule_non_residential_sweep,
     )
     scheduler.start()
     # Before any schedule fires: a previous instance that crashed mid-run leaves
@@ -86,6 +86,7 @@ async def lifespan(app: FastAPI):
     schedule_unverified_digest()
     schedule_user_digest()
     schedule_phone_append_sweep()
+    schedule_non_residential_sweep()
     _check_hcad_source()
     yield
     scheduler.shutdown(wait=False)

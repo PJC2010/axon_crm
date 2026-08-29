@@ -42,20 +42,26 @@ export function AIInsightsPanel() {
       if (analytics30.status === 'fulfilled' && analytics90.status === 'fulfilled') {
         const a30 = analytics30.value
         const a90 = analytics90.value
-        if (a30.win_rate > a90.win_rate) {
+        // An insight is a claim about the business. If either win rate was not
+        // measured — the panel degraded rather than 500ing (api/deps.py::
+        // soft_query) — there is no comparison to draw, and treating null as 0
+        // would manufacture a "win rate dipped" warning out of a slow database.
+        const w30 = a30.win_rate
+        const w90 = a90.win_rate
+        if (w30 != null && w90 != null && w30 > w90) {
           items.push({
             id: 'win-rate-up',
             icon: <TrendingUp size={15} strokeWidth={1.8} />,
             title: `Win rate trending up`,
-            description: `Your 30-day win rate is ${a30.win_rate}% vs ${a90.win_rate}% over 90 days — your close process is improving.`,
+            description: `Your 30-day win rate is ${w30}% vs ${w90}% over 90 days — your close process is improving.`,
             type: 'positive',
           })
-        } else if (a30.win_rate < a90.win_rate && a90.win_rate > 0) {
+        } else if (w30 != null && w90 != null && w30 < w90 && w90 > 0) {
           items.push({
             id: 'win-rate-down',
             icon: <AlertTriangle size={15} strokeWidth={1.8} />,
             title: `Win rate dipped recently`,
-            description: `30-day win rate (${a30.win_rate}%) is below your 90-day average (${a90.win_rate}%). Review recent lost deals for patterns.`,
+            description: `30-day win rate (${w30}%) is below your 90-day average (${w90}%). Review recent lost deals for patterns.`,
             type: 'warning',
             link: '/pipeline',
             linkLabel: 'Review pipeline',

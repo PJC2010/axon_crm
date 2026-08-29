@@ -18,7 +18,8 @@ from psycopg2.extensions import connection as PGConn
 from pydantic import BaseModel, Field
 
 from api import scoring_quota
-from api.deps import dict_fetchone, get_current_user, get_db, require_owner
+from api.deps import (dict_fetchone, get_current_user, get_db, require_owner,
+                      soft_query)
 from api.entitlements import get_scoring_limit, require_module
 
 router = APIRouter()
@@ -188,8 +189,23 @@ def property_data_non_residential(
     usually trips several reasons at once.
     """
     from pipeline.property_audit import audit as non_residential_audit
-    result = non_residential_audit(db, user["account_id"], zip_code=zip,
-                                   sample_limit=sample_limit)
+    from pipeline.property_audit import empty_report
+
+    # soft_query sets a tightened statement_timeout on this connection's
+    # transaction and then calls the audit, which opens its own cursors on the
+    # SAME connection and therefore inherits it. On a cancel it rolls the
+    # aborted transaction back and hands over `empty_report`, so a slow database
+    # costs the operator an empty panel that says so — not the 500 with a stack
+    # trace this endpoint returned on 2026-08-29.
+    result, timed_out = soft_query(
+        db,
+        lambda _cur: non_residential_audit(db, user["account_id"],
+                                           zip_code=zip,
+                                           sample_limit=sample_limit),
+        empty_report(user["account_id"], zip),
+    )
+    if timed_out:
+        return result
     # Sample rows carry account_number, address and owner_name — engine contact
     # data the scoring quota meters. Mask the samples that are unrevealed
     # candidates so this cleanup view can't be paged for identities the lead
@@ -202,6 +218,35 @@ def property_data_non_residential(
     for s in samples:
         s.pop("lead_source", None)
     return result
+
+
+@router.post("/property-data/non-residential/refresh")
+def property_data_non_residential_refresh(
+    current_user: dict = Depends(require_owner),
+    db: PGConn = Depends(get_db),
+    _mod: dict = _prospecting,
+):
+    """Re-derive this account's stored non-residential verdicts, now.
+
+    The audit reads a stored verdict (migration 0083) so it can answer on a page
+    load; this is where that verdict comes from. A nightly sweep
+    (api/scheduler.py) keeps it current, so an operator normally never needs
+    this — it exists for the two cases where waiting until tomorrow is wrong:
+    a freshly seeded ZIP whose rows have never been classified, and a rule or
+    threshold change the operator wants to see the effect of immediately.
+
+    Owner-only and bounded (`sweep` batches internally), but it is a write path
+    doing real work, so it is a POST an operator asks for rather than something
+    the audit does implicitly on their behalf. Nothing here is destructive: it
+    only recomputes a verdict column. Archiving is still a separate, explicit
+    call.
+
+    `complete: false` means the batch ceiling was reached and the remainder is
+    left for the next call or the nightly tick — the account is partially
+    classified, not wrongly classified.
+    """
+    from pipeline.property_audit import sweep
+    return sweep(db, current_user["account_id"])
 
 
 @router.post("/property-data/non-residential/archive")

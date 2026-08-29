@@ -10,8 +10,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError
 
 from config import (
-    DATABASE_URL, DB_CONNECT_TIMEOUT_SECONDS, DB_POOL_MAX, DB_POOL_MIN,
-    DB_STATEMENT_TIMEOUT_MS,
+    DASHBOARD_STATEMENT_TIMEOUT_MS, DATABASE_URL, DB_CONNECT_TIMEOUT_SECONDS,
+    DB_POOL_MAX, DB_POOL_MIN, DB_STATEMENT_TIMEOUT_MS,
 )
 
 # ── Database ──────────────────────────────────────────────────────────────────
@@ -74,6 +74,65 @@ def get_db():
         except Exception:
             broken = True
         pool.putconn(conn, close=broken or conn.closed)
+
+
+def soft_query(db, fn, fallback, *, timeout_ms: int | None = None):
+    """Run one read under a tighter statement_timeout; degrade instead of 500.
+
+    Returns ``(value, timed_out)``. On timeout the value is `fallback` and the
+    caller is expected to mark its response degraded rather than raise, so a
+    dashboard panel that cannot answer shows the rest of the page.
+
+    Three details are load-bearing:
+
+    * ``SET LOCAL`` — not ``SET``. These connections are pooled and long-lived;
+      a session-level timeout would follow the connection into every later
+      request. LOCAL lapses with the transaction below.
+    * The ``rollback()`` is mandatory, not tidiness. A cancelled statement
+      leaves the transaction ABORTED, and every subsequent statement on that
+      connection fails with InFailedSqlTransaction until it is unwound. The
+      endpoints here run several queries in sequence, so without this the first
+      timeout would take the whole response down anyway — which is exactly the
+      500 this function exists to prevent.
+    * ``QueryCanceled`` only. A cancelled statement is the expected outcome of a
+      cap; a syntax error, a permissions failure or a dropped connection are
+      not, and must still surface. psycopg2 raises QueryCanceled for both a
+      statement_timeout and a server-side pg_cancel_backend, and treating the
+      latter as a degraded panel is the correct reading too.
+
+    A statement that is genuinely fast is unaffected: the SET LOCAL costs one
+    round trip on a connection the request already holds.
+    """
+    ms = DASHBOARD_STATEMENT_TIMEOUT_MS if timeout_ms is None else timeout_ms
+    try:
+        with db.cursor() as cur:
+            if ms and ms > 0:
+                cur.execute("SELECT set_config('statement_timeout', %s, true)",
+                            (str(int(ms)),))
+            value = fn(cur)
+            # Hand the cap back, on the success path only. SET LOCAL is scoped
+            # to the TRANSACTION, not to this call, and a request does more than
+            # its degradable reads: /api/pipeline/alerts then runs the scoring
+            # quota masker on the same connection. Leaving 5s in force would put
+            # security-relevant code — which must never fail open, and so is
+            # deliberately NOT wrapped in soft_query — under a budget it was
+            # never designed for, and a cancel there would 500 the very endpoint
+            # this function exists to keep up.
+            #
+            # Not a `finally`: on the cancel path the transaction is already
+            # ABORTED, and issuing this there would raise InFailedSqlTransaction
+            # over the top of the QueryCanceled we need to catch. The rollback
+            # below discards the setting anyway.
+            if ms and ms > 0:
+                cur.execute("SELECT set_config('statement_timeout', %s, true)",
+                            (str(int(DB_STATEMENT_TIMEOUT_MS)),))
+            return value, False
+    except psycopg2.errors.QueryCanceled:
+        # Unwind the aborted transaction so the caller's next query can run.
+        # This also discards the SET LOCAL, so the reset above is only needed on
+        # the path where the transaction survives.
+        db.rollback()
+        return fallback, True
 
 
 def dict_fetchall(cur) -> list[dict]:

@@ -915,6 +915,80 @@ def schedule_account_rescore():
     log.info("Scheduled daily account rescore at %02d:45 UTC", WORKFLOW_TICK_HOUR)
 
 
+NON_RESIDENTIAL_SWEEP_LOCK_KEY = 742026010
+
+
+def run_non_residential_sweep_tick():
+    """Nightly: bring every account's stored non-residential verdicts up to date.
+
+    This is the derivation half of migration 0083. The audit endpoint reads
+    `properties.non_residential_reasons`; nothing writes it on the request path,
+    by design — deriving the rule per page load is what returned QueryCanceled
+    to the data-quality page on 2026-08-29.
+
+    Bounded on three axes, because this shares the web process and its memory
+    (CLAUDE.md): `sweep` walks the primary key in disjoint batches, `max_batches`
+    caps one account's share of a tick, and only account IDs are materialized —
+    never their rows. A partial sweep is left unstamped, so the next tick
+    resumes it instead of believing it finished.
+
+    One account failing does not stop the rest: a verdict is advisory data, and
+    a bad row in one org must not leave every other org's audit stale.
+    """
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_try_advisory_lock(%s)",
+                        (NON_RESIDENTIAL_SWEEP_LOCK_KEY,))
+            if not cur.fetchone()[0]:
+                log.info("Non-residential sweep skipped — another worker holds the lock")
+                return
+        try:
+            from pipeline.property_audit import sweep
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM accounts ORDER BY id")
+                account_ids = [r[0] for r in cur.fetchall()]
+            swept = changed = failed = 0
+            for account_id in account_ids:
+                try:
+                    result = sweep(conn, account_id)
+                except Exception:
+                    conn.rollback()
+                    failed += 1
+                    log.exception("Non-residential sweep failed for account %s",
+                                  account_id)
+                    continue
+                swept += 1
+                changed += result["changed"]
+            log.info("Non-residential sweep finished: %d account(s), %d verdict(s) "
+                     "changed, %d failed", swept, changed, failed)
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_unlock(%s)",
+                            (NON_RESIDENTIAL_SWEEP_LOCK_KEY,))
+            conn.commit()
+    except Exception:
+        log.exception("Non-residential sweep tick failed")
+    finally:
+        conn.close()
+
+
+def schedule_non_residential_sweep():
+    """Register the nightly non-residential verdict sweep (idempotent)."""
+    from config import WORKFLOW_TICK_HOUR
+    scheduler.add_job(
+        run_non_residential_sweep_tick,
+        # :05 — before the other daily ticks, so anything reading a verdict
+        # later in the night reads a current one.
+        trigger=CronTrigger(hour=WORKFLOW_TICK_HOUR, minute=5, timezone="UTC"),
+        id="non_residential_sweep_daily",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    log.info("Scheduled nightly non-residential verdict sweep at %02d:05 UTC",
+             WORKFLOW_TICK_HOUR)
+
+
 def run_recurring_invoice_tick():
     """Daily: generate the next occurrence of every due recurring invoice."""
     conn = psycopg2.connect(DATABASE_URL)

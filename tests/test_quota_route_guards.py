@@ -149,7 +149,12 @@ def test_non_residential_masks_candidate_samples(monkeypatch):
     monkeypatch.setattr(pa, "audit",
                         lambda *a, **k: {"samples": [dict(s) for s in samples], "counts": {}})
 
-    out = dq_route.property_data_non_residential(zip=None, sample_limit=10, user=USER, db=object(), _mod=USER)
+    # The route now runs the audit under a tightened statement_timeout
+    # (api/deps.py::soft_query), so the connection must at least hand out a
+    # cursor. `set_config` is the only statement the route issues itself; the
+    # audit behind it is monkeypatched above.
+    db = _Conn([("set_config", [])])
+    out = dq_route.property_data_non_residential(zip=None, sample_limit=10, user=USER, db=db, _mod=USER)
     s = {r.get("id") or r.get("_id"): r for r in out["samples"]}
     got = out["samples"]
     masked = [r for r in got if r["owner_name"] is None]
