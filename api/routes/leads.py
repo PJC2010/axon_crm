@@ -20,9 +20,9 @@ from api.models import (
     Lead, LeadPage, StatusUpdate, LeadContactUpdate,
     CustomerSearchResult, ScoreExplanation, ScoreFactor, VerticalFactor, MLFactor,
 )
-from config import (
-    DEFAULT_WEIGHTS, VERTICAL_WEIGHTS, CONTACT_PROVIDER, CONTACT_API_KEY, SCORER_MODE,
-)
+from config import CONTACT_PROVIDER, CONTACT_API_KEY, SCORER_MODE
+from pipeline import regional
+from pipeline.profiles import resolve_profile
 from pipeline.scoring import explain_score, describe_vertical
 from pipeline.contact import PROVIDERS
 
@@ -240,10 +240,16 @@ def get_score_explanation(lead_id: int, db: PGConn = Depends(get_db), user: dict
     if not row:
         raise HTTPException(status_code=404, detail="Lead not found")
 
+    # Explain the lead against the profile it was SCORED with, market and all.
+    # Resolving the region here rather than reading the stored one keeps the
+    # breakdown reconciled with a fresh recompute; a lead scored before the
+    # market's calibration moved surfaces as weights_drift below, which is
+    # exactly what that flag is for.
     vertical = row.get("vertical")
-    weights = VERTICAL_WEIGHTS.get(vertical, DEFAULT_WEIGHTS) if vertical else DEFAULT_WEIGHTS
-    breakdown = explain_score(row, weights)
-    vdesc = describe_vertical(vertical)
+    region = regional.resolve_region(row.get("zip"), row.get("state"))
+    profile = resolve_profile(vertical, region)
+    breakdown = explain_score(row, profile.weights, profile=profile)
+    vdesc = describe_vertical(vertical, profile)
 
     # The stored lead_score was computed when the lead was last scored; current
     # weights may differ. Report the recomputed total (so factor contributions
@@ -273,6 +279,8 @@ def get_score_explanation(lead_id: int, db: PGConn = Depends(get_db), user: dict
         grade=breakdown["grade"],
         vertical=vertical,
         is_default_profile=vdesc["is_default"],
+        region=profile.region,
+        region_label=profile.region_label,
         factors=[ScoreFactor(**f) for f in breakdown["factors"]],
         top_drivers=breakdown["top_drivers"],
         summary=breakdown["summary"],

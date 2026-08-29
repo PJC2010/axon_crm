@@ -16,8 +16,11 @@ from pathlib import Path
 # Ensure repo root is on sys.path when run directly
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import config
 from config import DEFAULT_WEIGHTS, VERTICAL_WEIGHTS
-from pipeline.scoring import score_property, _compute_score, _grade
+from pipeline import regional
+from pipeline.profiles import resolve_profile
+from pipeline.scoring import compute_score, score_property, _compute_score, _grade
 from pipeline.scoring import (
     _age_signal, _sale_signal, _equity_signal,
     _garage_signal, _income_signal, _permit_signal,
@@ -163,12 +166,17 @@ def fmt_date(d) -> str:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-def run(vertical: str | None = None) -> None:
-    weights = VERTICAL_WEIGHTS.get(vertical, DEFAULT_WEIGHTS) if vertical else DEFAULT_WEIGHTS
+def run(vertical: str | None = None, region: str = regional.NATIONAL) -> None:
+    # Resolve through the same registry production uses, so the demo can never
+    # print national weights for a market that scores on different ones.
+    profile = resolve_profile(vertical, region)
+    weights = profile.weights
 
     header = f"Lead Scoring Demo"
     if vertical:
         header += f"  [vertical: {vertical}]"
+    if profile.region != regional.NATIONAL:
+        header += f"  [market: {profile.region_label}]"
     print(f"\n{BOLD}{header}{RESET}")
     print("─" * 100)
 
@@ -176,15 +184,21 @@ def run(vertical: str | None = None) -> None:
     print(f"{BOLD}{col_h}{RESET}")
     print("─" * 100)
 
-    for lead in SAMPLE_LEADS:
-        age_s    = _age_signal(lead.get("year_built"))
-        sale_s   = _sale_signal(lead.get("last_sale_date"))
-        equity_s = _equity_signal(lead.get("estimated_equity"))
-        garage_s = _garage_signal(lead.get("garage_spaces"))
-        income_s = _income_signal(lead.get("zip_median_income"))
-        permit_s = _permit_signal(lead.get("permit_count_24mo"))
+    # The market's own signal functions, not the module-level national ones —
+    # a market overrides thresholds as well as weights, and a table showing
+    # national signals beside a regional composite would not add up.
+    fns = profile.signal_fns
 
-        score, grade = score_property(lead, weights)
+    for lead in SAMPLE_LEADS:
+        age_s    = fns["age"](lead.get("year_built"))
+        sale_s   = fns["sale"](lead.get("last_sale_date"))
+        equity_s = fns["equity"](lead.get("estimated_equity"))
+        garage_s = fns["garage"](lead.get("garage_spaces"))
+        income_s = fns["income"](lead.get("zip_median_income"))
+        permit_s = fns["permit"](lead.get("permit_count_24mo"))
+
+        score = compute_score(lead, profile)
+        grade = _grade(score)
         label = lead.get("_label", lead.get("address", "?"))[:37]
 
         signals = (
@@ -205,7 +219,8 @@ def run(vertical: str | None = None) -> None:
         )
 
     print("─" * 100)
-    print(f"\nWeights used: " + "  ".join(f"{k}={v:.0%}" for k, v in weights.items()))
+    print(f"\nWeights used: " + "  ".join(f"{k}={v:.0%}" for k, v in weights.items() if v))
+    print(f"Market:       {profile.region_label} ({profile.region})")
     print(f"Grade bands:  A ≥75  B ≥55  C ≥35  D <35\n")
 
 
@@ -213,5 +228,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Score sample leads without a database.")
     parser.add_argument("--vertical", choices=list(VERTICAL_WEIGHTS.keys()), default=None,
                         help="Apply vertical-specific weights")
+    parser.add_argument("--region", choices=sorted(config.REGIONAL_CALIBRATION_MATRIX),
+                        default=regional.NATIONAL,
+                        help="Apply a market calibration (see docs/regional_calibration.md)")
     args = parser.parse_args()
-    run(args.vertical)
+    run(args.vertical, args.region)

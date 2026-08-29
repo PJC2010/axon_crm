@@ -38,27 +38,25 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import config
-from pipeline.scoring import (
-    explain_score,
-    _age_signal, _sale_signal, _equity_signal,
-    _garage_signal, _income_signal, _permit_signal,
-    _neighborhood_signal, _pool_signal, _slab_signal,
-)
+from pipeline import regional
+from pipeline.profiles import resolve_profile
+from pipeline.scoring import explain_score
 
 
 # ── Signal helpers ─────────────────────────────────────────────────────────────
 
-_SIGNAL_FNS = {
-    "age":          (_age_signal,           "year_built"),
-    "sale":         (_sale_signal,          "last_sale_date"),
-    "equity":       (_equity_signal,        "estimated_equity"),
-    "garage":       (_garage_signal,        "garage_spaces"),
-    "income":       (_income_signal,        "zip_median_income"),
-    "permit":       (_permit_signal,        "permit_count_24mo"),
-    "neighborhood": (_neighborhood_signal,  "neighborhood_value_ratio"),
-    "pool":         (_pool_signal,          "has_pool"),
-    "slab":         (_slab_signal,          "has_cracked_slab"),
-}
+# The columns the per-signal table and CSV report, in display order. The
+# functions come from the resolved profile rather than being bound here: a
+# market overrides signal THRESHOLDS as well as weights, so a hardcoded map
+# would print national signals beside a regional composite.
+REPORTED_SIGNALS = ["age", "sale", "equity", "garage", "income", "permit",
+                    "neighborhood", "pool", "slab"]
+
+
+def _signal_map(profile) -> dict:
+    """{key: (fn, row field)} for the signals this export reports."""
+    return {key: (profile.signal_fns[key], profile.factor_meta[key]["field"])
+            for key in REPORTED_SIGNALS}
 
 _INPUT_FIELDS = [
     "address", "city", "state", "zip", "owner_name",
@@ -187,8 +185,8 @@ RESET = "\033[0m"
 BOLD  = "\033[1m"
 
 
-def _null_fields(row: dict) -> str:
-    signal_inputs = {field for _, field in _SIGNAL_FNS.values()}
+def _null_fields(row: dict, signal_fns: dict) -> str:
+    signal_inputs = {field for _, field in signal_fns.values()}
     blanks = [f for f in signal_inputs if row.get(f) is None]
     return ",".join(sorted(blanks))
 
@@ -198,25 +196,27 @@ def _bar(signal: float, width: int = 8) -> str:
     return "█" * filled + "░" * (width - filled)
 
 
-def score_and_export(rows: list[dict], weights: dict, out_path: str | None, vertical: str | None) -> None:
+def score_and_export(rows: list[dict], profile, out_path: str | None, vertical: str | None) -> None:
+    weights = profile.weights
     all_keys = list(weights.keys())
+    signal_fns = _signal_map(profile)
     csv_rows = []
 
     print(f"\n{BOLD}{'Address':<38} {'Grade':>6} {'Score':>6}  {'Age':>5} {'Sale':>5} {'Equity':>6} {'Garage':>6} {'Income':>6} {'Permit':>6} {'Nbhd':>5}  Nulls{RESET}")
     print("─" * 110)
 
     for row in rows:
-        explained = explain_score(row, weights)
+        explained = explain_score(row, weights, profile=profile)
         score     = explained["score"]
         grade     = explained["grade"]
         factors   = {f["key"]: f for f in explained["factors"]}
 
         def sig(key):
-            fn, field = _SIGNAL_FNS[key]
+            fn, field = signal_fns[key]
             return fn(row.get(field))
 
         color = GRADE_COLORS.get(grade, "")
-        nulls = _null_fields(row)
+        nulls = _null_fields(row, signal_fns)
         addr  = str(row.get("address", ""))[:37]
 
         print(
@@ -238,8 +238,8 @@ def score_and_export(rows: list[dict], weights: dict, out_path: str | None, vert
         csv_row["top_drivers"] = ",".join(explained["top_drivers"])
         csv_row["null_fields"] = nulls
 
-        for key in ["age", "sale", "equity", "garage", "income", "permit", "neighborhood", "pool", "slab"]:
-            fn, field = _SIGNAL_FNS[key]
+        for key in REPORTED_SIGNALS:
+            fn, field = signal_fns[key]
             csv_row[f"sig_{key}"] = round(fn(row.get(field)), 4)
 
         for key in all_keys:
@@ -251,13 +251,14 @@ def score_and_export(rows: list[dict], weights: dict, out_path: str | None, vert
     print(f"\n{len(rows)} properties scored.")
     if vertical:
         print(f"Vertical: {vertical}")
-    print(f"Weights: " + "  ".join(f"{k}={v:.0%}" for k, v in weights.items()))
+    print(f"Weights: " + "  ".join(f"{k}={v:.0%}" for k, v in weights.items() if v))
+    print(f"Market:  {profile.region_label} ({profile.region})")
     print(f"Grades:  A ≥75  B ≥55  C ≥35  D <35\n")
 
     if not out_path:
         return
 
-    sig_cols  = [f"sig_{k}" for k in ["age", "sale", "equity", "garage", "income", "permit", "neighborhood", "pool", "slab"]]
+    sig_cols  = [f"sig_{k}" for k in REPORTED_SIGNALS]
     cont_cols = [f"factor_{k}_contribution" for k in all_keys]
     fieldnames = _INPUT_FIELDS + ["lead_score", "score_grade", "top_drivers"] + sig_cols + cont_cols + ["null_fields"]
 
@@ -283,6 +284,10 @@ def main() -> None:
                         help="Apply vertical-specific weights")
     parser.add_argument("--out",        default=None,
                         help="CSV output path (default: pipeline_export_<zip>.csv)")
+    parser.add_argument("--region",     choices=sorted(config.REGIONAL_CALIBRATION_MATRIX),
+                        default=None,
+                        help="Force a market calibration; default is derived from --zip "
+                             "(see docs/regional_calibration.md)")
     parser.add_argument("--dry-run",    action="store_true",
                         help="Use built-in sample data instead of a database connection")
     args = parser.parse_args()
@@ -290,8 +295,10 @@ def main() -> None:
     if not args.dry_run and not args.zip:
         parser.error("Provide --zip <code> to load from DB, or use --dry-run for sample data.")
 
-    weights = config.VERTICAL_WEIGHTS.get(args.vertical, config.DEFAULT_WEIGHTS) \
-              if args.vertical else config.DEFAULT_WEIGHTS
+    # --dry-run has no ZIP to derive a market from, so it scores nationally
+    # unless --region says otherwise.
+    region = args.region or regional.resolve_region(args.zip)
+    profile = resolve_profile(args.vertical, region)
 
     if args.dry_run:
         rows    = SAMPLE_LEADS
@@ -307,7 +314,7 @@ def main() -> None:
         sys.exit(0)
 
     print(f"\nLoaded {len(rows)} properties from {label}.")
-    score_and_export(rows, weights, out, args.vertical)
+    score_and_export(rows, profile, out, args.vertical)
 
 
 if __name__ == "__main__":

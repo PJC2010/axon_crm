@@ -54,6 +54,7 @@ SHARED_COLS = [
     "hcad_neighborhood_code", "hcad_neighborhood_name", "subdivision",
     "zip_median_income", "permit_count_24mo",
     "last_storm_date", "last_storm_type", "hail_size_in", "storm_count_24mo",
+    "last_freeze_date", "freeze_count_24mo",
 ]
 
 # Never shareable, listed explicitly so the reason is greppable from here.

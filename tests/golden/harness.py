@@ -46,8 +46,9 @@ import pipeline.permits as permits_mod
 import pipeline.property as prop
 import pipeline.scorer as scorer
 import pipeline.scoring as scoring
-from pipeline import addr
+from pipeline import addr, regional
 from pipeline.db import clamp_garage_spaces
+from pipeline.profiles import resolve_profile
 
 from tests.golden.clock import frozen_clock
 
@@ -70,6 +71,21 @@ FACTOR_FIELDS = {key: config.FACTOR_META[key]["field"]
 # estimated_value, which is not scored directly but is the basis every equity
 # estimate is derived from — a silent value-source shift moves equity too.
 PROVENANCE_FIELDS = tuple(sorted(set(FACTOR_FIELDS.values()) | {"estimated_value"}))
+
+
+def _scored_profile(zip_code: str, row: dict):
+    """The profile score_zip will actually use for this address.
+
+    Every corpus address is in Harris County, so all of them score on the
+    Houston calibration (pipeline/regional.py) rather than the national matrix.
+    Reading the profile back here is what keeps the pinned subscores reconciled
+    with the pinned composite: the market overrides both the weights AND the
+    signal thresholds, so scoring a Texas row against the national signal
+    functions would report an equity subscore of 1.0 next to a composite that
+    was computed from 0.76.
+    """
+    region = regional.resolve_region(zip_code, row.get("state"))
+    return resolve_profile(None, region)
 
 
 # ── Fixture IO ────────────────────────────────────────────────────────────────
@@ -389,9 +405,11 @@ def build_result(entry: dict, payloads: dict | None = None) -> dict:
         for field in PROVENANCE_FIELDS:
             provenance.setdefault(field, "missing")
 
+        profile = _scored_profile(zip_code, row)
         subscores = {
-            factor: round(scoring._SIGNAL_FNS[factor](row.get(field)), 6)
-            for factor, field in FACTOR_FIELDS.items()
+            factor: round(profile.signal_fns[factor](
+                row.get(profile.factor_meta[factor]["field"])), 6)
+            for factor, weight in profile.weights.items() if weight
         }
         # The equity signal the composite actually used is scaled when the
         # scorer's flat-fallback backfill supplied the number; report that in

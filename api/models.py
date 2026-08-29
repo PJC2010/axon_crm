@@ -490,6 +490,9 @@ class ScoreExplanation(BaseModel):
     grade: Optional[str] = None
     vertical: Optional[str] = None
     is_default_profile: bool = False
+    # Which market calibration produced this score (pipeline/regional.py).
+    region: str = "us"
+    region_label: str = "national"
     factors: list[ScoreFactor] = []
     top_drivers: list[str] = []
     summary: Optional[str] = None  # one-line plain-language reason for the score

@@ -43,7 +43,7 @@ export function WhyThisScore({
   if (!explanation || explanation.factors.length === 0) return null
   const {
     factors, top_drivers, summary, grade, score, vertical, vertical_description,
-    is_default_profile, weights_drift, score_updated_at,
+    is_default_profile, weights_drift, score_updated_at, region, region_label,
   } = explanation
 
   const scoredDaysAgo = score_updated_at
@@ -135,6 +135,12 @@ export function WhyThisScore({
       )}
       <p style={{ fontSize: 12, color: 'var(--color-ink-500)', lineHeight: 1.5, margin: '0 0 16px' }}>
         Scored on the <span style={{ fontWeight: 600, color: 'var(--color-ink-700)' }}>{profileName}</span>
+        {/* Say which market tuned the weights. A lead in a calibrated market is
+            scored on different thresholds from the national default, and that
+            should read as a stated choice rather than an unexplained number. */}
+        {region && region !== 'us' && (
+          <>, calibrated for <span style={{ fontWeight: 600, color: 'var(--color-ink-700)' }}>{region_label}</span></>
+        )}
         {topWeights && <>, which weighs {topWeights}.</>}
       </p>
 

@@ -23,9 +23,11 @@ Pure helpers (`haversine_miles`, `prescore`) are DB-free and unit-tested.
 import logging
 import math
 
-from config import DEFAULT_WEIGHTS, VERTICAL_WEIGHTS, EQUITY_FALLBACK_PCT
+from config import EQUITY_FALLBACK_PCT, FACTOR_META
+from pipeline import regional
+from pipeline.profiles import resolve_profile
 from pipeline.db import fetch_by_zip
-from pipeline.scoring import _compute_score
+from pipeline.scoring import _compute_score, _weighted_sum
 
 log = logging.getLogger(__name__)
 
@@ -46,18 +48,23 @@ def haversine_miles(lat1: float, lng1: float, lat2: float, lng2: float) -> float
     return 2 * EARTH_RADIUS_MI * math.asin(math.sqrt(a))
 
 
-def prescore(row: dict, weights: dict) -> float:
+def prescore(row: dict, weights: dict, signal_fns: dict | None = None) -> float:
     """Cheap pre-enrichment score from free fields only.
 
     Reuses the production `_compute_score` so the ranking is consistent with the
     real scorer. Paid-only signals (garage, permits) are simply absent at this
     stage and contribute 0. Equity is approximated from estimated_value via the
     same fallback fraction the paid step uses, when no equity is known yet.
+
+    `signal_fns` carries a regional profile's thresholds; omitting it scores on
+    the national ones, which is what a national market wants anyway.
     """
     if not row.get("estimated_equity") and row.get("estimated_value"):
         row = dict(row)
         row["estimated_equity"] = int(row["estimated_value"] * EQUITY_FALLBACK_PCT)
-    return _compute_score(row, weights)
+    if signal_fns is None:
+        return _compute_score(row, weights)
+    return _weighted_sum(row, weights, FACTOR_META, signal_fns)
 
 
 def _within_radius(row: dict, center: tuple[float, float] | None,
@@ -92,9 +99,16 @@ def select_for_enrichment(conn, zip_code: str, account_id: int, *, top_n: int | 
     OVERSAMPLE). Selected rows get enrichment_selected = TRUE, the rest FALSE.
     Returns counts for logging/run results.
     """
-    weights = VERTICAL_WEIGHTS.get(vertical, DEFAULT_WEIGHTS) if vertical else DEFAULT_WEIGHTS
     rows = fetch_by_zip(conn, zip_code, account_id)
     candidates = len(rows)
+
+    # Rank on the SAME weights the scorer will use for this ZIP. Selection
+    # decides which rows get paid enrichment, so pre-scoring a Houston ZIP on
+    # national weights would spend the budget on a different set of rows than
+    # the ones that end up graded well.
+    state = next((r.get("state") for r in rows if r.get("state")), None)
+    profile = resolve_profile(vertical, regional.resolve_region(zip_code, state))
+    weights = profile.weights
 
     in_radius = [r for r in rows if _within_radius(r, center, radius_mi)]
     in_radius_ids = {r["id"] for r in in_radius}
@@ -102,7 +116,9 @@ def select_for_enrichment(conn, zip_code: str, account_id: int, *, top_n: int | 
 
     if top_n:
         budget = math.ceil(top_n * OVERSAMPLE)
-        ranked = sorted(in_radius, key=lambda r: prescore(r, weights), reverse=True)
+        ranked = sorted(in_radius,
+                        key=lambda r: prescore(r, weights, profile.signal_fns),
+                        reverse=True)
         keep = ranked[:budget]
         drop = ranked[budget:]
     else:

@@ -94,8 +94,9 @@ ALL_COLS = [
     "state_class",
     # Lead attribution — rep ownership + acquisition source (migration 030)
     "assigned_to", "lead_source",
-    # Storm/hail enrichment (migration 027)
+    # Storm/hail enrichment (migration 027) + freeze events (migration 081)
     "last_storm_date", "last_storm_type", "hail_size_in", "storm_count_24mo",
+    "last_freeze_date", "freeze_count_24mo",
     # Household demographics / life-events (migration 028)
     "owner_age", "length_of_residence_years", "est_household_income", "life_stage",
     # Versium Demographic Append — scoring signals (migration 029)

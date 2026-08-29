@@ -308,6 +308,9 @@ export interface ScoreExplanation {
   grade: ScoreGrade | null
   vertical: string | null
   is_default_profile: boolean
+  /** Which market calibration produced this score (pipeline/regional.py). */
+  region: string
+  region_label: string
   factors: ScoreFactor[]
   top_drivers: string[]
   summary: string | null

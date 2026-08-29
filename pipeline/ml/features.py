@@ -35,6 +35,12 @@ SNAPSHOT_FIELDS = [
     "neighborhood_value_ratio", "neighborhood_value_pctile",
     "has_pool", "has_cracked_slab",
     "last_storm_date", "hail_size_in", "storm_count_24mo",
+    # Persisted but not yet engineered into a feature (see _CONTINUOUS below).
+    # Snapshots are the training record, so capturing a column here first means a
+    # later model version can learn from freeze history without a backfill —
+    # whereas adding it to _CONTINUOUS now would change the vector length and
+    # invalidate every model already stored against feature_names().
+    "last_freeze_date", "freeze_count_24mo",
     "owner_age", "length_of_residence_years", "est_household_income", "life_stage",
     "refi_date", "home_improvement_flag", "credit_rating", "has_children",
     "gardening_flag", "estimated_net_worth", "loan_to_value",
