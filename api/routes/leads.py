@@ -36,6 +36,11 @@ SORT_MAP = {
     "grade":               "score_grade ASC",
     "value":               "estimated_value DESC NULLS LAST",
     "neighborhood_pctile": "neighborhood_value_pctile DESC NULLS LAST",
+    # Bare column on purpose: export.py runs this map against an unjoined
+    # `FROM properties` query, so no alias may appear here (unambiguous in the
+    # joined list — lead_geo_scores has no updated_at). Ordering is byte-matched
+    # to 0084's index; tests/test_leads_sort_indexes.py pins both constraints.
+    "updated_at":          "updated_at DESC NULLS LAST",
     # Geo blend — falls back to the property score for leads not yet geo-scored.
     "final_score":         "COALESCE(lgs.final_score, p.lead_score) DESC NULLS LAST",
 }
