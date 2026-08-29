@@ -69,7 +69,7 @@ services:
       # This API's own public origin — used to build the Twilio voice webhook
       # URLs configured on purchased call-tracking numbers (calls module).
       - key: PUBLIC_API_BASE_URL
-        value: https://axon-crm-api.onrender.com
+        value: https://axon-crm.onrender.com
       # Paid APIs — left blank on purpose. Set RENTCAST_API_KEY later to test
       # RentCast as a gap-filler; the property step no-ops while it is empty.
       - key: RENTCAST_API_KEY
