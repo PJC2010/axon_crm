@@ -6,31 +6,50 @@ import { Camera } from 'lucide-react'
  * Real-photography slots on the landing page.
  *
  * The page's whole argument is "local, verifiable, no hype" — a stock photo of
- * a smiling generic crew undercuts every honest claim above it. So these stay
- * empty until real Houston photography exists, and the frame renders as an
- * obvious, correctly-sized placeholder in the meantime.
+ * a smiling generic crew undercuts every honest claim above it. An unfilled
+ * slot renders as an obvious, correctly-sized placeholder rather than pulling
+ * in filler.
+ *
+ * The line is the claim, not the slot: an illustrative photo of the work may
+ * fill a frame, but nothing here may imply a specific customer, job, or result
+ * that does not exist — and a stand-in face attached to a real person's name is
+ * a different kind of lie, so a portrait slot ships only with the real portrait.
+ * Keep the `alt` describing what the photo actually shows, not what the slot
+ * wishes for; each `brief` is the art direction still open for a real shoot.
  *
  * To fill one: drop the file in `frontend/public/photos/` and set `src` below.
  * Nothing else changes — each frame already reserves its aspect ratio, so the
  * layout does not shift when the image lands.
  */
-export type PhotoKind = 'founder' | 'crew' | 'doorstep'
+export type PhotoKind = 'crew' | 'dialer'
 
-export const PHOTOS: Record<PhotoKind, { src: string | null; ratio: string; brief: string }> = {
-  founder: {
-    src: null,
-    ratio: '1 / 1',
-    brief: 'Pete — head and shoulders, natural light, Houston backdrop. Square crop.',
-  },
+/**
+ * Photos default to `cover` — fill the frame, crop the overflow — which is
+ * right for photography, where the frame is a window onto a larger scene.
+ *
+ * A device mockup is not photography: cropping it cuts through UI, which reads
+ * as a rendering bug rather than a window. So the dialer uses `contain` and
+ * shows the whole phone, and `.lp-feature-photo` gives its frame the height to
+ * do that (see landing.css). The trade is legibility — a 1320x2868 phone shown
+ * whole in a grid card renders its screen text at under 10px, so this is a
+ * device shot and the card's caption carries the message in live text. Crop to
+ * `cover` with a `position` anchored in the gaps between the mockup's own cards
+ * if readable screen detail ever matters more than the whole device.
+ */
+export const PHOTOS: Record<
+  PhotoKind,
+  { src: string | null; ratio: string; brief: string; position?: string; fit?: 'cover' | 'contain' }
+> = {
   crew: {
-    src: null,
-    ratio: '4 / 3',
+    src: '/photos/roof-inspection.jpg',
+    ratio: '16 / 9',
     brief: 'A real Houston crew mid-job — truck, ladder, branded shirts. Shot on site, not staged.',
   },
-  doorstep: {
-    src: null,
+  dialer: {
+    src: '/photos/phone-dialer-3x.png',
     ratio: '3 / 2',
-    brief: 'One contractor at a front door, homeowner mid-conversation. Recognizably Harris County.',
+    brief: 'The dialer on a phone — the whole device, shown as a product shot.',
+    fit: 'contain',
   },
 }
 
@@ -52,7 +71,13 @@ export function LandingPhoto({
   if (photo.src) {
     return (
       <figure className={cls} style={style}>
-        <Image src={photo.src} alt={alt} fill sizes={sizes} style={{ objectFit: 'cover' }} />
+        <Image
+          src={photo.src}
+          alt={alt}
+          fill
+          sizes={sizes}
+          style={{ objectFit: photo.fit ?? 'cover', objectPosition: photo.position ?? 'center' }}
+        />
       </figure>
     )
   }

@@ -13,45 +13,47 @@ import { ProspectCaptureForm } from '@/components/ProspectCaptureForm'
 import { TESTIMONIALS, SHOW_TESTIMONIALS } from '@/lib/testimonials'
 import { getPublicStats } from '@/lib/api'
 
-// ── Comparison data (Axon vs. the shared-lead marketplaces) ──
+// ── Comparison data (Axon vs. the shared-lead model) ──
 // The criticism belongs to the shared-lead business model, not to any one
-// company: cell copy states each platform's publicly documented pay-per-lead
-// model, and nothing here asserts a price or a contractor outcome.
+// company: cell copy states Angi's publicly documented pay-per-lead model, and
+// nothing here asserts a price or a contractor outcome. One named rival rather
+// than several, because every claim has to be defensible against that specific
+// platform's published terms. The `rivals` tuple length is tied to VS_RIVALS
+// and to the grid's column count in landing.css — adding a rival means a cell
+// in every row and a track in that rule.
 const VS_RIVALS = [
   { name: 'Angi', sub: 'Shared-lead marketplace' },
-  { name: 'HomeAdvisor', sub: 'Shared-lead marketplace' },
-  { name: 'Thumbtack', sub: 'Shared-lead marketplace' },
 ]
 
-const VS_ROWS: Array<{ label: string; rivals: [string, string, string]; axon: string }> = [
+const VS_ROWS: Array<{ label: string; rivals: [string]; axon: string }> = [
   {
     label: 'Who else gets the same name',
-    rivals: ['Shared with up to 4 pros', 'Shared with up to 4 pros', 'Any pro who pays can chase it'],
+    rivals: ['Shared with up to 4 pros'],
     axon: 'Nobody — your list is built for your account alone',
   },
   {
     label: 'How you pay',
-    rivals: ['Per lead, win or lose', 'Per lead, plus an annual fee', 'Per lead, at their price'],
+    rivals: ['Per lead, win or lose'],
     axon: 'One flat monthly price, however many properties you work',
   },
   {
     label: 'Where the list comes from',
-    rivals: ['Whoever fills out the national form', 'Same funnel, different logo', 'National app traffic'],
+    rivals: ['Whoever fills out the national form'],
     axon: 'Harris County records, permits & storm data',
   },
   {
     label: 'Local knowledge',
-    rivals: ['One playbook for every market', 'One playbook for every market', 'One playbook for every market'],
+    rivals: ['One playbook for every market'],
     axon: 'Scored street by street in your ZIP codes',
   },
   {
     label: 'Why it’s on your list',
-    rivals: ['No explanation', 'No explanation', 'No explanation'],
+    rivals: ['No explanation'],
     axon: 'Every score shows its signals',
   },
   {
     label: 'Who owns the customer',
-    rivals: ['The platform', 'The platform', 'The platform'],
+    rivals: ['The platform'],
     axon: 'You do — export everything, anytime',
   },
 ]
@@ -325,17 +327,6 @@ export default function LandingContent() {
               <a href="/hcad-data" className="lp-hero-sources-more">How HCAD data works <ArrowRight size={12} /></a>
             </p>
             </div>
-            {/* TODO(pete): edit this bio in your own words — it is the one place
-                on the page where a stranger meets a person instead of a claim. */}
-            <div className="lp-founder">
-              <LandingPhoto kind="founder" alt="Pete Castillo, who built Axon" className="lp-founder-photo" sizes="72px" />
-              <p>
-                <b>Built by Pete Castillo</b>{' — '}a data analyst in Houston. The same public
-                records that appraise your customers&apos; homes can tell you which doors are worth
-                knocking on. Axon is that, for one contractor at a time.{' '}
-                <a href="mailto:admin@axonhtx.com">Ask me anything about the data</a>.
-              </p>
-            </div>
           </div>
 
           {/* ── Social proof band — hidden for now via SHOW_TESTIMONIALS; the
@@ -394,9 +385,8 @@ export default function LandingContent() {
             differently: it builds a ranked list from Harris County property data for one flat
             monthly price.
           </p>
-          <div className="lp-vs-shell">
           <div className="lp-vs-wrap">
-            <div className="lp-vs" role="table" aria-label="How Axon compares with shared-lead marketplaces">
+            <div className="lp-vs" role="table" aria-label="How Axon compares with Angi">
               <div className="lp-vs-row lp-vs-head" role="row">
                 <div className="lp-vs-cell" role="columnheader">
                   <span className="lp-vs-dim">How Axon compares</span>
@@ -432,7 +422,6 @@ export default function LandingContent() {
               ))}
             </div>
           </div>
-          </div>
           <p className="lp-section-sub" style={{ marginTop: 32 }}>
             <b>The problem isn&apos;t that you called too slowly. The same name went to several
             contractors.</b> Shared leads turn every inquiry into a two-minute race. Axon gives
@@ -440,10 +429,9 @@ export default function LandingContent() {
             that show the strongest signals.
           </p>
           <p className="lp-vs-foot">
-            Marketplace practices summarized from each platform&apos;s publicly documented
-            pay-per-lead model; details vary by market, trade, and plan. Angi, HomeAdvisor, and
-            Thumbtack are trademarks of their respective owners — no affiliation or endorsement
-            implied.
+            Marketplace practices summarized from Angi&apos;s publicly documented pay-per-lead
+            model; details vary by market, trade, and plan. Angi is a trademark of its owner —
+            no affiliation or endorsement implied.
           </p>
         </div>
       </section>
@@ -617,10 +605,10 @@ export default function LandingContent() {
               </div>
             </div>
             <div className="lp-feature lp-feature-photo">
-              <LandingPhoto kind="doorstep" alt="An Axon customer at a Harris County front door" sizes="(max-width: 860px) 100vw, 33vw" />
+              <LandingPhoto kind="dialer" alt="Axon's dialer on a phone: a ranked lead mid-call, with one-tap outcome buttons" sizes="(max-width: 860px) 100vw, 33vw" />
               <div className="lp-feature-photo-cap">
-                <strong>The list gets you to the door.</strong>
-                <span>The rest is still you.</span>
+                <strong>Run the day from the truck.</strong>
+                <span>Ranked leads, one-tap outcomes, invoices from the driveway.</span>
               </div>
             </div>
           </div>
@@ -641,7 +629,7 @@ export default function LandingContent() {
           {/* A day the data built — the route card tells the people story in the
               product's own language: the map points the way, the crew closes. */}
           <div className="lp-people-visual" data-reveal>
-            <LandingPhoto kind="crew" alt="A Houston crew on a job in their territory" className="lp-people-photo" />
+            <LandingPhoto kind="crew" alt="A harnessed roofer documenting a Houston roof, city skyline behind" className="lp-people-photo" />
             <div className="lp-route-card">
               <div className="lp-route-head">
                 <span className="t-eyebrow">Tuesday&apos;s route · 77007</span>

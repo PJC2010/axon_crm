@@ -99,7 +99,7 @@ export function ZipSampleWidget() {
           type="text"
           inputMode="numeric"
           maxLength={5}
-          placeholder="Your ZIP — try 77007"
+          placeholder="Try 77007"
           value={zip}
           onChange={(e) => setZip(e.target.value.replace(/\D/g, ''))}
           aria-label="ZIP code"

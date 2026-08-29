@@ -19,3 +19,9 @@ hcad_centroids_work/
 .env.backup-20260819
 *.duckdb
 .impeccable/
+
+# Agent tooling state (session-local, not project source)
+.agents/
+.unlazy/
+GATES.md
+skills-lock.json

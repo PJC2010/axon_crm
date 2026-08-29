@@ -74,13 +74,6 @@
 .lp-hero-sources a:hover { color: var(--color-accent-300); text-decoration-color: var(--color-accent-300); }
 .lp-hero-sources-more { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; color: var(--color-accent-300) !important; text-decoration-color: var(--color-accent-300) !important; }
 
-/* Founder line — the one place a stranger meets a person, not a claim. */
-.lp-founder { display: flex; align-items: center; gap: 14px; margin-top: 0; padding: 16px 18px; background: var(--color-surface); border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
-.lp-founder p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--color-ink-600); }
-.lp-founder p b { color: var(--color-ink-900); font-weight: 600; }
-.lp-founder p a { color: var(--color-accent-300); }
-.lp-founder-photo { width: 72px; flex-shrink: 0; border-radius: 50%; }
-
 /* Video header frame */
 .lp-video-wrap { margin-top: 56px; position: relative; border-radius: 8px; overflow: hidden; box-shadow: var(--shadow-modal); background: var(--color-black); }
 .lp-video-chrome { height: 38px; background: var(--color-paper-deep); border-bottom: 1px solid var(--color-ink-200); display: flex; align-items: center; padding: 0 14px; gap: 7px; position: relative; z-index: 3; }
@@ -199,53 +192,28 @@
 .lp-stat-l { font-size: 13px; color: var(--color-ink-500); line-height: 1.4; }
 .lp-proof-foot { text-align: center; font-size: 13px; color: var(--color-ink-500); margin: 26px auto 0; max-width: 520px; line-height: 1.5; }
 
-/* Competitor comparison table ("name the enemy": Axon vs. Angi & co.)
-   A div-grid rather than <table> so rows can scroll-stagger in; the wrapper
-   scrolls horizontally below ~800px, so no stacked-mobile variant is needed. */
-.lp-vs-shell { position: relative; margin-top: 44px; }
-.lp-vs-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+/* Competitor comparison table ("name the enemy": Axon vs. Angi).
+   A div-grid rather than <table> so rows can scroll-stagger in. The wrapper
+   keeps overflow-x as a safety net, but at three columns the table fits every
+   viewport — see the phone rules below. */
+.lp-vs-wrap { margin-top: 44px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
-/* Narrow screens: keep the row labels pinned while the competitor columns
-   scroll under them, and hang a fade scrim on the right edge so the cut-off
-   column reads as "swipe for more", not as a rendering bug. */
-@media (max-width: 860px) {
-  /* Sticky inside a grid item is confined to its own grid area and never
-     pins, so rows become flex here — the row is the containing block and
-     the label cell can hold the left edge while the rest scrolls. The
-     table's own overflow must be `clip`, not `hidden`: hidden makes it a
-     scroll container and steals the sticky cells from the real scroller. */
-  .lp-vs { overflow: clip; }
-  .lp-vs-row { display: flex; }
-  .lp-vs-cell { flex: 0 0 143px; }
-  .lp-vs-cell:last-child { flex: 0 0 187px; }
-  .lp-vs-cell:first-child {
-    flex: 0 0 164px;
-    position: sticky; left: 0; z-index: 2;
-    background: var(--color-surface);
-    box-shadow: 1px 0 0 var(--color-ink-100);
-  }
-  .lp-vs-head .lp-vs-cell:first-child { background: var(--color-paper-deep); }
-  .lp-vs-shell::after {
-    content: '';
-    position: absolute; top: 0; right: 0; bottom: 0; width: 44px;
-    background: linear-gradient(270deg, rgba(17, 20, 24, 0.75), rgba(17, 20, 24, 0));
-    border-radius: 0 var(--radius-card) var(--radius-card) 0;
-    pointer-events: none;
-  }
-  /* Where scroll-driven animations exist, the scrim clears as the user
-     reaches the end of the table; elsewhere it simply stays. */
-  @supports (animation-timeline: scroll()) {
-    .lp-vs-shell { timeline-scope: --lp-vs-x; }
-    .lp-vs-wrap { scroll-timeline: --lp-vs-x x; }
-    .lp-vs-shell::after { animation: lp-vs-scrim linear both; animation-timeline: --lp-vs-x; }
-  }
+/* Phones: three columns fit, so the table squeezes rather than scrolls — the
+   min-width is released and the cells tighten. This replaced a sticky row-label
+   plus a right-edge scroll scrim, which existed only because five columns could
+   not fit any phone; a fade hinting at a swipe that no longer exists would be a
+   false affordance. Restore that treatment if a rival column is ever added. */
+@media (max-width: 560px) {
+  .lp-vs { min-width: 0; }
+  .lp-vs-cell { padding: 12px 10px; font-size: 12.5px; gap: 7px; }
+  .lp-vs-head .lp-vs-cell { padding: 12px 10px; }
+  .lp-vs-rowlabel strong { font-size: 12.5px; }
 }
-@keyframes lp-vs-scrim {
-  0%, 75% { opacity: 1; }
-  100% { opacity: 0; }
-}
-.lp-vs { min-width: 780px; background: var(--color-surface); border-radius: var(--radius-card); box-shadow: var(--shadow-card); overflow: hidden; }
-.lp-vs-row { display: grid; grid-template-columns: 1.15fr 1fr 1fr 1fr 1.3fr; }
+.lp-vs { min-width: 480px; background: var(--color-surface); border-radius: var(--radius-card); box-shadow: var(--shadow-card); overflow: hidden; }
+/* Columns: row label, one named rival, Axon. Keep this in sync with VS_RIVALS
+   — the track count is the column count, so a rival added there needs a track
+   here or the last column silently wraps. */
+.lp-vs-row { display: grid; grid-template-columns: 1.15fr 1fr 1.3fr; }
 .lp-vs-row + .lp-vs-row { border-top: 1px solid var(--color-ink-100); }
 .lp-vs-cell { display: flex; align-items: center; gap: 9px; padding: 14px 16px; font-size: 13px; line-height: 1.45; color: var(--color-ink-700); }
 .lp-vs-cell + .lp-vs-cell { border-left: 1px solid var(--color-ink-100); }
@@ -306,7 +274,8 @@
   color: var(--color-ink-900); background: var(--color-surface);
   border: 1px solid var(--color-ink-300); border-radius: var(--radius-button);
 }
-.lp-zip-form input { width: 180px; }
+.lp-zip-form input { width: 120px; }
+.lp-zip-form select { padding: 0 12px; }
 .lp-zip-form input:focus, .lp-zip-form select:focus { outline: 2px solid var(--color-accent); outline-offset: -1px; }
 .lp-zip-form .lp-btn { height: 44px; }
 .lp-zip-note { display: flex; align-items: flex-start; gap: 8px; margin: 16px 0 0; font-size: 14px; color: var(--color-ink-600); line-height: 1.55; max-width: 560px; }
@@ -380,15 +349,14 @@
 .lp-photo.is-empty figcaption { display: flex; flex-direction: column; gap: 4px; max-width: 34ch; }
 .lp-photo.is-empty figcaption b { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-ink-500); }
 .lp-photo.is-empty figcaption span { font-size: 12px; line-height: 1.5; color: var(--color-ink-400); }
-/* The round founder slot is too small for placeholder prose — icon only.
-   Declared after the block above: at equal specificity the later rule wins. */
-.lp-photo.lp-founder-photo { border-radius: 50%; }
-.lp-photo.lp-founder-photo.is-empty { padding: 0; }
-.lp-photo.lp-founder-photo.is-empty figcaption { display: none; }
 
 /* Photo tile inside the feature grid — a breather in a wall of product UI. */
 .lp-feature-photo { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
-.lp-feature-photo .lp-photo { flex: 1; border-radius: 0; border-left: 0; border-right: 0; border-top: 0; }
+/* min-height, not a taller aspect-ratio: the photo is a flex child with a 0
+   basis, so its height comes from the grid row, and a ratio alone would be
+   ignored. 420px is what the contained phone mockup needs to read as a device
+   rather than a stamp; the row's other cards stretch to match. */
+.lp-feature-photo .lp-photo { flex: 1; min-height: 420px; border-radius: 0; border-left: 0; border-right: 0; border-top: 0; }
 .lp-feature-photo-cap { padding: 16px 20px 18px; }
 .lp-feature-photo-cap strong { display: block; font-family: var(--font-display); font-size: 15px; color: var(--color-ink-900); }
 .lp-feature-photo-cap span { font-size: 13px; color: var(--color-ink-600); }
@@ -422,7 +390,6 @@
   .lp-nav-links { display: none; }
   .lp-price-featured { order: -1; }
   .lp-zip-list li { flex-wrap: wrap; }
-  .lp-zip-form input { flex: 1; min-width: 120px; }
   /* The math reads top-to-bottom on a phone; the divider turns horizontal. */
   .lp-price-math { grid-template-columns: 1fr; }
   .lp-price-math-vs { padding: 8px 0; border-left: 0; border-right: 0; border-top: 1px solid var(--color-ink-100); border-bottom: 1px solid var(--color-ink-100); }
@@ -438,8 +405,6 @@
   .lp-zip-form input, .lp-zip-form select, .lp-zip-form .lp-btn { width: 100%; min-width: 0; }
   .lp-zip-form .lp-btn { justify-content: center; }
   .lp-hero { padding-top: 48px; }
-  .lp-founder { align-items: flex-start; }
-  .lp-founder-photo { width: 56px; }
   .lp-zip-stats { gap: 8px 16px; }
   /* Long single-token strings (addresses, emails) must wrap, not widen the page. */
   .lp-zip-addr, .lp-hero-sources { overflow-wrap: anywhere; }
