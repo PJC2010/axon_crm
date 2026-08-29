@@ -89,12 +89,14 @@ UNWORKED_ONLY_SQL = """(
 # Columns shown in a sample row — the ones an operator needs to recognise a
 # parcel, matching the property-signals panel on the lead page.
 #
-# This tuple MUST be a superset of every column residential.classify() reads,
-# because each sample's `reasons` are re-derived from the projected row. Omit
-# one and the row silently loses a reason the SQL counted: the audit would
-# report N rows flagged for `county_class` and then show examples that do not
-# mention it. That is the same Python/SQL drift tests/test_addr.py exists to
-# prevent, and _guard_sample_cols below fails at import if it reappears.
+# This tuple MUST remain a superset of every column residential.classify()
+# reads. Samples now carry the stored verdict rather than a Python
+# re-derivation (migration 0083), so a missing column no longer makes the
+# reasons disagree with the counts — but it still leaves the operator looking at
+# a row flagged `oversized_structure` with no square footage on screen, unable
+# to check the call the panel is asking them to confirm. The guard also keeps
+# tests/test_property_audit_stored.py able to re-derive a sample and compare it
+# against what the sweep stored. _guard_sample_cols below fails at import.
 _SAMPLE_COLS = (
     "id", "account_number", "address", "zip", "owner_name", "property_type",
     "state_class", "square_footage", "year_built", "estimated_value",
@@ -123,20 +125,25 @@ _guard_sample_cols()
 
 
 # ── Evaluating the rule at account scale ─────────────────────────────────────
-# The audit and the archive run the full reason battery over every scoped row.
-# Two structural rules keep that scan inside DB_STATEMENT_TIMEOUT_MS — the 30s
-# request cap the account-wide audit used to blow through, returning
-# QueryCanceled (a 500) to the data-quality page instead of a report:
+# `classify` (the sweep) and `archive` run the full reason battery over every
+# scoped row. `audit` no longer does — it reads the stored verdict (migration
+# 0083), because keeping a per-row battery inside DB_STATEMENT_TIMEOUT_MS on a
+# page load turned out not to be a fight worth continuing to win: it returned
+# QueryCanceled (a 500) to the data-quality page on 2026-08-29.
+#
+# For the two paths that still derive it, two structural rules keep the scan
+# affordable:
 #
 #   1. owner_name is normalized ONCE per row. Without `owner_norm`, sql_reason
 #      embeds the double-REGEXP_REPLACE normalization into every token/phrase
 #      strpos, and Postgres does not common-subexpression-eliminate scalar
-#      expressions — across the totals FILTERs that was ~440 regex evaluations
-#      per row, milliseconds each thousand, minutes per account. The inner
-#      subquery projects `__owner_norm` once and every fragment reads it.
+#      expressions — ~76 evaluations per row, milliseconds each thousand,
+#      minutes per account. The inner subquery projects `__owner_norm` once and
+#      every fragment reads it.
 #   2. Each reason is evaluated ONCE per row, as a boolean column of the
-#      middle subquery; the aggregates then combine booleans instead of
-#      re-deriving the battery in every FILTER clause.
+#      middle subquery (archive) or one element of the verdict array
+#      (classify); the consumer then combines booleans instead of re-deriving
+#      the battery in every clause that references one.
 #
 # Both subqueries end in OFFSET 0 — the optimizer fence. Without it Postgres
 # pulls the subquery up and substitutes the __owner_norm / r_* expressions
@@ -163,11 +170,273 @@ def _flag_cols(reasons) -> str:
 
 
 def _any(reasons) -> str:
-    """Boolean OR over already-computed reason columns."""
+    """Boolean OR over already-computed reason columns (archive's flags subquery)."""
     return "(" + " OR ".join(f"r_{r}" for r in reasons) + ")"
 
 
+# ── Reading the stored verdict ───────────────────────────────────────────────
+# The audit's side of migration 0083. Each helper below reads
+# `non_residential_reasons` and touches none of the 11,678-byte battery.
+#
+# NULL (never classified) is deliberately falsy throughout: `= ANY(NULL)` and
+# `NULL && ARRAY[...]` are both NULL, and COUNT(*) FILTER treats NULL as false.
+# An unclassified row therefore never counts as flagged. It is reported on its
+# own as `unclassified` instead, because an audit that quietly calls an
+# unexamined row clean is not an audit.
+
+def _has(reason: str) -> str:
+    """Does the stored verdict carry this reason?"""
+    return f"'{reason}' = ANY(non_residential_reasons)"
+
+
+def _has_any(reasons) -> str:
+    """Does the stored verdict carry any of these? `&&` is array overlap."""
+    if not reasons:
+        return "(FALSE)"
+    literals = ", ".join(f"'{r}'" for r in reasons)
+    return f"(non_residential_reasons && ARRAY[{literals}]::text[])"
+
+
+# "Classified, and tripped at least one reason." array_length is NULL for both
+# an empty array and a NULL one, which is why it needs the COALESCE.
+FLAGGED_SQL = "(COALESCE(array_length(non_residential_reasons, 1), 0) > 0)"
+UNCLASSIFIED_SQL = "(non_residential_reasons IS NULL)"
+
+
+# ── The stored verdict (migration 0083) ──────────────────────────────────────
+# Everything above builds the rule as SQL. Everything here is about running it
+# ONCE per row instead of once per read.
+#
+# The audit is a page load and the battery is 11,678 bytes evaluated per row,
+# three passes deep. That combination returned QueryCanceled — a 500 — to the
+# data-quality page on 2026-08-29, exactly as this module's header predicted.
+# `properties.non_residential_reasons` holds the answer instead: NULL until
+# classified, then the array of reasons the row trips (`{}` for a clean row).
+#
+# The split of labour, which is not symmetric:
+#   audit()    reads the stored array. Must be fast; may be a moment stale.
+#   archive()  re-evaluates the live rule in its own UPDATE. Must be right;
+#              is a deliberate, owner-only action, not a page load.
+# A row that changed since the last sweep is therefore stamped by archive with
+# what is true of it now — a property worth keeping, and the reason archive() is
+# deliberately NOT converted to read the column.
+
+
+def _flag_array(prefix: str = "", owner_norm: str | None = None) -> str:
+    """SQL building the reasons array for one row.
+
+    Each reason contributes `CASE WHEN <expr> THEN '<name>' END`, which is NULL
+    when the reason does not apply; ARRAY_REMOVE then drops the NULLs. A row
+    tripping nothing yields `{}` — an empty array, never NULL, so "classified
+    and clean" stays distinguishable from "not yet classified".
+    """
+    arms = ",\n                           ".join(
+        f"CASE WHEN {sql_reason(r, prefix, owner_norm=owner_norm)} THEN '{r}' END"
+        for r in ALL_REASONS
+    )
+    return f"ARRAY_REMOVE(ARRAY[\n                           {arms}\n                       ], NULL)"
+
+
+def rule_hash() -> str:
+    """Fingerprint of the residential rule AS DEPLOYED.
+
+    The generated SQL folds in the token and phrase lists, the tier
+    composition, and this environment's NONRESIDENTIAL_* thresholds — so an
+    operator editing pipeline/residential.py, or overriding a threshold, changes
+    the hash. Stamped per account in property_rule_stamps (0083); a stale stamp
+    is what makes the next sweep re-derive instead of trusting the change guard,
+    which would otherwise make a rule change invisible forever.
+
+    Deliberately the same construction as parcels._rule_hash, over ALL_REASONS
+    rather than the EXCLUDE tier, because the audit reports both tiers.
+    """
+    import hashlib
+
+    payload = "\n".join(sql_reason(r) for r in ALL_REASONS)
+    return hashlib.sha256(payload.encode()).hexdigest()[:16]
+
+
+def stamped_rule_hash(cur, account_id: int):
+    cur.execute("SELECT rule_hash FROM property_rule_stamps WHERE account_id = %s",
+                (account_id,))
+    row = cur.fetchone()
+    if row is None:
+        return None
+    # RealDictCursor in some callers, plain tuple in others.
+    return row["rule_hash"] if isinstance(row, dict) else row[0]
+
+
+def stamp_rule(cur, account_id: int, value: str) -> None:
+    cur.execute(
+        """
+        INSERT INTO property_rule_stamps (account_id, rule_hash, classified_at)
+        VALUES (%s, %s, NOW())
+        ON CONFLICT (account_id) DO UPDATE SET
+            rule_hash = EXCLUDED.rule_hash, classified_at = NOW()
+        """,
+        (account_id, value),
+    )
+
+
+def next_batch_bound(conn, account_id: int, *, zip_code: str | None = None,
+                     after_id: int = 0, batch_size: int = 5000):
+    """Highest `id` in the next batch of this account's rows, or None if none.
+
+    Keyset pagination over the primary key, and the reason `classify` takes an
+    id range rather than a bare LIMIT.
+
+    A `LIMIT n` with no ordering re-reads an arbitrary — in practice, the same —
+    n rows every call. Combined with classify's `IS DISTINCT FROM` change guard
+    that is silently wrong on the path that matters most: after a rule change,
+    batch 1 corrects some rows, batch 2 reads the same rows, finds nothing left
+    to change, reports 0, and the sweep concludes it has finished an account it
+    has barely started — then stamps the new rule hash over it, so nothing ever
+    revisits the remainder.
+
+    Ordering by id makes each batch disjoint and the walk terminating, at the
+    cost of one cheap index-only query per batch.
+    """
+    scope_sql, scope_params = _scope(account_id, zip_code)
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT MAX(id) FROM (
+                SELECT id FROM properties
+                WHERE {scope_sql} AND id > %s
+                ORDER BY id LIMIT %s
+            ) batch
+            """,
+            scope_params + [int(after_id), int(batch_size)],
+        )
+        row = cur.fetchone()
+    if not row:
+        return None
+    return row["max"] if isinstance(row, dict) else row[0]
+
+
+def classify(conn, account_id: int, *, zip_code: str | None = None,
+             after_id: int | None = None, through_id: int | None = None,
+             only_unclassified: bool = False) -> int:
+    """Re-derive `non_residential_reasons` for an account. Returns rows changed.
+
+    This is where the expensive battery runs, and the only place it runs on a
+    read path's behalf. Structure mirrors parcels._classify_residential, for the
+    same measured reasons:
+
+    * owner_name is normalized ONCE per row in the inner subquery and every
+      reason reads `__owner_norm`. Inline, the owner battery re-runs a double
+      REGEXP_REPLACE once per token and phrase — ~76 times per row.
+    * Both subqueries end in `OFFSET 0`, the optimizer fence. Without it the
+      planner pulls them up and substitutes the expressions back into each
+      reference, restoring exactly the cost this structure removes.
+    * `IS DISTINCT FROM` keeps a re-run write-free for rows whose verdict
+      stands — no dead tuples, no bloat, no index churn on a nightly sweep.
+      It is also why the rule stamp exists: with no writes, nothing else would
+      ever notice that the rule itself changed.
+
+    `after_id`/`through_id` bound one batch to a half-open primary-key range,
+    from `next_batch_bound`. The nightly sweep runs inside the API process
+    (api/scheduler.py), so an account-wide UPDATE has to be divisible or it
+    becomes the long statement this whole change is about. A range rather than a
+    LIMIT because batches must be disjoint — see next_batch_bound.
+
+    `only_unclassified=True` restricts to rows never classified — the cheap
+    catch-up path, served by idx_properties_unclassified (0083).
+    """
+    scope_sql, scope_params = _scope(account_id, zip_code)
+    params = list(scope_params)
+    if only_unclassified:
+        scope_sql += " AND non_residential_reasons IS NULL"
+    # Appended in statement order: psycopg2 binds %s positionally by where the
+    # placeholder appears in the text, and both of these sit in the inner WHERE
+    # after the scope predicates.
+    if after_id is not None:
+        scope_sql += " AND id > %s"
+        params.append(int(after_id))
+    if through_id is not None:
+        scope_sql += " AND id <= %s"
+        params.append(int(through_id))
+
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            UPDATE properties SET non_residential_reasons = v.reasons
+            FROM (
+                SELECT src.id,
+                       {_flag_array('src.', owner_norm='src.__owner_norm')}
+                           AS reasons
+                FROM (SELECT *, {sql_normalize('owner_name')} AS __owner_norm
+                      FROM properties WHERE {scope_sql}
+                      OFFSET 0) src
+                OFFSET 0
+            ) v
+            WHERE properties.id = v.id
+              AND properties.non_residential_reasons IS DISTINCT FROM v.reasons
+            """,
+            params,
+        )
+        changed = cur.rowcount
+    conn.commit()
+    return changed
+
+
+def sweep(conn, account_id: int, *, batch_size: int = 5000,
+          max_batches: int = 20) -> dict:
+    """Bring one account's verdicts up to date with the live rule.
+
+    Two cases, and they cost very differently:
+
+    * The stamp matches the deployed rule — only rows never classified need
+      work, and idx_properties_unclassified finds them without a scan. This is
+      the steady state, and on a quiet account it costs one index probe.
+    * The stamp is missing or stale (the rule changed) — every row must be
+      re-derived, because the change guard means a re-run of an unchanged rule
+      writes nothing and nothing else would ever notice the difference.
+
+    Walks the primary key in disjoint batches (see next_batch_bound), bounded by
+    `max_batches` so one tick can never run unboundedly. The remainder is picked
+    up by the next tick — and crucially, the stamp is written ONLY when the walk
+    reaches the end. Stamping a partial sweep would tell the next tick the rule
+    change had been applied and strand every row this one did not reach.
+
+    Returns what it did, including `complete`, so a caller can log a partial
+    sweep rather than report a clean one.
+    """
+    current = rule_hash()
+    with conn.cursor() as cur:
+        stale = stamped_rule_hash(cur, account_id) != current
+
+    changed = batches = 0
+    after_id = 0
+    complete = False
+    for _ in range(max_batches):
+        through_id = next_batch_bound(conn, account_id, after_id=after_id,
+                                      batch_size=batch_size)
+        if through_id is None:
+            complete = True          # walked past the last row
+            break
+        changed += classify(conn, account_id, after_id=after_id,
+                            through_id=through_id,
+                            only_unclassified=not stale)
+        batches += 1
+        after_id = through_id
+
+    log.info("residential: swept account %s — %d verdict(s) changed in %d "
+             "batch(es), stale_rule=%s, complete=%s",
+             account_id, changed, batches, stale, complete)
+
+    if complete:
+        with conn.cursor() as cur:
+            stamp_rule(cur, account_id, current)
+        conn.commit()
+
+    return {"changed": changed, "batches": batches, "rule_was_stale": stale,
+            "complete": complete, "rule_hash": current,
+            "resume_after_id": None if complete else after_id}
+
+
 def _scope(account_id: int, zip_code: str | None,
+
            include_archived: bool = False) -> tuple[str, list]:
     """WHERE fragment + params for 'this account's live leads'.
 
@@ -190,10 +459,23 @@ def audit(conn, account_id: int, *, zip_code: str | None = None,
     """Free, read-only report on non-residential rows in this account's leads.
 
     No vendor calls and nothing written — safe to hit on a page load, the same
-    contract as pipeline/backfill.py::audit. Returns::
+    contract as pipeline/backfill.py::audit.
+
+    Reads the STORED verdict (`non_residential_reasons`, migration 0083) rather
+    than re-deriving the rule. Deriving it here meant 11,678 bytes of predicate
+    per row across three passes, which is what returned QueryCanceled to the
+    data-quality page on 2026-08-29. `classify`/`sweep` above own the derivation
+    now, off the request path.
+
+    The cost of that trade is staleness, and the report is explicit about it:
+    `unclassified` counts rows the rule has not reached, and `rule_stale` says
+    whether the deployed rule has changed since the last sweep. Neither is
+    folded into the flagged/clean split. Returns::
 
         {
           "properties":  int,              # live leads in scope
+          "unclassified": int,             # …the rule has not reached yet
+          "rule_stale":  bool,             # deployed rule changed since the sweep
           "flagged":     int,              # …carrying at least one reason
           "excludable":  int,              # …carrying at least one EXCLUDE reason
           "by_reason":   {reason: {count, tier, label}},
@@ -209,15 +491,15 @@ def audit(conn, account_id: int, *, zip_code: str | None = None,
     scope_sql, scope_params = _scope(account_id, zip_code)
 
     # One pass over the account's rows: totals and every per-reason count in a
-    # single scan, rather than a query per reason. The middle subquery computes
-    # each reason exactly once (see _scoped_rows above); FILTER (WHERE …) then
-    # combines the booleans, keeping each count independent while sharing the
-    # scan.
+    # single scan, rather than a query per reason. Each count is now an array
+    # membership test against the stored verdict — `'x' = ANY(reasons)` — so
+    # FILTER combines nine cheap booleans over one scan instead of re-deriving
+    # the rule nine times per row.
     reason_counts = ",\n                ".join(
-        f"COUNT(*) FILTER (WHERE r_{r}) AS n_{r}" for r in ALL_REASONS
+        f"COUNT(*) FILTER (WHERE {_has(r)}) AS n_{r}" for r in ALL_REASONS
     )
-    any_excl = _any(EXCLUDE_REASONS)
-    any_reason = _any(ALL_REASONS)
+    any_excl = _has_any(EXCLUDE_REASONS)
+    any_reason = FLAGGED_SQL
 
     # The spend-at-risk and protected counts are FILTERs on the same scan
     # rather than queries of their own. No fragment here binds a parameter, so
@@ -226,10 +508,16 @@ def audit(conn, account_id: int, *, zip_code: str | None = None,
     from pipeline.backfill import _gap_clause
 
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        # Cheap, and it decides how the numbers below should be read: a stale
+        # stamp means the stored verdicts were derived by a different build of
+        # the rule than the one deployed now.
+        rule_is_stale = stamped_rule_hash(cur, account_id) != rule_hash()
+
         cur.execute(
             f"""
             SELECT
                 COUNT(*) AS properties,
+                COUNT(*) FILTER (WHERE {UNCLASSIFIED_SQL}) AS unclassified,
                 COUNT(*) FILTER (WHERE {any_reason}) AS flagged,
                 COUNT(*) FILTER (WHERE {any_excl})   AS excludable,
                 COUNT(*) FILTER (WHERE {any_excl} AND has_gap) AS billable,
@@ -237,10 +525,10 @@ def audit(conn, account_id: int, *, zip_code: str | None = None,
                     AS protected,
                 {reason_counts}
             FROM (
-                SELECT {_flag_cols(ALL_REASONS)},
+                SELECT non_residential_reasons,
                        {_gap_clause()} AS has_gap,
                        {UNWORKED_ONLY_SQL} AS unworked
-                FROM {_scoped_rows(scope_sql)}
+                FROM properties WHERE {scope_sql}
                 OFFSET 0
             ) flags
             """,
@@ -252,20 +540,15 @@ def audit(conn, account_id: int, *, zip_code: str | None = None,
         # clear-cut, and the highest-scoring ones are the leads actively wasting
         # a rep's time.
         reason_score = " + ".join(
-            f"(CASE WHEN r_{r} THEN 1 ELSE 0 END)" for r in EXCLUDE_REASONS
+            f"(CASE WHEN {_has(r)} THEN 1 ELSE 0 END)" for r in EXCLUDE_REASONS
         )
         cols = ", ".join(_SAMPLE_COLS)
         cur.execute(
             f"""
-            SELECT {cols},
+            SELECT {cols}, non_residential_reasons,
                    {reason_score} AS reason_count
-            FROM (
-                SELECT {cols},
-                       {_flag_cols(ALL_REASONS)}
-                FROM {_scoped_rows(scope_sql)}
-                OFFSET 0
-            ) flags
-            WHERE {any_reason}
+            FROM properties
+            WHERE {scope_sql} AND {any_reason}
             ORDER BY reason_count DESC, lead_score DESC NULLS LAST, id
             LIMIT %s
             """,
@@ -283,12 +566,7 @@ def audit(conn, account_id: int, *, zip_code: str | None = None,
                 SELECT zip,
                        COUNT(*) AS properties,
                        COUNT(*) FILTER (WHERE {any_excl}) AS excludable
-                FROM (
-                    SELECT zip,
-                           {_flag_cols(EXCLUDE_REASONS)}
-                    FROM {_scoped_rows(scope_sql)}
-                    OFFSET 0
-                ) flags
+                FROM properties WHERE {scope_sql}
                 GROUP BY zip
                 HAVING COUNT(*) FILTER (WHERE {any_excl}) > 0
                 ORDER BY excludable DESC, zip
@@ -312,17 +590,29 @@ def audit(conn, account_id: int, *, zip_code: str | None = None,
         )
         already_archived = (cur.fetchone() or {}).get("n") or 0
 
-    # Re-derive each sample's reasons in Python from the row we already have, so
-    # the API can explain a flag without another query. classify() and the SQL
-    # above are the same rule (tests/test_residential.py proves it), so this
-    # cannot disagree with the counts.
-    from pipeline.residential import classify
+    # Each sample's reasons come from the same stored array the counts were
+    # aggregated from, so a sample can no longer disagree with the total that
+    # selected it. Previously these were re-derived in Python from the projected
+    # row, which held only as long as _SAMPLE_COLS stayed a superset of every
+    # column the rule reads — the drift _guard_sample_cols exists to catch.
+    # Reading the column removes the opportunity for drift rather than guarding
+    # against it; tests/test_property_audit_stored.py pins that the stored array
+    # and residential.classify() still agree on the same row.
     for row in samples:
         row.pop("reason_count", None)
-        row["reasons"] = classify(row)
+        row["reasons"] = list(row.pop("non_residential_reasons", None) or [])
 
     return {
         "properties": int(totals.get("properties") or 0),
+        # Rows the rule has not reached yet (migration 0083 ships no backfill).
+        # Reported rather than folded into either side: these are not known to
+        # be clean, and a caller showing "0 flagged" beside a large
+        # `unclassified` is telling the operator something different from a
+        # clean account.
+        "unclassified": int(totals.get("unclassified") or 0),
+        # TRUE when the deployed rule has changed since this account was last
+        # swept, so the stored verdicts predate it.
+        "rule_stale": rule_is_stale,
         "flagged": int(totals.get("flagged") or 0),
         # What archive() would act on. Smaller than the sum of by_reason counts:
         # one bad row usually trips several reasons at once.
@@ -344,6 +634,34 @@ def audit(conn, account_id: int, *, zip_code: str | None = None,
         "protected": int(totals.get("protected") or 0),
         "already_archived": int(already_archived),
         "scope": {"zip": zip_code},
+        # Always present, so a client reads one field rather than testing for
+        # the key's absence. empty_report() is the True case.
+        "degraded": False,
+    }
+
+
+def empty_report(account_id: int, zip_code: str | None = None) -> dict:
+    """The audit's shape with every figure zeroed and `degraded` set.
+
+    Returned by the route when the audit itself times out
+    (api/deps.py::soft_query), so the panel renders its own empty state instead
+    of the client having to special-case a 500. Built from ALL_REASONS rather
+    than written out, so a new reason cannot be missing from the degraded shape
+    only — the sort of gap that shows up once, in front of an operator, on the
+    day the database is already slow.
+    """
+    return {
+        "properties": 0, "unclassified": 0, "rule_stale": False,
+        "flagged": 0, "excludable": 0,
+        "by_reason": {r: {"count": 0, "tier": REASON_TIERS[r],
+                          "label": REASON_LABELS[r]} for r in ALL_REASONS},
+        "samples": [], "by_zip": [],
+        "spend_at_risk": {"billable_rows": 0},
+        "protected": 0, "already_archived": 0,
+        "scope": {"zip": zip_code},
+        # The one field that differs from a genuine clean report: every zero
+        # above means "not measured", not "none found".
+        "degraded": True,
     }
 
 

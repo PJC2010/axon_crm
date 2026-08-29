@@ -67,21 +67,29 @@ class _FakeConn:
 
 
 def _audit_results(totals=None, samples=(), by_zip=(), billable=0, archived=0,
-                   protected=0):
+                   protected=0, unclassified=0, rule_hash=None):
     """The result sets audit() consumes, in order.
 
-    Three statements by default — totals, samples, already-archived — because
-    the spend-at-risk and protected counts are FILTERs on the totals scan. A
-    fourth (by_zip) is appended for the opt-in path.
+    Four statements by default — the rule stamp, then totals, samples and
+    already-archived — because the spend-at-risk and protected counts are
+    FILTERs on the totals scan. A fifth (by_zip) is inserted for the opt-in path.
+
+    The stamp read is first and comes from migration 0083: the audit reads a
+    stored verdict, so it has to say whether that verdict was derived by the
+    rule currently deployed. Defaults to the live hash, i.e. not stale, because
+    that is the uninteresting case for every test that is about something else.
     """
-    base = {"properties": 100, "flagged": 7, "excludable": 5,
+    from pipeline.property_audit import rule_hash as live_rule_hash
+    stamp = [{"rule_hash": rule_hash if rule_hash is not None else live_rule_hash()}]
+    base = {"properties": 100, "unclassified": unclassified,
+            "flagged": 7, "excludable": 5,
             "billable": billable, "protected": protected}
     base.update({f"n_{r}": 0 for r in
                  list(EXCLUDE_REASONS) + list(REVIEW_REASONS)})
     base.update(totals or {})
     if by_zip:
-        return [[base], list(samples), list(by_zip), [{"n": archived}]]
-    return [[base], list(samples), [{"n": archived}]]
+        return [stamp, [base], list(samples), list(by_zip), [{"n": archived}]]
+    return [stamp, [base], list(samples), [{"n": archived}]]
 
 
 # ── Scoping ──────────────────────────────────────────────────────────────────
@@ -106,20 +114,30 @@ def test_live_leads_only_by_default():
     cur = _FakeCursor(_audit_results())
     audit(_FakeConn(cur), 1)
     # The statements reporting work still to do; the last counts what a previous
-    # archive already handled and deliberately looks at archived rows.
-    for sql, _ in cur.statements[:-1]:
+    # archive already handled and deliberately looks at archived rows. The rule
+    # stamp reads property_rule_stamps, not leads, so it has no scope to apply.
+    lead_reads = [s for s, _ in cur.statements if "FROM properties" in s]
+    assert lead_reads
+    for sql in lead_reads[:-1]:
         assert "archived_at IS NULL" in sql
 
 
 def test_audit_uses_one_scan_for_the_headline_counts():
-    """Each predicate re-normalizes owner_name, so an extra pass over the
-    account is expensive and this runs behind a page load. spend-at-risk and
-    protected are FILTERs on the totals scan, and the per-ZIP breakdown — which
-    only the CLI renders — is opt-in."""
+    """An extra pass over the account is expensive and this runs behind a page
+    load. spend-at-risk and protected are FILTERs on the totals scan, and the
+    per-ZIP breakdown — which only the CLI renders — is opt-in.
+
+    Four statements, not three, since migration 0083: the rule stamp is read
+    first so the report can say whether the stored verdicts predate the
+    deployed rule. It is a single-row primary-key lookup, not a pass over the
+    account, which is why it does not count against this budget."""
     cur = _FakeCursor(_audit_results())
     audit(_FakeConn(cur), 1)
-    assert len(cur.statements) == 3, [s[:60] for s, _ in cur.statements]
-    totals = cur.statements[0][0]
+    assert len(cur.statements) == 4, [s[:60] for s, _ in cur.statements]
+    scans = [s for s, _ in cur.statements if "FROM properties" in s]
+    assert len(scans) == 3, \
+        "totals + samples + already-archived; anything more is a new pass"
+    totals = cur.statements[1][0]
     assert "AS billable" in totals and "AS protected" in totals
     assert "GROUP BY zip" not in cur.all_sql()
 
@@ -128,7 +146,7 @@ def test_by_zip_is_opt_in():
     cur = _FakeCursor(_audit_results(
         by_zip=[{"zip": "77024", "properties": 10, "excludable": 3}]))
     out = audit(_FakeConn(cur), 1, by_zip=True)
-    assert len(cur.statements) == 4
+    assert len(cur.statements) == 5
     assert "GROUP BY zip" in cur.all_sql()
     assert out["by_zip"][0]["zip"] == "77024"
 
@@ -141,7 +159,9 @@ def test_by_zip_defaults_to_empty():
 def test_zip_scope_is_bound_not_interpolated():
     cur = _FakeCursor(_audit_results())
     audit(_FakeConn(cur), 1, zip_code="77024")
-    for sql, params in cur.statements:
+    scoped = [(s, p) for s, p in cur.statements if "FROM properties" in s]
+    assert scoped
+    for sql, params in scoped:
         assert "zip = %s" in sql
         assert "77024" in (params or [])
     assert "77024" not in cur.all_sql()
@@ -172,15 +192,20 @@ def _norm_expr():
     return sql_normalize("owner_name")
 
 
-def test_audit_normalizes_owner_name_once_per_statement():
+def test_audit_no_longer_normalizes_owner_name_at_all():
+    """Migration 0083 went further than normalizing once: the audit stopped
+    deriving the rule, so it has no owner battery left to feed.
+
+    This replaces an older test that pinned "normalized exactly once per
+    statement". Once-per-row was the best available answer while the read path
+    still evaluated the rule; not at all is strictly better, and this asserts
+    the stronger property so a partial revert cannot pass.
+    """
     cur = _FakeCursor(_audit_results())
     audit(_FakeConn(cur), 1)
-    totals_sql, samples_sql = cur.statements[0][0], cur.statements[1][0]
-    for sql in (totals_sql, samples_sql):
-        assert sql.count(_norm_expr()) == 1, sql[:200]
-        # Two fences: around the normalized source, and around the per-reason
-        # boolean columns the aggregates combine.
-        assert sql.count("OFFSET 0") == 2, sql[:200]
+    for sql, _ in cur.statements:
+        assert _norm_expr() not in sql, sql[:200]
+        assert "__owner_norm" not in sql, sql[:200]
 
 
 def test_archive_normalizes_owner_name_once_per_statement():
@@ -234,13 +259,19 @@ def test_samples_carry_their_reasons():
               "owner_name": "MEMORIAL CITY MALL LP", "property_type": None,
               "state_class": None, "square_footage": 147089, "year_built": 2001,
               "estimated_value": 13_465_295, "lead_score": 62.0,
-              "score_grade": "B", "status": "new", "reason_count": 3}
+              "score_grade": "B", "status": "new", "reason_count": 3,
+              # Since 0083 the reasons come from the stored verdict rather than
+              # being re-derived in Python, so they arrive on the row.
+              "non_residential_reasons": ["commercial_owner",
+                                          "oversized_structure", "no_situs"]}
     cur = _FakeCursor(_audit_results(samples=[sample]))
     out = audit(_FakeConn(cur), 1)
     got = out["samples"][0]
     assert set(got["reasons"]) == {"commercial_owner", "oversized_structure",
                                    "no_situs"}
     assert "reason_count" not in got, "internal ordering column leaked"
+    assert "non_residential_reasons" not in got, \
+        "raw column leaked alongside the `reasons` field it populates"
 
 
 def test_sample_projection_covers_every_classifier_input():

@@ -1033,12 +1033,19 @@ export interface PipelineStage {
 // ── Pipeline Analytics ───────────────────────────────────────────────────────
 
 export interface PipelineAnalytics {
-  win_rate: number
+  // Nullable because a panel whose query exceeds DASHBOARD_STATEMENT_TIMEOUT_MS
+  // degrades rather than 500ing the endpoint (api/deps.py::soft_query). null
+  // means "not measured" and must render as an em dash, never as 0 — telling an
+  // operator their win rate is 0% because the database was busy is worse than
+  // telling them nothing.
+  win_rate: number | null
   avg_cycle_time: number | null
-  leads_won: number
+  leads_won: number | null
   funnel: Record<string, number>
   avg_days_per_stage: Record<string, number | null>
   period_days: number
+  /** Panel keys that timed out; empty on the happy path. */
+  degraded?: string[]
 }
 
 export interface ForecastData {
@@ -1103,6 +1110,12 @@ export interface PipelineAlerts {
     default_stuck_days: number
     cooling_idle_days:  number
   }
+  /**
+   * Buckets whose query timed out. A bucket listed here reports count 0 because
+   * it could not be measured, not because it is empty — do not render "nothing
+   * is stuck" for one.
+   */
+  degraded?: string[]
 }
 
 // ── Team & performance attribution ─────────────────────────────────────────────

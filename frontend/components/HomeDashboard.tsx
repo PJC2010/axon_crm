@@ -270,8 +270,11 @@ export function HomeDashboard() {
     win: {
       eyebrow: 'Pipeline', title: 'Win rate · last 30 days',
       rows: [
-        { label: 'Win rate', value: `${data.analytics?.win_rate ?? 0}%`, tone: 'moss' },
-        { label: 'Deals won', value: String(data.analytics?.leads_won ?? 0) },
+        // `?? 0` would render a confident "0%" for a figure the API could not
+        // measure (api/deps.py::soft_query degrades instead of 500ing). An em
+        // dash is the honest rendering of "not known".
+        { label: 'Win rate', value: data.analytics?.win_rate != null ? `${data.analytics.win_rate}%` : '—', tone: 'moss' },
+        { label: 'Deals won', value: data.analytics?.leads_won != null ? String(data.analytics.leads_won) : '—' },
         { label: 'Avg cycle time', value: data.analytics?.avg_cycle_time != null ? `${data.analytics.avg_cycle_time}d` : '—' },
         { label: `Active ${t('leads').toLowerCase()}`, value: activeLeads != null ? String(activeLeads) : '—' },
       ],
@@ -560,7 +563,7 @@ export function HomeDashboard() {
                 <KpiTile key={id}
                   icon={<Percent size={15} strokeWidth={1.5} color="var(--color-moss)" />}
                   label="Win Rate"
-                  value={loading || !data.analytics ? '—' : `${data.analytics.win_rate}%`}
+                  value={loading || data.analytics?.win_rate == null ? '—' : `${data.analytics.win_rate}%`}
                   context={data.analytics?.avg_cycle_time != null ? `${data.analytics.avg_cycle_time}d avg cycle` : '30-day period'}
                   contextTone="moss"
                   onOpen={() => setDrawer('win')}

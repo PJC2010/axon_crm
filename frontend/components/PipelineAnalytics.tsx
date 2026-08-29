@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { TrendingUp, Clock, Trophy, BarChart3, ArrowDown } from 'lucide-react'
+import { TrendingUp, Clock, Trophy, BarChart3, ArrowDown, AlertTriangle } from 'lucide-react'
 import { getPipelineAnalytics } from '@/lib/api'
 import type { PipelineAnalytics as AnalyticsData } from '@/lib/types'
 
@@ -86,11 +86,32 @@ export function PipelineAnalytics() {
         ))}
       </div>
 
+      {/* Some figures could not be measured — say so, rather than letting the
+          em dashes read as zeroes. `degraded` lists the panels whose query hit
+          DASHBOARD_STATEMENT_TIMEOUT_MS. */}
+      {data.degraded && data.degraded.length > 0 && (
+        <div
+          role="status"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px',
+            borderRadius: 8, background: 'var(--color-surface-2)',
+            border: '1px solid var(--color-border)', color: 'var(--color-ink-400)',
+            fontSize: 13,
+          }}
+        >
+          <AlertTriangle size={15} strokeWidth={1.6} aria-hidden />
+          <span>
+            Some figures took too long to calculate and are shown as “—”. They are
+            not zero. Try narrowing the period, or reload in a moment.
+          </span>
+        </div>
+      )}
+
       {/* KPI cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
-        <KpiCard icon={<Trophy size={16} strokeWidth={1.5} />} label="Win Rate" value={`${data.win_rate}%`} color="var(--color-moss)" accent />
+        <KpiCard icon={<Trophy size={16} strokeWidth={1.5} />} label="Win Rate" value={data.win_rate != null ? `${data.win_rate}%` : '—'} color="var(--color-moss)" accent />
         <KpiCard icon={<Clock size={16} strokeWidth={1.5} />} label="Avg Cycle Time" value={data.avg_cycle_time != null ? `${data.avg_cycle_time}d` : '—'} color="var(--color-accent)" />
-        <KpiCard icon={<TrendingUp size={16} strokeWidth={1.5} />} label="Leads Won" value={String(data.leads_won)} color="var(--color-gold)" />
+        <KpiCard icon={<TrendingUp size={16} strokeWidth={1.5} />} label="Leads Won" value={data.leads_won != null ? String(data.leads_won) : '—'} color="var(--color-gold)" />
         <KpiCard icon={<BarChart3 size={16} strokeWidth={1.5} />} label="Period" value={`${data.period_days} days`} color="var(--color-ink-400)" />
       </div>
 

@@ -25,6 +25,16 @@ DB_CONNECT_TIMEOUT_SECONDS = int(os.getenv("DB_CONNECT_TIMEOUT_SECONDS", "5"))
 # query must not hold a worker + connection forever. 0 disables.
 DB_STATEMENT_TIMEOUT_MS = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "30000"))
 
+# Tighter cap for read-only dashboard panels (api/deps.py::soft_query). The 30s
+# above is a backstop against a pathological query holding a worker; it is far
+# too long for a widget. A panel that cannot answer in a few seconds should show
+# what it has and say so — the alternative, observed in production on
+# 2026-08-29, is that the operator waits half a minute and is then handed a 500
+# with no data at all. Applied per statement with SET LOCAL, so it never leaks
+# to the next request on the pooled connection. 0 falls back to the global cap.
+DASHBOARD_STATEMENT_TIMEOUT_MS = int(
+    os.getenv("DASHBOARD_STATEMENT_TIMEOUT_MS", "5000"))
+
 # Purging an organization (DELETE /admin/accounts/{id}) is legitimately the
 # longest-running statement the API issues: Postgres runs one referential-
 # integrity query per deleted row per foreign key, and `properties` alone has

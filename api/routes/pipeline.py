@@ -17,7 +17,8 @@ from psycopg2.extensions import connection as PGConn
 from pydantic import BaseModel
 
 from api import scoring_quota
-from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user, require_owner
+from api.deps import (get_db, dict_fetchall, dict_fetchone, get_current_user,
+                      require_owner, soft_query)
 from api.entitlements import get_scoring_limit, require_module
 
 router = APIRouter()
@@ -53,6 +54,16 @@ COOLING_GRADES = ("A", "B")
 COOLING_ACTIVE_STATUSES = ("new", "contacted")
 COOLING_IDLE_DAYS = 5
 ALERTS_LIMIT = 50
+
+# Pushdown for the cooling-leads scan: the idle test applied to the columns the
+# row already carries, so the two correlated MAX() subqueries that compute
+# `last_activity_at` never run for a lead that is plainly still warm. Lossless
+# — see the query for why, including why NULL must be admitted rather than
+# filtered. Kept here because it is a threshold, not query plumbing.
+COOLING_PREFILTER = (
+    "COALESCE(GREATEST(stage_moved_at, created_at) "
+    "< NOW() - make_interval(days => %s), TRUE)"
+)
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
@@ -261,8 +272,22 @@ def pipeline_analytics(
     vert_filter = "AND vertical = %s" if vertical else ""
     vert_params = [vertical] if vertical else []
 
-    with db.cursor() as cur:
-        # Win rate
+    # Each panel is fetched under its own tightened statement_timeout and its
+    # own fallback (api/deps.py::soft_query). Five queries used to share one
+    # cursor and one 30s cap: the win-rate count timing out took the whole
+    # endpoint down with it, and the four behind it never ran at all. Now a slow
+    # panel costs its own number and nothing else — `degraded` tells the client
+    # which figures to distrust rather than leaving it to infer from a 500.
+    degraded: list[str] = []
+
+    def _q(name, fn, fallback):
+        value, timed_out = soft_query(db, fn, fallback)
+        if timed_out:
+            degraded.append(name)
+        return value
+
+    # Win rate
+    def _win_rate(cur):
         cur.execute(
             f"SELECT "
             f"  COUNT(*) FILTER (WHERE status = 'won') AS won, "
@@ -271,9 +296,12 @@ def pipeline_analytics(
             [acct, days] + vert_params,
         )
         wr = dict_fetchone(cur)
-        win_rate = round((wr["won"] / wr["decided"] * 100) if wr["decided"] > 0 else 0, 1)
+        return round((wr["won"] / wr["decided"] * 100) if wr["decided"] > 0 else 0, 1)
 
-        # Avg cycle time (created_at → stage_moved_at for won leads)
+    win_rate = _q("win_rate", _win_rate, None)
+
+    # Avg cycle time (created_at → stage_moved_at for won leads)
+    def _cycle_time(cur):
         cur.execute(
             f"SELECT AVG(EXTRACT(EPOCH FROM (stage_moved_at - created_at)) / 86400) AS avg_days "
             f"FROM properties WHERE account_id = %s AND archived_at IS NULL AND status = 'won' AND stage_moved_at IS NOT NULL AND created_at IS NOT NULL "
@@ -281,21 +309,28 @@ def pipeline_analytics(
             [acct, days] + vert_params,
         )
         ct = dict_fetchone(cur)
-        avg_cycle_time = round(ct["avg_days"], 1) if ct and ct["avg_days"] else None
+        return round(ct["avg_days"], 1) if ct and ct["avg_days"] else None
 
-        # Leads won in period
+    avg_cycle_time = _q("avg_cycle_time", _cycle_time, None)
+
+    # Leads won in period
+    def _leads_won(cur):
         cur.execute(
             f"SELECT COUNT(*) AS count FROM properties WHERE account_id = %s AND archived_at IS NULL AND status = 'won' "
             f"AND stage_moved_at >= NOW() - INTERVAL '%s days' {vert_filter}",
             [acct, days] + vert_params,
         )
-        leads_won = cur.fetchone()[0]
+        return cur.fetchone()[0]
 
-        # Funnel: count per stage from stage_transitions (scoped to this org's leads)
-        acct_sub = (
-            "AND property_id IN (SELECT id FROM properties WHERE account_id = %s AND archived_at IS NULL"
-            + (" AND vertical = %s)" if vertical else ")")
-        )
+    leads_won = _q("leads_won", _leads_won, None)
+
+    # Funnel: count per stage from stage_transitions (scoped to this org's leads)
+    acct_sub = (
+        "AND property_id IN (SELECT id FROM properties WHERE account_id = %s AND archived_at IS NULL"
+        + (" AND vertical = %s)" if vertical else ")")
+    )
+
+    def _funnel(cur):
         cur.execute(
             f"SELECT to_status, COUNT(DISTINCT property_id) AS leads "
             f"FROM stage_transitions WHERE transitioned_at >= NOW() - INTERVAL '%s days' "
@@ -303,10 +338,12 @@ def pipeline_analytics(
             f"GROUP BY to_status",
             [days, acct] + vert_params,
         )
-        funnel_rows = dict_fetchall(cur)
-        funnel = {r["to_status"]: r["leads"] for r in funnel_rows}
+        return {r["to_status"]: r["leads"] for r in dict_fetchall(cur)}
 
-        # Avg days per stage from transitions (scoped to this org's leads)
+    funnel = _q("funnel", _funnel, {})
+
+    # Avg days per stage from transitions (scoped to this org's leads)
+    def _stage_time(cur):
         cur.execute(
             f"SELECT t1.from_status AS stage, "
             f"  AVG(EXTRACT(EPOCH FROM (t1.transitioned_at - t2.transitioned_at)) / 86400) AS avg_days "
@@ -321,8 +358,10 @@ def pipeline_analytics(
             f"GROUP BY t1.from_status",
             [days, acct],
         )
-        stage_time_rows = dict_fetchall(cur)
-        avg_days_per_stage = {r["stage"]: round(r["avg_days"], 1) if r["avg_days"] else None for r in stage_time_rows}
+        return {r["stage"]: round(r["avg_days"], 1) if r["avg_days"] else None
+                for r in dict_fetchall(cur)}
+
+    avg_days_per_stage = _q("avg_days_per_stage", _stage_time, {})
 
     return {
         "win_rate": win_rate,
@@ -331,6 +370,9 @@ def pipeline_analytics(
         "funnel": funnel,
         "avg_days_per_stage": avg_days_per_stage,
         "period_days": days,
+        # Panels whose query hit DASHBOARD_STATEMENT_TIMEOUT_MS. Empty on the
+        # happy path, so a client can treat truthiness as "something is missing".
+        "degraded": degraded,
     }
 
 
@@ -399,8 +441,19 @@ def pipeline_alerts(
     stuck_case = "CASE status " + " ".join(case_parts) + " ELSE make_interval(days => %s) END"
     case_params.append(DEFAULT_STUCK_DAYS)
 
-    with db.cursor() as cur:
-        # ── Stuck deals ──
+    # Three independent buckets, three independent budgets: the stuck scan
+    # timing out must not also cost the operator their overdue follow-ups. See
+    # api/deps.py::soft_query for why each one needs its own transaction.
+    degraded: list[str] = []
+
+    def _q(name, fn, fallback):
+        value, timed_out = soft_query(db, fn, fallback)
+        if timed_out:
+            degraded.append(name)
+        return value
+
+    # ── Stuck deals ──
+    def _stuck(cur):
         cur.execute(
             f"SELECT {CARD_COLS}, stage_moved_at, "
             f"  EXTRACT(DAY FROM (NOW() - stage_moved_at))::int AS days_in_stage "
@@ -410,9 +463,12 @@ def pipeline_alerts(
             f"ORDER BY stage_moved_at ASC LIMIT %s",
             [acct, TERMINAL_STATUSES] + case_params + [limit],
         )
-        stuck = dict_fetchall(cur)
+        return dict_fetchall(cur)
 
-        # ── Overdue follow-ups ──
+    stuck = _q("stuck_deals", _stuck, [])
+
+    # ── Overdue follow-ups ──
+    def _overdue(cur):
         cur.execute(
             "SELECT t.id, t.title, t.due_date, t.priority, t.property_id, t.assigned_to, "
             "  p.address, p.owner_name, (CURRENT_DATE - t.due_date) AS days_overdue, "
@@ -423,9 +479,34 @@ def pipeline_alerts(
             "ORDER BY t.due_date ASC LIMIT %s",
             (acct, limit),
         )
-        overdue = dict_fetchall(cur)
+        return dict_fetchall(cur)
 
-        # ── Cooling leads (last_activity = newest of stage move / creation / note / history) ──
+    overdue = _q("overdue_followups", _overdue, [])
+
+    # ── Cooling leads (last_activity = newest of stage move / creation / note / history) ──
+    #
+    # The two MAX() subqueries are correlated, so they run once per row the
+    # inner WHERE admits — and the idle-days test they feed can only be
+    # applied afterwards, on the computed column. Unpruned, that is every
+    # A/B-grade new/contacted lead in the account, twice, on a widget that
+    # loads with the dashboard.
+    #
+    # COOLING_PREFILTER is the same test applied to the two columns we
+    # already have, inside the scan. It is lossless, not an approximation:
+    # GREATEST ignores NULLs, so last_activity_at is the max over a superset
+    # of {stage_moved_at, created_at} and therefore
+    #     last_activity_at >= GREATEST(stage_moved_at, created_at)
+    # whenever the right-hand side is non-NULL. A row failing the prefilter
+    # has GREATEST(...) >= cutoff, hence last_activity_at >= cutoff, and the
+    # outer filter would have dropped it anyway.
+    #
+    # The COALESCE(..., TRUE) is what keeps that "whenever" honest.
+    # properties.created_at is `TIMESTAMP DEFAULT NOW()` — nullable, not NOT
+    # NULL — so a row can carry NULL for both columns while still having
+    # notes or history. GREATEST is then NULL, the comparison is NULL, and a
+    # bare prefilter would silently drop a row the outer filter accepts.
+    # Admitting NULL hands that row to the outer filter unchanged.
+    def _cooling(cur):
         cur.execute(
             f"SELECT * FROM ("
             f"  SELECT {CARD_COLS}, GREATEST("
@@ -435,12 +516,20 @@ def pipeline_alerts(
             f"  ) AS last_activity_at "
             f"  FROM properties "
             f"  WHERE account_id = %s AND archived_at IS NULL AND score_grade IN %s AND status IN %s"
+            f"    AND {COOLING_PREFILTER}"
             f") s "
             f"WHERE last_activity_at < NOW() - make_interval(days => %s) "
             f"ORDER BY lead_score DESC NULLS LAST LIMIT %s",
-            (acct, COOLING_GRADES, COOLING_ACTIVE_STATUSES, cooling_days, limit),
+            # cooling_days is bound TWICE, and the inner occurrence must come
+            # first: psycopg2 binds %s positionally by where the placeholder
+            # appears in the statement text, not by which clause was written
+            # first (CLAUDE.md, pipeline/db.py).
+            (acct, COOLING_GRADES, COOLING_ACTIVE_STATUSES, cooling_days,
+             cooling_days, limit),
         )
-        cooling = dict_fetchall(cur)
+        return dict_fetchall(cur)
+
+    cooling = _q("cooling_leads", _cooling, [])
 
     # A notification widget must honor the reveal allowance but never spend it:
     # this loads with the dashboard, and the stuck bucket is ordered by stage
@@ -480,6 +569,11 @@ def pipeline_alerts(
             "default_stuck_days": DEFAULT_STUCK_DAYS,
             "cooling_idle_days":  cooling_days,
         },
+        # Buckets whose query hit DASHBOARD_STATEMENT_TIMEOUT_MS. A bucket
+        # listed here reports count 0 because it could not be measured, not
+        # because it is empty — the distinction the client needs to not tell the
+        # operator "nothing is stuck" when the truth is "we could not look".
+        "degraded": degraded,
     }
 
 

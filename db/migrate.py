@@ -27,7 +27,40 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
+# How long a migration may WAIT for a lock before giving up. Render runs this
+# runner as preDeployCommand with the old instances still serving traffic, so a
+# migration that blocks on `properties` does not just wait — Postgres' lock
+# queue is FIFO, and every SELECT arriving behind a pending ACCESS EXCLUSIVE
+# queues behind it too. A 30s DB_STATEMENT_TIMEOUT_MS (api/deps.py) then turns
+# that wait into QueryCanceled 500s across the dashboard.
+#
+# 0077, 0078 and 0080 each opened with their own `SET LOCAL lock_timeout`;
+# 0081 did not, and two ALTER TABLE properties went out with an unbounded wait.
+# Setting it here makes the guard structural instead of a per-file habit: a
+# migration cannot forget what it never had to remember. A file that needs
+# something different still wins, because its own SET LOCAL runs afterwards.
+#
+# Failing fast is the right trade because every migration is written to be
+# idempotent (IF NOT EXISTS / IF EXISTS) — a migrate.py re-run is the retry.
+# Set to "" to disable and wait indefinitely.
+MIGRATION_LOCK_TIMEOUT = os.getenv("MIGRATION_LOCK_TIMEOUT", "10s")
+
 _PREFIX_RE = re.compile(r"^(\d+)(_.*)$")
+
+
+def apply_lock_timeout(cur) -> bool:
+    """Bound this transaction's lock waits. Returns whether a bound was set.
+
+    `set_config(..., is_local => true)` rather than `SET LOCAL`: SET does not
+    accept bind parameters, and an interpolated value here would be the one
+    place in the runner where an environment variable reaches SQL as text.
+    Transaction-scoped, so it lapses with the migration's own COMMIT.
+    """
+    if not MIGRATION_LOCK_TIMEOUT:
+        return False
+    cur.execute("SELECT set_config('lock_timeout', %s, true)",
+                (MIGRATION_LOCK_TIMEOUT,))
+    return True
 
 
 def _canonical(name: str) -> str:
@@ -117,6 +150,9 @@ def run(args):
         print(f"  → applying {path.name} ... ", end="", flush=True)
         sql = path.read_text()
         with conn.cursor() as cur:
+            # Before the file's own SQL and inside the same transaction, so a
+            # migration that omits its own guard still cannot stall live traffic.
+            apply_lock_timeout(cur)
             cur.execute(sql)
             cur.execute(
                 "INSERT INTO schema_migrations (filename) VALUES (%s)", (path.name,)
