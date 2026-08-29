@@ -13,11 +13,13 @@ from config import (
     GRADE_BANDS, GATE_MISS_FACTOR,
     EQUITY_FALLBACK_SIGNAL_SCALE,
     AGE_SWEET_SPOT_MIN, AGE_SWEET_SPOT_MAX,
+    AGE_DECAY_YEARS, AGE_DECAY_FLOOR, AGE_RUNTIME_FACTOR,
     SALE_RECENCY_MAX_MO, EQUITY_TARGET,
     GARAGE_TARGET, INCOME_TARGET, PERMIT_TARGET,
     POOL_SIGNAL_VALUE, SLAB_SIGNAL_VALUE,
     NEIGHBORHOOD_RATIO_TARGET,
-    STORM_RECENCY_MAX_MO,
+    STORM_RECENCY_MAX_MO, STORM_HAIL_TARGET_IN,
+    FREEZE_RECENCY_MAX_MO, HOME_SIZE_TARGET_SQFT,
     REFI_RECENCY_MAX_MO, CREDIT_GRADE_SCORES,
     TENURE_TARGET_YEARS, LIFE_STAGE_SCORES,
     FACTOR_META, DEFAULT_WEIGHTS, VERTICAL_WEIGHTS,
@@ -155,73 +157,120 @@ def _grade(score: float) -> str:
     return "D"
 
 
-# ── Signal functions (each returns 0.0–1.0) ───────────────────────────────────
+# ── Signal thresholds ─────────────────────────────────────────────────────────
+# Every threshold the signal functions below read, in one dict. This is what
+# makes the regional layer possible: a market overrides entries here and gets a
+# complete, independent set of signal functions built from them, rather than the
+# module-level constants being mutated under the whole process.
+DEFAULT_THRESHOLDS: dict[str, float] = {
+    "AGE_SWEET_SPOT_MIN":        AGE_SWEET_SPOT_MIN,
+    "AGE_SWEET_SPOT_MAX":        AGE_SWEET_SPOT_MAX,
+    "AGE_DECAY_YEARS":           AGE_DECAY_YEARS,
+    "AGE_DECAY_FLOOR":           AGE_DECAY_FLOOR,
+    "AGE_RUNTIME_FACTOR":        AGE_RUNTIME_FACTOR,
+    "SALE_RECENCY_MAX_MO":       SALE_RECENCY_MAX_MO,
+    "EQUITY_TARGET":             EQUITY_TARGET,
+    "GARAGE_TARGET":             GARAGE_TARGET,
+    "INCOME_TARGET":             INCOME_TARGET,
+    "PERMIT_TARGET":             PERMIT_TARGET,
+    "NEIGHBORHOOD_RATIO_TARGET": NEIGHBORHOOD_RATIO_TARGET,
+    "STORM_RECENCY_MAX_MO":      STORM_RECENCY_MAX_MO,
+    "STORM_HAIL_TARGET_IN":      STORM_HAIL_TARGET_IN,
+    "FREEZE_RECENCY_MAX_MO":     FREEZE_RECENCY_MAX_MO,
+    "REFI_RECENCY_MAX_MO":       REFI_RECENCY_MAX_MO,
+    "TENURE_TARGET_YEARS":       TENURE_TARGET_YEARS,
+    "HOME_SIZE_TARGET_SQFT":     HOME_SIZE_TARGET_SQFT,
+}
 
-def _age_signal(year_built: int | None) -> float:
-    if not year_built:
-        return 0.0
-    age = date.today().year - year_built
-    if AGE_SWEET_SPOT_MIN <= age <= AGE_SWEET_SPOT_MAX:
-        return 1.0
-    if age < AGE_SWEET_SPOT_MIN:
-        return age / AGE_SWEET_SPOT_MIN
-    # Older than sweet spot: decay from 30 to 50+ years
-    return max(0.0, 1.0 - (age - AGE_SWEET_SPOT_MAX) / 20)
 
+# ── Signal-function factories ─────────────────────────────────────────────────
+# Each returns a fn(value) -> 0.0–1.0 closed over its thresholds. Two shapes
+# cover most signals — a saturating ratio and a linear recency decay — and the
+# age curve gets its own because it is the only non-monotonic one.
 
-def _sale_signal(last_sale_date) -> float:
-    if not last_sale_date:
-        return 0.0
-    try:
-        if isinstance(last_sale_date, str):
-            sold = date.fromisoformat(last_sale_date[:10])
-        elif isinstance(last_sale_date, date):
-            sold = last_sale_date
-        else:
+def make_ratio_signal(target: float):
+    """More is better, saturating at `target`. Non-positive and missing score 0.
+
+    The target is the calibration knob that matters most in practice: set it
+    where a market's homes actually cluster and the signal ranks them; set it
+    below the market's median and the whole book pins at 1.0, contributing a
+    constant to every score and separating nobody.
+    """
+    def _signal(value) -> float:
+        if not value or value <= 0:
             return 0.0
-        months_ago = (date.today() - sold).days / 30.44
-        if months_ago >= SALE_RECENCY_MAX_MO:
+        return min(1.0, value / target)
+    return _signal
+
+
+def make_recency_signal(max_months: float):
+    """Sooner is better: 1.0 for an event today, decaying linearly to 0.0 at
+    `max_months`. Accepts a date or an ISO string; anything unparseable is 0."""
+    def _signal(when) -> float:
+        if not when:
             return 0.0
-        return 1.0 - (months_ago / SALE_RECENCY_MAX_MO)
-    except (ValueError, TypeError):
-        return 0.0
+        try:
+            if isinstance(when, str):
+                event = date.fromisoformat(when[:10])
+            elif isinstance(when, date):
+                event = when
+            else:
+                return 0.0
+            months_ago = (date.today() - event).days / 30.44
+            if months_ago >= max_months:
+                return 0.0
+            return max(0.0, 1.0 - (months_ago / max_months))
+        except (ValueError, TypeError):
+            return 0.0
+    return _signal
 
 
-def _equity_signal(equity: int | None) -> float:
-    if not equity or equity <= 0:
-        return 0.0
-    return min(1.0, equity / EQUITY_TARGET)
+def make_age_signal(min_years: float, max_years: float, decay_years: float,
+                    floor: float = 0.0, runtime_factor: float = 1.0):
+    """Home age against a renovation/replacement window.
+
+    Ramps from 0 at new build to 1.0 at `min_years`, holds through `max_years`,
+    then decays over `decay_years` to `floor`.
+
+    `runtime_factor` scales calendar age into effective component age before the
+    curve is applied — the honest way to say "equipment wears faster here"
+    without maintaining a second, hand-shifted band per market. `floor` is the
+    other regional knob: nationally it is 0.0, which asserts that a home old
+    enough is out of the market entirely. That is true of a renovation cycle and
+    false of a replacement cycle, so markets whose stock is old enough that the
+    modal home sits past the window raise it rather than writing themselves off.
+    """
+    def _signal(year_built) -> float:
+        if not year_built:
+            return 0.0
+        age = date.today().year - year_built
+        if runtime_factor != 1.0:
+            age = age * runtime_factor
+        if min_years <= age <= max_years:
+            return 1.0
+        if age < min_years:
+            return age / min_years
+        return max(floor, 1.0 - (age - max_years) / decay_years)
+    return _signal
 
 
-def _garage_signal(spaces: int | None) -> float:
-    if not spaces:
-        return 0.0
-    return min(1.0, spaces / GARAGE_TARGET)
-
-
-def _income_signal(income: int | None) -> float:
-    if not income or income <= 0:
-        return 0.0
-    return min(1.0, income / INCOME_TARGET)
-
-
-def _permit_signal(count: int | None) -> float:
-    if not count or count <= 0:
-        return 0.0
-    return min(1.0, count / PERMIT_TARGET)
-
-
-def _neighborhood_signal(ratio: float | None) -> float:
+def make_neighborhood_signal(ratio_target: float):
     """Reward homes whose value-per-sqft is strong relative to their immediate
     neighborhood. `ratio` (precomputed in pipeline/neighborhood.py) is the home's
     value/sqft ÷ the neighborhood median; 1.0 means exactly at the median. At or
-    below median scores 0; NEIGHBORHOOD_RATIO_TARGET× (or higher) scores 1.0.
-    This replaces ZIP-median income as the sole locality signal with a far more
-    granular one. Unbenchmarked homes (ratio None) score 0."""
-    if not ratio or ratio <= 0:
-        return 0.0
-    return min(1.0, max(0.0, (ratio - 1.0) / (NEIGHBORHOOD_RATIO_TARGET - 1.0)))
+    below median scores 0; `ratio_target`× (or higher) scores 1.0. This replaces
+    ZIP-median income as the sole locality signal with a far more granular one.
+    Unbenchmarked homes (ratio None) score 0."""
+    def _signal(ratio) -> float:
+        if not ratio or ratio <= 0:
+            return 0.0
+        return min(1.0, max(0.0, (ratio - 1.0) / (ratio_target - 1.0)))
+    return _signal
 
+
+# ── Threshold-free signal functions ───────────────────────────────────────────
+# Presence flags and ordinal lookups. Nothing here has a knob to calibrate, so
+# they are shared by every region rather than rebuilt per market.
 
 def _pool_signal(has_pool: bool | None) -> float:
     """1.0 if property has a pool, else 0. Used by pool_maintenance vertical."""
@@ -233,30 +282,6 @@ def _slab_signal(has_cracked_slab: bool | None) -> float:
     return SLAB_SIGNAL_VALUE if has_cracked_slab else 0.0
 
 
-def _storm_signal(last_storm_date) -> float:
-    """Recency-weighted signal for a recent storm event (hail/wind/tornado).
-
-    Decays linearly from 1.0 (event today) to 0.0 (event >= STORM_RECENCY_MAX_MO
-    months ago). Same decay shape as _sale_signal. Used by roofing, hvac, fencing,
-    and pressure_washing verticals.
-    """
-    if not last_storm_date:
-        return 0.0
-    try:
-        if isinstance(last_storm_date, str):
-            event_date = date.fromisoformat(last_storm_date[:10])
-        elif isinstance(last_storm_date, date):
-            event_date = last_storm_date
-        else:
-            return 0.0
-        months_ago = (date.today() - event_date).days / 30.44
-        if months_ago >= STORM_RECENCY_MAX_MO:
-            return 0.0
-        return max(0.0, 1.0 - (months_ago / STORM_RECENCY_MAX_MO))
-    except (ValueError, TypeError):
-        return 0.0
-
-
 def _home_improvement_signal(flag: bool | None) -> float:
     """1.0 if the owner is a confirmed home-improvement buyer, else 0.
 
@@ -265,30 +290,6 @@ def _home_improvement_signal(flag: bool | None) -> float:
     prospect for all service verticals.
     """
     return 1.0 if flag else 0.0
-
-
-def _refi_signal(refi_date) -> float:
-    """Recency-weighted signal for a recent mortgage refinance.
-
-    Decays linearly from 1.0 (refi today) to 0.0 (refi >= REFI_RECENCY_MAX_MO
-    months ago). A recent cash-out refi signals both available capital and an
-    investment mindset — strongest conversion predictor for solar, HVAC, roofing.
-    """
-    if not refi_date:
-        return 0.0
-    try:
-        if isinstance(refi_date, str):
-            event_date = date.fromisoformat(refi_date[:10])
-        elif isinstance(refi_date, date):
-            event_date = refi_date
-        else:
-            return 0.0
-        months_ago = (date.today() - event_date).days / 30.44
-        if months_ago >= REFI_RECENCY_MAX_MO:
-            return 0.0
-        return max(0.0, 1.0 - (months_ago / REFI_RECENCY_MAX_MO))
-    except (ValueError, TypeError):
-        return 0.0
 
 
 def _credit_signal(rating: str | None) -> float:
@@ -326,21 +327,31 @@ def _absentee_signal(owner_occupied: bool | None) -> float:
     Absentee owners are reachable through their mailing address and are strong
     prospects for rental turnover, exterior, and systems work. A missing
     owner_occupied value scores 0 — unknown is not assumed to be absentee.
+
+    The exact mirror of `_owner_occupied_signal`. The two read the same column
+    and disagree about which way it points, so no profile may weight both — see
+    tests/test_regional.py::test_no_profile_weights_both_occupancy_signals.
     """
     if owner_occupied is None:
         return 0.0
     return 1.0 if owner_occupied is False else 0.0
 
 
-def _tenure_signal(years: int | None) -> float:
-    """Long ownership tenure — aging systems overdue for big-ticket replacement.
+def _owner_occupied_signal(owner_occupied: bool | None) -> float:
+    """1.0 when the owner lives at the property, else 0. Missing scores 0.
 
-    Scales linearly to TENURE_TARGET_YEARS, then caps at 1.0. Complements the
-    home-age signal: a long-tenured owner of an older home is the most "due".
+    The counterpart to `_absentee_signal`, and which of the two a market weights
+    is a real calibration decision rather than a preference. Nationally, at a
+    65% homeownership rate, absentee ownership is the rarer and therefore more
+    informative state, and a landlord is a genuine buyer of exterior and systems
+    work. In a market that is majority-renter — the City of Houston is ~42%
+    owner-occupied — the split approaches even, occupancy carries its maximum
+    discriminative power, and it points the other way: landlord-owned stock buys
+    the same job on price-shopped, lower-quality economics.
     """
-    if not years or years <= 0:
+    if owner_occupied is None:
         return 0.0
-    return min(1.0, years / TENURE_TARGET_YEARS)
+    return 1.0 if owner_occupied is True else 0.0
 
 
 def _life_stage_signal(stage: str | None) -> float:
@@ -355,29 +366,69 @@ def _life_stage_signal(stage: str | None) -> float:
     return LIFE_STAGE_SCORES.get(str(stage).lower().strip(), 0.0)
 
 
-# ── Score explanation ─────────────────────────────────────────────────────────
-# Reuse the exact production signal functions above so the breakdown can never
-# drift from the real score. Keyed by the same factor keys used in the weights.
-_SIGNAL_FNS = {
-    "age":              _age_signal,
-    "sale":             _sale_signal,
-    "equity":           _equity_signal,
-    "garage":           _garage_signal,
-    "income":           _income_signal,
-    "permit":           _permit_signal,
-    "neighborhood":     _neighborhood_signal,
+_STATIC_SIGNAL_FNS = {
     "pool":             _pool_signal,
     "slab":             _slab_signal,
-    "storm":            _storm_signal,
     "home_improvement": _home_improvement_signal,
-    "refi":             _refi_signal,
     "credit":           _credit_signal,
     "children":         _children_signal,
     "gardening":        _gardening_signal,
     "absentee":         _absentee_signal,
-    "tenure":           _tenure_signal,
+    "owner_occupied":   _owner_occupied_signal,
     "life_stage":       _life_stage_signal,
 }
+
+
+def build_signal_fns(thresholds: dict | None = None) -> dict:
+    """The complete signal-function map for one set of thresholds.
+
+    Callers pass only the overrides they care about; everything else falls back
+    to DEFAULT_THRESHOLDS. Building a whole map (rather than mutating globals)
+    is what lets two markets score in the same process — a per-ZIP pipeline run
+    and a per-lead explanation for a different ZIP can be in flight at once.
+    """
+    t = {**DEFAULT_THRESHOLDS, **(thresholds or {})}
+    return {
+        "age":          make_age_signal(t["AGE_SWEET_SPOT_MIN"], t["AGE_SWEET_SPOT_MAX"],
+                                        t["AGE_DECAY_YEARS"], t["AGE_DECAY_FLOOR"],
+                                        t["AGE_RUNTIME_FACTOR"]),
+        "sale":         make_recency_signal(t["SALE_RECENCY_MAX_MO"]),
+        "equity":       make_ratio_signal(t["EQUITY_TARGET"]),
+        "garage":       make_ratio_signal(t["GARAGE_TARGET"]),
+        "income":       make_ratio_signal(t["INCOME_TARGET"]),
+        "permit":       make_ratio_signal(t["PERMIT_TARGET"]),
+        "neighborhood": make_neighborhood_signal(t["NEIGHBORHOOD_RATIO_TARGET"]),
+        "storm":        make_recency_signal(t["STORM_RECENCY_MAX_MO"]),
+        "hail":         make_ratio_signal(t["STORM_HAIL_TARGET_IN"]),
+        "freeze":       make_recency_signal(t["FREEZE_RECENCY_MAX_MO"]),
+        "refi":         make_recency_signal(t["REFI_RECENCY_MAX_MO"]),
+        "tenure":       make_ratio_signal(t["TENURE_TARGET_YEARS"]),
+        "home_size":    make_ratio_signal(t["HOME_SIZE_TARGET_SQFT"]),
+        **_STATIC_SIGNAL_FNS,
+    }
+
+
+# ── Score explanation ─────────────────────────────────────────────────────────
+# Reuse the exact production signal functions above so the breakdown can never
+# drift from the real score. Keyed by the same factor keys used in the weights.
+_SIGNAL_FNS = build_signal_fns()
+
+# National instances, exported under their historical names so callers and tests
+# that import a single signal keep working. A regional profile carries its own
+# map (pipeline/regional.py) and never reads these.
+_age_signal          = _SIGNAL_FNS["age"]
+_sale_signal         = _SIGNAL_FNS["sale"]
+_equity_signal       = _SIGNAL_FNS["equity"]
+_garage_signal       = _SIGNAL_FNS["garage"]
+_income_signal       = _SIGNAL_FNS["income"]
+_permit_signal       = _SIGNAL_FNS["permit"]
+_neighborhood_signal = _SIGNAL_FNS["neighborhood"]
+_storm_signal        = _SIGNAL_FNS["storm"]
+_hail_signal         = _SIGNAL_FNS["hail"]
+_freeze_signal       = _SIGNAL_FNS["freeze"]
+_refi_signal         = _SIGNAL_FNS["refi"]
+_tenure_signal       = _SIGNAL_FNS["tenure"]
+_home_size_signal    = _SIGNAL_FNS["home_size"]
 
 
 def _summarize(grade: str, factors: list[dict], top_drivers: list[str]) -> str:
@@ -465,23 +516,33 @@ def explain_score(row: dict, weights: dict, profile=None) -> dict:
     }
 
 
-def describe_vertical(vertical: str | None) -> dict:
+def describe_vertical(vertical: str | None, profile=None) -> dict:
     """Describe the weight profile used for a vertical, derived purely from the
     weights so the description can never drift from actual scoring.
 
     Unknown/None verticals fall back to DEFAULT_WEIGHTS (same rule as
     `scorer.score_zip`); `is_default` flags that fallback for the UI.
+
+    Pass the `profile` the lead was actually scored with to describe that —
+    otherwise a regionally calibrated lead would be explained against the
+    national weights it was not scored on.
     """
-    weights = VERTICAL_WEIGHTS.get(vertical) if vertical else None
-    is_default = weights is None
-    if is_default:
-        weights = DEFAULT_WEIGHTS
+    if profile is not None:
+        weights = profile.weights
+        meta = profile.factor_meta
+        is_default = getattr(profile, "key", None) in (None, "default")
+    else:
+        weights = VERTICAL_WEIGHTS.get(vertical) if vertical else None
+        is_default = weights is None
+        if is_default:
+            weights = DEFAULT_WEIGHTS
+        meta = FACTOR_META
 
     factors = [
         {
             "key":         key,
-            "label":       FACTOR_META[key]["label"],
-            "description": FACTOR_META[key]["description"],
+            "label":       meta[key]["label"],
+            "description": meta[key]["description"],
             "weight":      weight,
         }
         for key, weight in weights.items()

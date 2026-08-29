@@ -78,6 +78,8 @@ export const PREVIEW_EXPLANATION: ScoreExplanation = {
   grade: 'A',
   vertical: 'hvac',
   is_default_profile: false,
+  region: 'tx_houston',
+  region_label: 'Houston / Gulf Coast, TX',
   summary: 'A long-time owner with strong home equity in a high-value neighborhood — a prime candidate for a system upgrade.',
   top_drivers: ['equity', 'sale_recency', 'home_value'],
   factors: [

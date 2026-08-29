@@ -1,22 +1,33 @@
 """
-Step 5.5 — Storm / hail event enrichment (FREE, NOAA/IEM).
+Step 5.5 — Storm / hail / freeze event enrichment (FREE, NOAA/IEM).
 
-Fetches Local Storm Reports (hail, thunderstorm wind, tornado) from the Iowa
-Environmental Mesonet (IEM) API. The NWS Weather Forecast Office is resolved
-per ZIP from its centroid via the NWS point API, so any market works without
-configuration; STORM_WFO is only a fallback. Neither API requires a key.
+Fetches Local Storm Reports (hail, thunderstorm wind, tornado, tropical cyclone,
+winter events) from the Iowa Environmental Mesonet (IEM) API. The NWS Weather
+Forecast Office is resolved per ZIP from its centroid via the NWS point API, so
+any market works without configuration; STORM_WFO is only a fallback. Neither
+API requires a key.
 
 For each property that has been geocoded (lat/lng set by pipeline/geocode.py),
-matches storm events within STORM_MATCH_RADIUS_MI and writes:
+matches events within STORM_MATCH_RADIUS_MI and writes:
 
-  last_storm_date   — date of the most recent matched storm
+  last_storm_date   — date of the most recent matched damage storm
   last_storm_type   — 'hail' | 'wind' | 'tornado'
-  hail_size_in      — hail diameter in inches (None for non-hail events)
-  storm_count_24mo  — count of distinct storm events within 24 months
+  hail_size_in      — largest hail diameter in inches (None if no hail matched)
+  storm_count_24mo  — count of distinct damage-storm events within 24 months
+  last_freeze_date  — date of the most recent matched freeze event
+  freeze_count_24mo — count of distinct freeze events within the window
 
-These columns immediately improve the `storm` scoring signal for roofing, HVAC,
-fencing, and pressure-washing verticals, and accumulate as model features for a
-future conversion-probability model.
+**Damage storms and freezes are tracked in separate columns and must stay that
+way.** They sell different trades — hail/wind sells roofing, fencing and
+pressure-washing; a freeze sells HVAC and, through multi-day outages, solar with
+storage — and they arrive in the same market in the same year. Merging them into
+one last_* pair means whichever landed later erases the other: Houston logged 120
+SNOW reports in January 2025 against 122 HAIL reports over the same 24 months, so
+one shared column would have blanked the storm signal for every roofing lead in
+the market.
+
+These columns feed the `storm`, `hail` and `freeze` scoring signals and
+accumulate as model features for the conversion-probability model.
 """
 import logging
 import math
@@ -33,12 +44,20 @@ log = logging.getLogger(__name__)
 
 # IEM LSR `typetext` values we care about, mapped to our normalized labels.
 # These strings must match the feed exactly — they are the raw NWS product
-# abbreviations, not the spelled-out event names.
+# abbreviations, not the spelled-out event names. Every string in both maps below
+# was read off a live LSR response; do not add one from memory.
 #
 # Deliberately excluded: MARINE TSTM WIND and WATERSPOUT (over open water, so
 # they describe no property damage even when a coastal parcel falls inside the
-# match radius), and the precipitation/flood/temperature types, which no
-# vertical scores on.
+# match radius), and the precipitation/flood types.
+#
+# The flood exclusion is load-bearing rather than incidental, and a hurricane is
+# where it shows. Beryl's July 2024 track through Harris County produced
+# TROPICAL CYCLONE, NON-TSTM WND GST, STORM SURGE, FLASH FLOOD and COASTAL FLOOD
+# reports in one window. Only the wind half drives roofing work: wind damage is a
+# homeowners-policy claim, while hurricane flood damage runs through NFIP and
+# buys no roof. Keying storm exposure to a general hurricane path rather than to
+# wind and hail would score the flooded side of the storm as demand.
 _TYPE_MAP = {
     "HAIL":              "hail",
     "TSTM WND DMG":      "wind",
@@ -46,10 +65,36 @@ _TYPE_MAP = {
     "NON-TSTM WND DMG":  "wind",
     "NON-TSTM WND GST":  "wind",
     "HIGH SUST WINDS":   "wind",
+    "TROPICAL CYCLONE":  "wind",
     "TORNADO":           "tornado",
     "FUNNEL CLOUD":      "tornado",
     "LANDSPOUT":         "tornado",
 }
+
+# Winter events, kept in their own map and written to their own columns (see the
+# module docstring). Plain SNOW is included on purpose: in the markets that
+# weight the freeze signal it marks a hard freeze well outside local design
+# temperatures — Houston's whole January 2025 event reports as SNOW, SLEET,
+# FREEZING RAIN and ICE STORM together. That reasoning does not travel. A market
+# in the freeze belt, where snow is a weekly fact rather than an equipment event,
+# must revisit this list before weighting `freeze` at all, or the signal will
+# saturate for every lead and rank nobody.
+_FREEZE_TYPE_MAP = {
+    "SNOW":          "freeze",
+    "HEAVY SNOW":    "freeze",
+    "SLEET":         "freeze",
+    "FREEZING RAIN": "freeze",
+    "ICE STORM":     "freeze",
+    "SNOW/ICE DMG":  "freeze",
+    "EXTREME COLD":  "freeze",
+    "WIND CHILL":    "freeze",
+}
+
+# One lookup over both families; the partition happens at match time.
+_ALL_TYPE_MAP = {**_TYPE_MAP, **_FREEZE_TYPE_MAP}
+
+assert not (set(_TYPE_MAP) & set(_FREEZE_TYPE_MAP)), \
+    "a typetext in both maps would be counted as damage and as freeze"
 
 # IEM caps a single LSR response at this many features and gives no truncation
 # flag, so an over-broad query silently loses data. Scoping to one WFO keeps a
@@ -163,7 +208,7 @@ def _fetch_storm_reports(lookback_months: int, wfo: str) -> list[dict]:
         if not coords or len(coords) < 2:
             continue
         type_text = (props.get("typetext") or "").upper()
-        storm_type = _TYPE_MAP.get(type_text)
+        storm_type = _ALL_TYPE_MAP.get(type_text)
         if not storm_type:
             continue
         valid_str = props.get("valid", "")
@@ -196,6 +241,10 @@ def _fetch_storm_reports(lookback_months: int, wfo: str) -> list[dict]:
     return reports
 
 
+# Normalized labels that describe physical damage, as opposed to a freeze.
+_DAMAGE_TYPES = frozenset(_TYPE_MAP.values())
+
+
 def _match_property(prop_lat: float, prop_lon: float, reports: list[dict],
                     radius_mi: float, cutoff_date: date) -> dict:
     """Return aggregated storm data for a single property location.
@@ -211,18 +260,28 @@ def _match_property(prop_lat: float, prop_lon: float, reports: list[dict],
     if not nearby:
         return {}
 
-    # Most recent event
-    latest = max(nearby, key=lambda r: r["date"])
-    # Largest hail within the window
-    hail_events = [r for r in nearby if r["storm_type"] == "hail" and r["hail_size_in"]]
-    max_hail = max((r["hail_size_in"] for r in hail_events), default=None)
+    # Partition before aggregating. storm_count_24mo and last_storm_* must stay
+    # damage-only: a market that gets both hail and freezes would otherwise see
+    # its storm count inflated by every snow report and its last_storm_date
+    # replaced by whichever family happened to arrive last.
+    damage = [r for r in nearby if r["storm_type"] in _DAMAGE_TYPES]
+    freezes = [r for r in nearby if r["storm_type"] == "freeze"]
 
-    return {
-        "last_storm_date": latest["date"],
-        "last_storm_type": latest["storm_type"],
-        "hail_size_in": max_hail,
-        "storm_count_24mo": len(nearby),
-    }
+    out: dict = {}
+    if damage:
+        latest = max(damage, key=lambda r: r["date"])
+        # Largest hail within the window — severity, not just occurrence. An
+        # adjuster approves a full replacement on granule loss, which is a
+        # function of stone size.
+        hail_events = [r for r in damage if r["storm_type"] == "hail" and r["hail_size_in"]]
+        out["last_storm_date"] = latest["date"]
+        out["last_storm_type"] = latest["storm_type"]
+        out["hail_size_in"] = max((r["hail_size_in"] for r in hail_events), default=None)
+        out["storm_count_24mo"] = len(damage)
+    if freezes:
+        out["last_freeze_date"] = max(r["date"] for r in freezes)
+        out["freeze_count_24mo"] = len(freezes)
+    return out
 
 
 def enrich_storm(zip_code: str, account_id: int) -> int:

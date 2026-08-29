@@ -22,13 +22,15 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from psycopg2.extensions import connection as PGConn
 
 from config import (
-    DEFAULT_WEIGHTS, VERTICAL_WEIGHTS,
+    VERTICAL_WEIGHTS,
     PUBLIC_SAMPLE_ACCOUNT_ID, PUBLIC_SAMPLE_AUTORUN, PUBLIC_SAMPLE_RUNS_PER_HOUR,
     PUBLIC_SAMPLE_TOP_N,
 )
 from api.deps import get_db, dict_fetchall
 from api.ratelimit import RateLimiter, client_ip
 from api.zip_sample_logic import mask_address, teaser_rank_key, value_label
+from pipeline import regional
+from pipeline.profiles import resolve_profile
 from pipeline.scoring import explain_score
 
 log = logging.getLogger(__name__)
@@ -148,10 +150,12 @@ def zip_sample(zip: str, vertical: str | None = None, request: Request = None,
             return {"configured": True, "available": False, "queued": True}
         return {"configured": True, "available": False, "queued": False, "supported": True}
 
-    weights = VERTICAL_WEIGHTS.get(vertical, DEFAULT_WEIGHTS) if vertical else DEFAULT_WEIGHTS
+    # The teaser re-ranks with the same market calibration the scorer used, so a
+    # stranger's ZIP sample matches what a paying account in that market sees.
+    profile = resolve_profile(vertical, regional.resolve_region(zip_code))
     explained = []
     for row in rows:
-        e = explain_score(row, weights)
+        e = explain_score(row, profile.weights, profile=profile)
         explained.append((e["score"], e, row))
     # Two-tier: benchmarked rows keep the honest vertical re-rank; rows the
     # neighborhood benchmark hasn't reached fall back to their stored lead_score

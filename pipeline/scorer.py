@@ -8,12 +8,13 @@ import logging
 from datetime import datetime, timezone
 
 from config import SCORER_MODE
+from pipeline import regional
 from pipeline.db import get_conn, fetch_by_zip, upsert_properties
 from pipeline.equity import estimate_equity
 from pipeline.job_value import estimate_job_value
 from pipeline.score_snapshots import write_score_snapshots
 from pipeline.scoring import (
-    score_property, _compute_score, _grade, data_completeness,
+    score_property, compute_score, _compute_score, _grade, data_completeness,
     _age_signal, _sale_signal, _equity_signal,
     _garage_signal, _income_signal, _permit_signal,
 )
@@ -25,13 +26,22 @@ def score_zip(zip_code: str, account_id: int, vertical: str | None = None) -> in
     # Resolved through the profile registry (pipeline/profiles.py); property
     # profiles wrap the same config weights, so output is unchanged.
     from pipeline.profiles import resolve_profile
-    profile = resolve_profile(vertical)
-    weights = profile.weights
     conn = get_conn()
     rows = fetch_by_zip(conn, zip_code, account_id)
     if not rows:
         conn.close()
         return 0
+
+    # A run is per-ZIP, so the whole batch shares one market and the regional
+    # profile is resolved once rather than per row. The rows' own state is a
+    # cross-check on the ZIP (pipeline/regional.py); a ZIP outside a calibrated
+    # market resolves to the national profile, which is the object every
+    # non-regional caller already gets.
+    state = next((r.get("state") for r in rows if r.get("state")), None)
+    region = regional.resolve_region(zip_code, state)
+    profile = resolve_profile(vertical, region)
+    weights = profile.weights
+    job_value_mult = regional.job_value_multiplier(region, profile.key)
 
     updates = []
     scored_rows = []   # (row-as-scored, score, grade) for the feedback-loop snapshot
@@ -63,18 +73,24 @@ def score_zip(zip_code: str, account_id: int, vertical: str | None = None) -> in
 
         # Backfill an auto job-value estimate only when the user hasn't set one.
         if row.get("estimated_job_value") is None:
-            job_value = estimate_job_value(row, vertical)
+            job_value = estimate_job_value(row, vertical, multiplier=job_value_mult)
             if job_value is not None:
                 update["estimated_job_value"] = job_value
 
-        score = _compute_score(row, weights, profile.gates)
+        # compute_score (not _compute_score) so the profile's OWN signal
+        # functions run: a regional profile's thresholds live in those closures,
+        # and the raw-weights path would silently score them nationally.
+        score = compute_score(row, profile)
         update["lead_score"]  = round(score, 2)
         update["score_grade"] = _grade(score)
         # How much of the weight profile real data backed — separates "weak
-        # lead" from "thin file" in the UI and in the score snapshots.
+        # lead" from "thin file" in the UI and in the score snapshots. `region`
+        # records which calibration produced the number, so a score can be
+        # reproduced later even after the matrix moves.
         update["enrichment_flags"] = {
             "scored": vertical or "default",
-            "data_completeness": data_completeness(row, weights),
+            "region": region,
+            "data_completeness": data_completeness(row, weights, profile.factor_meta),
         }
         updates.append(update)
         scored_rows.append((row, score, update["score_grade"]))
@@ -96,8 +112,8 @@ def score_zip(zip_code: str, account_id: int, vertical: str | None = None) -> in
     _apply_ml(conn, account_id, vertical, rows)
 
     conn.close()
-    log.info("Scored %d properties in ZIP %s (grade dist: %s)", n, zip_code,
-             _grade_dist(updates))
+    log.info("Scored %d properties in ZIP %s [%s calibration] (grade dist: %s)",
+             n, zip_code, profile.region_label, _grade_dist(updates))
     return n
 
 

@@ -4,7 +4,9 @@ from datetime import date, timedelta
 import pytest
 
 import pipeline.storm as storm_mod
-from pipeline.storm import _TYPE_MAP, _fetch_storm_reports, _haversine_mi, _match_property
+from pipeline.storm import (
+    _TYPE_MAP, _FREEZE_TYPE_MAP, _fetch_storm_reports, _haversine_mi, _match_property,
+)
 
 
 # ── Haversine ─────────────────────────────────────────────────────────────────
@@ -82,6 +84,26 @@ class TestMatchProperty:
         reports = [_report(10), _report(100), _report(300)]  # 300 days ago < 24mo
         result = _match_property(self.PROP_LAT, self.PROP_LON, reports, 1.0, self.CUTOFF)
         assert result["storm_count_24mo"] == 3
+
+    def test_freeze_events_do_not_touch_the_storm_columns(self):
+        # The regression the separate columns exist to prevent: a market that
+        # gets both would otherwise have every roofing lead's hail date
+        # overwritten by whichever snow report happened to land last.
+        hail = _report(200, storm_type="hail")
+        snow = _report(10, storm_type="freeze", hail_size=None)
+        result = _match_property(self.PROP_LAT, self.PROP_LON, [hail, snow], 1.0, self.CUTOFF)
+        assert result["last_storm_date"] == date.today() - timedelta(days=200)
+        assert result["last_storm_type"] == "hail"
+        assert result["storm_count_24mo"] == 1
+        assert result["last_freeze_date"] == date.today() - timedelta(days=10)
+        assert result["freeze_count_24mo"] == 1
+
+    def test_freeze_only_match_writes_no_storm_columns(self):
+        snow = _report(10, storm_type="freeze", hail_size=None)
+        result = _match_property(self.PROP_LAT, self.PROP_LON, [snow], 1.0, self.CUTOFF)
+        assert "last_storm_date" not in result
+        assert "storm_count_24mo" not in result
+        assert result["freeze_count_24mo"] == 1
 
     def test_max_hail_size_taken(self):
         reports = [
@@ -178,6 +200,24 @@ class TestTypeMap:
         assert "MARINE TSTM WIND" not in _TYPE_MAP
         assert "WATERSPOUT" not in _TYPE_MAP
 
+    def test_flood_is_not_a_damage_storm(self):
+        # Hurricane flood damage runs through NFIP, not the homeowners policy
+        # that funds a reroof — see the wind/flood note on _TYPE_MAP.
+        for flood in ("FLOOD", "FLASH FLOOD", "COASTAL FLOOD", "STORM SURGE"):
+            assert flood not in _TYPE_MAP
+            assert flood not in _FREEZE_TYPE_MAP
+
+    def test_freeze_map_is_disjoint_from_damage_map(self):
+        assert not (set(_TYPE_MAP) & set(_FREEZE_TYPE_MAP))
+
+    def test_freeze_map_uses_real_feed_vocabulary(self):
+        # Observed in live LSR responses for HGX (Uri, and January 2025).
+        for observed in ("SNOW", "SLEET", "FREEZING RAIN", "ICE STORM",
+                         "SNOW/ICE DMG", "EXTREME COLD", "WIND CHILL"):
+            assert _FREEZE_TYPE_MAP[observed] == "freeze"
+        # Reads plausibly, never appears — the original _TYPE_MAP bug.
+        assert "BLIZZARD" not in _FREEZE_TYPE_MAP
+
 
 class TestFetchStormReports:
     def test_request_uses_accepted_param_names_and_formats(self, captured_get):
@@ -232,10 +272,31 @@ class TestFetchStormReports:
 
     def test_irrelevant_and_marine_types_dropped(self, captured_get):
         captured_get({"type": "FeatureCollection", "features": [
-            _feature("SNOW"), _feature("FLASH FLOOD"), _feature("RAIN"),
+            _feature("FLASH FLOOD"), _feature("RAIN"),
             _feature("MARINE TSTM WIND"), _feature("WATERSPOUT"),
         ]})
         assert _fetch_storm_reports(24, "HGX") == []
+
+    def test_hurricane_wind_is_kept_and_hurricane_flood_is_not(self, captured_get):
+        # Beryl's Harris County track produced all five of these in one window.
+        # Wind damage is a homeowners-policy claim and buys a roof; hurricane
+        # flood runs through NFIP and buys nothing this app sells.
+        captured_get({"type": "FeatureCollection", "features": [
+            _feature("TROPICAL CYCLONE"), _feature("NON-TSTM WND GST"),
+            _feature("STORM SURGE"), _feature("FLASH FLOOD"),
+            _feature("COASTAL FLOOD"),
+        ]})
+        reports = _fetch_storm_reports(24, "HGX")
+        assert [r["storm_type"] for r in reports] == ["wind", "wind"]
+
+    def test_freeze_types_are_kept(self, captured_get):
+        # Winter Storm Uri reported as exactly these four types for HGX.
+        captured_get({"type": "FeatureCollection", "features": [
+            _feature("SNOW"), _feature("SLEET"),
+            _feature("FREEZING RAIN"), _feature("ICE STORM"),
+        ]})
+        reports = _fetch_storm_reports(24, "HGX")
+        assert [r["storm_type"] for r in reports] == ["freeze"] * 4
 
     def test_hail_with_no_measurement_still_recorded(self, captured_get):
         captured_get({"type": "FeatureCollection",

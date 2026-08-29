@@ -205,11 +205,12 @@ class TestGarageSignal:
     def test_above_target_capped(self):
         assert _garage_signal(4) == pytest.approx(1.0)
 
-    def test_negative_passes_through(self):
-        # Known quirk: no <=0 guard (unlike equity/income/permit).
-        # Negative input yields a negative signal — locked in as current behavior.
-        result = _garage_signal(-1)
-        assert result == pytest.approx(-0.5)
+    def test_negative_clamps_to_zero(self):
+        # Was a known quirk: garage alone had no <=0 guard, so a negative count
+        # produced a negative signal that SUBTRACTED points. It shares the one
+        # saturating-ratio factory with equity/income/permit/tenure now, so the
+        # guard is no longer per-signal and the quirk is gone.
+        assert _garage_signal(-1) == 0.0
 
 
 # ── _income_signal ────────────────────────────────────────────────────────────
@@ -554,6 +555,12 @@ PERFECT_ROW = {
     "owner_occupied":        False,                # absentee owner → signal 1.0
     "ownership_years":       12,                   # at tenure target → 1.0
     "life_stage":            "new_mover",          # highest life-stage signal → 1.0
+    # Regional-layer signals. `owner_occupied` above is False because the
+    # national profiles score `absentee`; the two read the same column and point
+    # opposite ways, so no single row can max both (see tests/test_regional.py).
+    "square_footage":        3_000,                # at home-size target → 1.0
+    "hail_size_in":          1.5,                  # at national hail target → 1.0
+    "last_freeze_date":      date.today(),         # freeze today → signal ≈ 1.0
 }
 
 EMPTY_ROW: dict = {}
@@ -634,7 +641,9 @@ ALL_PROFILES = {
 EXPECTED_KEYS = set(config.DEFAULT_WEIGHTS.keys())
 # Optional vertical-only signals (scored via weights.get() — not in DEFAULT_WEIGHTS).
 OPTIONAL_KEYS = {"pool", "slab", "storm", "home_improvement", "refi", "credit",
-                 "children", "gardening", "absentee", "tenure", "life_stage"}
+                 "children", "gardening", "absentee", "tenure", "life_stage",
+                 # Introduced by the regional layer; zero-weight nationally.
+                 "home_size", "owner_occupied", "hail", "freeze"}
 ALLOWED_KEYS = EXPECTED_KEYS | OPTIONAL_KEYS
 
 

@@ -29,6 +29,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import DEFAULT_WEIGHTS, VERTICAL_WEIGHTS
+from pipeline import regional
+from pipeline.profiles import resolve_profile
 from pipeline.scoring import describe_vertical, explain_score, score_property
 
 # Columns whose fill rate is worth tracking. Mirrors pipeline.coverage.TRACKED_FIELDS;
@@ -176,11 +178,18 @@ def build_trace(row: dict) -> list[dict]:
 
 
 def score_breakdown(row: dict, vertical_override: str | None) -> dict:
-    """Per-factor scoring breakdown for the Score step (reuses production math)."""
+    """Per-factor scoring breakdown for the Score step (reuses production math).
+
+    Resolved through the profile registry so the breakdown matches the market
+    the row actually scores in — a Houston row explained against the national
+    weights would reconcile with nothing production ever wrote.
+    """
     vertical = vertical_override or row.get("vertical")
-    weights = VERTICAL_WEIGHTS.get(vertical, DEFAULT_WEIGHTS) if vertical else DEFAULT_WEIGHTS
-    explained = explain_score(row, weights)
-    explained["profile"] = describe_vertical(vertical)
+    profile = resolve_profile(
+        vertical, regional.resolve_region(row.get("zip"), row.get("state")))
+    explained = explain_score(row, profile.weights, profile=profile)
+    explained["profile"] = describe_vertical(vertical, profile)
+    explained["profile"]["region_label"] = profile.region_label
     return explained
 
 
@@ -268,6 +277,8 @@ def _coverage_html(rates: dict, total: int) -> str:
 def _factor_html(breakdown: dict) -> str:
     prof = breakdown["profile"]
     vlabel = (prof.get("vertical") or "default") + (" (default weights)" if prof["is_default"] else "")
+    if prof.get("region_label") and prof["region_label"] != "national":
+        vlabel += f" — {prof['region_label']}"
     rows = ""
     for f in breakdown["factors"]:
         w = int(round(f["signal"] * 120))

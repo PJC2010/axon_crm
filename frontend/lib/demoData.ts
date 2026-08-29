@@ -161,6 +161,8 @@ export function buildDemoExplanation(lead: Lead): ScoreExplanation {
     grade,
     vertical: lead.vertical,
     is_default_profile: false,
+    region: 'tx_houston',
+    region_label: 'Houston / Gulf Coast, TX',
     summary: GRADE_SUMMARY[grade](top[0]?.label ?? 'Home equity'),
     top_drivers: top.map(f => f.key),
     factors,

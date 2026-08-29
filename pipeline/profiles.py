@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 import config
-from pipeline import scoring
+from pipeline import regional, scoring
 
 
 @dataclass(frozen=True)
@@ -27,6 +27,8 @@ class ScoringProfile:
     signal_fns: dict[str, Callable]        # signal key -> fn(value) -> 0.0..1.0
     gates: tuple = ()                      # qualifier signals; confirmed absence
                                            # multiplies the score by GATE_MISS_FACTOR
+    region: str = regional.NATIONAL        # market this profile is calibrated for
+    region_label: str = "national"         # human-readable, for the explanation UI
 
 
 def _property_profile(key: str, weights: dict[str, float]) -> ScoringProfile:
@@ -214,6 +216,10 @@ PIPELINE_ENGAGEMENT_PROFILE = ScoringProfile(
 )
 
 
+# Profiles that score a property row, and are therefore the ones a market can
+# recalibrate. Everything else in PROFILES scores a computed roll-up.
+_PROPERTY_PROFILE_KEYS = frozenset({DEFAULT_PROFILE_KEY, *config.VERTICAL_WEIGHTS})
+
 PROFILES: dict[str, ScoringProfile] = {
     DEFAULT_PROFILE_KEY: _property_profile(DEFAULT_PROFILE_KEY, config.DEFAULT_WEIGHTS),
     **{key: _property_profile(key, weights) for key, weights in config.VERTICAL_WEIGHTS.items()},
@@ -246,9 +252,53 @@ SCORING_PROFILE_BY_BUSINESS_TYPE: dict[str, str] = {
 }
 
 
-def resolve_profile(key: str | None) -> ScoringProfile:
+def _regional_property_profile(key: str, region: str) -> ScoringProfile:
+    """A property profile with one market's weights and signal thresholds.
+
+    Everything the region does not state falls through to the national matrix,
+    so this is the national profile plus deltas — never a parallel definition.
+    """
+    cal = regional.calibrate(key, region)
+    scoring.validate_weights(cal["weights"], config.FACTOR_META, cal["signal_fns"])
+    return ScoringProfile(
+        key=key,
+        label=key.replace("_", " ").title(),
+        weights=cal["weights"],
+        factor_meta=config.FACTOR_META,
+        signal_fns=cal["signal_fns"],
+        gates=tuple(config.VERTICAL_GATES.get(key, ())),
+        region=region,
+        region_label=cal["label"],
+    )
+
+
+# Regional profiles are built on first use and held for the life of the process:
+# a pipeline run scores tens of thousands of rows through one of them, and
+# rebuilding ~20 closures per row would be pure waste. Keyed by (vertical,
+# region), so a worker handling ZIPs in two markets holds both. The calibration
+# matrix is config, read once — editing it (or monkeypatching it in a test) after
+# a profile has been resolved needs `_REGIONAL_CACHE.clear()`, or a restart.
+_REGIONAL_CACHE: dict[tuple[str, str], ScoringProfile] = {}
+
+
+def resolve_profile(key: str | None, region: str | None = None) -> ScoringProfile:
     """Same fallback rule scorer.score_zip has always used: an unknown or
-    missing vertical scores with the default property weights."""
-    if key and key in PROFILES:
-        return PROFILES[key]
-    return PROFILES[DEFAULT_PROFILE_KEY]
+    missing vertical scores with the default property weights.
+
+    With a `region`, returns that market's calibration of the profile. The
+    national region (and a region with nothing to say about the vertical) gives
+    back the shared national profile object, so the no-region path is unchanged.
+    """
+    profile_key = key if (key and key in PROFILES) else DEFAULT_PROFILE_KEY
+    if not region or region == regional.NATIONAL:
+        return PROFILES[profile_key]
+
+    # Non-property profiles (insurance/retail/pipeline roll-ups) score computed
+    # aggregates, not a place — there is nothing regional about days-to-renewal.
+    if profile_key not in _PROPERTY_PROFILE_KEYS:
+        return PROFILES[profile_key]
+
+    cache_key = (profile_key, region)
+    if cache_key not in _REGIONAL_CACHE:
+        _REGIONAL_CACHE[cache_key] = _regional_property_profile(profile_key, region)
+    return _REGIONAL_CACHE[cache_key]

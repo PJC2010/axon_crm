@@ -36,6 +36,7 @@ import json
 import pytest
 
 import config
+from pipeline import scoring
 from pipeline.scoring import _compute_score
 
 from tests.golden import harness, sanitize
@@ -142,10 +143,14 @@ class TestGarageZeroVsNull:
         zero, null = golden_scores[GARAGE_ZERO], golden_scores[GARAGE_NULL]
         assert zero["provenance"]["garage_spaces"] == "rentcast"
         assert null["provenance"]["garage_spaces"] == "missing"
-        # garage carries 0.15 of the default profile's weight; a present 0
-        # counts as measured, an absent value does not.
+        # A present 0 counts as measured, an absent value does not, so the twins
+        # differ by exactly garage's share of the profile. Read that share from
+        # the profile the ZIP actually scores on rather than hardcoding the
+        # national 0.15 — the Houston calibration rescales every weight.
+        garage_weight = harness._scored_profile(
+            "77084", {"state": "TX"}).weights["garage"]
         assert (zero["data_completeness"] - null["data_completeness"]
-                == pytest.approx(0.15))
+                == pytest.approx(garage_weight, abs=1e-4))
 
     def test_composites_diverge_under_renormalize(self, frozen, monkeypatch):
         """Under the opt-in renormalize mode the twins DO separate: the null
@@ -212,12 +217,18 @@ class TestEquityFallbackPolicy:
                                          id=1, zip=entry["zip"]),
                                     str(entry["zip"]), [])
         # Fallback equity written by the scorer: flagged in-memory, halved in
-        # the composite. 385000*0.6 = 231000 -> raw signal 1.0, scaled 0.5:
-        # equity contributes 9.0 points instead of 18.0.
-        full_weight_score = _compute_score(
-            dict(row, estimated_equity=231000), config.DEFAULT_WEIGHTS)
+        # the composite. 385000*0.6 = 231000. Compared against the profile the
+        # ZIP scores on, so the assertion measures the HAIRCUT and not the
+        # market's weights: equity's contribution drops by exactly
+        # weight x signal x 100 x (1 - EQUITY_FALLBACK_SIGNAL_SCALE).
+        profile = harness._scored_profile(str(entry["zip"]), {"state": "TX"})
+        full = dict(row, estimated_equity=231000)
+        full_weight_score = scoring.compute_score(full, profile)
+        haircut = (profile.weights["equity"]
+                   * profile.signal_fns["equity"](231000) * 100
+                   * (1 - config.EQUITY_FALLBACK_SIGNAL_SCALE))
         assert update["lead_score"] == pytest.approx(
-            round(full_weight_score, 2) - 9.0, abs=0.01)
+            round(full_weight_score - haircut, 2), abs=0.01)
 
 
 # ── Meta-assertions: the acceptance criteria are themselves tested ────────────

@@ -9,7 +9,9 @@ import pipeline.scorer as scorer
 from pipeline.score_snapshots import (
     get_active_model_version, snapshot_features, write_score_snapshots,
 )
-from pipeline.scoring import _compute_score
+from pipeline import regional
+from pipeline.profiles import resolve_profile
+from pipeline.scoring import _compute_score, compute_score
 
 
 # ── Fakes ─────────────────────────────────────────────────────────────────────
@@ -212,8 +214,12 @@ class TestScoreZipSnapshots:
         assert [p[0] for p in params_list] == [101, 102]
         assert all(p[2] == 7 for p in params_list)   # active model version id
 
-        # The snapshot records the same score the lead was graded with.
-        expected = _compute_score(_lead_row(id=101), config.DEFAULT_WEIGHTS)
+        # The snapshot records the same score the lead was graded with — which
+        # means the profile the ZIP actually scores on. 77002 is Houston, so
+        # comparing against the national weights would only prove the regional
+        # layer is off.
+        profile = resolve_profile(None, regional.resolve_region("77002"))
+        expected = compute_score(_lead_row(id=101), profile)
         assert params_list[0][4] == round(expected, 4)
 
     def test_snapshot_failure_never_breaks_scoring(self, monkeypatch):

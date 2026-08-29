@@ -692,16 +692,69 @@ FACTOR_META = {
         "field": "life_stage",
         "description": "Owner life stage signals intent: recent movers renovate soon after moving; retirees invest in aging-in-place.",
     },
+    # ── Signals introduced by the regional calibration layer ──────────────────
+    # These carry zero weight in every national profile. They exist because some
+    # markets need them (see REGIONAL_CALIBRATION), and a signal that is never
+    # weighted costs nothing — _weighted_sum skips zero-weight keys.
+    "home_size": {
+        "label": "Home size",
+        "field": "square_footage",
+        "description": "Larger conditioned area means a bigger roof, a bigger system, and a bigger power bill — it scales both the job and the savings a homeowner is buying.",
+    },
+    "owner_occupied": {
+        "label": "Owner-occupied",
+        "field": "owner_occupied",
+        "description": "The owner lives here. Owner-occupants buy on condition and warranty; landlord-owned stock price-shops the same job.",
+    },
+    "hail": {
+        "label": "Hail severity",
+        "field": "hail_size_in",
+        "description": "How big the hail was, not just that it fell. Granule-loss damage large enough for a full-replacement approval starts around golf-ball size.",
+    },
+    "freeze": {
+        "label": "Freeze event",
+        "field": "last_freeze_date",
+        "description": "A recent hard freeze (ice storm, freezing rain, sleet). Freezes crack heat exchangers, burst condensate lines, and kill compressors across a whole market at once.",
+    },
 }
 
 # ── Signal thresholds ────────────────────────────────────────────────────────
+# These are the NATIONAL baseline. A market can override any of them through the
+# regional calibration layer below (REGIONAL_CALIBRATION → "thresholds"); see
+# docs/regional_calibration.md for why a threshold is a calibration knob and not
+# a constant — a target that every home in a market clears (or none does) is a
+# signal with no discriminative power left in it.
 AGE_SWEET_SPOT_MIN   = 15    # years
 AGE_SWEET_SPOT_MAX   = 30    # years
+# Years past AGE_SWEET_SPOT_MAX over which the age signal decays to AGE_DECAY_FLOOR.
+# Nationally the floor is 0.0: a 50-year-old home scores nothing on age. That is
+# wrong in markets whose stock is old enough that the modal home sits past the
+# sweet spot (Houston's median build year is 1989), so the floor is regionally
+# overridable — an old home in a high-runtime climate never leaves the market for
+# HVAC or roofing, it just cycles.
+AGE_DECAY_YEARS      = 20    # years
+AGE_DECAY_FLOOR      = 0.0   # signal an arbitrarily old home retains
+# Multiplies home age before the curve is applied, to express component wear per
+# calendar year relative to the national baseline (1.0). A Gulf-coast cooling
+# season runs ~9 months, so a condenser there absorbs roughly a Midwest
+# decade-and-a-quarter of runtime per decade on the wall.
+AGE_RUNTIME_FACTOR   = 1.0
 SALE_RECENCY_MAX_MO  = 24    # months — anything older scores 0
 EQUITY_TARGET        = 100_000   # USD
 GARAGE_TARGET        = 2     # spaces
 INCOME_TARGET        = 75_000    # zip median USD
 PERMIT_TARGET        = 2     # permits in 24 months
+# Conditioned floor area (sqft) at which the home-size signal saturates. Home
+# size is the per-property proxy for the two things that scale a job: the amount
+# of building to work on (roof plane, garage floor, duct run) and the amount of
+# energy the household burns. Set it near the upper quartile of the market, not
+# the median — a target at the median saturates half the book at 1.0 and throws
+# away the ranking information the signal exists to provide.
+HOME_SIZE_TARGET_SQFT = int(os.getenv("HOME_SIZE_TARGET_SQFT", "3000"))
+# Freeze/winter-event recency window (months). Wider than the storm window: a
+# hard freeze cracks heat exchangers and kills compressors on a delay, and the
+# replacement wave behind one runs for years, not one season.
+FREEZE_RECENCY_MAX_MO = int(os.getenv("FREEZE_RECENCY_MAX_MO", "36"))
 
 # HCAD extra-features store garage size in square feet (the `uts` valuation
 # units), not a space count — convert at ~240 sqft per car. MAX_GARAGE_SPACES
@@ -774,6 +827,266 @@ GRADE_BANDS = [
     (35, "C"),
     (0,  "D"),
 ]
+
+
+# ── Regional calibration layer ───────────────────────────────────────────────
+# Everything above this line is the NATIONAL matrix. This block is a set of
+# deltas on top of it, resolved per ZIP at score time — deliberately a layer and
+# not a fork, so a future national recalibration propagates into every market
+# instead of being re-litigated per region. The math lives in pipeline/regional.py
+# and the reasoning in docs/regional_calibration.md.
+#
+# The one rule that governs what may live here: **a regional factor earns a
+# weight only if it varies between two homes in the same market.** Cooling degree
+# days, electricity price, net-metering policy, growing-season length and
+# relative humidity are all real drivers of regional demand and none of them are
+# scoring signals — they are identical for every lead in the market, so weighting
+# them adds the same constant to every score, moves no lead past any other, and
+# inflates the grade distribution while pretending to rank. Those factors land in
+# `base_rates` (what share of homes buy per year — a forecasting prior) and
+# `job_value` (what the ticket is worth), never in `scale`/`set`.
+#
+# "auto" resolves the region from each ZIP; "off" disables the layer entirely and
+# every market scores on the national matrix; any region key below pins all
+# scoring to that region (useful for reproducing a customer's numbers locally).
+REGIONAL_CALIBRATION = os.getenv("REGIONAL_CALIBRATION", "auto").strip().lower()
+
+# Region → parent. Deltas merge down the chain, so a Houston profile is
+# national ▸ Texas ▸ Houston and only states what Houston does differently.
+REGION_PARENTS = {
+    "us":         None,
+    "tx":         "us",
+    "tx_houston": "tx",
+}
+
+REGION_LABELS = {
+    "us":         "national",
+    "tx":         "Texas",
+    "tx_houston": "Houston / Gulf Coast, TX",
+}
+
+# ZIP3 → region. Texas is 750–799 plus the 885xx El Paso block; the Gulf Coast
+# sub-region is 770–777 (Houston metro, Galveston, Beaumont/Port Arthur), which
+# is the humid, hurricane-exposed half of the state. The split is load-bearing
+# rather than cosmetic: the same state contains the country's wettest major
+# metro and a desert, and at least one calibration (turf/water stress) points in
+# opposite directions across it.
+TX_GULF_ZIP3 = frozenset({"770", "771", "772", "773", "774", "775", "776", "777"})
+# Texas ZIP3 ranges: the 750–799 block plus the 885xx El Paso block. The
+# resolution function itself lives in pipeline/regional.py — this file holds the
+# data a market is defined by, not the logic that reads it.
+TX_ZIP3_RANGES = ((750, 799), (885, 885))
+
+
+# The calibration itself. Per region:
+#   thresholds  — signal-threshold overrides applied to every vertical
+#   verticals   — per-vertical {scale, set, thresholds}
+#                   scale: multiply the national weight (0.0 removes the signal)
+#                   set:   pin an EXACT final share; the rest rescale to fill
+#                          1 − Σset. This is how a signal absent from the
+#                          national profile gets introduced.
+#                   thresholds: vertical-specific overrides, applied over the
+#                          region's own
+#   job_value   — per-vertical multiplier on JOB_VALUE_MODEL's output
+#   base_rates  — annual purchase incidence prior per vertical (forecasting only;
+#                 never touches a lead's rank)
+#
+# Sources for every number below are cited in docs/regional_calibration.md.
+REGIONAL_CALIBRATION_MATRIX: dict[str, dict] = {
+    "us": {
+        "thresholds": {},
+        "verticals": {},
+        "job_value": {},
+        # National annual incidence, share of owner homes buying per year.
+        "base_rates": {
+            "roofing":          0.055,
+            "hvac":             0.060,
+            "solar":            0.010,
+            "landscaping":      0.280,
+            "epoxy_flooring":   0.020,
+        },
+    },
+
+    # ── Texas ────────────────────────────────────────────────────────────────
+    "tx": {
+        "thresholds": {
+            # Texas median home age ~30 vs ~41 nationally, and the Houston metro's
+            # median build year is 1989 — i.e. the modal Texas home sits AT or just
+            # past the top of the national sweet spot, where the national curve is
+            # already decaying it toward zero.
+            #
+            # The fix is a slower decay first and a floor second, in that order. A
+            # floor alone reaches its value early and then ties every home older
+            # than that at one number: at the national 20-year decay a floor of
+            # 0.35 binds from age 43, so a 1983 build and a 1930 build would score
+            # identically across a large minority of Houston's stock. Stretching
+            # the decay to 35 years keeps them ordered — the 1989 median lands at
+            # 0.83 rather than 0.70 — and the floor then catches only genuinely
+            # ancient stock, which is still in the market for a roof and a system.
+            "AGE_DECAY_YEARS": 35,
+            "AGE_DECAY_FLOOR": 0.20,
+            # Harris County median property value ~$277k against ~47% state price
+            # appreciation since 2020. At the national $100k target the median
+            # Texas owner-occupant pins the equity signal at 1.0 and the signal
+            # stops separating anyone.
+            "EQUITY_TARGET": 150_000,
+            # The West South Central division builds 72% of new homes with a
+            # two-car garage, so two spaces is the mode here, not the standout.
+            "GARAGE_TARGET": 3,
+            # Greater Houston takes golf-ball hail (1.75") nearly every spring;
+            # saturating at 1.5" would grade a routine spring the same as a
+            # roof-replacing one.
+            "STORM_HAIL_TARGET_IN": 1.75,
+        },
+        "verticals": {
+            "roofing": {
+                # Texas logged ~811k hail claims over three years, nearly double
+                # second-place Colorado, and 2024 added the May derecho and
+                # Hurricane Beryl through Harris County. Storm exposure keeps the
+                # top weight and gains a severity companion: adjusters approve
+                # full replacement on granule loss, which is a function of stone
+                # size, not of the fact that it hailed.
+                "scale": {"storm": 1.15, "absentee": 0.0},
+                "set":   {"hail": 0.07, "owner_occupied": 0.06},
+                "thresholds": {
+                    "AGE_RUNTIME_FACTOR": 1.15,   # hail + UV age a roof faster
+                    "AGE_DECAY_YEARS":    30,
+                    "AGE_DECAY_FLOOR":    0.40,   # a 40-year-old house is on its
+                                                  # 2nd/3rd roof, not out of the market
+                },
+                # The flat tail here is deliberate, and differs from the region
+                # default's long decay. Past roughly forty years a Houston home
+                # has had two or three roofs and its CURRENT roof's age is no
+                # longer a function of its build year, so a curve that kept
+                # separating a 1975 build from a 1955 one would be ranking on
+                # noise. Flattening says the honest thing: old enough to be in
+                # the replacement cycle, and build year has nothing left to add.
+            },
+            "hvac": {
+                # Cooling runs ~9 months on the Gulf Coast, so equipment reaches
+                # end of life earlier in calendar years — the doc's "effective
+                # component age", modelled as a runtime multiplier rather than a
+                # shifted band so one number carries the whole claim. Hail does
+                # not sell an HVAC system; freezes and hurricanes do, so the
+                # generic storm weight drops and a freeze signal takes its place.
+                "scale": {"storm": 0.80, "absentee": 0.0},
+                "set":   {"freeze": 0.09, "owner_occupied": 0.06},
+                "thresholds": {
+                    "AGE_RUNTIME_FACTOR": 1.20,   # 10 calendar years ≈ 12 of wear
+                    "AGE_DECAY_YEARS":    30,
+                    "AGE_DECAY_FLOOR":    0.45,   # 3rd-generation equipment still cycles
+                },
+            },
+            "solar": {
+                # Texas power is ~25% cheaper than the national average and the
+                # state has no net-metering mandate, yet payback still beats the
+                # nation because consumption is enormous (Houston solar shoppers
+                # average 1,864 kWh/mo, $288 bills). Rate and policy are market
+                # constants and get no weight; what varies house to house is how
+                # much power the house burns — floor area and a pool pump — so the
+                # consumption proxies are what go up. Freeze/storm recency stands
+                # in for outage history until a service-territory outage feed
+                # exists: after Uri and Beryl, battery-attached solar is a
+                # resilience purchase here as much as an economic one.
+                "scale": {"neighborhood": 0.85, "income": 0.70},
+                "set": {
+                    "home_size":      0.10,
+                    "pool":           0.04,
+                    "freeze":         0.04,
+                    "storm":          0.04,
+                    "owner_occupied": 0.08,
+                },
+                "thresholds": {
+                    # Solar inverts the age signal: panels need a roof with life
+                    # left, and Houston's 1990s–2000s cohort increasingly needs
+                    # re-roofing first. Peak moves young and old stock is
+                    # penalised rather than rewarded.
+                    "AGE_SWEET_SPOT_MIN": 5,
+                    "AGE_SWEET_SPOT_MAX": 20,
+                    "AGE_DECAY_YEARS":    22,
+                    "AGE_DECAY_FLOOR":    0.10,
+                },
+            },
+            "epoxy_flooring": {
+                # The sweet spot is the newer master-planned suburbs — Katy,
+                # Cypress, Spring, the Conroe corridor: big garages, high equity,
+                # no legacy coating. Humidity above 75% year-round is what makes
+                # the sale (moisture-vapour management), but it is identical for
+                # every garage in the market, so it moves the ticket, not the rank.
+                "scale": {"garage": 1.15, "equity": 1.10},
+                "set":   {"owner_occupied": 0.07},
+                "thresholds": {
+                    "AGE_SWEET_SPOT_MIN": 8,
+                    "AGE_SWEET_SPOT_MAX": 25,
+                    "AGE_DECAY_YEARS":    25,
+                    "AGE_DECAY_FLOOR":    0.20,
+                },
+            },
+            "landscaping": {
+                # A ~9-month growing season and ~33 mowing visits a year are
+                # market constants — they raise annual customer value, which is
+                # `job_value`, not rank. What ranks is who owns the lawn.
+                "scale": {"gardening": 1.20},
+                "set":   {"owner_occupied": 0.08},
+            },
+            "fencing": {
+                "scale": {"storm": 1.15},
+                "set":   {"owner_occupied": 0.06, "hail": 0.03},
+            },
+            "pool_maintenance": {
+                "scale": {"income": 0.90},
+                "set":   {"owner_occupied": 0.06},
+            },
+            "pressure_washing": {
+                "scale": {"storm": 1.10, "absentee": 0.0},
+                "set":   {"owner_occupied": 0.05},
+            },
+            "default": {
+                "set": {"owner_occupied": 0.06, "home_size": 0.05},
+            },
+        },
+        "job_value": {},
+        "base_rates": {
+            # Hail frequency plus the 2024 derecho/Beryl claims backlog put
+            # roofing above the national 5–6%; runtime pulls HVAC's peak 1–3
+            # years earlier on equipment age; season length lifts landscaping
+            # participation; garage prevalence and new-stock growth lift epoxy.
+            # Solar tracks the national ~1% but concentrates in high-usage,
+            # younger-roof suburbs rather than spreading evenly.
+            "roofing":          0.075,
+            "hvac":             0.075,
+            "solar":            0.010,
+            "landscaping":      0.350,
+            "epoxy_flooring":   0.028,
+        },
+    },
+
+    # ── Houston / Gulf Coast ─────────────────────────────────────────────────
+    "tx_houston": {
+        "thresholds": {
+            # Median build year 1989 — 36 years old, i.e. original roof long
+            # gone, second roof at the ~19-year average replacement age, HVAC on
+            # its third generation. A slightly deeper floor than the rest of
+            # Texas; the 35-year decay inherited from `tx` is what does the work.
+            "AGE_DECAY_FLOOR": 0.25,
+            # ~1.4x the ~2,040 sqft Harris County median existing single-family
+            # home, so the modal home lands near 0.7 and the signal keeps its
+            # spread across the upper half of the market.
+            "HOME_SIZE_TARGET_SQFT": 2_900,
+        },
+        "verticals": {},
+        "job_value": {
+            # Season length (~33 visits/yr vs ~26 nationally) beats Houston's
+            # below-average 7,131 sqft median lot on annual customer value.
+            "landscaping": 1.25,
+            # Texas residential garage coating runs $3,000–$15,000+ and >75%
+            # year-round humidity pushes jobs toward moisture-barrier systems,
+            # which sit above the bare-epoxy ticket the national model assumes.
+            "epoxy_flooring": 1.25,
+        },
+        "base_rates": {},
+    },
+}
 
 # ── RentCast ─────────────────────────────────────────────────────────────────
 RENTCAST_BASE_URL = "https://api.rentcast.io/v1"

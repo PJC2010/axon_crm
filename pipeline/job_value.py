@@ -6,13 +6,23 @@ Pure functions (no DB / no network) so they're unit-testable like equity/scoring
 Estimation, best source first:
   1. per-vertical model (flat base + per-unit terms from known property fields)
   2. flat fallback: estimated_value × JOB_VALUE_FALLBACK_PCT
-Returns whole dollars, or None when there's nothing to estimate from.
+Then a regional multiplier (pipeline/regional.py) for markets whose ticket
+diverges from the model's baseline. Returns whole dollars, or None when there's
+nothing to estimate from.
 """
 from config import JOB_VALUE_MODEL, JOB_VALUE_FALLBACK_PCT
 
 
-def estimate_job_value(row: dict, vertical: str | None = None) -> int | None:
-    """Best-available job-value estimate in whole dollars, or None."""
+def estimate_job_value(row: dict, vertical: str | None = None,
+                       multiplier: float = 1.0) -> int | None:
+    """Best-available job-value estimate in whole dollars, or None.
+
+    `multiplier` is the market's ticket adjustment
+    (`regional.job_value_multiplier`). It scales the finished estimate rather
+    than the model's terms, so a market states one number instead of restating
+    a whole model — and it applies to the generic value-based fallback too,
+    which is the branch most leads actually take.
+    """
     est = _vertical_estimate(row, vertical)
 
     # Generic fallback — a small fraction of the home's value.
@@ -23,7 +33,7 @@ def estimate_job_value(row: dict, vertical: str | None = None) -> int | None:
 
     if est is None:
         return None
-    return max(int(round(est)), 0)
+    return max(int(round(est * multiplier)), 0)
 
 
 def _vertical_estimate(row: dict, vertical: str | None) -> float | None:
