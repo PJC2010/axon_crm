@@ -21,7 +21,7 @@ import { Camera } from 'lucide-react'
  * Nothing else changes — each frame already reserves its aspect ratio, so the
  * layout does not shift when the image lands.
  */
-export type PhotoKind = 'crew' | 'dialer'
+export type PhotoKind = 'founder' | 'crew' | 'dialer'
 
 /**
  * Photos default to `cover` — fill the frame, crop the overflow — which is
@@ -40,6 +40,14 @@ export const PHOTOS: Record<
   PhotoKind,
   { src: string | null; ratio: string; brief: string; position?: string; fit?: 'cover' | 'contain' }
 > = {
+  founder: {
+    src: '/photos/pete_headshot.jpeg',
+    ratio: '1 / 1',
+    brief: 'Pete — head and shoulders, natural light, Houston backdrop. Square crop.',
+    // Squaring a 1030x1280 portrait crops 250px of height; centering it would
+    // clip the top of his hair, so the crop hangs from the top edge.
+    position: 'top',
+  },
   crew: {
     src: '/photos/roof-inspection.jpg',
     ratio: '16 / 9',
