@@ -327,6 +327,19 @@ export default function LandingContent() {
               <a href="/hcad-data" className="lp-hero-sources-more">How HCAD data works <ArrowRight size={12} /></a>
             </p>
             </div>
+            {/* The one place on the page where a stranger meets a person instead of
+                a claim. Every detail here is a checkable fact about a real person —
+                keep it that way: no invented credentials, employers, or tenure, and
+                nothing about the family beyond what Pete has said publicly. */}
+            <div className="lp-founder">
+              <LandingPhoto kind="founder" alt="Pete Castillo, who built Axon" className="lp-founder-photo" sizes="72px" />
+              <p>
+                <b>Built by Pete Castillo</b>{' — '}a data scientist in Houston, married with two
+                kids. Axon is both halves of that: the modeling I do professionally, aimed at the
+                county I&apos;m raising a family in.{' '}
+                <a href="mailto:admin@axonhtx.com">Ask me anything about the data</a>.
+              </p>
+            </div>
           </div>
 
           {/* ── Social proof band — hidden for now via SHOW_TESTIMONIALS; the

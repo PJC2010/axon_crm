@@ -74,6 +74,13 @@
 .lp-hero-sources a:hover { color: var(--color-accent-300); text-decoration-color: var(--color-accent-300); }
 .lp-hero-sources-more { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; color: var(--color-accent-300) !important; text-decoration-color: var(--color-accent-300) !important; }
 
+/* Founder line — the one place a stranger meets a person, not a claim. */
+.lp-founder { display: flex; align-items: center; gap: 14px; margin-top: 0; padding: 16px 18px; background: var(--color-surface); border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
+.lp-founder p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--color-ink-600); }
+.lp-founder p b { color: var(--color-ink-900); font-weight: 600; }
+.lp-founder p a { color: var(--color-accent-300); }
+.lp-founder-photo { width: 72px; flex-shrink: 0; border-radius: 50%; }
+
 /* Video header frame */
 .lp-video-wrap { margin-top: 56px; position: relative; border-radius: 8px; overflow: hidden; box-shadow: var(--shadow-modal); background: var(--color-black); }
 .lp-video-chrome { height: 38px; background: var(--color-paper-deep); border-bottom: 1px solid var(--color-ink-200); display: flex; align-items: center; padding: 0 14px; gap: 7px; position: relative; z-index: 3; }
@@ -349,6 +356,11 @@
 .lp-photo.is-empty figcaption { display: flex; flex-direction: column; gap: 4px; max-width: 34ch; }
 .lp-photo.is-empty figcaption b { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-ink-500); }
 .lp-photo.is-empty figcaption span { font-size: 12px; line-height: 1.5; color: var(--color-ink-400); }
+/* The round founder slot is too small for placeholder prose — icon only.
+   Declared after the block above: at equal specificity the later rule wins. */
+.lp-photo.lp-founder-photo { border-radius: 50%; }
+.lp-photo.lp-founder-photo.is-empty { padding: 0; }
+.lp-photo.lp-founder-photo.is-empty figcaption { display: none; }
 
 /* Photo tile inside the feature grid — a breather in a wall of product UI. */
 .lp-feature-photo { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
@@ -405,6 +417,8 @@
   .lp-zip-form input, .lp-zip-form select, .lp-zip-form .lp-btn { width: 100%; min-width: 0; }
   .lp-zip-form .lp-btn { justify-content: center; }
   .lp-hero { padding-top: 48px; }
+  .lp-founder { align-items: flex-start; }
+  .lp-founder-photo { width: 56px; }
   .lp-zip-stats { gap: 8px 16px; }
   /* Long single-token strings (addresses, emails) must wrap, not widen the page. */
   .lp-zip-addr, .lp-hero-sources { overflow-wrap: anywhere; }
