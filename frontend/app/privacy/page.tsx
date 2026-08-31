@@ -1,7 +1,7 @@
 import LegalPage, { LegalH2, LegalP, LegalUl } from '@/components/LegalPage'
 
 export const metadata = {
-  title: 'Privacy Policy — Axon',
+  title: 'Privacy Policy',  // layout template appends "— Axon" (audit D5.1: was doubled)
   description: 'How Axon collects, uses, and protects data — including SMS consent and the public-records property data that powers lead scoring.',
 }
 

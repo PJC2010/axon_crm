@@ -23,6 +23,9 @@ export interface Testimonial {
   city: string
   /** One or two short sentences, ideally with a concrete number. */
   quote: string
+  /** Optional headshot path under /public (e.g. '/photos/mike-r.jpg'). The
+   *  testimonial wall falls back to an initials avatar when absent. */
+  photo?: string
 }
 
 export const TESTIMONIALS: Testimonial[] = [

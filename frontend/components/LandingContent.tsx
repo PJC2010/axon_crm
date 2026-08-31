@@ -5,12 +5,14 @@ import {
   ArrowRight, Columns3, FileText, DollarSign, GitBranch, Layers, Download,
   Map, Bell, Play, Star, Check, Users,
   Database, HelpCircle, X, Mail, MapPin, CloudLightning,
-  MessageSquare, PenLine, Zap,
+  MessageSquare, PenLine, Zap, Lock,
 } from 'lucide-react'
+import Image from 'next/image'
 import { ZipSampleWidget, WAITLIST_MAILTO } from '@/components/ZipSampleWidget'
 import { LandingPhoto } from '@/components/LandingPhoto'
 import { ProspectCaptureForm } from '@/components/ProspectCaptureForm'
 import { TESTIMONIALS, SHOW_TESTIMONIALS } from '@/lib/testimonials'
+import { REVIEW_BADGES } from '@/lib/thirdPartyReviews'
 import { getPublicStats } from '@/lib/api'
 
 // ── Comparison data (Axon vs. the shared-lead model) ──
@@ -67,6 +69,19 @@ const AxonMark = ({ size = 28, maskId }: { size?: number; maskId: string }) => (
     </mask>
     <polygon points="16,5 27,16 16,27 5,16" fill="var(--color-accent)" mask={`url(#${maskId})`} />
     <circle cx="16" cy="16" r="1.5" fill="#f6f7f9" />
+  </svg>
+)
+
+// TODO(pete): paste your real LinkedIn profile URL to light up the founder
+// link (audit D3.3: "a real face plus LinkedIn clears this criterion
+// entirely"). Empty string keeps the link out of the page — never ship a
+// guessed URL for a real person.
+const FOUNDER_LINKEDIN = ''
+
+/** LinkedIn "in" glyph (simple-icons path, CC0) — lucide ships no brand icons. */
+const LinkedinGlyph = ({ size = 12 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 1 1 0-4.124 2.062 2.062 0 0 1 0 4.124zM7.119 20.452H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
   </svg>
 )
 
@@ -338,6 +353,14 @@ export default function LandingContent() {
                 kids. Axon is both halves of that: the modeling I do professionally, aimed at the
                 county I&apos;m raising a family in.{' '}
                 <a href="mailto:admin@axonhtx.com">Ask me anything about the data</a>.
+                {FOUNDER_LINKEDIN && (
+                  <>
+                    {' '}
+                    <a href={FOUNDER_LINKEDIN} target="_blank" rel="noopener noreferrer" className="lp-founder-li">
+                      <LinkedinGlyph /> LinkedIn
+                    </a>
+                  </>
+                )}
               </p>
             </div>
           </div>
@@ -487,6 +510,13 @@ export default function LandingContent() {
                   <div>
                     <strong>See your territory on a map</strong>
                     <span>Every scored property plotted with grade heatmaps — plan a route through a neighborhood of A&apos;s instead of driving to scattered addresses.</span>
+                  </div>
+                </div>
+                <div className="lp-point">
+                  <div className="lp-point-ic"><Database size={16} /></div>
+                  <div>
+                    <strong>No CRM history required</strong>
+                    <span>Axon scores from public records, so you get a ranked list on day one — even if you&apos;ve never used a CRM.</span>
                   </div>
                 </div>
               </div>
@@ -742,6 +772,24 @@ export default function LandingContent() {
       </section>
 
       {/* ── Pricing ── */}
+      {/* ── Third-party reviews (audit D3.5) — hidden until a real G2/Capterra
+             profile exists; see lib/thirdPartyReviews.ts for the contract. ── */}
+      {REVIEW_BADGES.length > 0 && (
+        <section className="lp-section lp-reviews" aria-label="Third-party reviews">
+          <div className="lp-container">
+            <p className="lp-reviews-row">
+              {REVIEW_BADGES.map(b => (
+                <a key={b.platform} href={b.url} target="_blank" rel="noopener noreferrer" className="lp-reviews-badge">
+                  <b>{b.platform}</b>
+                  {b.rating && <span className="tabular">{b.rating} ★</span>}
+                  {b.count != null && <span>{b.count} reviews</span>}
+                </a>
+              ))}
+            </p>
+          </div>
+        </section>
+      )}
+
       <section className="lp-section" id="pricing" style={{ paddingTop: 72 }}>
         <div className="lp-container">
           <div className="lp-eyebrow"><DollarSign size={12} /> Pricing</div>
@@ -801,6 +849,12 @@ export default function LandingContent() {
               <a className="lp-btn lp-btn-accent" href="/signup">Start Free</a>
             </div>
           </div>
+          {/* Payment trust mark (audit D3.4): Stripe handles billing — say so
+                 where the buying decision happens, not only in the privacy policy. */}
+          <p className="lp-stripe-badge">
+            <Lock size={13} aria-hidden="true" /> Payments secured by <b>Stripe</b> — Axon never
+            sees your card number.
+          </p>
           {/* ── item 8: the anchor with the arithmetic in it. Angi publishes no
                  price list, so the figure is stated as the reported range it is,
                  and the comparison is arithmetic the reader can redo. ── */}
@@ -837,6 +891,31 @@ export default function LandingContent() {
           </div>
         </div>
       </section>
+
+      {/* ── Testimonial wall (audit D3.2/D3.1) — renders only once real,
+             consented customer quotes exist in lib/testimonials.ts. Note the
+             hero proof band shows the first three of the same list. ── */}
+      {SHOW_TESTIMONIALS && TESTIMONIALS.length >= 3 && (
+        <section className="lp-section lp-wall" aria-label="Customer results">
+          <div className="lp-container">
+            <div className="lp-eyebrow"><Users size={12} /> From contractors working their lists</div>
+            <h2 className="lp-h2">What owners like you booked with Axon</h2>
+            <div className="lp-wall-grid">
+              {TESTIMONIALS.map(t => (
+                <figure key={t.name} className="lp-wall-card">
+                  <blockquote>&ldquo;{t.quote}&rdquo;</blockquote>
+                  <figcaption>
+                    {t.photo
+                      ? <Image src={t.photo} alt="" width={36} height={36} className="lp-wall-avatar" />
+                      : <span className="lp-wall-avatar" aria-hidden="true">{t.name.charAt(0)}</span>}
+                    <span><b>{t.name}</b> · {t.trade}, {t.city}</span>
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ── FAQ ── */}
       <section className="lp-section" id="faq" style={{ paddingTop: 24 }}>
@@ -921,9 +1000,10 @@ export default function LandingContent() {
             <a className="lp-btn lp-btn-ghost lp-btn-lg" href="/preview" style={{ color: 'rgba(255,255,255,0.85)' }}>Try the Live Demo</a>
           </div>
           <p className="lp-cta-note">
-            Axon currently serves Harris County, Texas — with local appraisal, permit, and storm
-            data built into every score. Outside Harris County?{' '}
-            <a href={WAITLIST_MAILTO}>Join the waitlist</a> to bring Axon to your area.
+            Axon is built specifically for Harris County — every score comes from county
+            appraisal records, Houston permits, and local NOAA storm data. No national tool
+            knows your streets this well. Outside Harris County?{' '}
+            <a href={WAITLIST_MAILTO}>Join the waitlist</a>.
           </p>
           <div style={{ marginTop: 36, paddingTop: 28, borderTop: '1px solid rgba(255,255,255,0.15)' }}>
             <p style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 600, margin: '0 0 12px' }}>
@@ -950,6 +1030,14 @@ export default function LandingContent() {
                 <li><a href="#pricing">Pricing</a></li>
                 <li><a href="/preview">Live Demo</a></li>
                 <li><a href="/hcad-data">HCAD Data, Explained</a></li>
+              </ul>
+            </div>
+            <div>
+              <div className="lp-footer-ct">Compare</div>
+              <ul className="lp-footer-links">
+                <li><a href="/vs/axon-vs-angi">Axon vs Angi</a></li>
+                <li><a href="/vs/axon-vs-salesrabbit">Axon vs SalesRabbit</a></li>
+                <li><a href="/vs/axon-vs-ladder">Axon vs Ladder</a></li>
               </ul>
             </div>
             <div>

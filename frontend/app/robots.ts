@@ -13,7 +13,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: [
       {
         userAgent: '*',
-        allow: ['/', '/hcad-data', '/login', '/signup', '/privacy', '/terms', '/preview'],
+        allow: ['/', '/hcad-data', '/vs/', '/login', '/signup', '/privacy', '/terms', '/preview'],
         disallow: [
           '/home',
           '/dashboard',

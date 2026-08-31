@@ -1,7 +1,7 @@
 import LegalPage, { LegalH2, LegalP, LegalUl } from '@/components/LegalPage'
 
 export const metadata = {
-  title: 'Terms of Service — Axon',
+  title: 'Terms of Service',  // layout template appends "— Axon" (audit D5.1: was doubled)
   description: 'The agreement between Axon and the businesses that use it: plans, billing, acceptable use, and data ownership.',
 }
 

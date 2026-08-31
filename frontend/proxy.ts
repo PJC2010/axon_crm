@@ -9,7 +9,7 @@ import type { NextRequest } from 'next/server'
 // Next 16 renamed the `middleware` file convention to `proxy` — same contract,
 // new name (see node_modules/next/dist/docs/01-app/03-api-reference/
 // 03-file-conventions/proxy.md).
-const INDEXABLE_PATHS = ['/', '/hcad-data', '/login', '/signup', '/privacy', '/terms']
+const INDEXABLE_PATHS = ['/', '/hcad-data', '/vs', '/login', '/signup', '/privacy', '/terms']
 
 // Exact-match only: the /preview interactive demo is a marketing surface, but
 // its /preview/dev component gallery stays out of the index.

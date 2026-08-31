@@ -199,6 +199,43 @@
 .lp-stat-l { font-size: 13px; color: var(--color-ink-500); line-height: 1.4; }
 .lp-proof-foot { text-align: center; font-size: 13px; color: var(--color-ink-500); margin: 26px auto 0; max-width: 520px; line-height: 1.5; }
 
+/* /vs comparison pages (audit D5.3) — landing world, page-scoped chrome. */
+.vsp-hero { padding: 64px 32px 40px; }
+.vsp-h1 { font-family: var(--font-display); font-size: clamp(34px, 5vw, 52px); font-weight: 600; line-height: 1.08; letter-spacing: -0.02em; margin: 0 0 18px; }
+.vsp-verdict { font-size: 16.5px; line-height: 1.6; color: var(--color-ink-700); max-width: 720px; margin: 0; }
+.vsp-honest { margin-top: 40px; padding: 22px 24px; background: var(--color-surface); border-radius: var(--radius-card); box-shadow: var(--shadow-card); max-width: 720px; }
+.vsp-honest h2 { font-family: var(--font-display); font-size: 18px; font-weight: 600; margin: 0 0 12px; color: var(--color-ink-900); }
+.vsp-honest ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+.vsp-honest li { font-size: 14px; line-height: 1.55; color: var(--color-ink-700); }
+.vsp-cta { margin: 52px 0 0; }
+.vsp-cta h2 { font-family: var(--font-display); font-size: clamp(24px, 3.4vw, 34px); font-weight: 600; letter-spacing: -0.01em; margin: 0 0 10px; }
+.vsp-cta p { font-size: 15px; color: var(--color-ink-600); max-width: 560px; margin: 0 0 22px; line-height: 1.55; }
+.vsp-crosslinks { margin: 48px 0 72px; font-size: 13.5px; color: var(--color-ink-500); }
+.vsp-crosslinks a { color: var(--color-accent-300); }
+
+/* Payment trust mark under the pricing grid (audit D3.4). */
+.lp-stripe-badge { display: flex; align-items: center; justify-content: center; gap: 7px; margin: 18px 0 26px; font-size: 12.5px; color: var(--color-ink-500); }
+.lp-stripe-badge svg { color: var(--color-moss); flex-shrink: 0; }
+.lp-stripe-badge b { color: var(--color-ink-700); font-weight: 600; }
+
+/* Founder LinkedIn link (audit D3.3) — sits inline after the email link. */
+.lp-founder-li { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; margin-left: 8px; color: var(--color-accent-300); }
+
+/* Third-party review badges (audit D3.5) — hidden until real profiles exist. */
+.lp-reviews { padding-bottom: 0; }
+.lp-reviews-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; margin: 0; }
+.lp-reviews-badge { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: var(--radius-card); background: var(--color-surface); box-shadow: var(--shadow-card); font-size: 13px; color: var(--color-ink-700); text-decoration: none; }
+.lp-reviews-badge b { color: var(--color-ink-900); }
+.lp-reviews-badge:hover { box-shadow: var(--shadow-pop); }
+
+/* Testimonial wall (audit D3.2/D3.1) — real quotes only; see lib/testimonials.ts. */
+.lp-wall-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 32px; }
+.lp-wall-card { margin: 0; padding: 20px; background: var(--color-surface); border-radius: var(--radius-card); box-shadow: var(--shadow-card); display: flex; flex-direction: column; gap: 14px; }
+.lp-wall-card blockquote { margin: 0; font-size: 14.5px; line-height: 1.6; color: var(--color-ink-800); }
+.lp-wall-card figcaption { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--color-ink-500); }
+.lp-wall-card figcaption b { color: var(--color-ink-800); font-weight: 600; }
+.lp-wall-avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; background: var(--color-accent-100); color: var(--color-accent-300); display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+
 /* Competitor comparison table ("name the enemy": Axon vs. Angi).
    A div-grid rather than <table> so rows can scroll-stagger in. The wrapper
    keeps overflow-x as a safety net, but at three columns the table fits every
@@ -330,7 +367,7 @@
 
 /* Footer */
 .lp-footer { background: var(--color-black); border-top: 1px solid var(--color-ink-100); padding: 56px 0 40px; }
-.lp-footer-inner { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 56px; }
+.lp-footer-inner { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr; gap: 44px; }
 .lp-footer-wordmark { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-display); font-size: 18px; font-weight: 600; color: #fff; }
 .lp-footer-tag { font-size: 13px; color: var(--color-ink-400); line-height: 1.6; max-width: 200px; margin: 12px 0 0; }
 .lp-footer-ct { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--color-ink-400); margin-bottom: 14px; }
