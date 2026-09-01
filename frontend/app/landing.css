@@ -80,6 +80,13 @@
 .lp-founder p b { color: var(--color-ink-900); font-weight: 600; }
 .lp-founder p a { color: var(--color-accent-300); }
 .lp-founder-photo { width: 72px; flex-shrink: 0; border-radius: 50%; }
+/* The text side is a column now: blurb, then the social row. min-width:0 keeps
+   a long link in the blurb from widening the flex item past the card. */
+.lp-founder-body { min-width: 0; }
+.lp-founder-social { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; }
+.lp-founder-social a { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: var(--radius-pill); color: var(--color-ink-400); background: var(--color-surface-hi); transition: color var(--dur-base) var(--ease-out), background var(--dur-base) var(--ease-out); }
+.lp-founder-social a:hover { color: var(--color-accent-300); background: var(--color-ink-200); }
+.lp-founder-social svg { display: block; }
 
 /* Video header frame */
 .lp-video-wrap { margin-top: 56px; position: relative; border-radius: 8px; overflow: hidden; box-shadow: var(--shadow-modal); background: var(--color-black); }

@@ -70,6 +70,27 @@ const AxonMark = ({ size = 28, maskId }: { size?: number; maskId: string }) => (
   </svg>
 )
 
+// Founder social links, rendered in the founder box. The brand marks are inline
+// SVG because lucide-react dropped its social/brand icons in v1 and these two
+// are the only ones the page needs; each is the official glyph on a 24x24 grid,
+// filled with currentColor so it inherits the link colour.
+//
+// Same rule as the founder blurb itself: these must be Pete's real accounts.
+// An entry with an empty `href` is skipped rather than rendered dead, so the
+// list can be extended before an account exists.
+const FOUNDER_SOCIALS: Array<{ label: string; href: string; path: string }> = [
+  {
+    label: 'Instagram',
+    href: 'https://www.instagram.com/ohitspete01/',
+    path: 'M12 2.16c3.2 0 3.58.01 4.85.07 1.17.05 1.8.25 2.23.41.56.22.96.48 1.38.9.42.42.68.82.9 1.38.16.42.36 1.06.41 2.23.06 1.27.07 1.65.07 4.85s-.01 3.58-.07 4.85c-.05 1.17-.25 1.8-.41 2.23-.22.56-.48.96-.9 1.38-.42.42-.82.68-1.38.9-.42.16-1.06.36-2.23.41-1.27.06-1.65.07-4.85.07s-3.58-.01-4.85-.07c-1.17-.05-1.8-.25-2.23-.41-.56-.22-.96-.48-1.38-.9-.42-.42-.68-.82-.9-1.38-.16-.42-.36-1.06-.41-2.23C2.17 15.58 2.16 15.2 2.16 12s.01-3.58.07-4.85c.05-1.17.25-1.8.41-2.23.22-.56.48-.96.9-1.38.42-.42.82-.68 1.38-.9.42-.16 1.06-.36 2.23-.41C8.42 2.17 8.8 2.16 12 2.16zM12 0C8.74 0 8.33.01 7.05.07c-1.28.06-2.15.26-2.91.56-.79.3-1.46.72-2.13 1.38C1.35 2.68.94 3.35.63 4.14c-.3.77-.5 1.64-.56 2.91C.01 8.33 0 8.74 0 12s.01 3.67.07 4.95c.06 1.28.26 2.15.56 2.91.31.79.72 1.46 1.38 2.13.67.67 1.34 1.08 2.13 1.38.76.3 1.63.5 2.91.56C8.33 23.99 8.74 24 12 24s3.67-.01 4.95-.07c1.28-.06 2.15-.26 2.91-.56.79-.3 1.46-.71 2.13-1.38.67-.67 1.08-1.34 1.38-2.13.3-.76.5-1.63.56-2.91.06-1.28.07-1.69.07-4.95s-.01-3.67-.07-4.95c-.06-1.28-.26-2.15-.56-2.91-.3-.79-.71-1.46-1.38-2.13C21.32 1.35 20.65.94 19.86.63c-.76-.3-1.63-.5-2.91-.56C15.67.01 15.26 0 12 0zm0 5.84a6.16 6.16 0 1 0 0 12.32 6.16 6.16 0 0 0 0-12.32zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm7.85-10.41a1.44 1.44 0 1 1-2.88 0 1.44 1.44 0 0 1 2.88 0z',
+  },
+  {
+    label: 'LinkedIn',
+    href: 'https://www.linkedin.com/in/petecastillo92',
+    path: 'M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.07 2.07 0 1 1 0-4.13 2.07 2.07 0 0 1 0 4.13zm1.78 13.02H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0z',
+  },
+]
+
 // Below this, a platform-wide count reads as thin rather than as proof — the
 // chip stays hidden until the number has real weight.
 const MIN_PROOF_COUNT = 500
@@ -333,12 +354,36 @@ export default function LandingContent() {
                 nothing about the family beyond what Pete has said publicly. */}
             <div className="lp-founder">
               <LandingPhoto kind="founder" alt="Pete Castillo, who built Axon" className="lp-founder-photo" sizes="72px" />
-              <p>
-                <b>Built by Pete Castillo</b>{' — '}a data scientist in Houston, married with two
-                kids. Axon is both halves of that: the modeling I do professionally, aimed at the
-                county I&apos;m raising a family in.{' '}
-                <a href="mailto:admin@axonhtx.com">Ask me anything about the data</a>.
-              </p>
+              <div className="lp-founder-body">
+                <p>
+                  <b>Built by Pete Castillo</b>{' — '}a data scientist in Houston, married with two
+                  kids. Axon is both halves of that: the modeling I do professionally, aimed at the
+                  county I&apos;m raising a family in.{' '}
+                  <a href="mailto:admin@axonhtx.com">Ask me anything about the data</a>.
+                </p>
+                {FOUNDER_SOCIALS.some(s => s.href) && (
+                  <ul className="lp-founder-social">
+                    {FOUNDER_SOCIALS.filter(s => s.href).map(s => (
+                      <li key={s.label}>
+                        {/* rel="me" states these profiles are the same person as the
+                            byline above; the icon is decorative, so the accessible
+                            name comes from aria-label. */}
+                        <a
+                          href={s.href}
+                          target="_blank"
+                          rel="me noopener noreferrer"
+                          aria-label={`Pete Castillo on ${s.label}`}
+                          title={s.label}
+                        >
+                          <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true" focusable="false">
+                            <path d={s.path} />
+                          </svg>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
           </div>
 
