@@ -318,13 +318,18 @@ def test_seed_from_parcels_actually_passes_residential_only(monkeypatch):
     monkeypatch.setattr(parcels, "link_existing", lambda c, z, a: 0)
     monkeypatch.setattr(parcels, "coverage",
                         lambda c, z: {"parcels": 10, "geocoded": 0})
+    monkeypatch.setattr(seed_mod, "SEED_PROPERTY_TYPES", ["Single Family"])
     monkeypatch.setattr(
         parcels, "seed_account",
-        lambda c, z, a, limit=None, residential_only=False:
-            seen.update(residential_only=residential_only) or 10)
+        lambda c, z, a, limit=None, residential_only=False, dwelling_types=None:
+            seen.update(residential_only=residential_only,
+                        dwelling_types=dwelling_types) or 10)
 
     seed_mod._seed_from_parcels("77449", 1)
     assert seen["residential_only"] is True
+    # Same guard for the dwelling-type allowlist: config.SEED_PROPERTY_TYPES is
+    # useless if the HCAD path never hands it to the seed.
+    assert seen["dwelling_types"] == ["Single Family"]
 
 
 def test_ensure_from_hcad_collapses_duplicate_addresses():
@@ -386,7 +391,8 @@ def test_seed_links_pre_existing_rows_before_seeding_them(monkeypatch):
     monkeypatch.setattr(parcels, "link_existing",
                         lambda c, z, a: calls.append("link") or 0)
     monkeypatch.setattr(parcels, "seed_account",
-                        lambda c, z, a, limit=None, residential_only=False:
+                        lambda c, z, a, limit=None, residential_only=False,
+                               dwelling_types=None:
                             calls.append("seed") or 10)
     monkeypatch.setattr(parcels, "coverage",
                         lambda c, z: {"parcels": 10, "geocoded": 0})

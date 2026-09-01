@@ -12,6 +12,7 @@ from pipeline.property_type import (
     DWELLING_BY_STATE_CLASS,
     from_state_class,
     sql_from_state_class,
+    sql_type_allowlist,
 )
 from pipeline.residential import NON_RESIDENTIAL_PROPERTY_TYPES, classify
 from pipeline.addr import normalize
@@ -145,3 +146,102 @@ class TestSqlParity:
 
     def test_sql_accepts_a_qualified_column(self):
         assert "h.state_class" in sql_from_state_class("h.state_class")
+
+
+class TestSeedAllowlist:
+    """config.SEED_PROPERTY_TYPES as a SQL filter, for the shared-cache seed."""
+
+    ALLOW = ["Single Family", "Townhouse", "Manufactured"]
+
+    def test_builds_an_in_clause(self):
+        sql = sql_type_allowlist("p.property_type", self.ALLOW)
+        assert "p.property_type IN (" in sql
+        for t in self.ALLOW:
+            assert f"'{t}'" in sql
+
+    def test_null_is_kept(self):
+        # Load-bearing: property_type is derived from state_class, so it is NULL
+        # for every parcel outside a county whose mirror carries that column.
+        # Dropping NULLs would make those ZIPs seed zero rows and look empty.
+        assert "IS NULL OR" in sql_type_allowlist("p.property_type", self.ALLOW)
+
+    @pytest.mark.parametrize("allowed", [None, [], ["*"], ["*", "Condo"], ["  "]])
+    def test_no_allowlist_means_no_filter(self, allowed):
+        # Matches seed._wanted_type's treatment of the same config value.
+        assert sql_type_allowlist("p.property_type", allowed) == ""
+
+    def test_label_allowlist_is_the_injection_guard(self):
+        for bad in ["x'; DROP TABLE parcels--", "Single Family'", 'a"b', "a;b", "--x"]:
+            with pytest.raises(ValueError):
+                sql_type_allowlist("p.property_type", [bad])
+
+    def test_column_must_be_an_identifier(self):
+        with pytest.raises(ValueError):
+            sql_type_allowlist("p.property_type; DROP TABLE parcels", self.ALLOW)
+
+    def test_filter_matches_python_on_real_rows(self):
+        """The SQL filter keeps exactly the rows seed._wanted_type would keep."""
+        from pipeline.seed import _wanted_type
+        import pipeline.seed as seed_mod
+
+        con = duckdb.connect(":memory:")
+        try:
+            con.execute("CREATE TABLE p (property_type VARCHAR)")
+            values = ["Single Family", "Condo", "Townhouse", "Manufactured",
+                      "Duplex", "Triplex", "Fourplex", "Multi-Family", None]
+            con.executemany("INSERT INTO p VALUES (?)", [(v,) for v in values])
+            sql = sql_type_allowlist("property_type", self.ALLOW)
+            kept_sql = {r[0] for r in
+                        con.execute(f"SELECT property_type FROM p WHERE {sql}").fetchall()}
+
+            orig = seed_mod.SEED_PROPERTY_TYPES
+            seed_mod.SEED_PROPERTY_TYPES = self.ALLOW
+            try:
+                kept_py = {v for v in values if _wanted_type(v)}
+            finally:
+                seed_mod.SEED_PROPERTY_TYPES = orig
+
+            assert kept_sql == kept_py
+            assert "Condo" not in kept_sql and "Multi-Family" not in kept_sql
+            assert None in kept_sql          # NULL survives both paths
+            assert "Single Family" in kept_sql
+        finally:
+            con.close()
+
+
+class TestSeedAccountWiring:
+    """The filter has to actually reach the statement, not just exist."""
+
+    def _sql(self, **kwargs):
+        import inspect
+        from pipeline import parcels
+        captured = {}
+
+        class FakeCur:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def execute(self, sql, params=None): captured["sql"] = sql
+            def fetchone(self): return [0]
+            @property
+            def rowcount(self): return 0
+
+        class FakeConn:
+            def cursor(self, *a, **k): return FakeCur()
+
+        try:
+            parcels.seed_account(FakeConn(), "77396", 1, **kwargs)
+        except Exception:
+            pass  # we only need the first statement's text
+        return captured.get("sql", "")
+
+    def test_types_reach_the_statement(self):
+        sql = self._sql(dwelling_types=["Single Family", "Townhouse"])
+        assert "'Single Family'" in sql and "'Townhouse'" in sql
+        assert "'Condo'" not in sql
+
+    def test_absent_by_default(self):
+        # Existing callers are unchanged: no dwelling_types, no clause.
+        assert "property_type IN" not in self._sql()
+
+    def test_star_adds_no_clause(self):
+        assert "property_type IN" not in self._sql(dwelling_types=["*"])

@@ -224,6 +224,15 @@ def seed_from_hcad_zip(zip_code: str, account_id: int, limit: int | None = None)
         return 0
 
     rows = [_normalize_hcad(p, region_id=None) for p in parcels_by_addr.values()]
+    # Same allowlist the RentCast path applies above and the shared-cache path
+    # applies in SQL, so which seed path an account happens to take cannot
+    # change which dwelling types reach its lead list. A NULL type is kept.
+    kept = [r for r in rows if _wanted_type(r.get("property_type"))]
+    dropped = len(rows) - len(kept)
+    if dropped:
+        log.info("Skipped %d off-target property type(s) for ZIP %s",
+                 dropped, zip_code)
+    rows = kept
     if limit:
         rows = rows[:limit]
 
@@ -272,7 +281,8 @@ def _seed_from_parcels(zip_code: str, account_id: int, limit: int | None = None)
         # churches and school-district land seeded, scored and reached the lead
         # list alongside the homes.
         n = parcels.seed_account(conn, zip_code, account_id, limit=limit,
-                                 residential_only=SEED_RESIDENTIAL_ONLY)
+                                 residential_only=SEED_RESIDENTIAL_ONLY,
+                                 dwelling_types=SEED_PROPERTY_TYPES)
         cov = parcels.coverage(conn, zip_code)
         log.info("HCAD seed: %d properties for ZIP %s (shared cache: %d parcels, "
                  "%d already geocoded)", n, zip_code, cov["parcels"], cov["geocoded"])
