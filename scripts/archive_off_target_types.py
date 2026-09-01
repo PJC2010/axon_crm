@@ -49,34 +49,83 @@ REASON = "off_target_type"
 BATCH = 5000
 
 
-def _where(allow_sql: str, account_id: int | None) -> tuple[str, list]:
-    """Rows to archive: typed, off-allowlist, not already archived."""
-    # NOT(allowlist) rather than a NOT IN list: sql_type_allowlist keeps NULL,
-    # and negating it is what makes "unknown type" fall on the KEEP side here
-    # too. A NULL type must never be archived by this tool — it means the county
-    # mirror has no state_class for that parcel, not that the row is a condo.
-    where = f"property_type IS NOT NULL AND NOT {allow_sql} AND archived_at IS NULL"
+# The tenant row's own type, else the shared cache's. Existing production rows
+# have property_type NULL — it is filled by hcad_enrichment, which runs per ZIP
+# per account, so waiting for it would mean re-running the pipeline over every
+# ZIP in every book before a single condo could be archived. parcels.property_type
+# is filled county-wide by one `tools/build_parcel_cache.py` pass, and
+# properties.parcel_id already points at it, so reading through the link lets
+# this act on every account at once.
+#
+# COALESCE order matters: the tenant's own value wins when it has one, because
+# that may be RentCast's answer for a row this deployment paid to enrich.
+RESOLVED = "COALESCE(p.property_type, pc.property_type)"
+
+# Aliased in a CTE so the allowlist applies to a plain identifier — the guard in
+# property_type.sql_type_allowlist validates one, and an expression would (rightly)
+# be rejected.
+_FROM = """
+        FROM properties p
+        LEFT JOIN parcels pc ON pc.id = p.parcel_id
+"""
+
+
+def _cte(account_id: int | None) -> tuple[str, list]:
+    where = "p.archived_at IS NULL"
     params: list = []
     if account_id is not None:
-        where += " AND account_id = %s"
+        where += " AND p.account_id = %s"
         params.append(account_id)
-    return where, params
+    return (
+        f"WITH resolved AS (SELECT p.id, {RESOLVED} AS dwelling_type{_FROM}"
+        f"        WHERE {where})",
+        params,
+    )
 
 
-def preview(cur, where: str, params: list) -> list[tuple[str, int]]:
+def _target(allow_sql: str) -> str:
+    """Rows to archive: type resolvable, off the allowlist.
+
+    NOT(allowlist) rather than a NOT IN list: sql_type_allowlist keeps NULL, and
+    negating it puts "unknown type" on the KEEP side here too. A row whose type
+    cannot be resolved must never be archived by this tool — it means the county
+    mirror has no state_class for that parcel, not that the row is a condo.
+    """
+    return f"dwelling_type IS NOT NULL AND NOT {allow_sql}"
+
+
+def coverage(cur, account_id: int | None) -> tuple[int, int]:
+    """(live rows, rows whose dwelling type is resolvable).
+
+    Printed before anything else so an unpopulated cache reports itself instead
+    of looking like a clean book. Finding nothing to archive is a real outcome
+    and an empty parcels.property_type is a setup error; they must not render
+    identically.
+    """
+    cte, params = _cte(account_id)
     cur.execute(
-        f"SELECT property_type, COUNT(*) FROM properties WHERE {where} "
-        f"GROUP BY 1 ORDER BY 2 DESC",
+        f"{cte} SELECT COUNT(*), COUNT(dwelling_type) FROM resolved", params
+    )
+    return cur.fetchone()
+
+
+def preview(cur, allow_sql: str, account_id: int | None) -> list[tuple[str, int]]:
+    cte, params = _cte(account_id)
+    cur.execute(
+        f"{cte} SELECT dwelling_type, COUNT(*) FROM resolved "
+        f"WHERE {_target(allow_sql)} GROUP BY 1 ORDER BY 2 DESC",
         params,
     )
     return cur.fetchall()
 
 
-def archive(cur, where: str, params: list) -> int:
+def archive(cur, allow_sql: str, account_id: int | None) -> int:
+    cte, params = _cte(account_id)
     total = 0
     while True:
         cur.execute(
             f"""
+            {cte}
             UPDATE properties SET
                 archived_at = NOW(),
                 exclusion_reason = %s,
@@ -86,10 +135,11 @@ def archive(cur, where: str, params: list) -> int:
                 -- pass and would still be billed.
                 enrichment_selected = FALSE
             WHERE id IN (
-                SELECT id FROM properties WHERE {where} ORDER BY id LIMIT {BATCH}
+                SELECT id FROM resolved WHERE {_target(allow_sql)}
+                ORDER BY id LIMIT {BATCH}
             )
             """,
-            [REASON] + params,
+            params + [REASON],
         )
         n = cur.rowcount
         total += n
@@ -117,11 +167,23 @@ def main() -> None:
     print("Keeping rows with a NULL property_type (county mirror has no state_class "
           "for them).\n")
 
-    where, params = _where(allow_sql, args.account_id)
     conn = psycopg2.connect(args.dsn)
     try:
         with conn.cursor() as cur:
-            rows = preview(cur, where, params)
+            live, typed = coverage(cur, args.account_id)
+            print(f"Live leads: {live:,}   with a resolvable type: {typed:,} "
+                  f"({(typed / live if live else 0):.1%})")
+            if live and not typed:
+                sys.exit(
+                    "\nNo lead has a resolvable dwelling type — nothing could be "
+                    "archived even if it should be.\nLoad state_class into the HCAD "
+                    "mirror (tools/load_hcad_to_postgres.py) and fill the shared "
+                    "cache\n(tools/build_parcel_cache.py) first; see "
+                    "docs/RENDER_DEPLOYMENT.md."
+                )
+            print()
+
+            rows = preview(cur, allow_sql, args.account_id)
             if not rows:
                 print("Nothing to archive.")
                 return
@@ -133,7 +195,7 @@ def main() -> None:
             if not args.apply:
                 print("Dry run — nothing written. Re-run with --apply to archive.")
                 return
-            done = archive(cur, where, params)
+            done = archive(cur, allow_sql, args.account_id)
         conn.commit()
         print(f"\nArchived {done:,} lead(s), exclusion_reason='{REASON}'.")
         print("Reversible: unarchive from the lead list clears both columns.")
