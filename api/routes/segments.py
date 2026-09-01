@@ -27,7 +27,7 @@ ALLOWED_FILTER_KEYS = frozenset({
     "zip", "grade", "vertical", "status", "min_value", "max_value",
     "neighborhood", "min_neighborhood_pctile", "sort",
 })
-_STRIPPED_KEYS = ("page", "page_size")
+_STRIPPED_KEYS = ("page", "page_size", "show_all")  # ephemeral view state, never stored
 
 
 def _clean_filters(filters: dict) -> dict:

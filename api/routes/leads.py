@@ -17,7 +17,7 @@ from api.deps import get_db, dict_fetchall, dict_fetchone, get_current_user
 from api.entitlements import get_scoring_limit
 from api.lead_events_emit import emit_surfaced, emit_viewed
 from api.models import (
-    Lead, LeadPage, StatusUpdate, LeadContactUpdate,
+    FocusInfo, Lead, LeadPage, StatusUpdate, LeadContactUpdate,
     CustomerSearchResult, ScoreExplanation, ScoreFactor, VerticalFactor, MLFactor,
 )
 from config import CONTACT_PROVIDER, CONTACT_API_KEY, SCORER_MODE
@@ -73,6 +73,7 @@ def list_leads(
     sort: str = Query("score"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    show_all: bool = Query(False),
     db: PGConn = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
@@ -87,9 +88,37 @@ def list_leads(
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     offset = (page - 1) * page_size
 
+    # Focus view (pipeline/focus.py): when the account has a stored cutoff, the
+    # default list shows only top-graded engine candidates; ?show_all=1 lifts
+    # it. Applied here as an explicit append — never inside _build_filters,
+    # which archive-by-filter (destructive), export, and the map also consume.
+    from pipeline import focus as focus_mod
+    cutoff = focus_mod.get_focus_cutoff(db, user["account_id"])
+    focus_cond = focus_mod.focus_condition("p.") if cutoff is not None else None
+    row_where, row_params = where, params
+    if focus_cond and not show_all:
+        row_where = f"{where} AND {focus_cond}" if where else f"WHERE {focus_cond}"
+        row_params = params + [cutoff]
+
+    focus = None
     with db.cursor() as cur:
-        cur.execute(f"SELECT COUNT(*) FROM properties p {where}", params)
-        total = cur.fetchone()[0]
+        if focus_cond:
+            # One scan for both totals; the banner needs them live. The cutoff
+            # rides FIRST: psycopg2 binds %s in statement-text order, and the
+            # FILTER's placeholder sits in the SELECT list, before the WHERE.
+            cur.execute(
+                f"SELECT COUNT(*), COUNT(*) FILTER (WHERE {focus_cond}) "
+                f"FROM properties p {where}",
+                [cutoff] + params,
+            )
+            all_total, focus_total = cur.fetchone()
+            total = focus_total if not show_all else all_total
+            focus = FocusInfo(active=not show_all, cutoff=cutoff,
+                              grade=focus_mod.grade_for_cutoff(cutoff),
+                              shown_total=focus_total, all_total=all_total)
+        else:
+            cur.execute(f"SELECT COUNT(*) FROM properties p {where}", params)
+            total = cur.fetchone()[0]
 
         # LEFT JOIN the geo scores so the list carries final_score / geo components
         # and can sort by the blend. Leads not yet geo-scored simply have NULLs.
@@ -99,8 +128,8 @@ def list_leads(
             f"       lgs.customers_within_1600m "
             f"FROM properties p "
             f"LEFT JOIN lead_geo_scores lgs ON lgs.property_id = p.id "
-            f"{where} ORDER BY {order} LIMIT %s OFFSET %s",
-            params + [page_size, offset],
+            f"{row_where} ORDER BY {order} LIMIT %s OFFSET %s",
+            row_params + [page_size, offset],
         )
         rows = dict_fetchall(cur)
 
@@ -119,7 +148,8 @@ def list_leads(
                   user["account_id"], actor_user_id=user["id"])
 
     return LeadPage(total=total, page=page, page_size=page_size,
-                    results=[Lead(**r) for r in rows], scoring_quota=quota)
+                    results=[Lead(**r) for r in rows], scoring_quota=quota,
+                    focus=focus)
 
 
 # NOTE: literal-path routes (/leads/search, /leads/by-number/...) must be declared

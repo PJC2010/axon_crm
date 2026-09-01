@@ -428,6 +428,17 @@ class ScoringQuota(BaseModel):
     remaining: int
 
 
+class FocusInfo(BaseModel):
+    """Focus-view state for the lead list (pipeline/focus.py): the server-chosen
+    grade cutoff plus live counts, so the banner can say "Showing your top 214
+    leads · Show all 41,334". Absent when the account has no cutoff stored."""
+    active: bool               # False when the caller passed show_all
+    cutoff: float
+    grade: Optional[str] = None
+    shown_total: int
+    all_total: int
+
+
 class LeadPage(BaseModel):
     total: int
     page: int
@@ -435,6 +446,8 @@ class LeadPage(BaseModel):
     results: list[Lead]
     # Present only for metered plans; None means unlimited (or ledger unavailable).
     scoring_quota: Optional[ScoringQuota] = None
+    # Present when the account has an automatic focus cutoff (pipeline/focus.py).
+    focus: Optional[FocusInfo] = None
 
 
 class CustomerSearchResult(BaseModel):
