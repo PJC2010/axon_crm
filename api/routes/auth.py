@@ -19,7 +19,8 @@ from api.ratelimit import client_ip, login_limiter
 from api.security import hash_password, verify_password, create_access_token
 from api.deps import get_current_user, require_owner
 from api.entitlements import (
-    MODULE_KEYS, PLAN_CATALOG, get_account_modules, get_scoring_limit, _plan_defaults,
+    MODULE_KEYS, PLAN_CATALOG, get_account_modules, get_scoring_limit,
+    get_territory_limit, _plan_defaults,
 )
 from api.business_types import BUSINESS_TYPES, business_type_profile
 from api.signup_logic import EMAIL_RE, USERNAME_RE, normalize_email, password_problem
@@ -221,10 +222,20 @@ def account_features(current_user: dict = Depends(get_current_user), db: PGConn 
         used = scoring_quota.used_this_month(db, acct)
         quota = {"limit": limit, "used": used, "remaining": max(0, limit - used)}
 
+    # Territory (distinct pipeline ZIP) allowance for metered plans, so the
+    # settings page can show "Territories: 1 of 1" and disable the add forms
+    # (api/territory.py). Unlimited plans skip the measurement entirely.
+    territory_quota = None
+    t_limit = get_territory_limit(acct, db)
+    if t_limit is not None:
+        from api import territory
+        territory_quota = territory.territory_quota(db, acct, t_limit)
+
     return {
         "plan_name": plan_name,
         "modules": get_account_modules(acct, db),
         "scoring_quota": quota,
+        "territory_quota": territory_quota,
         **business_type_profile(_account_business_type(acct, db)),
     }
 

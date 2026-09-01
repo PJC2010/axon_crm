@@ -100,6 +100,25 @@ export interface ScoringQuota {
   remaining: number
 }
 
+// Territory (distinct pipeline ZIP) allowance state for metered plans.
+// Re-running a ZIP in `zips` is always free; a new ZIP consumes a slot.
+export interface TerritoryQuota {
+  limit: number
+  used: number
+  zips: string[]
+  remaining: number
+}
+
+// Focus-view state for the lead list (pipeline/focus.py): the server-chosen
+// grade cutoff plus live counts. Absent when the account has no cutoff.
+export interface FocusInfo {
+  active: boolean            // false when show_all was requested
+  cutoff: number
+  grade: string | null
+  shown_total: number
+  all_total: number
+}
+
 export interface LeadPage {
   total: number
   page: number
@@ -107,6 +126,8 @@ export interface LeadPage {
   results: Lead[]
   // Present only for metered plans; null/absent means unlimited.
   scoring_quota?: ScoringQuota | null
+  // Present when the account has an automatic focus cutoff.
+  focus?: FocusInfo | null
 }
 
 export interface CustomerSearchResult {
@@ -388,6 +409,9 @@ export interface LeadFilters {
   sort?: string
   page?: number
   page_size?: number
+  // Lift the automatic focus view for this request (ephemeral — never stored
+  // in segments; api/routes/segments.py strips it).
+  show_all?: boolean
 }
 
 export interface Neighborhood {
@@ -624,6 +648,8 @@ export interface AccountFeatures {
   modules: ModuleMap
   // Monthly scored-lead allowance for metered plans; null/absent = unlimited.
   scoring_quota?: ScoringQuota | null
+  // Territory (distinct pipeline ZIP) allowance; null/absent = unlimited.
+  territory_quota?: TerritoryQuota | null
   // Business-type profile (see api/business_types.py). Optional so older payloads
   // / pre-load states degrade gracefully to home-services defaults.
   business_type?: string

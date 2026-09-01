@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { getAccountFeatures } from '@/lib/api'
 import { getToken } from '@/lib/auth'
-import type { AccountFeatures, ModuleKey, ScoringQuota } from '@/lib/types'
+import type { AccountFeatures, ModuleKey, ScoringQuota, TerritoryQuota } from '@/lib/types'
 
 /**
  * Account feature-module entitlements for gating nav and UI.
@@ -58,6 +58,8 @@ export interface Entitlements {
   hasModule: (m: ModuleKey) => boolean
   /** Monthly scored-lead allowance for metered plans; null = unlimited/unknown. */
   scoringQuota: ScoringQuota | null
+  /** Territory (pipeline ZIP) allowance for metered plans; null = unlimited/unknown. */
+  territoryQuota: TerritoryQuota | null
 }
 
 export function useEntitlements(): Entitlements {
@@ -83,5 +85,9 @@ export function useEntitlements(): Entitlements {
     return features.modules[m] !== false
   }
 
-  return { features, loading, hasModule, scoringQuota: features?.scoring_quota ?? null }
+  return {
+    features, loading, hasModule,
+    scoringQuota: features?.scoring_quota ?? null,
+    territoryQuota: features?.territory_quota ?? null,
+  }
 }

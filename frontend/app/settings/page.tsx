@@ -19,7 +19,7 @@ import { RescoreSection } from '@/components/RescoreSection'
 import { NonResidentialSection } from '@/components/NonResidentialSection'
 import { DailyDigestSection } from '@/components/DailyDigestSection'
 import { SmsAlertsSection } from '@/components/SmsAlertsSection'
-import { useEntitlements } from '@/hooks/useEntitlements'
+import { useEntitlements, refreshEntitlements } from '@/hooks/useEntitlements'
 import { useTerminology } from '@/hooks/useTerminology'
 import type { PipelineSchedule, PipelineRun, WorkflowRule } from '@/lib/types'
 import { ToastStack, useToast } from '@/components/Toast'
@@ -68,8 +68,25 @@ function runSummary(run: PipelineRun): string | null {
   return parts.join(' · ')
 }
 
+// Pull the human-readable message (and the territory-limit marker) out of
+// api.ts req()'s `API 403: {json}` error text. Same string-matching contract
+// as StatusSelect.tsx — req() doesn't unpack structured detail bodies.
+function friendlyError(e: unknown, fallback: string): { message: string; territory: boolean } {
+  const raw = e instanceof Error ? e.message : ''
+  const territory = raw.includes('territory')
+  const jsonStart = raw.indexOf('{')
+  if (jsonStart >= 0) {
+    try {
+      const body = JSON.parse(raw.slice(jsonStart))
+      const detail = typeof body?.detail === 'object' && body.detail ? body.detail.detail : body?.detail
+      if (typeof detail === 'string' && detail) return { message: detail, territory }
+    } catch { /* not JSON — fall through to the raw text */ }
+  }
+  return { message: raw || fallback, territory }
+}
+
 function SettingsPage() {
-  const { hasModule } = useEntitlements()
+  const { hasModule, territoryQuota } = useEntitlements()
   const { toasts, show, dismiss } = useToast()
   const { confirm, confirmDialog } = useConfirm()
   const { categories } = useTerminology()
@@ -155,14 +172,22 @@ function SettingsPage() {
       })
       setZip(''); setTopN(''); setNearAddress(''); setRadiusMi('')
       await loadData()
+      refreshEntitlements().catch(() => {})  // a new ZIP moves the territory counter
+    } catch (err: unknown) {
+      show(friendlyError(err, "We couldn't add the schedule.").message, 'error')
     } finally {
       setSaving(false)
     }
   }
 
   async function handleToggle(s: PipelineSchedule) {
-    await updateSchedule(s.id, { is_active: !s.is_active })
-    setSchedules(prev => prev.map(x => x.id === s.id ? { ...x, is_active: !s.is_active } : x))
+    try {
+      await updateSchedule(s.id, { is_active: !s.is_active })
+      setSchedules(prev => prev.map(x => x.id === s.id ? { ...x, is_active: !s.is_active } : x))
+    } catch (err: unknown) {
+      // Reactivating can hit the plan's territory limit (403) — surface it.
+      show(friendlyError(err, "We couldn't update the schedule.").message, 'error')
+    }
   }
 
   async function handleDelete(id: number) {
@@ -186,12 +211,35 @@ function SettingsPage() {
         buildControls(runTopN, runNearAddress, runRadiusMi))
       setRunZip(''); setRunTopN(''); setRunNearAddress(''); setRunRadiusMi('')
       await getPipelineRuns().then(setRuns)
+      refreshEntitlements().catch(() => {})  // a new ZIP moves the territory counter
+    } catch (err: unknown) {
+      show(friendlyError(err, "We couldn't start the run.").message, 'error')
     } finally {
       setTriggering(false)
     }
   }
 
   const hasActive = runs.some(r => r.status === 'running' || r.status === 'queued')
+
+  // Territory limit (metered plans only): typing a ZIP outside the held set
+  // while no slots remain disables the form up front — the backend guard
+  // (api/territory.py) stays the real enforcement.
+  const isNewTerritory = (z: string) =>
+    !!territoryQuota && !!z.trim() && !territoryQuota.zips.includes(z.trim())
+  const atTerritoryCap = !!territoryQuota && territoryQuota.remaining <= 0
+  const scheduleBlocked = atTerritoryCap && isNewTerritory(zip)
+  const runBlocked = atTerritoryCap && isNewTerritory(runZip)
+  const territoryHint = (limit: number) => (
+    <p style={{ fontSize: 12, color: 'var(--color-ink-500)', margin: '8px 0 0', width: '100%' }}>
+      Your plan includes {limit} territor{limit === 1 ? 'y' : 'ies'} (ZIP code{limit === 1 ? '' : 's'}) — this would be a new one.{' '}
+      <button type="button" onClick={() => setTab('business')} style={{
+        background: 'none', border: 'none', padding: 0, font: 'inherit',
+        color: 'var(--color-accent)', textDecoration: 'underline', cursor: 'pointer',
+      }}>
+        Upgrade to add more
+      </button>
+    </p>
+  )
 
   // Tabs with nothing to show for this account's modules disappear entirely.
   const visibleTabs = TABS.filter(t =>
@@ -281,9 +329,10 @@ function SettingsPage() {
             <input type="number" min={1} value={runTopN} onChange={e => setRunTopN(e.target.value)} placeholder="Leads/run" title="Cap leads enriched per run (saves API cost). Blank = whole ZIP." className="drawer-input" style={{ width: 110 }} />
             <input type="text" value={runNearAddress} onChange={e => setRunNearAddress(e.target.value)} placeholder="Near address (optional)" title="Only enrich homes within the radius of this address" className="drawer-input" style={{ width: 200 }} />
             <input type="number" min={0} step={0.5} value={runRadiusMi} onChange={e => setRunRadiusMi(e.target.value)} placeholder="mi" title="Radius in miles from the address above" className="drawer-input" style={{ width: 70 }} disabled={!runNearAddress.trim()} />
-            <button type="submit" disabled={triggering || !runZip.trim()} style={{
+            <button type="submit" disabled={triggering || !runZip.trim() || runBlocked} style={{
               padding: '0 16px', height: 36, background: 'var(--color-ink-900)', color: 'var(--color-paper)',
-              border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, cursor: triggering ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+              border: 'none', borderRadius: 'var(--radius-pill)', fontSize: 13, cursor: (triggering || runBlocked) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+              opacity: runBlocked ? 0.55 : 1,
             }}>
               <Play size={12} />
               {triggering ? 'Starting…' : 'Run'}
@@ -337,12 +386,23 @@ function SettingsPage() {
             >
               {rescoringAll ? 'Scoring all…' : 'Update All Scores'}
             </button>
+            {runBlocked && territoryQuota && territoryHint(territoryQuota.limit)}
           </form>
         </section>
 
         {/* Schedules */}
         <section>
-          <h2 className="t-eyebrow" style={{ marginBottom: 12 }}>Scheduled refreshes</h2>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+            <h2 className="t-eyebrow" style={{ margin: 0 }}>Scheduled refreshes</h2>
+            {territoryQuota && (
+              <span style={{ fontSize: 12, color: 'var(--color-ink-500)' }} title="Distinct ZIP codes your plan can run the pipeline in. Re-running a held ZIP is always free.">
+                Territories: <strong style={{ color: territoryQuota.remaining <= 0 ? 'var(--color-ink-800)' : undefined }}>
+                  {territoryQuota.used} of {territoryQuota.limit}
+                </strong>
+                {territoryQuota.zips.length > 0 && <> · {territoryQuota.zips.join(', ')}</>}
+              </span>
+            )}
+          </div>
 
           {schedules.length > 0 && (
             <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 16, fontSize: 13 }}>
@@ -406,12 +466,14 @@ function SettingsPage() {
             <input type="number" min={1} value={topN} onChange={e => setTopN(e.target.value)} placeholder="Leads/run" title="Cap leads enriched per run (saves API cost). Blank = whole ZIP." className="drawer-input" style={{ width: 110 }} />
             <input type="text" value={nearAddress} onChange={e => setNearAddress(e.target.value)} placeholder="Near address (optional)" title="Only enrich homes within the radius of this address" className="drawer-input" style={{ width: 180 }} />
             <input type="number" min={0} step={0.5} value={radiusMi} onChange={e => setRadiusMi(e.target.value)} placeholder="mi" title="Radius in miles from the address above" className="drawer-input" style={{ width: 70 }} disabled={!nearAddress.trim()} />
-            <button type="submit" disabled={saving} style={{
+            <button type="submit" disabled={saving || scheduleBlocked} style={{
               padding: '0 14px', height: 36, background: 'var(--color-surface)', color: 'var(--color-ink-800)',
-              border: '1px solid var(--color-ink-200)', borderRadius: 'var(--radius-pill)', fontSize: 13, cursor: saving ? 'not-allowed' : 'pointer',
+              border: '1px solid var(--color-ink-200)', borderRadius: 'var(--radius-pill)', fontSize: 13, cursor: (saving || scheduleBlocked) ? 'not-allowed' : 'pointer',
+              opacity: scheduleBlocked ? 0.55 : 1,
             }}>
               {saving ? 'Saving…' : 'Add schedule'}
             </button>
+            {scheduleBlocked && territoryQuota && territoryHint(territoryQuota.limit)}
           </form>
         </section>
         </>

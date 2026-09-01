@@ -40,6 +40,35 @@ def test_scoring_limits_cover_every_plan():
     assert PLAN_SCORING_LIMITS["growth"] == 100
 
 
+def test_territory_limits_cover_every_plan():
+    from api.entitlements import PLAN_TERRITORY_LIMITS
+    assert set(PLAN_TERRITORY_LIMITS) == set(PLAN_CATALOG)
+    assert PLAN_TERRITORY_LIMITS["pro"] is None          # unlimited
+    assert PLAN_TERRITORY_LIMITS["starter"] == 1
+    assert PLAN_TERRITORY_LIMITS["growth"] == 3
+
+
+def test_apply_plan_trims_over_limit_schedules(monkeypatch):
+    # A downgrade must deactivate over-limit territory schedules in the same
+    # transaction as the plan write — apply_plan is the chokepoint for the
+    # Stripe webhook, checkout, cancel, and trial expiry.
+    trimmed_for = []
+    import api.territory as territory
+    monkeypatch.setattr(territory, "trim_schedules_to_limit",
+                        lambda db, account_id: trimmed_for.append(account_id) or [])
+
+    class _Cur:
+        def __enter__(self): return self
+        def __exit__(self, *exc): return False
+        def execute(self, sql, params=None): assert "account_plans" in sql
+
+    class _Conn:
+        def cursor(self): return _Cur()
+
+    b.apply_plan(_Conn(), 7, "starter")
+    assert trimmed_for == [7]
+
+
 # ── price-id mapping ──────────────────────────────────────────────────────────
 
 def _set_prices(monkeypatch, starter="", growth="", pro=""):

@@ -606,8 +606,48 @@ def _scheduled_job(schedule_id: int, zip_code: str, vertical: str | None, accoun
                    top_n: int | None = None, center_address: str | None = None,
                    radius_mi: float | None = None):
     """Wrapper that creates a pipeline_runs row then kicks off the pipeline."""
+    from api import territory
+
     conn = psycopg2.connect(DATABASE_URL)
     try:
+        # Re-read the schedule row before firing: APScheduler state is
+        # per-process, so a schedule deleted, toggled off, or deactivated by a
+        # downgrade trim on the OTHER instance is still registered here until
+        # a restart. The row is the truth; the in-memory job is a cache.
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT is_active FROM pipeline_schedules WHERE id = %s AND account_id = %s",
+                (schedule_id, account_id),
+            )
+            row = cur.fetchone()
+        if row is None or not row[0]:
+            log.info("Schedule %s is gone or inactive; dropping its job", schedule_id)
+            remove_schedule_job(schedule_id)
+            return
+
+        # Territory-limit backstop: only the oldest N scheduled ZIPs may fire
+        # (same rule as the downgrade trim). Blocked schedules deactivate and
+        # leave a failed run so the Settings "Recent runs" list explains why.
+        ok, reason = territory.schedule_may_fire(conn, account_id, zip_code)
+        if not ok:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE pipeline_schedules SET is_active = FALSE WHERE id = %s AND account_id = %s",
+                    (schedule_id, account_id),
+                )
+                cur.execute(
+                    "INSERT INTO pipeline_runs "
+                    "(schedule_id, zip, vertical, triggered_by, account_id, status, finished_at, result_json) "
+                    "VALUES (%s, %s, %s, 'schedule', %s, 'failed', NOW(), %s)",
+                    (schedule_id, zip_code, vertical, account_id,
+                     psycopg2.extras.Json({"error": reason})),
+                )
+            conn.commit()
+            remove_schedule_job(schedule_id)
+            log.warning("Schedule %s (ZIP %s, account %s) is over the plan's territory "
+                        "limit; deactivated", schedule_id, zip_code, account_id)
+            return
+
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO pipeline_runs "

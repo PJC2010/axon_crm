@@ -10,18 +10,21 @@ POST /api/pipeline/run                   — trigger manual run (owner only)
 GET  /api/pipeline/runs                  — recent runs
 GET  /api/pipeline/runs/{id}             — single run detail
 """
+import logging
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from psycopg2.extensions import connection as PGConn
 from pydantic import BaseModel
 
-from api import scoring_quota
+from api import scoring_quota, territory
 from api.deps import (get_db, dict_fetchall, dict_fetchone, get_current_user,
                       require_owner, soft_query)
 from api.entitlements import get_scoring_limit, require_module
 
 router = APIRouter()
+
+log = logging.getLogger(__name__)
 
 # Data-acquisition / "pipeline refresh" endpoints below are gated on the
 # `prospecting` module. The Kanban board *view* endpoints (get_pipeline,
@@ -684,6 +687,7 @@ def list_schedules(user: dict = Depends(get_current_user), db: PGConn = Depends(
 @router.post("/pipeline-schedules", status_code=201)
 def create_schedule(body: ScheduleCreate, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db), _mod: dict = _prospecting):
     from api.scheduler import add_schedule_job
+    territory.require_schedule_allowed(db, current_user["account_id"], body.zip)
     with db.cursor() as cur:
         cur.execute(
             "INSERT INTO pipeline_schedules "
@@ -707,6 +711,23 @@ def update_schedule(
     _mod: dict = _prospecting,
 ):
     from api.scheduler import remove_schedule_job, add_schedule_job
+    if body.is_active is True:
+        # Reactivation can push the account back over its territory limit
+        # (e.g. after a downgrade trim) — guard it like a create. Toggling a
+        # ZIP that still has another active schedule stays free.
+        with db.cursor() as cur:
+            cur.execute(
+                "SELECT zip, is_active FROM pipeline_schedules WHERE id = %s AND account_id = %s",
+                (schedule_id, current_user["account_id"]),
+            )
+            existing = cur.fetchone()
+        if existing is None:
+            raise HTTPException(status_code=404, detail="Schedule not found")
+        if not existing[1]:
+            territory.require_schedule_allowed(
+                db, current_user["account_id"], existing[0],
+                exclude_schedule_id=schedule_id,
+            )
     sets, params = [], []
     if body.is_active is not None:
         sets.append("is_active = %s"); params.append(body.is_active)
@@ -764,6 +785,21 @@ def trigger_run(body: RunCreate, current_user: dict = Depends(require_owner), db
 
     if bool(body.zip) == bool(body.region_id):
         raise HTTPException(status_code=422, detail="Provide exactly one of `zip` or `region_id`")
+
+    # Territory limit: a run against a NEW ZIP consumes a slot; re-running a
+    # held territory is always free. A region run is checked against its whole
+    # fan-out — resolving it is best-effort (region data is an optional local
+    # dependency), so a resolution failure fails open rather than blocking.
+    if body.zip:
+        territory.require_run_allowed(db, current_user["account_id"], [body.zip])
+    else:
+        try:
+            from pipeline import hcad_store
+            region_fanout = hcad_store.region_zips(body.region_id)
+        except Exception:
+            log.exception("region_zips(%s) failed; skipping territory check", body.region_id)
+            region_fanout = []
+        territory.require_run_allowed(db, current_user["account_id"], region_fanout)
 
     # v1 stores a region run under the existing `zip` column as a "region:<id>"
     # sentinel to avoid a schema migration; structured detail lands in result_json.
