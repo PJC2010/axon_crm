@@ -118,3 +118,52 @@ def sql_from_state_class(column: str) -> str:
             raise ValueError(f"Quote in state-class mapping: {code!r} -> {label!r}")
         whens.append(f"WHEN '{code}' THEN '{label}'")
     return f"CASE UPPER(TRIM({column})) {' '.join(whens)} ELSE NULL END"
+
+
+# ── Seeding: which dwelling types a deployment actually wants ────────────────
+# A SEPARATE QUESTION from pipeline/residential.py, and the separation is the
+# point. That module asks "is this a home?" — a correctness rule, whose EXCLUDE
+# tier is structurally impossible for a dwelling and may be bulk-archived. This
+# asks "is this a home WE SELL TO?", which is a business preference: a condo is
+# unambiguously a home, and an account working HOA or investor angles may want
+# every one of them. Folding "condo" into residential.py's EXCLUDE tier would
+# corrupt a load-bearing correctness rule with a per-deployment opinion, so the
+# allowlist lives here and is read only at seed time.
+#
+# The allowlist is config.SEED_PROPERTY_TYPES — the same knob that has always
+# governed the RentCast seed (pipeline/seed.py::_wanted_type), so one setting
+# now covers both seed paths rather than two overlapping ones.
+
+# A property-type label safe to interpolate as a SQL literal. This allowlist IS
+# the injection guard, the same posture as pipeline/db.py's ALL_COLS check: the
+# values come from an env var, and psycopg2 binds %s positionally by statement
+# text order, so seed_account's filters are literal SQL by design (a bind param
+# added there would silently shift every other one).
+_SQL_TYPE_LITERAL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 /&.+-]*$")
+
+
+def sql_type_allowlist(column: str, allowed) -> str:
+    """A seed filter keeping only `allowed` types, or "" for "no filter".
+
+    Returns "" when the allowlist is empty or contains "*", matching
+    ``seed._wanted_type``'s treatment of the same config value.
+
+    **A NULL type is kept.** That mirrors ``_wanted_type``'s documented rule
+    ("a record with no propertyType is kept — we have no grounds to drop it"),
+    and here it is load-bearing in a second way: property_type is derived from
+    `state_class`, so it is NULL for every parcel outside a county whose mirror
+    carries that column. Dropping NULLs would make a seed of such a ZIP return
+    zero rows — silently, looking exactly like an empty ZIP. Non-dwellings that
+    ride along on the NULL branch are the `residential_only` / `built_only`
+    filters' job, not this one's.
+    """
+    if not _SQL_IDENT.match(column or ""):
+        raise ValueError(f"Not a plain SQL identifier: {column!r}")
+    types = [t.strip() for t in (allowed or []) if str(t).strip()]
+    if not types or "*" in types:
+        return ""
+    for t in types:
+        if not _SQL_TYPE_LITERAL.match(t):
+            raise ValueError(f"Not a valid property-type label: {t!r}")
+    joined = ", ".join(f"'{t}'" for t in sorted(set(types)))
+    return f"({column} IS NULL OR {column} IN ({joined}))"

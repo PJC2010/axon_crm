@@ -201,10 +201,29 @@ SEED_SOURCE = os.getenv("SEED_SOURCE", "rentcast").strip().lower()
 # Only these RentCast `propertyType` values are seeded; everything else (e.g.
 # Apartment, Multi-Family, Land) is skipped at seed so paid enrichment never
 # touches it. Comma-separated env override. Set to "*" (or empty) to seed all.
+# Which dwelling types a seed materializes, for BOTH seed paths: the RentCast
+# allowlist (pipeline/seed.py::_wanted_type) and — since property_type is now
+# derived from the county's state class for HCAD-seeded rows
+# (pipeline/property_type.py) — the shared-cache seed
+# (pipeline/parcels.py::seed_account). One knob rather than two overlapping ones.
+#
+# "*" (or empty) disables the filter and seeds every type.
+#
+# Condo and Multi-Family are OUT of the default: on those the roof belongs to an
+# HOA or a management company, so the occupant is not the buyer for a home
+# services vertical. That is a business preference and deliberately NOT a
+# pipeline/residential.py rule — a condo IS a home, and an account working HOA or
+# investor angles wants them. Widen this list rather than touching that module.
+#
+# A row whose property_type is NULL is KEPT by both paths. property_type is
+# derived from state_class, so it is NULL for every parcel outside a county whose
+# mirror carries that column; dropping NULLs would make those ZIPs seed zero rows
+# and look like empty ZIPs. Non-dwelling rows on that branch are handled by
+# SEED_RESIDENTIAL_ONLY and seed_account's built_only filter.
 SEED_PROPERTY_TYPES = [
     t.strip() for t in os.getenv(
         "SEED_PROPERTY_TYPES",
-        "Single Family,Condo,Townhouse,Manufactured",
+        "Single Family,Townhouse,Manufactured",
     ).split(",") if t.strip()
 ]
 

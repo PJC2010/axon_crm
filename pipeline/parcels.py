@@ -32,7 +32,7 @@ import logging
 from pipeline.addr import sql_has_situs
 from pipeline.owner import sql_clean_owner_name
 from pipeline.parcel_id import sql_normalize_apn
-from pipeline.property_type import sql_from_state_class
+from pipeline.property_type import sql_from_state_class, sql_type_allowlist
 
 log = logging.getLogger(__name__)
 
@@ -369,7 +369,8 @@ def fill_coords_from_centroids(conn, zip_code: str) -> int:
 def seed_account(conn, zip_code: str, account_id: int, limit: int | None = None,
                  owner_occupied_only: bool = False,
                  built_only: bool = False,
-                 residential_only: bool = False) -> int:
+                 residential_only: bool = False,
+                 dwelling_types: list[str] | None = None) -> int:
     """Create this account's `properties` rows for a ZIP straight from `parcels`.
 
     The whole seed is one statement: no parcel data is read into Python. An
@@ -391,6 +392,15 @@ def seed_account(conn, zip_code: str, account_id: int, limit: int | None = None,
     `residential_only` is the one wired to a caller: the county roll is every
     parcel, not every house, so an unfiltered ZIP seed takes the shopping
     centres and school-district land with it. See pipeline/residential.py.
+
+    `dwelling_types` narrows to an allowlist of `property_type` values
+    (config.SEED_PROPERTY_TYPES) — the HCAD-path counterpart to the RentCast
+    seed's long-standing `_wanted_type` filter, usable now that property_type is
+    derived from the county's state class rather than written only by RentCast.
+    It answers a DIFFERENT question from `residential_only`: that one is a
+    correctness rule ("is this a home?"), this one a business preference ("is it
+    a home we sell to?"), which is why a condo is excluded here and never there.
+    A NULL type is kept — see sql_type_allowlist.
 
     Returns rows inserted or updated.
     """
@@ -419,6 +429,13 @@ def seed_account(conn, zip_code: str, account_id: int, limit: int | None = None,
         # row — the same asymmetry the rule's tiers encode.
         filter_sql += ("\n                  AND NOT "
                        "COALESCE(p.non_residential, FALSE)")
+    if dwelling_types:
+        # Literal SQL like every filter here (see the note above): the values
+        # are validated against a label allowlist in property_type.py, which is
+        # the injection guard. Empty or "*" yields "" and no clause.
+        allow = sql_type_allowlist("p.property_type", dwelling_types)
+        if allow:
+            filter_sql += f"\n                  AND {allow}"
 
     shared = ", ".join(SHARED_COLS)
     params: list = [zip_code, account_id]
