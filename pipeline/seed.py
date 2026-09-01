@@ -20,6 +20,7 @@ from pipeline.db import get_conn, upsert_properties
 from pipeline.http import get_json
 from pipeline.owner import clean_owner_name
 from pipeline.parcel_id import normalize_apn
+from pipeline.property_type import from_state_class as type_from_state_class
 from pipeline.reconcile import map_record
 
 log = logging.getLogger(__name__)
@@ -352,6 +353,7 @@ def _normalize_hcad(p: dict, region_id: str | None = None) -> dict:
         "owner_occupied":         p.get("owner_occupied"),
         "mailing_address":        p.get("mailing_address"),
         "state_class":            p.get("state_class"),
+        "property_type":          type_from_state_class(p.get("state_class")),
         "hcad_neighborhood_code": p.get("neighborhood_code"),
         "hcad_neighborhood_name": p.get("neighborhood_name"),
         "enrichment_flags":       flags,

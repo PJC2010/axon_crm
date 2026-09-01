@@ -32,6 +32,7 @@ import logging
 from pipeline.addr import sql_has_situs
 from pipeline.owner import sql_clean_owner_name
 from pipeline.parcel_id import sql_normalize_apn
+from pipeline.property_type import sql_from_state_class
 
 log = logging.getLogger(__name__)
 
@@ -84,7 +85,8 @@ _HCAD_FILL_COLS = [
     "city", "state", "parcel_apn",
     "year_built", "square_footage", "lot_size", "estimated_value",
     "last_sale_date", "owner_name", "owner_occupied", "mailing_address",
-    "state_class", "hcad_neighborhood_code", "hcad_neighborhood_name",
+    "state_class", "property_type",
+    "hcad_neighborhood_code", "hcad_neighborhood_name",
 ]
 
 
@@ -219,6 +221,7 @@ def ensure_from_hcad(conn, zip_code: str) -> int:
         f"(parcels.{c} IS NULL AND EXCLUDED.{c} IS NOT NULL)"
         for c in _HCAD_FILL_COLS
     )
+    property_type_expr = sql_from_state_class("h.state_class")
     with conn.cursor() as cur:
         cur.execute(
             f"""
@@ -226,7 +229,7 @@ def ensure_from_hcad(conn, zip_code: str) -> int:
                 address, zip, city, state, parcel_apn,
                 year_built, square_footage, lot_size, estimated_value,
                 last_sale_date, owner_name, owner_occupied, mailing_address,
-                state_class,
+                state_class, property_type,
                 hcad_neighborhood_code, hcad_neighborhood_name,
                 enrichment_flags, enriched_at
             )
@@ -267,6 +270,11 @@ def ensure_from_hcad(conn, zip_code: str) -> int:
                                                NULLIF(TRIM(h.mail_zip), ''))), '')
                 ), ''),
                 h.state_class,
+                -- The dwelling type the county's class names, derived here
+                -- because this INSERT … SELECT never sees a Python row. Only
+                -- dwellings map; a non-residential class yields NULL and is
+                -- excluded by state_class itself in pipeline/residential.py.
+                {property_type_expr},
                 h.neighborhood_code,
                 h.neighborhood_name,
                 jsonb_build_object('seed', 'hcad'),

@@ -19,6 +19,8 @@ into the tables Axon's pipeline consumes. Column meanings come from the
 | `Real_acct_owner.zip` | `permits.txt` | `permits` |
 | `Real_building_land.zip` *(optional)* | `extra_features.txt` | `extra_features` (pool / slab / garage) |
 | `Real_building_land.zip` *(optional)* | `building_res.txt` | `property_summary.year_built` (true year built) |
+| `code_description_real.zip` *(optional)* | `desc_r_01_state_class.txt` | `state_class_codes` (county label per class) |
+| `code_description_real.zip` *(optional)* | `desc_r_02_building_type_code.txt` | `building_type_codes` |
 
 The files are tab-delimited with a header row, encoded latin-1 (Windows-1252).
 
@@ -38,6 +40,35 @@ The files are tab-delimited with a header row, encoded latin-1 (Windows-1252).
 | `owner_name` | `owners.name` (primary), else `real_acct.mailto` | |
 | `mail_addr` / `mail_city` / `mail_state` / `mail_zip` | `real_acct.mail_addr_1` / `mail_city` / `mail_state` / `mail_zip` | owner mailing address |
 | `likely_owner_occupied` | derived | normalized `mail_addr_1` == `site_addr_1` |
+| `state_class` | `real_acct.state_class` | Texas Comptroller State Category Code — the county's own "what is this?" |
+
+## Code descriptions (from `code_description_real.zip`, optional)
+
+HCAD publishes the decode tables for its own codes as a separate download
+("Code Descriptions (Real)"). Two are loaded:
+
+| DuckDB table | HCAD source | Decodes |
+|---|---|---|
+| `state_class_codes(cd, dept, dscr)` | `desc_r_01_state_class.txt` | `real_acct.state_class` |
+| `building_type_codes(cd, dscr)` | `desc_r_02_building_type_code.txt` | `building_res.impr_tp` |
+
+`dept` is a **rollup, not a restatement of `cd`** — every improved condo class
+rolls up to A1 single-family (Z1 Apartment Conversion, Z2 Fee Simple Townhouse,
+Z3 Townhouse, Z4 Apartment Style, Z5 High Rise), the unimproved Z0 to C1 vacant,
+and X1/X2/X3/X4/X7 alike to XV.
+
+`pipeline/property_type.py` turns `state_class` into `properties.property_type`,
+which is otherwise written only by RentCast. It maps **only dwellings** (A1, A2,
+A4, B1–B4, E1, M3, Z1–Z5) and returns NULL for everything else, including A3
+(Auxiliary Buildings — a shed, `bld_ar = 0`) and Z0 (unimproved). Excluding
+non-residential parcels stays `pipeline/residential.py`'s job, reading
+`state_class` directly. Measured on the full county roll: 79.5% of parcels typed,
+71.6% Single Family.
+
+`building_res.impr_tp` is a finer grain than `state_class` and is **not yet
+carried** into `property_summary` — it separates 22,530 townhomes that
+`state_class` files as plain A1. Adding it means a new column in the
+`property_summary` projection and another full rebuild.
 
 ## `permits` (from `permits.txt`)
 
