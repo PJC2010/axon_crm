@@ -319,7 +319,9 @@ export function getChecklistStatus(): Promise<import('./types').ChecklistStatus>
 export function getLeads(filters: LeadFilters = {}): Promise<LeadPage> {
   const params = new URLSearchParams()
   Object.entries(filters).forEach(([k, v]) => {
-    if (v !== undefined && v !== '') params.set(k, String(v))
+    if (v === undefined || v === '') return
+    if (k === 'show_all' && !v) return  // focus is the server default; only send the lift
+    params.set(k, String(v))
   })
   return req<LeadPage>(`/leads?${params}`)
 }

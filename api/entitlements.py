@@ -59,6 +59,15 @@ PLAN_SCORING_LIMITS: dict[str, int | None] = {
     "pro": None,
 }
 
+# Distinct pipeline ZIPs ("territories") per plan (None = unlimited). Enforced
+# at schedule-create/reactivate and run-trigger time by api/territory.py:
+# a new ZIP consumes a slot, re-running a held ZIP is always free.
+PLAN_TERRITORY_LIMITS: dict[str, int | None] = {
+    "starter": 1,
+    "growth": 3,
+    "pro": None,
+}
+
 
 def _plan_defaults(plan_name: str) -> dict[str, bool]:
     """Module map a plan grants by default, before per-account overrides."""
@@ -139,6 +148,27 @@ def get_scoring_limit(account_id: int, db: PGConn) -> int | None:
     if override is not None:
         return override
     return PLAN_SCORING_LIMITS.get(plan_name)
+
+
+def get_territory_limit(account_id: int, db: PGConn) -> int | None:
+    """Distinct-ZIP territory limit for an account (None = unlimited).
+
+    The per-account ``account_plans.territory_limit`` column (migration 0085)
+    overrides the plan default from ``PLAN_TERRITORY_LIMITS``. Accounts with no
+    plan row are unlimited — permissive, like module resolution.
+    """
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT plan_name, territory_limit FROM account_plans WHERE account_id = %s",
+            (account_id,),
+        )
+        row = cur.fetchone()
+    if row is None:
+        return None
+    plan_name, override = row
+    if override is not None:
+        return override
+    return PLAN_TERRITORY_LIMITS.get(plan_name)
 
 
 def require_module(module_key: str):

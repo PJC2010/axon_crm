@@ -82,6 +82,12 @@ def set_plan(conn, account_id: int, plan: str, enable: list[str], disable: list[
             "ON CONFLICT (account_id) DO UPDATE SET plan_name = %s, modules = %s, updated_at = NOW()",
             (account_id, plan, Json(modules), plan, Json(modules)),
         )
+    # Same downgrade behavior as the billing webhook and the admin endpoint:
+    # over-limit territory schedules deactivate, oldest ZIPs survive.
+    from api.territory import trim_schedules_to_limit
+    trimmed = trim_schedules_to_limit(conn, account_id)
+    if trimmed:
+        print(f"Deactivated {len(trimmed)} pipeline schedule(s) over the plan's territory limit")
     conn.commit()
     return modules
 

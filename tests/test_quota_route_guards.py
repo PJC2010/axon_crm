@@ -208,6 +208,28 @@ def test_discrepancies_masks_stored_and_remote_of_candidates(monkeypatch):
     assert "lead_source" not in cand and "status" not in cand and "lead_score" not in cand
 
 
+# ── GET /leads/{id}/score-explanation ─────────────────────────────────────────
+
+def test_score_explanation_refuses_masked_candidate():
+    # The factor text embeds the property facts the mask withholds (year
+    # built, equity, sale recency), so past the allowance the breakdown must
+    # 403 with the upgrade shape rather than explain a masked lead.
+    from api.routes import leads as leads_route
+    conn = _Conn([
+        ("SELECT * FROM properties", [{"id": 55, "lead_score": 91.0, "status": "new",
+                                       "lead_source": None, "zip": "77002",
+                                       "state": "TX", "vertical": None}]),
+        ("FROM account_plans", [("starter", 1)]),
+        ("COUNT(*) FROM scoring_reveals", [(1,)]),        # allowance already spent
+        ("SELECT property_id FROM scoring_reveals", []),  # this lead not revealed
+    ])
+    with pytest.raises(HTTPException) as exc:
+        leads_route.get_score_explanation(55, db=conn, user=USER)
+    assert exc.value.status_code == 403
+    assert exc.value.detail["quota"] is True
+    assert exc.value.detail["upgrade"] is True
+
+
 # ── GET /map/properties (pin dropping) ────────────────────────────────────────
 
 def test_map_properties_drops_masked_candidates(monkeypatch):

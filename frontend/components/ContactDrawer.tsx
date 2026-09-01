@@ -16,6 +16,7 @@ import { AppointmentsSection } from './lead/AppointmentsSection'
 import { PropertySignals } from './lead/PropertySignals'
 import { WhyThisScore } from './lead/WhyThisScore'
 import { ActivityPanel } from './lead/ActivityPanel'
+import { MaskedLeadPanel } from './lead/MaskedLeadPanel'
 import { NextStepHint } from './NextStepHint'
 
 interface Props {
@@ -158,21 +159,31 @@ export function ContactDrawer({ lead, onClose, onStatusChange, onLeadChange, onT
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {actions && (
-            <div style={{ padding: '14px 24px 0' }}>{actions(lead)}</div>
+          {lead.quota_masked ? (
+            // Past the monthly reveal allowance (api/scoring_quota.py): the
+            // body is a blurred placeholder + upgrade prompt. The live
+            // sections must not mount — they'd render the property facts the
+            // mask leaves in the row and fire per-lead fetches.
+            <MaskedLeadPanel />
+          ) : (
+            <>
+              {actions && (
+                <div style={{ padding: '14px 24px 0' }}>{actions(lead)}</div>
+              )}
+              <div style={{ padding: '0 24px' }}>
+                <NextStepHint status={lead.status} leadId={lead.id} onToast={onToast} />
+              </div>
+              <ContactInfoSection lead={lead} onSaved={l => onLeadChange?.(l)} onToast={onToast} />
+              <CustomFieldsSection key={lead.id} lead={lead} onSaved={l => onLeadChange?.(l)} onToast={onToast} />
+              <MessageSection key={`msg-${lead.id}`} leadId={lead.id} />
+              <PoliciesSection key={`pol-${lead.id}`} leadId={lead.id} />
+              <OrdersSection key={`ord-${lead.id}`} leadId={lead.id} />
+              <AppointmentsSection key={`appt-${lead.id}`} leadId={lead.id} />
+              {propertyBased && <PropertySignals lead={lead} />}
+              {propertyBased && <WhyThisScore leadId={lead.id} />}
+              <ActivityPanel leadId={lead.id} contactPhone={lead.contact_phone} />
+            </>
           )}
-          <div style={{ padding: '0 24px' }}>
-            <NextStepHint status={lead.status} leadId={lead.id} onToast={onToast} />
-          </div>
-          <ContactInfoSection lead={lead} onSaved={l => onLeadChange?.(l)} onToast={onToast} />
-          <CustomFieldsSection key={lead.id} lead={lead} onSaved={l => onLeadChange?.(l)} onToast={onToast} />
-          <MessageSection key={`msg-${lead.id}`} leadId={lead.id} />
-          <PoliciesSection key={`pol-${lead.id}`} leadId={lead.id} />
-          <OrdersSection key={`ord-${lead.id}`} leadId={lead.id} />
-          <AppointmentsSection key={`appt-${lead.id}`} leadId={lead.id} />
-          {propertyBased && <PropertySignals lead={lead} />}
-          {propertyBased && <WhyThisScore leadId={lead.id} />}
-          <ActivityPanel leadId={lead.id} contactPhone={lead.contact_phone} />
         </div>
       </aside>
     </>

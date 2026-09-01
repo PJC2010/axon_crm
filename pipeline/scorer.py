@@ -111,6 +111,20 @@ def score_zip(zip_code: str, account_id: int, vertical: str | None = None) -> in
     # store the learned conversion probability alongside the deterministic score.
     _apply_ml(conn, account_id, vertical, rows)
 
+    # Focus view: grades just moved, so re-pick the account's surfacing cutoff
+    # (pipeline/focus.py). Non-fatal by the same rule as the snapshot write —
+    # including the rollback itself, so a connection stub without one (the
+    # golden scoring suite) can't turn a best-effort step into a crash.
+    try:
+        from pipeline.focus import recompute_focus
+        recompute_focus(conn, account_id)
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        log.exception("Focus recompute failed (non-fatal) for account %s", account_id)
+
     conn.close()
     log.info("Scored %d properties in ZIP %s [%s calibration] (grade dist: %s)",
              n, zip_code, profile.region_label, _grade_dist(updates))

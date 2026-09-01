@@ -5,8 +5,9 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getLeads, getLead, getLeadByNumber } from '@/lib/api'
 import { clearToken } from '@/lib/auth'
-import type { Lead, LeadFilters, LeadStatus, ScoringQuota } from '@/lib/types'
+import type { FocusInfo, Lead, LeadFilters, LeadStatus, ScoringQuota } from '@/lib/types'
 import { LeadTable } from './LeadTable'
+import { FocusBanner } from './FocusBanner'
 import { ScoringQuotaBanner } from './ModuleGate'
 import { CustomerSearch } from './CustomerSearch'
 import { TerritoryFilter } from './TerritoryFilter'
@@ -29,6 +30,7 @@ export function Dashboard() {
   const [leads, setLeads]       = useState<Lead[]>([])
   const [total, setTotal]       = useState(0)
   const [quota, setQuota]       = useState<ScoringQuota | null>(null)
+  const [focus, setFocus]       = useState<FocusInfo | null>(null)
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState<string | null>(null)
   const [selected, setSelected] = useState<Lead | null>(null)
@@ -62,6 +64,7 @@ export function Dashboard() {
       setLeads(page.results)
       setTotal(page.total)
       setQuota(page.scoring_quota ?? null)
+      setFocus(page.focus ?? null)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load leads')
     } finally {
@@ -276,6 +279,13 @@ export function Dashboard() {
       {/* Monthly scored-lead allowance meter (metered plans only). Fed from the
           lead-list response so it reflects reveals consumed by this render. */}
       <ScoringQuotaBanner quota={quota} />
+
+      {/* Automatic focus view: default list narrowed to the top grade bands,
+          one click to show everything (fed from the same response). */}
+      <FocusBanner
+        focus={focus}
+        onToggle={(showAll) => setFilters(f => ({ ...f, show_all: showAll || undefined, page: 1 }))}
+      />
 
       <main id="main" className="flex-1 overflow-hidden">
         <LeadTable

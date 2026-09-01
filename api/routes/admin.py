@@ -614,10 +614,15 @@ def admin_set_plan(
             "ON CONFLICT (account_id) DO UPDATE SET plan_name = %s, modules = %s, updated_at = NOW()",
             (account_id, body.plan, Json(modules), body.plan, Json(modules)),
         )
+    # Downgrades deactivate over-limit territory schedules (oldest survive),
+    # in the same transaction as the plan write.
+    from api.territory import trim_schedules_to_limit
+    trimmed = trim_schedules_to_limit(db, account_id)
     record_admin_action(
         db, admin, "account.plan_set", "account", account_id,
         {"old_plan": old[0] if old else None, "new_plan": body.plan,
-         "enable": body.enable, "disable": body.disable},
+         "enable": body.enable, "disable": body.disable,
+         "trimmed_schedule_ids": trimmed},
     )
     db.commit()
     return {"plan_name": body.plan, "modules": modules}

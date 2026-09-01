@@ -180,6 +180,12 @@ def apply_plan(db, account_id: int, plan_name: str) -> None:
             "ON CONFLICT (account_id) DO UPDATE SET plan_name = %s, modules = %s, updated_at = NOW()",
             (account_id, plan_name, Json(defaults), plan_name, Json(defaults)),
         )
+    # A downgrade may leave more scheduled territories active than the new plan
+    # allows — deactivate the extras (oldest ZIPs survive) in the same
+    # transaction. Local import: api.territory lazily reaches back into
+    # api.scheduler, which imports this module.
+    from api.territory import trim_schedules_to_limit
+    trim_schedules_to_limit(db, account_id)
 
 
 def expire_stale_trials(conn) -> int:

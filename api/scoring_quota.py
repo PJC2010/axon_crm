@@ -76,6 +76,21 @@ def _is_own_book(lead_source) -> bool:
     return lead_source in _OWN_BOOK_SOURCES or lead_source.startswith("website_")
 
 
+def engine_book_sql(prefix: str = "") -> str:
+    """SQL twin of ``not _is_own_book(lead_source)``: TRUE when the row is the
+    prospecting ENGINE's output rather than the tenant's own book. Generated
+    from ``_OWN_BOOK_SOURCES`` so the SQL and the Python rule can't drift;
+    consumed by the territory limit (api/territory.py) and the focus view
+    (pipeline/focus.py). The fragment contains doubled percents (LIKE
+    wildcards), so it must ride a *parameterized* execute() — psycopg2 only
+    collapses ``%%`` to ``%`` when params are passed.
+    """
+    col = f"{prefix}lead_source"
+    sources = ", ".join(f"'{s}'" for s in sorted(_OWN_BOOK_SOURCES))
+    return (f"({col} IS NULL OR ({col} NOT IN ({sources}) "
+            f"AND {col} NOT LIKE 'website\\_%%'))")
+
+
 def is_quota_candidate(row: dict) -> bool:
     """Only scored, not-yet-worked leads from the prospecting ENGINE count
     against (or are hidden by) the quota. Anything unscored, already in play, or
