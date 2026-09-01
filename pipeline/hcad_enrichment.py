@@ -18,6 +18,7 @@ from pipeline.backfill import record_findings
 from pipeline.db import get_conn, fetch_by_zip, upsert_properties
 from pipeline.equity import estimate_equity
 from pipeline.parcel_id import normalize_apn
+from pipeline.property_type import from_state_class as type_from_state_class
 from pipeline.reconcile import parcel_finding
 from pipeline import hcad_store
 
@@ -94,6 +95,12 @@ def enrich_hcad(zip_code: str, account_id: int) -> int:
             # that were seeded before migration 0072, so an existing book of
             # leads gains the class without being re-seeded.
             _backfill("state_class",             hcad.get("state_class"))
+            # The dwelling type the county's class names. property_type is
+            # otherwise written ONLY by RentCast, so this is the difference
+            # between an HCAD-seeded book having the column and having it NULL
+            # on every row. Fill-only like everything here: a type RentCast
+            # already bought is never overwritten.
+            _backfill("property_type",           type_from_state_class(hcad.get("state_class")))
             _backfill("hcad_neighborhood_code",  hcad.get("neighborhood_code"))
             _backfill("hcad_neighborhood_name",  hcad.get("neighborhood_name"))
 
