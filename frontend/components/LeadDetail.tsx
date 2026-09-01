@@ -18,6 +18,7 @@ import { AppointmentsSection } from './lead/AppointmentsSection'
 import { PropertySignals } from './lead/PropertySignals'
 import { WhyThisScore } from './lead/WhyThisScore'
 import { ActivityPanel } from './lead/ActivityPanel'
+import { MaskedLeadPanel } from './lead/MaskedLeadPanel'
 import { DisqualifyButton } from './lead/DisqualifyButton'
 
 export function LeadDetail({ leadId }: { leadId: number }) {
@@ -152,23 +153,33 @@ export function LeadDetail({ leadId }: { leadId: number }) {
               </div>
             </div>
 
-            <ContactInfoSection lead={lead} onSaved={setLead} onToast={showToast} />
-            <MessageSection leadId={lead.id} />
-            <PoliciesSection leadId={lead.id} />
-            <OrdersSection leadId={lead.id} />
-            <AppointmentsSection leadId={lead.id} />
-            {propertyBased && <PropertySignals lead={lead} />}
-            {propertyBased && <WhyThisScore leadId={lead.id} />}
-            <div id="lead-activity">
-              <ActivityPanel leadId={lead.id} contactPhone={lead.contact_phone} />
-            </div>
+            {lead.quota_masked ? (
+              // Past the monthly reveal allowance: blurred placeholder +
+              // upgrade prompt instead of the live sections (deep links get
+              // the same treatment as the drawer — GET /leads/{id} already
+              // returns the row masked, this keeps the page from dressing it).
+              <MaskedLeadPanel />
+            ) : (
+              <>
+                <ContactInfoSection lead={lead} onSaved={setLead} onToast={showToast} />
+                <MessageSection leadId={lead.id} />
+                <PoliciesSection leadId={lead.id} />
+                <OrdersSection leadId={lead.id} />
+                <AppointmentsSection leadId={lead.id} />
+                {propertyBased && <PropertySignals lead={lead} />}
+                {propertyBased && <WhyThisScore leadId={lead.id} />}
+                <div id="lead-activity">
+                  <ActivityPanel leadId={lead.id} contactPhone={lead.contact_phone} />
+                </div>
+              </>
+            )}
           </div>
         )}
       </main>
 
       {/* Sticky one-thumb action bar — contractors work this page from a truck.
           Primary actions stay under the thumb; content gets bottom padding above. */}
-      {!wide && lead && (
+      {!wide && lead && !lead.quota_masked && (
         <nav
           aria-label="Quick actions"
           style={{

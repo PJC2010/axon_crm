@@ -275,6 +275,24 @@ def get_score_explanation(lead_id: int, db: PGConn = Depends(get_db), user: dict
     if not row:
         raise HTTPException(status_code=404, detail="Lead not found")
 
+    # Same reveal semantics as the id-addressed detail above: within the
+    # allowance, explaining an unrevealed candidate consumes its reveal; past
+    # it, the breakdown is refused — the factor text embeds the very property
+    # facts (year built, equity, sale recency) the mask withholds.
+    limit = get_scoring_limit(user["account_id"], db)
+    if limit is not None and scoring_quota.is_quota_candidate(row):
+        (row,), _ = scoring_quota.apply_quota(db, user["account_id"], [row], limit)
+        if row.get("quota_masked"):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "detail": "This scored lead is past your monthly reveal allowance. "
+                              "Upgrade your plan to see its score breakdown.",
+                    "quota": True,
+                    "upgrade": True,
+                },
+            )
+
     # Explain the lead against the profile it was SCORED with, market and all.
     # Resolving the region here rather than reading the stored one keeps the
     # breakdown reconciled with a fresh recompute; a lead scored before the
