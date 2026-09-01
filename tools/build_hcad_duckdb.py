@@ -25,6 +25,9 @@ Source files (HCAD PDATA, https://hcad.org/pdata/) and the table each feeds:
     Real_building_land.zip   (optional — enables pool/slab + true year-built)
       extra_features.txt -> extra_features
       building_res.txt   -> property_summary (year_built override = date_erected)
+    code_description_real.zip  (optional — decodes county codes to county labels)
+      desc_r_01_state_class.txt        -> state_class_codes
+      desc_r_02_building_type_code.txt -> building_type_codes
 
 If the optional files are absent the corresponding columns degrade gracefully:
 year_built falls back to real_acct.yr_impr (Parcel Year Improved) and the
@@ -93,7 +96,8 @@ def _has_column(con: duckdb.DuckDBPyConnection, src: str, column: str) -> bool:
 def build(src_dir: Path, out_db: Path, encoding: str) -> None:
     f = {name: src_dir / f"{name}.txt" for name in
          ("real_acct", "owners", "deeds", "permits", "extra_features", "building_res",
-          "real_neighborhood_code")}
+          "real_neighborhood_code",
+          "desc_r_01_state_class", "desc_r_02_building_type_code")}
 
     real_acct = None  # set below; required
     if out_db.exists():
@@ -251,6 +255,55 @@ def build(src_dir: Path, out_db: Path, encoding: str) -> None:
     else:
         print("  (real_neighborhood_code.txt absent — neighborhood names will be empty)")
 
+    # ── code descriptions (optional) ────────────────────────────────────────
+    # HCAD publishes the decode tables for its own codes as a separate download
+    # (code_description_real.zip, "Code Descriptions (Real)"). Without them
+    # `state_class` is an opaque 'A1' and a building's `impr_tp` an opaque
+    # '1001'; with them the county's own label — "Real, Residential,
+    # Single-Family", "Residential Townhome" — is one join away. That is what
+    # lets an HCAD-seeded row carry a real property type instead of the NULL
+    # migration 0072 was written around (properties.property_type is written
+    # ONLY by RentCast).
+    #
+    # `Dept` on the state-class table is a ROLLUP, not a restatement of `Code`,
+    # and that is the reason to load this file rather than hand-maintain a
+    # prefix list: every improved condo class rolls up to A1 single-family
+    # (Z1 Apartment Conversion, Z2 Fee Simple Townhouse, Z3 Townhouse,
+    # Z4 Apartment Style, Z5 High Rise), the unimproved Z0 to C1 vacant, and
+    # X1/X2/X3/X4/X7 alike to XV. A `Z` prefix is invisible to
+    # pipeline/residential.py's A/B/E/M allowlist, so the county's own rollup
+    # answers "is this class residential?" for 64k Harris County condos that
+    # the prefix rule has no opinion on.
+    sc_src = _src(con, f["desc_r_01_state_class"], encoding)
+    if sc_src:
+        print("Building state_class_codes ...")
+        con.execute(f"""
+            CREATE TABLE state_class_codes AS
+            SELECT
+                NULLIF(TRIM("Code"), '')        AS cd,
+                NULLIF(TRIM("Dept"), '')        AS dept,
+                NULLIF(TRIM("Description"), '') AS dscr
+            FROM {sc_src}
+            WHERE "Code" IS NOT NULL AND TRIM("Code") <> ''
+        """)
+    else:
+        print("  (desc_r_01_state_class.txt absent — state-class labels will be empty)")
+
+    bt_src = _src(con, f["desc_r_02_building_type_code"], encoding)
+    if bt_src:
+        print("Building building_type_codes ...")
+        con.execute(f"""
+            CREATE TABLE building_type_codes AS
+            SELECT
+                NULLIF(TRIM("Type"), '')        AS cd,
+                NULLIF(TRIM("Description"), '') AS dscr
+            FROM {bt_src}
+            WHERE "Type" IS NOT NULL AND TRIM("Type") <> ''
+        """)
+    else:
+        print("  (desc_r_02_building_type_code.txt absent — building-type labels "
+              "will be empty)")
+
     # ── indexes + report ────────────────────────────────────────────────────
     con.execute("CREATE INDEX idx_ps_zip ON property_summary(site_zip)")
     con.execute("CREATE INDEX idx_ps_acct ON property_summary(acct)")
@@ -261,6 +314,8 @@ def build(src_dir: Path, out_db: Path, encoding: str) -> None:
         con.execute("CREATE INDEX idx_ef_acct ON extra_features(acct)")
     if "neighborhood_codes" in tables:
         con.execute("CREATE INDEX idx_nc_cd ON neighborhood_codes(cd)")
+    # state_class_codes / building_type_codes are deliberately unindexed: they
+    # are ~60 and ~200 rows, small enough that a scan beats an index probe.
 
     print("\nDone. Row counts:")
     for t in tables:
