@@ -14,9 +14,9 @@ numbers use the reserved 555-01xx fictional block and emails use RFC 2606
 reserved domains, so nothing in a demo can reach a real person.
 
 The importer writes only these eleven columns, so a lead created from this file
-has no year built, floor area, sale history or storm exposure and every account
-grades C/D. Run scripts/enrich_demo_leads.py after importing to fill those in
-and get a real A-D spread.
+has no year built, floor area, sale history, storm exposure or coordinates: the
+account grades C/D and nothing shows on the map. Run scripts/enrich_demo_leads.py
+after importing to fill those in, get a real A-D spread, and place the leads.
 
 Usage:
     python scripts/generate_demo_leads.py --rows 250 --vertical roofing \

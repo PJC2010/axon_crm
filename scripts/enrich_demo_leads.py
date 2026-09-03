@@ -21,6 +21,21 @@ sale date, `last_sale_price` from the value and the years since sale, and
 `zip_median_income` is a property of the ZIP rather than of the lead, so two
 leads on the same street can't disagree about their neighborhood's income.
 
+It also puts the leads on the map, which the import cannot: `latitude`,
+`longitude` and `geohash` (what /api/map/properties and /api/map/cells need),
+`hcad_neighborhood_name` so choropleth cells are labelled, and derived
+`signal_events` so the map's signals toggle has something to colour. Coordinates
+come from the shared `parcels` cache when the deployment has county data loaded
+— real Harris County parcel centroids — and otherwise from
+scripts/data/harris_zip_anchors.json, real coordinates harvested from the free
+Census batch geocoder. Geocoding the generated addresses directly does not work:
+their house numbers are invented, so TIGER matched only 11% of them, and 71% of
+the matches it did return were for a same-named street in a different ZIP.
+
+For a map demo generate more leads than you would otherwise — the geohash-6
+cells the choropleth aggregates are about 1.2km across, so 250 leads over a
+12-ZIP territory leaves most cells holding one or two. 600 is a good number.
+
 Usage:
     # See the achievable distribution without touching the database
     python scripts/enrich_demo_leads.py --dry-run --vertical roofing
@@ -46,7 +61,9 @@ pins and neighborhood benchmarks:
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+import math
 import random
 import sys
 from datetime import date, timedelta
@@ -54,7 +71,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from pipeline import regional                       # noqa: E402
+from pipeline import regional                       # noqa: E402  (path set above)
 from pipeline.equity import estimate_equity         # noqa: E402
 from pipeline.profiles import resolve_profile       # noqa: E402
 from pipeline.scoring import compute_score, _grade  # noqa: E402
@@ -436,6 +453,208 @@ def enrich(rows: list[dict], mix: dict[str, int], seed: int,
     return out
 
 
+# ── Map coordinates ───────────────────────────────────────────────────────────
+
+# Real Harris County coordinates, one list per ZIP, harvested from the free
+# Census batch geocoder (scripts/data/harris_zip_anchors.json). Only matches the
+# geocoder echoed back carrying the ZIP we asked for were kept: same-named
+# streets exist all over the metro, and 71% of its raw "Match" rows for these
+# probes resolved to a street in a different ZIP — often 30km away, which put
+# whole suburbs on top of downtown until the check was added.
+ANCHORS_PATH = Path(__file__).resolve().parent / "data" / "harris_zip_anchors.json"
+
+# Metres of jitter around an anchor. A few hundred puts a pin on neighbouring
+# parcels rather than stacked on one rooftop, without drifting off the street.
+JITTER_M = 380
+GEOHASH_PRECISION = 7   # matches pipeline/geocode.py; map/cells reads LEFT(geohash, 6)
+
+
+def load_anchors() -> dict[str, list[list[float]]]:
+    if not ANCHORS_PATH.exists():
+        log.warning("No anchor file at %s — coordinates will come from parcels only",
+                    ANCHORS_PATH)
+        return {}
+    with open(ANCHORS_PATH, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def parcel_coords(conn, zips: list[str], per_zip: int) -> dict[str, list[tuple]]:
+    """Real parcel coordinates per ZIP from the shared `parcels` cache.
+
+    Preferred over the baked anchors whenever the deployment has county data
+    loaded: these are actual Harris County parcel centroids (migration 0070, via
+    parcels.fill_coords_from_centroids), so a pin lands on a real lot rather than
+    near one. `parcels` is shared and carries no account_id, so there is nothing
+    to scope here — and nothing tenant-specific is read.
+    """
+    if not zips:
+        return {}
+    found: dict[str, list[tuple]] = {}
+    with conn.cursor() as cur:
+        for zip_code in zips:
+            try:
+                cur.execute(
+                    "SELECT latitude, longitude FROM parcels "
+                    "WHERE zip = %s AND latitude IS NOT NULL AND longitude IS NOT NULL "
+                    "ORDER BY random() LIMIT %s",
+                    (zip_code, per_zip),
+                )
+                rows = cur.fetchall()
+            except Exception:
+                # No parcels table (or no county data) is a normal deployment
+                # state, not an error — fall through to the baked anchors.
+                conn.rollback()
+                return found
+            if rows:
+                found[zip_code] = [(float(a), float(b)) for a, b in rows]
+    return found
+
+
+def jitter(lat: float, lng: float, rng: random.Random) -> tuple[float, float]:
+    """Nudge a coordinate by up to JITTER_M metres in a random direction."""
+    dlat = rng.uniform(-JITTER_M, JITTER_M) / 111_320.0
+    dlng = rng.uniform(-JITTER_M, JITTER_M) / (
+        111_320.0 * max(0.2, math.cos(math.radians(lat))))
+    return round(lat + dlat, 6), round(lng + dlng, 6)
+
+
+def assign_coordinates(rows: list[dict], pools: dict[str, list[tuple]],
+                       anchors: dict, seed: int) -> tuple[int, dict[str, int]]:
+    """Give every lead latitude/longitude/geohash in place.
+
+    Returns (placed, unplaced_by_zip). A ZIP with neither parcels nor anchors
+    leaves its leads without coordinates — they stay off the map rather than
+    being dropped somewhere plausible-looking but wrong.
+    """
+    try:
+        import geohash2
+    except ImportError:
+        log.warning("geohash2 not installed — writing coordinates without geohash; "
+                    "the choropleth (/api/map/cells) needs it, pins do not")
+        geohash2 = None
+
+    placed, unplaced = 0, {}
+    for row in rows:
+        zip_code = row.get("zip")
+        pool = pools.get(zip_code) or anchors.get(zip_code)
+        if not pool:
+            unplaced[zip_code] = unplaced.get(zip_code, 0) + 1
+            continue
+        rng = random.Random(f"{seed}:geo:{row.get('id') or row.get('address')}")
+        base = pool[rng.randrange(len(pool))]
+        lat, lng = jitter(float(base[0]), float(base[1]), rng)
+        row["latitude"], row["longitude"] = lat, lng
+        row["geohash"] = (geohash2.encode(lat, lng, precision=GEOHASH_PRECISION)
+                          if geohash2 else None)
+        placed += 1
+    return placed, unplaced
+
+
+def neighborhood_name(address: str | None) -> str | None:
+    """A HCAD-shaped neighbourhood label from the lead's own street.
+
+    /api/map/cells names each cell with the modal hcad_neighborhood_name of its
+    leads, so without this every cell in the choropleth is unlabelled. HCAD
+    writes these uppercase ("FALL CREEK"), and taking it from the lead's own
+    address keeps the label agreeing with the card.
+    """
+    if not address:
+        return None
+    parts = address.split()[1:]          # drop the house number
+    if not parts:
+        return None
+    # Drop the street-type suffix: "Timber Forest Dr" -> "TIMBER FOREST".
+    if len(parts) > 1 and len(parts[-1]) <= 4:
+        parts = parts[:-1]
+    return " ".join(parts).upper() or None
+
+
+# ── Intent signals ────────────────────────────────────────────────────────────
+
+# The four signal_type values pipeline/signals.py actually emits. The older
+# scripts/seed_map_sample_data.py invents its own ("storm_hail", "roof_permit"),
+# which no other part of the product produces or knows how to read.
+SIGNAL_WINDOW_DAYS = 88   # inside /api/map's default signal_days=90
+
+
+def signals_for(row: dict, rng: random.Random) -> list[tuple[str, str, int]]:
+    """(signal_type, summary, days_ago) derived from this lead's own attributes.
+
+    Derived rather than sampled at random so a pin's signal agrees with the lead
+    behind it: a 'just_sold' badge sits on a lead whose sale date really is
+    recent. `days_ago` is when the pipeline would have *noticed*, which is what
+    detected_at means and what the map's recency window filters on.
+    """
+    today = date.today()
+    out = []
+    sale = row.get("last_sale_date")
+    if sale and (today - sale).days <= 400:
+        out.append(("just_sold", f"Sold {sale.isoformat()}",
+                    rng.randint(1, SIGNAL_WINDOW_DAYS)))
+    permits = row.get("permit_count_24mo") or 0
+    if permits > 0:
+        out.append(("new_permit",
+                    f"Permit activity rose from 0 to {permits} (24mo)",
+                    rng.randint(1, SIGNAL_WINDOW_DAYS)))
+    storm = row.get("last_storm_date")
+    if storm and (today - storm).days <= 400:
+        out.append((
+            "storm_event",
+            f"New storm detected {storm.isoformat()}"
+            + (f" ({row['hail_size_in']}\" hail)" if row.get("hail_size_in") else ""),
+            rng.randint(1, SIGNAL_WINDOW_DAYS)))
+    if row.get("score_grade") in ("A", "B") and rng.random() < 0.30:
+        out.append(("score_changed",
+                    f"Grade improved from C to {row['score_grade']} "
+                    f"(score {row['lead_score']})", rng.randint(1, SIGNAL_WINDOW_DAYS)))
+    # Two badges is enough to read on a pin; more just crowds the hover card.
+    rng.shuffle(out)
+    return out[:2]
+
+
+def write_signals(conn, account_id: int, rows: list[dict], seed: int,
+                  replace: bool = True) -> int:
+    """Insert derived signal_events for these leads, scoped by account_id.
+
+    `replace` clears this account's existing events for these leads first, so a
+    re-run does not stack a second generation of badges on every pin.
+    """
+    import psycopg2.extras
+
+    ids = [r["id"] for r in rows if r.get("id") is not None]
+    if not ids:
+        return 0
+    written = 0
+    with conn.cursor() as cur:
+        if replace:
+            cur.execute(
+                "DELETE FROM signal_events WHERE account_id = %s AND property_id = ANY(%s)",
+                (account_id, ids),
+            )
+        payload = []
+        for row in rows:
+            if row.get("id") is None:
+                continue
+            rng = random.Random(f"{seed}:sig:{row['id']}")
+            for signal_type, summary, days_ago in signals_for(row, rng):
+                payload.append((row["id"], account_id, signal_type,
+                                psycopg2.extras.Json({"summary": summary,
+                                                      "source": "demo_seed"}),
+                                days_ago))
+        if payload:
+            psycopg2.extras.execute_values(
+                cur,
+                "INSERT INTO signal_events "
+                "(property_id, account_id, signal_type, details, detected_at) "
+                "VALUES %s",
+                payload,
+                template="(%s, %s, %s, %s, NOW() - (%s * INTERVAL '1 day'))",
+            )
+            written = len(payload)
+    conn.commit()
+    return written
+
+
 # ── Database side ─────────────────────────────────────────────────────────────
 
 # Columns fit_row produces that are real properties columns. estimated_value is
@@ -450,10 +669,15 @@ WRITE_COLS = [
     "credit_rating", "life_stage", "owner_occupied", "home_improvement_flag",
     "gardening_flag", "has_children", "has_pool", "has_cracked_slab",
     "vertical", "lead_score", "score_grade",
+    # Map columns. /api/map/properties needs latitude+longitude; /api/map/cells
+    # additionally groups on LEFT(geohash, 6) and labels each cell with the modal
+    # hcad_neighborhood_name, so all four are what makes a lead visible there.
+    "latitude", "longitude", "geohash", "hcad_neighborhood_name",
 ]
 
 READ_COLS = ["id", "address", "zip", "state", "estimated_value", "vertical",
-             "neighborhood_value_ratio", "square_footage", "geohash"]
+             "neighborhood_value_ratio", "square_footage", "geohash",
+             "latitude", "longitude"]
 
 
 def fetch_rows(conn, account_id: int, all_leads: bool, limit: int | None) -> list[dict]:
@@ -520,6 +744,26 @@ def seed_square_footage(conn, account_id: int, rows: list[dict], seed: int) -> i
                 "UPDATE properties SET square_footage = %s "
                 "WHERE id = %s AND account_id = %s",
                 (house_sqft(row, noise), row["id"], account_id),
+            )
+            written += cur.rowcount
+    conn.commit()
+    return written
+
+
+MAP_COLS = ["latitude", "longitude", "geohash", "hcad_neighborhood_name"]
+
+
+def write_map_columns(conn, account_id: int, rows: list[dict]) -> int:
+    """Persist coordinates before the benchmark pass reads them back."""
+    assignments = ", ".join(f"{c} = %s" for c in MAP_COLS)
+    written = 0
+    with conn.cursor() as cur:
+        for row in rows:
+            if row.get("latitude") is None:
+                continue
+            cur.execute(
+                f"UPDATE properties SET {assignments} WHERE id = %s AND account_id = %s",
+                [row.get(c) for c in MAP_COLS] + [row["id"], account_id],
             )
             written += cur.rowcount
     conn.commit()
@@ -625,6 +869,11 @@ def main() -> int:
                    help="enrich every lead, not just rows tagged source=csv_import")
     p.add_argument("--limit", type=int, help="cap how many leads are touched")
     p.add_argument("--seed", type=int, default=20260903, help="RNG seed (reproducible)")
+    p.add_argument("--no-map", action="store_true",
+                   help="skip coordinates, geohash and intent signals "
+                        "(leads then do not appear on the map)")
+    p.add_argument("--coords-per-zip", type=int, default=400,
+                   help="how many real parcel coordinates to sample per ZIP")
     p.add_argument("--skip-neighborhood", action="store_true",
                    help="don't refresh neighborhood_value_ratio before fitting")
     p.add_argument("--dry-run", action="store_true",
@@ -639,8 +888,19 @@ def main() -> int:
     if args.dry_run or args.from_csv:
         rows = (rows_from_csv(args.from_csv) if args.from_csv
                 else synth_rows(args.rows, args.seed, args.vertical or "roofing"))
+        if not args.no_map:
+            placed, unplaced = assign_coordinates(rows, {}, load_anchors(), args.seed)
+            print(f"map: placed {placed}/{len(rows)} leads from baked anchors "
+                  f"(a real run prefers the parcels cache)")
+            if unplaced:
+                print("map: no anchors for " + ", ".join(
+                    f"{z}({n})" for z, n in sorted(unplaced.items())))
         simulate_neighborhood(rows, args.seed)
         fitted = enrich(rows, mix, args.seed, args.vertical)
+        if not args.no_map:
+            sig = sum(len(signals_for(r, random.Random(f"{args.seed}:sig:{r['id']}")))
+                      for r in fitted)
+            print(f"map: {sig} intent signals across {len(fitted)} leads")
         report(fitted)
         print("\ndry run — nothing written")
         return 0
@@ -655,16 +915,41 @@ def main() -> int:
         if not rows:
             print("No leads matched — did the CSV import run for this account?")
             return 1
+        if not args.no_map:
+            # Before the benchmark pass: recompute_neighborhood_values groups by
+            # geohash cell, so a lead without coordinates is unbenchmarked and
+            # its neighborhood signal scores 0.
+            zips = sorted({r["zip"] for r in rows if r.get("zip")})
+            pools = parcel_coords(conn, zips, args.coords_per_zip)
+            if pools:
+                log.info("Sourced real parcel coordinates for %d/%d ZIP(s) from "
+                         "the shared parcels cache", len(pools), len(zips))
+            placed, unplaced = assign_coordinates(rows, pools, load_anchors(), args.seed)
+            log.info("Placed %d/%d lead(s) on the map", placed, len(rows))
+            if unplaced:
+                log.warning("No coordinates for ZIP(s) %s — %d lead(s) will not "
+                            "appear on the map",
+                            ", ".join(sorted(unplaced)), sum(unplaced.values()))
+            for row in rows:
+                row["hcad_neighborhood_name"] = neighborhood_name(row.get("address"))
+            write_map_columns(conn, args.account_id, rows)
+
         if not args.skip_neighborhood:
             log.info("Seeded square footage on %d lead(s)",
                      seed_square_footage(conn, args.account_id, rows, args.seed))
             log.info("Refreshed neighborhood benchmarks for %d lead(s)",
                      recompute_neighborhood(conn, args.account_id))
-            rows = fetch_rows(conn, args.account_id, args.all_leads, args.limit)
+            refetched = {r["id"]: r for r in
+                         fetch_rows(conn, args.account_id, args.all_leads, args.limit)}
+            for row in rows:
+                row.update(refetched.get(row["id"], {}))
         log.info("Fitting %d lead(s)…", len(rows))
         fitted = enrich(rows, mix, args.seed, args.vertical)
         written = write_rows(conn, args.account_id, fitted)
         log.info("Updated %d lead(s)", written)
+        if not args.no_map:
+            log.info("Wrote %d intent signal(s)",
+                     write_signals(conn, args.account_id, fitted, args.seed))
         report(fitted)
     finally:
         conn.close()
