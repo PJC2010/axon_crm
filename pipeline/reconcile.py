@@ -37,7 +37,7 @@ from datetime import date
 
 from config import PROPERTY_VALUE_TOLERANCE_PCT
 from pipeline.addr import same_address
-from pipeline.equity import estimate_equity
+from pipeline.equity import estimate_equity, equity_source_for
 from pipeline.owner import clean_owner_name, same_owner
 from pipeline.parcel_id import normalize_apn, same_parcel
 
@@ -336,6 +336,24 @@ def consistent_derived(stored: dict, updates: dict) -> dict:
         else:
             out["estimated_equity"] = equity
     return out
+
+
+def equity_provenance(stored: dict, updates: dict) -> str | None:
+    """The basis behind the estimated_equity `consistent_derived` wrote — the
+    value a writer stamps into enrichment_flags[EQUITY_SOURCE_FLAG] next to it.
+
+    Reads the same effective (update-over-stored) inputs consistent_derived
+    used, so the stamp can never disagree with the number. None when the
+    update carries no equity.
+    """
+    if updates.get("estimated_equity") is None:
+        return None
+
+    def eff(field):
+        return updates[field] if field in updates else stored.get(field)
+
+    return equity_source_for(eff("estimated_value"), eff("last_sale_price"),
+                             eff("last_sale_date"))
 
 
 def years_owned(sale_date) -> int | None:

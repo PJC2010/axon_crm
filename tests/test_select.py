@@ -69,8 +69,9 @@ def test_prescore_does_not_mutate_input_row():
 
 def test_prescore_respects_existing_equity():
     """An explicit equity is used as-is; the value fallback does not override it."""
-    row = {"estimated_value": 1_000_000, "estimated_equity": 50_000}
-    # Fallback would be 600k (capped to target); real 50k should score lower.
+    row = {"estimated_value": 1_000_000, "estimated_equity": 40_000}
+    # Fallback would be 600k (saturating the signal, then haircut to 0.5 by
+    # EQUITY_FALLBACK_SIGNAL_SCALE); a real 40k (signal 0.4) must score lower.
     fallback_row = {"estimated_value": 1_000_000, "estimated_equity": None}
     assert prescore(row, DEFAULT_WEIGHTS) < prescore(fallback_row, DEFAULT_WEIGHTS)
 

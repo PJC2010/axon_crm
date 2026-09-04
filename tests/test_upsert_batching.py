@@ -125,8 +125,10 @@ def test_fill_only_writes_into_nulls_not_over_values(monkeypatch):
     assert "year_built = COALESCE(properties.year_built, EXCLUDED.year_built)" in sql
     assert "parcel_apn = COALESCE(properties.parcel_apn, EXCLUDED.parcel_apn)" in sql
     assert "year_built = EXCLUDED.year_built" not in sql
-    # Flags still merge — provenance from earlier steps survives a re-seed.
-    assert "enrichment_flags = properties.enrichment_flags || EXCLUDED.enrichment_flags" in sql
+    # Flags still merge, and under fill_only the EXISTING keys win: a re-seed
+    # that keeps the row's columns keeps their provenance too (e.g. the
+    # enrichment_flags.equity_source stamp, pipeline/equity.py).
+    assert "enrichment_flags = EXCLUDED.enrichment_flags || properties.enrichment_flags" in sql
 
 
 def test_default_mode_still_overwrites(monkeypatch):

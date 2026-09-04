@@ -846,7 +846,12 @@ def get_run(run_id: int, user: dict = Depends(get_current_user), db: PGConn = De
 
 @router.post("/pipeline/rescore")
 def rescore(body: RunCreate, current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db), _mod: dict = _prospecting):
-    """Score (or re-score) all leads in a ZIP without re-running the full pipeline."""
+    """Score (or re-score) all leads in a ZIP without re-running the full pipeline.
+
+    With no `vertical` in the body each lead keeps scoring on the vertical it
+    was last scored with (pipeline/scorer.py::score_zip); passing one re-labels
+    the whole ZIP.
+    """
     import sys, os
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
     from pipeline.scorer import score_zip
@@ -856,7 +861,12 @@ def rescore(body: RunCreate, current_user: dict = Depends(require_owner), db: PG
 
 @router.post("/pipeline/rescore-all")
 def rescore_all(current_user: dict = Depends(require_owner), db: PGConn = Depends(get_db), _mod: dict = _prospecting):
-    """Score (or re-score) all leads in every ZIP for this org."""
+    """Score (or re-score) all leads in every ZIP for this org.
+
+    Each lead is rescored on the vertical it was last scored with — this is a
+    refresh of the numbers, never a silent move of a roofing book onto the
+    default profile (pipeline/scorer.py::score_zip).
+    """
     import sys, os
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
     from pipeline.scorer import score_zip

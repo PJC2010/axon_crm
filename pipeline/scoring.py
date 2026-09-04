@@ -9,6 +9,7 @@ from datetime import date
 
 import config
 
+from pipeline.equity import stored_equity_source, FALLBACK_SOURCE
 from config import (
     GRADE_BANDS, GATE_MISS_FACTOR,
     EQUITY_FALLBACK_SIGNAL_SCALE,
@@ -69,14 +70,17 @@ def _weighted_sum(row: dict, weights: dict, factor_meta: dict,
       (confirmed absence of a qualifier, e.g. no pool for pool_maintenance),
       the final score is multiplied by GATE_MISS_FACTOR. Missing gate fields
       never gate.
-    - When the scorer flagged estimated_equity as a flat-fallback estimate
-      (row["estimated_equity_is_fallback"]), the equity contribution is scaled
-      by EQUITY_FALLBACK_SIGNAL_SCALE — fallback equity proxies home value,
-      which the neighborhood/income signals already measure.
+    - When the row's estimated_equity is the flat fallback (its provenance is
+      read by `equity_is_fallback`: the persisted enrichment_flags stamp, the
+      scorer's in-run hint, or re-derivation for legacy rows), the equity
+      contribution is scaled by EQUITY_FALLBACK_SIGNAL_SCALE — fallback equity
+      proxies home value, which the neighborhood/income signals already measure.
+      Reading provenance off the row rather than off which step ran is what
+      makes a first-pass score, a rescore and the explain endpoint agree.
     """
     mode = (config.SCORE_MISSING_MODE or "zero").lower()
     equity_scale = (EQUITY_FALLBACK_SIGNAL_SCALE
-                    if row.get("estimated_equity_is_fallback") else 1.0)
+                    if weights.get("equity") and equity_is_fallback(row) else 1.0)
 
     weighted = 0.0
     available = 0.0
@@ -110,6 +114,16 @@ def _weighted_sum(row: dict, weights: dict, factor_meta: dict,
     if gate_miss:
         score *= GATE_MISS_FACTOR
     return score * 100
+
+
+def equity_is_fallback(row: dict) -> bool:
+    """True when the row's stored equity came from the flat value×pct fallback.
+
+    The one rule every scoring path shares (score_zip, rescores, the explain
+    endpoint, the golden harness), so the EQUITY_FALLBACK_SIGNAL_SCALE haircut is
+    a property of the stored number, not of which step happened to write it.
+    """
+    return stored_equity_source(row) == FALLBACK_SOURCE
 
 
 def data_completeness(row: dict, weights: dict, factor_meta: dict = None) -> float:
@@ -466,12 +480,19 @@ def explain_score(row: dict, weights: dict, profile=None) -> dict:
     if profile is not None:
         weights = profile.weights
 
+    # The fallback-equity haircut belongs on the equity bar alone: applying it
+    # here, exactly as _weighted_sum does, keeps the breakdown reconciled
+    # without the proportional rescale below smearing it over every factor.
+    equity_scale = (EQUITY_FALLBACK_SIGNAL_SCALE
+                    if weights.get("equity") and equity_is_fallback(row) else 1.0)
     factors = []
     for key, weight in weights.items():
         if not weight:
             continue  # factor carries no weight in this profile — omit as noise
         meta = meta_map[key]
         signal = fns[key](row.get(meta["field"]))
+        if key == "equity":
+            signal *= equity_scale
         factors.append({
             "key":          key,
             "label":        meta["label"],

@@ -52,7 +52,9 @@ from config import (
 from pipeline.addr import sql_has_situs
 from pipeline.coverage import TRACKED_FIELDS, rates_from_counts
 from pipeline.db import ALL_COLS, fetch_missing_any, get_conn, upsert_properties
+from pipeline.equity import EQUITY_SOURCE_FLAG
 from pipeline.reconcile import (
+    equity_provenance,
     FILL, MISMATCH, REPORTED_FIELDS, reconcile, verify_record,
 )
 
@@ -320,6 +322,9 @@ def sweep(conn, account_id: int, *, zip_code: str | None = None,
             # Same marker the per-ZIP step writes, so a lead's provenance reads
             # the same however its data arrived.
             update["enrichment_flags"]["property"] = SOURCE
+            equity_source = equity_provenance(row, result["updates"])
+            if equity_source:
+                update["enrichment_flags"][EQUITY_SOURCE_FLAG] = equity_source
         updates.append(update)
         time.sleep(PROPERTY_BACKFILL_DELAY)
 

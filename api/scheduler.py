@@ -790,6 +790,9 @@ def _rescore_account(conn, account_id: int, zip_code: str | None) -> int:
     that ZIP's rows, so the refresh is bounded to the cells it touches; a
     whole-account sweep genuinely changed rows everywhere and gets the
     account-wide recompute.
+
+    score_zip is called without a vertical, which keeps every lead on the
+    vertical it was last scored with (a refresh, not a re-labelling).
     """
     from pipeline.neighborhood import recompute_neighborhood_values
     from pipeline.scorer import score_zip

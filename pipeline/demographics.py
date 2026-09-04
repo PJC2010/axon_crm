@@ -53,6 +53,7 @@ from config import (
     DEMO_MAX_ROWS_PER_ZIP, DEMO_MIN_GRADE,
 )
 from pipeline.db import get_conn, fetch_missing_field, upsert_properties
+from pipeline.equity import EQUITY_SOURCE_FLAG, PROVIDER_SOURCE
 from pipeline.http import get_json, post_json
 
 log = logging.getLogger(__name__)
@@ -615,10 +616,17 @@ def enrich_demographics(zip_code: str, account_id: int, selected_only: bool = Fa
             data = lookup(row)
             if data:
                 counter["ok"] += 1
+                flags = {"demographics": DEMO_PROVIDER}
+                if data.get("estimated_equity") is not None:
+                    # A vendor-measured figure (AVM × equityPercent) replaces
+                    # whatever fallback the row carried, and its stamp must
+                    # replace the fallback stamp too, or the scorer would keep
+                    # haircutting a number that is no longer the flat proxy.
+                    flags[EQUITY_SOURCE_FLAG] = PROVIDER_SOURCE
                 data.update({
                     "address": row["address"],
                     "zip": row["zip"],
-                    "enrichment_flags": {"demographics": DEMO_PROVIDER},
+                    "enrichment_flags": flags,
                 })
                 updates.append(data)
             else:

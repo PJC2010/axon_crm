@@ -48,7 +48,15 @@ SHARED_COLS = [
     "year_built", "square_footage", "lot_size", "property_type", "state_class",
     "garage_spaces", "garage_type", "has_pool", "has_cracked_slab",
     "roof_type", "foundation_type", "heating_type", "cooling_type",
-    "estimated_value", "estimated_equity",
+    # estimated_equity is deliberately NOT here. It is a pure function of
+    # estimated_value / last_sale_price / last_sale_date (pipeline/equity.py),
+    # all three shared, so every tenant derives it locally — hcad_enrichment or
+    # the scorer's own backfill — and stamps its basis in enrichment_flags,
+    # which this cache does not carry. Sharing the number used to let sync()
+    # pair a cached fallback with a tenant's own, different value (no stamp,
+    # nothing to re-derive it from) and let promote() redistribute an equity
+    # the demographic append had derived from a paid vendor figure.
+    "estimated_value",
     "last_sale_date", "last_sale_price",
     "owner_name", "owner_type", "owner_occupied", "ownership_years",
     "mailing_address",

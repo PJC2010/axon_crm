@@ -14,9 +14,9 @@ addresses:
     address: "4614 PIN OAK FOREST DR"
     city: "HOUSTON"
     zip: "77070"
-    band: A
+    band: B
     synthetic: true
-    purpose: "Clear A: 23yo home (sweet spot), sold ~9mo ago, $231k fallback equity, 2-car garage, high-income ZIP, 3 permits."
+    purpose: "High B (74.69): 23yo home (sweet spot), sold ~9mo ago, $231k FALLBACK equity (haircut to 0.5 — the 8 pts that used to make this an A), 2-car garage, high-income ZIP, 3 permits."
   - slug: 12206-mossycup-dr-77024
     address: "12206 MOSSYCUP DR"
     city: "HOUSTON"
@@ -43,23 +43,23 @@ addresses:
     address: "6110 GRAND COLONY CT"
     city: "KATY"
     zip: "77449"
-    band: A
+    band: B
     synthetic: true
-    purpose: "Clear A: Katy starter-plus, 18yo, sold 8mo ago, equity just past saturation ($159k fallback)."
+    purpose: "High B (74.39): Katy starter-plus, 18yo, sold 8mo ago, equity just past saturation ($159k FALLBACK, haircut to 0.5 — an A at full weight)."
   - slug: 1218-wakefield-dr-77018
     address: "1218 WAKEFIELD DR"
     city: "HOUSTON"
     zip: "77018"
-    band: B
+    band: C
     synthetic: true
-    purpose: "Clear B: Oak Forest, strong age/equity/garage but NO recorded sale — the 22-point sale factor at zero holds an otherwise-A row at B."
+    purpose: "High C (54.03): Oak Forest, strong age/garage, FALLBACK equity at the 0.5 haircut, and NO recorded sale — the ~20-point sale factor at zero plus the haircut hold an otherwise-A row at C."
   - slug: 9503-truscon-dr-77080
     address: "9503 TRUSCON DR"
     city: "HOUSTON"
     zip: "77080"
-    band: B
+    band: C
     synthetic: true
-    purpose: "Clear B: sale 21.5 months ago — recency signal nearly decayed to the 24-month floor (~0.10); 1-car garage at half signal."
+    purpose: "High C (54.05): sale 21.5 months ago — recency signal nearly decayed to the 24-month floor (~0.10); 1-car garage at a third signal; fallback equity haircut."
   - slug: 4022-lambeth-ln-77373
     address: "4022 LAMBETH LN"
     city: "SPRING"
@@ -71,16 +71,16 @@ addresses:
     address: "11322 SAGEVALE LN"
     city: "HOUSTON"
     zip: "77089"
-    band: B
+    band: C
     synthetic: true
-    purpose: "Clear B: 33yo home on the post-sweet-spot decay (signal 0.85), no sale, one permit."
+    purpose: "High C (53.11): 33yo home on the post-sweet-spot decay (signal 0.85), no sale, one permit, fallback equity haircut."
   - slug: 2815-quiet-glen-ct-77084
     address: "2815 QUIET GLEN CT"
     city: "HOUSTON"
     zip: "77084"
-    band: B
+    band: C
     synthetic: true
-    purpose: "Clear B: garage supplied by RENTCAST, not HCAD (no county garage feature rows) — pins a cascade split inside one row."
+    purpose: "High C (52.83): garage supplied by RENTCAST, not HCAD (no county garage feature rows) — pins a cascade split inside one row; fallback equity haircut."
   - slug: 7726-battle-oaks-dr-77521
     address: "7726 BATTLE OAKS DR"
     city: "BAYTOWN"
@@ -113,9 +113,9 @@ addresses:
     address: "1611 AVENUE O"
     city: "LA PORTE"
     zip: "77571"
-    band: C
+    band: D
     synthetic: true
-    purpose: "Clear C: 64yo (age 0), no sale, modest equity — permits saturated at the 2-permit target keep it a C."
+    purpose: "High D (34.79): 64yo (age floor), no sale, modest FALLBACK equity haircut to 0.29 — permits saturated at the 2-permit target no longer lift it into C."
   - slug: 918-ringrose-dr-77029
     address: "918 RINGROSE DR"
     city: "HOUSTON"

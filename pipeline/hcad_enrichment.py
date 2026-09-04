@@ -16,7 +16,7 @@ from datetime import date
 
 from pipeline.backfill import record_findings
 from pipeline.db import get_conn, fetch_by_zip, upsert_properties
-from pipeline.equity import estimate_equity
+from pipeline.equity import EQUITY_SOURCE_FLAG, estimate_equity
 from pipeline.parcel_id import normalize_apn
 from pipeline.property_type import from_state_class as type_from_state_class
 from pipeline.reconcile import parcel_finding
@@ -68,6 +68,7 @@ def enrich_hcad(zip_code: str, account_id: int) -> int:
 
         update: dict = {"address": row["address"], "zip": zip_code}
         changed = False
+        equity_source = None
 
         def _backfill(our_field: str, val):
             nonlocal changed
@@ -113,13 +114,18 @@ def enrich_hcad(zip_code: str, account_id: int) -> int:
             # Equity is otherwise only computed in the paid detail step, so an
             # HCAD-only run would leave the equity signal at 0. Derive it here
             # from the appraised value (TX is non-disclosure, so no sale price) —
-            # estimate_equity falls back to value × EQUITY_FALLBACK_PCT.
+            # estimate_equity falls back to value × EQUITY_FALLBACK_PCT. The
+            # basis is stamped alongside the number: this is the flat fallback
+            # the scorer haircuts, and without the stamp it used to dodge that
+            # haircut purely because this step wrote it before the scorer ran.
             if row.get("estimated_equity") is None:
                 value = update.get("estimated_value") or hcad.get("estimated_value")
                 sale_date = update.get("last_sale_date") or hcad.get("last_sale_date")
-                equity = estimate_equity(value, last_sale_date=sale_date)
+                equity, source = estimate_equity(value, last_sale_date=sale_date,
+                                                 return_source=True)
                 if equity is not None:
                     update["estimated_equity"] = equity
+                    equity_source = source
                     changed = True
 
         if ef:
@@ -138,7 +144,10 @@ def enrich_hcad(zip_code: str, account_id: int) -> int:
                 changed = True
 
         if changed:
-            update["enrichment_flags"] = {"hcad": "assessor"}
+            flags = {"hcad": "assessor"}
+            if equity_source:
+                flags[EQUITY_SOURCE_FLAG] = equity_source
+            update["enrichment_flags"] = flags
             updates.append(update)
 
     n = upsert_properties(conn, updates, account_id)
