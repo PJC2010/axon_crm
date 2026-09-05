@@ -1,13 +1,16 @@
 """Tests for tools/vertical_grade_audit.py — the free-data grade audit.
 
 The tool wraps production scoring rather than re-implementing it, so what is
-worth pinning is the two claims its report rests on:
+worth pinning is the claims its report rests on:
 
-  * `free_ceiling` is the score a row that maxes every FREE signal actually
-    gets from the production profile — including the gate correction, since a
-    gate factor contributes no points (pipeline/scoring.py::_weighted_sum).
-  * dropping the paid-only block and rescaling is a pure multiplication of the
-    current score, so it re-labels grades without reordering a single lead.
+  * `block_zero_ceiling` is the score a row that maxes every FREE signal gets
+    when the demographic block scores 0 (SCORE_DEMOGRAPHIC_BLOCK_MODE="zero"),
+    gate correction included, since a gate factor contributes no points
+    (pipeline/scoring.py::_weighted_sum);
+  * under the default "renormalize" mode that same row reaches the top of the
+    scale in every vertical and market — the whole point of the block rule;
+  * the renormalized score is a pure multiple of the zero-mode score for an
+    un-appended row, so the rule re-labels grades without reordering a lead.
 
 Plus one smoke test that the checked-in 77396 export builds rows the way the
 free pipeline leaves them (fallback equity, NULL-not-zero permit counts, no
@@ -74,7 +77,13 @@ def _free_rows(profile) -> list[dict]:
     return [full, mid, thin]
 
 
-def test_paid_fields_are_scored_fields():
+@pytest.fixture
+def block_zero(monkeypatch):
+    monkeypatch.setattr(config, "SCORE_DEMOGRAPHIC_BLOCK_MODE", "zero")
+
+
+def test_paid_fields_are_the_configured_block():
+    assert audit.PAID_FIELDS == config.DEMOGRAPHIC_FIELDS
     scored = {meta["field"] for meta in config.FACTOR_META.values()}
     assert audit.PAID_FIELDS <= scored
 
@@ -82,25 +91,35 @@ def test_paid_fields_are_scored_fields():
 @pytest.mark.parametrize("key", [k for k, m in config.FACTOR_META.items()
                                  if m["field"] in audit.PAID_FIELDS])
 def test_paid_signal_scores_zero_when_absent(key):
-    # The premise of "constant zero": an un-appended row scores nothing on it.
+    # The premise of "constant zero" under the legacy mode: an un-appended row
+    # scores nothing on it.
     assert scoring._SIGNAL_FNS[key](None) == 0.0
 
 
 @pytest.mark.parametrize("region", REGIONS)
 @pytest.mark.parametrize("vertical", PROPERTY_KEYS)
-def test_free_ceiling_is_what_a_perfect_free_row_scores(vertical, region):
+def test_block_zero_ceiling_is_what_a_perfect_free_row_scored(vertical, region, block_zero):
     profile = _profile(vertical, region)
-    dead, live, ceiling = audit.free_ceiling(profile)
+    dead, live, ceiling = audit.block_zero_ceiling(profile)
     assert 0.0 <= dead < live <= 1.0
     perfect_free = _free_rows(profile)[0]
     assert scoring.compute_score(perfect_free, profile) == pytest.approx(ceiling, abs=1.0)
 
 
-def test_free_ceiling_reads_the_gate():
+@pytest.mark.parametrize("region", REGIONS)
+@pytest.mark.parametrize("vertical", PROPERTY_KEYS)
+def test_perfect_free_row_now_reaches_the_top_of_the_scale(vertical, region):
+    # The headline: with the block renormalized out, no vertical in any market
+    # caps an un-appended row below 100.
+    profile = _profile(vertical, region)
+    assert scoring.compute_score(_free_rows(profile)[0], profile) == pytest.approx(100.0, abs=1.0)
+
+
+def test_block_zero_ceiling_reads_the_gate():
     # pool_maintenance gates on `pool`; that weight never contributes points, so
     # the paid share must be read against the live (non-gate) weight.
     profile = _profile("pool_maintenance", "us")
-    dead, live, ceiling = audit.free_ceiling(profile)
+    dead, live, ceiling = audit.block_zero_ceiling(profile)
     gate = profile.weights["pool"]
     assert live == pytest.approx(1.0 - gate)
     assert ceiling == pytest.approx(100 * (live - dead) / live)
@@ -109,20 +128,17 @@ def test_free_ceiling_reads_the_gate():
 
 @pytest.mark.parametrize("region", REGIONS)
 @pytest.mark.parametrize("vertical", PROPERTY_KEYS)
-def test_drop_paid_is_a_pure_rescale(vertical, region):
+def test_renormalization_is_a_pure_rescale_of_the_zero_mode_score(vertical, region):
     profile = _profile(vertical, region)
-    profile_key = vertical if vertical in config.VERTICAL_WEIGHTS else "default"
-    variants = dict(audit.build_variants(profile, region, profile_key, {}))
-    dead, live, _ceiling = audit.free_ceiling(profile)
-    if "drop_paid" not in variants:
-        assert dead == 0.0
-        return
+    dead, live, _ceiling = audit.block_zero_ceiling(profile)
+    rows = _free_rows(profile)
+    current = audit.score_all(rows, profile)
+    legacy = audit.score_all(rows, profile, block_mode="zero")
     scale = live / (live - dead)
-    for row in _free_rows(profile):
-        current = scoring.compute_score(row, variants["current"])
-        dropped = scoring.compute_score(row, variants["drop_paid"])
-        # Weights are rounded to 4 places by apply_weight_spec — allow that.
-        assert dropped == pytest.approx(current * scale, abs=0.1)
+    for now, before in zip(current, legacy):
+        assert now == pytest.approx(before * scale, abs=1e-6)
+    # score_all restores the mode it changed.
+    assert config.SCORE_DEMOGRAPHIC_BLOCK_MODE == "renormalize"
 
 
 def test_proposal_is_applied_through_the_regional_delta_machinery():

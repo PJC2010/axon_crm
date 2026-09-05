@@ -338,6 +338,11 @@ export interface ScoreExplanation {
   vertical_description: VerticalFactor[]
   score_updated_at: string | null
   weights_drift: boolean
+  /** Factor keys this lead was scored WITHOUT: demographic-append signals
+   *  whose purchased input is NULL are left out of the lead's scale rather
+   *  than scored 0 (config.SCORE_DEMOGRAPHIC_BLOCK_MODE). Empty when the
+   *  append reached the lead, or when the profile carries none. */
+  renormalized_out?: string[]
 }
 
 export interface Note {

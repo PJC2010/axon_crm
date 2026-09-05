@@ -6,7 +6,7 @@ validate_weights. Pure math — no database required.
 Behavioral defaults are unchanged (SCORE_MISSING_MODE defaults to "zero");
 renormalize-mode tests monkeypatch config.SCORE_MISSING_MODE.
 """
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -217,3 +217,123 @@ class TestValidateWeights:
         # Every registered property profile passed validation at import time;
         # spot-check the registry resolved them.
         assert resolve_profile("roofing").weights == config.VERTICAL_WEIGHTS["roofing"]
+
+
+# ── Demographic block renormalization ─────────────────────────────────────────
+
+class TestDemographicBlock:
+    """config.DEMOGRAPHIC_FIELDS are purchased attributes: NULL means "not
+    appended", never "measured absent", so the scorer leaves a NULL block field
+    out of the row's scale (SCORE_DEMOGRAPHIC_BLOCK_MODE=renormalize)."""
+
+    SOLAR = config.VERTICAL_WEIGHTS["solar"]
+    BLOCK_KEYS = {k for k, m in config.FACTOR_META.items() if m["field"] in config.DEMOGRAPHIC_FIELDS}
+
+    # Every free solar signal saturated, nothing the append writes.
+    FREE_PERFECT = {
+        "year_built":               today_year() - 22,
+        "last_sale_date":           date.today(),
+        "estimated_equity":         100_000,
+        "garage_spaces":            2,
+        "zip_median_income":        75_000,
+        "neighborhood_value_ratio": 1.3,
+        "permit_count_24mo":        2,
+        "ownership_years":          12,
+    }
+    APPENDED_PERFECT = dict(FREE_PERFECT, refi_date=date.today(), credit_rating="A",
+                            home_improvement_flag=True, life_stage="new_mover")
+    APPENDED_POOR = dict(FREE_PERFECT, refi_date=date.today() - timedelta(days=10 * 365),
+                         credit_rating="D", home_improvement_flag=False, life_stage="other")
+
+    @pytest.fixture
+    def block_zero(self, monkeypatch):
+        monkeypatch.setattr(config, "SCORE_DEMOGRAPHIC_BLOCK_MODE", "zero")
+
+    def test_default_mode_is_renormalize(self):
+        assert config.SCORE_DEMOGRAPHIC_BLOCK_MODE == "renormalize"
+
+    def test_every_block_field_is_read_by_a_weighted_signal(self):
+        read = {m["field"] for m in config.FACTOR_META.values()}
+        assert config.DEMOGRAPHIC_FIELDS <= read
+
+    def test_un_appended_row_can_reach_the_top_of_the_scale(self):
+        # Nationally solar carries 0.28 on the block; before, this row capped at 72.
+        assert _compute_score(self.FREE_PERFECT, self.SOLAR) == pytest.approx(100.0, abs=0.5)
+
+    def test_zero_mode_restores_the_old_ceiling(self, block_zero):
+        block = sum(w for k, w in self.SOLAR.items() if k in self.BLOCK_KEYS)
+        assert _compute_score(self.FREE_PERFECT, self.SOLAR) == pytest.approx(100.0 * (1 - block), abs=0.5)
+
+    def test_un_appended_rows_are_a_pure_rescale_of_the_old_score(self, monkeypatch):
+        # Only the labels move: every un-appended row scales by the same factor,
+        # so no lead passes another.
+        block = sum(w for k, w in self.SOLAR.items() if k in self.BLOCK_KEYS)
+        rows = [self.FREE_PERFECT,
+                dict(self.FREE_PERFECT, estimated_equity=40_000, garage_spaces=1),
+                {"year_built": today_year() - 22, "estimated_equity": 50_000}]
+        new = [_compute_score(r, self.SOLAR) for r in rows]
+        monkeypatch.setattr(config, "SCORE_DEMOGRAPHIC_BLOCK_MODE", "zero")
+        old = [_compute_score(r, self.SOLAR) for r in rows]
+        for n, o in zip(new, old):
+            assert n == pytest.approx(o / (1 - block), abs=1e-6)
+
+    def test_appended_row_keeps_the_full_formula(self):
+        # The append revealed something: perfect demographics still score 100,
+        # poor ones cost the row points against its un-appended neighbour.
+        assert _compute_score(self.APPENDED_PERFECT, self.SOLAR) == pytest.approx(100.0, abs=0.5)
+        poor = _compute_score(self.APPENDED_POOR, self.SOLAR)
+        assert poor < _compute_score(self.FREE_PERFECT, self.SOLAR) - 10
+
+    def test_present_but_negative_value_still_counts(self):
+        # False is a measurement, not a gap — it must NOT renormalize away.
+        row = dict(self.FREE_PERFECT, home_improvement_flag=False)
+        w = self.SOLAR["home_improvement"]
+        free = 1 - 0.28
+        # Denominator now includes home_improvement; numerator does not.
+        assert _compute_score(row, self.SOLAR) == pytest.approx(100.0 * free / (free + w), abs=0.5)
+
+    def test_partial_append_drops_only_the_null_fields(self):
+        # credit came back, nothing else: credit counts, the other three drop.
+        row = dict(self.FREE_PERFECT, credit_rating="C")
+        free = 1 - 0.28
+        expected = 100.0 * (free + self.SOLAR["credit"] * config.CREDIT_GRADE_SCORES["C"]) \
+            / (free + self.SOLAR["credit"])
+        assert _compute_score(row, self.SOLAR) == pytest.approx(expected, abs=0.5)
+
+    def test_free_signal_gaps_still_score_zero(self):
+        # The rule is scoped to the block: a NULL permit count or pool is the
+        # county recording nothing, and keeps scoring 0 in the default mode.
+        row = dict(self.FREE_PERFECT)
+        row.pop("permit_count_24mo")
+        free = 1 - 0.28
+        # permit stays in the denominator and contributes nothing.
+        assert _compute_score(row, self.SOLAR) == pytest.approx(
+            100.0 * (free - self.SOLAR["permit"]) / free, abs=0.5)
+
+    def test_profiles_without_block_signals_are_byte_identical(self, monkeypatch):
+        rows = [FULL_ROW, SPARSE_ROW, {}]
+        new = [_compute_score(r, config.DEFAULT_WEIGHTS) for r in rows]
+        monkeypatch.setattr(config, "SCORE_DEMOGRAPHIC_BLOCK_MODE", "zero")
+        assert new == [_compute_score(r, config.DEFAULT_WEIGHTS) for r in rows]
+
+    def test_empty_row_still_scores_zero(self):
+        assert _compute_score({}, self.SOLAR) == 0.0
+
+    def test_gate_and_block_renormalize_together(self):
+        # pool_maintenance: the pool gate contributes nothing and the block is
+        # absent, so the row is scored over what is left — and can still be 100.
+        profile = resolve_profile("pool_maintenance")
+        row = dict(self.FREE_PERFECT, has_pool=True)
+        assert scoring.compute_score(row, profile) == pytest.approx(100.0, abs=0.5)
+
+    def test_explain_names_the_factors_scored_without(self):
+        result = explain_score(self.FREE_PERFECT, self.SOLAR)
+        assert set(result["renormalized_out"]) == {"refi", "credit", "home_improvement", "life_stage"}
+        assert result["score"] == pytest.approx(100.0, abs=0.5)
+        assert sum(f["contribution"] for f in result["factors"]) == pytest.approx(result["score"], abs=0.5)
+        assert explain_score(self.APPENDED_PERFECT, self.SOLAR)["renormalized_out"] == []
+
+    def test_data_completeness_still_reports_the_thin_file(self):
+        # The score no longer blends in the missing block; completeness still
+        # says the block is missing, which is what separates the two.
+        assert data_completeness(self.FREE_PERFECT, self.SOLAR) == pytest.approx(0.72, abs=1e-6)

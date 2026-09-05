@@ -340,6 +340,7 @@ def get_score_explanation(lead_id: int, db: PGConn = Depends(get_db), user: dict
         vertical_description=[VerticalFactor(**f) for f in vdesc["factors"]],
         score_updated_at=row.get("score_updated_at"),
         weights_drift=drift,
+        renormalized_out=breakdown["renormalized_out"],
         scorer_mode=SCORER_MODE,
         ml_conversion_prob=ml.get("ml_conversion_prob"),
         ml_grade=ml.get("ml_grade"),

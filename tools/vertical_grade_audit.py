@@ -7,17 +7,18 @@ scoring profiles and reports, per vertical × market:
 
   * which weighted signals read a field only a PAID provider writes
     (pipeline/demographics.py — Versium / BatchData demographic append), and the
-    ceiling that leaves on an account that has not bought the append;
+    ceiling that block left on an un-appended row when it scored 0 — the
+    behavior before SCORE_DEMOGRAPHIC_BLOCK_MODE, still available as "zero";
   * the hit-rate of every signal on the ZIP — how many rows have the field at
     all, how many score above zero on it, how many saturate it;
-  * the A/B/C/D distribution under the current weights next to the same profile
-    with the paid-only signals dropped and the remainder rescaled — the exact
-    transform pipeline/regional.py::apply_weight_spec performs for scale=0.0, and
-    therefore something a region block could ship as-is.
+  * the A/B/C/D distribution as production scores it now (a NULL block field is
+    left out of the row's scale), next to the legacy zero-block scoring — a pure
+    rescale, so ranking is identical — and, optionally, a weight proposal
+    expressed as the {scale, set} delta a REGIONAL_CALIBRATION_MATRIX block takes.
 
 Nothing here re-implements scoring: rows go through pipeline.scoring.compute_score
 against the profile pipeline.profiles.resolve_profile returns for the ZIP's
-market, so if a weight or threshold moves, the audit follows it.
+market, so if a weight, threshold or scoring rule moves, the audit follows it.
 
 The export carries the assessor roll only. Signals the roll does not feed
 (garage/pool/slab come from HCAD extra-features, storm/hail/freeze from NOAA)
@@ -30,6 +31,8 @@ Usage:
     python tools/vertical_grade_audit.py --zip 77396 --garage 2 \
         --storm-months 8 --hail-in 1.75 --freeze-months 20
     python tools/vertical_grade_audit.py --zip 77396 --threshold SALE_RECENCY_MAX_MO=36
+    python tools/vertical_grade_audit.py --zip 77396 --vertical roofing \
+        --scale permit=0.5 --set home_size=0.06
 """
 from __future__ import annotations
 
@@ -55,13 +58,9 @@ from pipeline.profiles import resolve_profile    # noqa: E402
 EXPORT_DIR = ROOT / "tools" / "hcad_export"
 ACS_FIXTURES = ROOT / "tests" / "golden" / "fixtures" / "vendor_responses" / "acs"
 
-# Row fields that ONLY pipeline/demographics.py writes. With DEMO_PROVIDER unset
-# every one of them is NULL on every row, so a signal reading one is a constant
-# zero — weight spent on it is a ceiling cut, not a ranking.
-PAID_FIELDS = frozenset({
-    "home_improvement_flag", "refi_date", "credit_rating",
-    "has_children", "gardening_flag", "life_stage",
-})
+# Row fields that ONLY pipeline/demographics.py writes — the block the scorer
+# renormalizes out of a row when it is NULL (config.py explains why).
+PAID_FIELDS = config.DEMOGRAPHIC_FIELDS
 
 # Fields the assessor-roll export cannot carry; supplied by scenario flags.
 SCENARIO_FIELDS = {
@@ -230,8 +229,10 @@ def paid_signals(profile) -> list[str]:
             if w and profile.factor_meta[k]["field"] in PAID_FIELDS]
 
 
-def free_ceiling(profile) -> tuple[float, float, float]:
-    """(paid-only weight, live weight, ceiling) for a free-only row.
+def block_zero_ceiling(profile) -> tuple[float, float, float]:
+    """(paid-only weight, live weight, ceiling) for an un-appended row when the
+    demographic block scores 0 — SCORE_DEMOGRAPHIC_BLOCK_MODE="zero", the
+    behavior before the block was renormalized out.
 
     A gate factor (pipeline/scoring.py::_weighted_sum) contributes no points —
     the engine renormalizes over the non-gate weights — so the scale a profile
@@ -247,20 +248,15 @@ def free_ceiling(profile) -> tuple[float, float, float]:
 
 def build_variants(profile, region: str, profile_key: str, overrides: dict,
                    proposal: dict | None = None) -> list[tuple]:
-    """[(name, profile)] — the current profile; when it carries paid-only
-    signals, the same profile with them dropped and the rest rescaled; and,
-    when a proposal was given, the current profile with that {scale, set}
-    delta applied (the shape a REGIONAL_CALIBRATION_MATRIX block takes)."""
+    """[(name, profile)] — the current profile (with any threshold overrides
+    built into its signal functions) and, when a proposal was given, the same
+    profile with that {scale, set} delta applied — the shape a
+    REGIONAL_CALIBRATION_MATRIX block takes."""
     fns = profile.signal_fns
     if overrides:
         fns = scoring.build_signal_fns({**regional.thresholds_for(region, profile_key), **overrides})
     base = dataclasses.replace(profile, signal_fns=fns)
     variants = [("current", base)]
-    paid = paid_signals(profile)
-    if paid:
-        weights = regional.apply_weight_spec(profile.weights, {"scale": {k: 0.0 for k in paid}})
-        scoring.validate_weights(weights, profile.factor_meta, fns)
-        variants.append(("drop_paid", dataclasses.replace(base, weights=weights)))
     if proposal:
         weights = regional.apply_weight_spec(profile.weights, proposal)
         scoring.validate_weights(weights, profile.factor_meta, fns)
@@ -268,14 +264,19 @@ def build_variants(profile, region: str, profile_key: str, overrides: dict,
     return variants
 
 
-def score_all(rows: list[dict], profile, missing_mode: str | None = None) -> list[float]:
-    saved = config.SCORE_MISSING_MODE
+def score_all(rows: list[dict], profile, missing_mode: str | None = None,
+              block_mode: str | None = None) -> list[float]:
+    """Score every row; optionally under a different SCORE_MISSING_MODE or
+    SCORE_DEMOGRAPHIC_BLOCK_MODE, restored afterwards."""
+    saved = (config.SCORE_MISSING_MODE, config.SCORE_DEMOGRAPHIC_BLOCK_MODE)
     if missing_mode:
         config.SCORE_MISSING_MODE = missing_mode
+    if block_mode:
+        config.SCORE_DEMOGRAPHIC_BLOCK_MODE = block_mode
     try:
         return [scoring.compute_score(r, profile) for r in rows]
     finally:
-        config.SCORE_MISSING_MODE = saved
+        config.SCORE_MISSING_MODE, config.SCORE_DEMOGRAPHIC_BLOCK_MODE = saved
 
 
 def summarize(scores: list[float]) -> dict:
@@ -309,7 +310,7 @@ def print_hit_rates(rows: list[dict], profile, uniform_fields: set[str]) -> None
         saturated = sum(1 for s in signals if s >= 0.999)
         mean = sum(signals) / n if n else 0.0
         if field in PAID_FIELDS:
-            note = "PAID-ONLY (demographic append) — constant 0 without a provider"
+            note = "PAID-ONLY (demographic append) — NULL, so left out of the row's scale"
         elif field in SCENARIO_FIELDS and present == 0:
             note = f"not in export; supply with {SCENARIO_FIELDS[field]}"
         elif field in uniform_fields:
@@ -351,6 +352,14 @@ def run(args) -> None:
             sys.exit(f"unknown threshold {key!r}; choose from {sorted(scoring.DEFAULT_THRESHOLDS)}")
         overrides[key] = float(value)
 
+    proposal: dict = {}
+    for item in args.scale or []:
+        key, _, value = item.partition("=")
+        proposal.setdefault("scale", {})[key] = float(value)
+    for item in args.set or []:
+        key, _, value = item.partition("=")
+        proposal.setdefault("set", {})[key] = float(value)
+
     print(f"ZIP {zip_code}  market {regional.label(region)} ({region})  as of {today}")
     print(f"  parcels in export {meta['total_parcels']}, scored {meta['scored']}"
           f"{'' if args.all_parcels else ' (dwelling-shaped: year built, floor area and appraised value present)'}"
@@ -360,15 +369,8 @@ def run(args) -> None:
           f"freeze_months={args.freeze_months}  thresholds={overrides or 'profile defaults'}")
     print(f"  equity is the flat fallback (value × {config.EQUITY_FALLBACK_PCT}) exactly as "
           f"pipeline/hcad_enrichment.py stores it; grade bands "
-          + "  ".join(f"{g}≥{t}" for t, g in config.GRADE_BANDS if t))
-
-    proposal: dict = {}
-    for item in args.scale or []:
-        key, _, value = item.partition("=")
-        proposal.setdefault("scale", {})[key] = float(value)
-    for item in args.set or []:
-        key, _, value = item.partition("=")
-        proposal.setdefault("set", {})[key] = float(value)
+          + "  ".join(f"{g}≥{t}" for t, g in config.GRADE_BANDS if t)
+          + f"; SCORE_DEMOGRAPHIC_BLOCK_MODE={config.SCORE_DEMOGRAPHIC_BLOCK_MODE}")
     if proposal:
         print(f"  proposal delta: {proposal}")
 
@@ -378,12 +380,12 @@ def run(args) -> None:
         profile = resolve_profile(key, region)
         profile_key = vertical if vertical in config.VERTICAL_WEIGHTS else "default"
         paid = paid_signals(profile)
-        dead, live, ceiling = free_ceiling(profile)
+        dead, live, ceiling = block_zero_ceiling(profile)
 
         print()
-        print(f"── {vertical}  [{profile.region_label}]  paid-only weight {dead:.4f} "
-              f"→ free-data ceiling {ceiling:.1f}"
-              + (f"  ({', '.join(f'{k}={profile.weights[k]:.3f}' for k in paid)})" if paid else "")
+        print(f"── {vertical}  [{profile.region_label}]  paid-only weight {dead:.4f}"
+              + (f" ({', '.join(f'{k}={profile.weights[k]:.3f}' for k in paid)})"
+                 f" → ceiling {ceiling:.1f} if the block scored 0" if paid else "")
               + (f"  [gate: {', '.join(profile.gates)} — contributes no points]" if profile.gates else ""))
         try:
             variants = build_variants(profile, region, profile_key, overrides, proposal)
@@ -399,16 +401,18 @@ def run(args) -> None:
         for name, prof in variants:
             results[name] = score_all(rows, prof)
             print_distribution(name, summarize(results[name]))
-        if "drop_paid" in results:
-            # Every paid field is NULL on every row, so dropping the signals and
-            # rescaling is a pure multiplication by live/(live − dead): rank
-            # order is unchanged; only the labels move. Report the residual
-            # from weight rounding as proof.
+        if paid:
+            # The same profile with the block scored 0 — how production graded
+            # before SCORE_DEMOGRAPHIC_BLOCK_MODE. Every paid field is NULL on
+            # every row here, so today's score is that one multiplied by
+            # live/(live − dead): rank order is identical, only the labels
+            # moved. The residual (weight rounding) is printed as proof.
+            legacy = score_all(rows, variants[0][1], block_mode="zero")
             scale = live / (live - dead)
-            deviation = max(abs(b - a * scale)
-                            for a, b in zip(results["current"], results["drop_paid"]))
-            print(f"  {'':22s} drop_paid == current × {scale:.4f} (max residual "
-                  f"{deviation:.3f} pts) — same ranking, A needs ≥ {75 / scale:.1f} today")
+            deviation = max(abs(cur - old * scale) for cur, old in zip(results["current"], legacy))
+            print_distribution("block_zero (legacy)", summarize(legacy))
+            print(f"  {'':22s} current == block_zero × {scale:.4f} (max residual {deviation:.3f} pts)"
+                  f" — same ranking; an A needed ≥ {75 / scale:.1f} under the old scale")
         if "proposal" in results:
             prof = dict(variants)["proposal"]
             print(f"  {'':22s} proposal weights: "
