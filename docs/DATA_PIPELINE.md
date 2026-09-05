@@ -129,6 +129,11 @@ Processes one ZIP (or an HCAD region's ZIPs) per run, for one account.
   else D), score_factors, [ml_conversion_prob, ml_model_version].
   `estimated_job_value` ballpark comes from `pipeline/job_value.py`
   (`JOB_VALUE_MODEL` per vertical, fallback `JOB_VALUE_FALLBACK_PCT` × value).
+- **Un-appended rows:** the demographic signals read columns only Step 9.5
+  writes (`config.DEMOGRAPHIC_FIELDS`). A NULL there is left out of the row's
+  scale rather than scored 0 (`SCORE_DEMOGRAPHIC_BLOCK_MODE`), so a lead the
+  append never reached can still grade A on its free signals; see
+  `docs/free_data_scoring.md`.
 
 ### Step 7.5 — Trim (capped runs only) (`pipeline/select.py`)
 - Cuts the over-sampled selection back to exactly `top_n` using the now-real

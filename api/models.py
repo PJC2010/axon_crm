@@ -512,6 +512,11 @@ class ScoreExplanation(BaseModel):
     vertical_description: list[VerticalFactor] = []
     score_updated_at: Optional[datetime] = None
     weights_drift: bool = False
+    # Demographic-append factors this lead was scored WITHOUT: their purchased
+    # input is NULL, so they were left out of the lead's scale rather than
+    # scored 0 (config.SCORE_DEMOGRAPHIC_BLOCK_MODE). Empty when the append
+    # reached the lead, or the profile carries none.
+    renormalized_out: list[str] = []
     # Learned-model overlay (present when a model is active and SCORER_MODE != rules).
     scorer_mode: str = "rules"
     ml_conversion_prob: Optional[float] = None

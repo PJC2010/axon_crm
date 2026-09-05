@@ -849,6 +849,31 @@ GATE_MISS_FACTOR = float(os.getenv("GATE_MISS_FACTOR", "0.25"))
 # sparse data doesn't triple-count "expensive house". 1.0 disables the scale.
 EQUITY_FALLBACK_SIGNAL_SCALE = float(os.getenv("EQUITY_FALLBACK_SIGNAL_SCALE", "0.5"))
 
+# Signals whose input is a PURCHASED attribute — the columns only the paid
+# demographic append (pipeline/demographics.py, DEMO_PROVIDER) writes. A NULL in
+# one of these never means "measured absent": it means the append has not
+# reached the row, or the provider returned nothing for that field. Under
+# SCORE_MISSING_MODE="zero" that NULL scored 0, so on a deployment without a
+# provider the block's weight was a constant subtracted from every lead's
+# ceiling — solar could not reach the A band at all nationally — and even with a
+# provider the append is capped per ZIP per run, so it stayed a constant for
+# almost the whole book (docs/free_data_scoring.md has the measurements). The
+# scorer therefore leaves a block field out of a row's denominator whenever it
+# is NULL:
+#   "renormalize" — (default) score the row over the signals whose input exists.
+#                   For an un-appended row that is a pure rescale of its
+#                   free-signal score, so rank order among such rows is
+#                   unchanged; a row the append did reach keeps every returned
+#                   field, so a poor credit grade or a False flag still costs it.
+#   "zero"        — the prior behavior: a NULL block field scores 0.
+# Free signals are untouched — has_pool NULL or a NULL permit count really does
+# mean the county recorded nothing, and still scores 0 (SCORE_MISSING_MODE).
+DEMOGRAPHIC_FIELDS = frozenset({
+    "home_improvement_flag", "refi_date", "credit_rating",
+    "has_children", "gardening_flag", "life_stage",
+})
+SCORE_DEMOGRAPHIC_BLOCK_MODE = os.getenv("SCORE_DEMOGRAPHIC_BLOCK_MODE", "renormalize").strip().lower()
+
 # ── Grade bands ──────────────────────────────────────────────────────────────
 GRADE_BANDS = [
     (75, "A"),

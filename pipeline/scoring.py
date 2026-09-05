@@ -69,6 +69,12 @@ def _weighted_sum(row: dict, weights: dict, factor_meta: dict,
       (confirmed absence of a qualifier, e.g. no pool for pool_maintenance),
       the final score is multiplied by GATE_MISS_FACTOR. Missing gate fields
       never gate.
+    - Demographic block (config.DEMOGRAPHIC_FIELDS): a signal whose purchased
+      input is NULL is left out of the row's numerator AND denominator under
+      SCORE_DEMOGRAPHIC_BLOCK_MODE "renormalize" (the default), in every
+      SCORE_MISSING_MODE. NULL there means "not appended", never "measured
+      absent", so scoring it 0 subtracted a constant from every un-appended
+      lead. A present value — a False flag, a 'D' credit grade — still counts.
     - When the scorer flagged estimated_equity as a flat-fallback estimate
       (row["estimated_equity_is_fallback"]), the equity contribution is scaled
       by EQUITY_FALLBACK_SIGNAL_SCALE — fallback equity proxies home value,
@@ -77,6 +83,7 @@ def _weighted_sum(row: dict, weights: dict, factor_meta: dict,
     mode = (config.SCORE_MISSING_MODE or "zero").lower()
     equity_scale = (EQUITY_FALLBACK_SIGNAL_SCALE
                     if row.get("estimated_equity_is_fallback") else 1.0)
+    skipped = renormalized_out(row, weights, factor_meta)
 
     weighted = 0.0
     available = 0.0
@@ -85,7 +92,7 @@ def _weighted_sum(row: dict, weights: dict, factor_meta: dict,
         if not weight:
             continue
         value = row.get(factor_meta[key]["field"])
-        if mode == "renormalize" and value is None:
+        if key in skipped or (mode == "renormalize" and value is None):
             continue
         signal = signal_fns[key](value)
         if key in gates:
@@ -102,14 +109,34 @@ def _weighted_sum(row: dict, weights: dict, factor_meta: dict,
     # Profiles with gates always renormalize over their non-gate weights: the
     # gate factor is a pure qualifier (contributes no points itself), so the
     # score ranks qualified leads on their remaining signals alone. A missing
-    # gate field likewise neither gates nor penalizes.
-    if (mode == "renormalize" or gates) and available:
+    # gate field likewise neither gates nor penalizes. A skipped demographic
+    # field renormalizes the same way — the remaining weight is the row's whole
+    # scale, not a fraction of it.
+    if (mode == "renormalize" or gates or skipped) and available:
         score = weighted / available
     else:
         score = weighted
     if gate_miss:
         score *= GATE_MISS_FACTOR
     return score * 100
+
+
+def renormalized_out(row: dict, weights: dict, factor_meta: dict) -> frozenset:
+    """Signal keys left out of this row's scale: weighted signals reading a
+    config.DEMOGRAPHIC_FIELDS column that is NULL on the row, under
+    SCORE_DEMOGRAPHIC_BLOCK_MODE "renormalize". Empty under "zero".
+
+    One rule, shared by the engine and by explain_score, so the breakdown
+    can never disagree with the score about which factors were in play.
+    """
+    if (config.SCORE_DEMOGRAPHIC_BLOCK_MODE or "renormalize").lower() != "renormalize":
+        return frozenset()
+    return frozenset(
+        key for key, weight in weights.items()
+        if weight
+        and factor_meta[key]["field"] in config.DEMOGRAPHIC_FIELDS
+        and row.get(factor_meta[key]["field"]) is None
+    )
 
 
 def data_completeness(row: dict, weights: dict, factor_meta: dict = None) -> float:
@@ -513,6 +540,10 @@ def explain_score(row: dict, weights: dict, profile=None) -> dict:
         "summary":           _summarize(grade, factors, top_drivers),
         "data_completeness": data_completeness(row, weights, meta_map),
         "gated":             gated,
+        # Demographic-block factors this row was scored WITHOUT (their
+        # purchased input is NULL): the UI can say "scored on property signals
+        # only" instead of showing a 0-point credit bar as if it were measured.
+        "renormalized_out":  sorted(renormalized_out(row, weights, meta_map)),
     }
 
 
