@@ -26,7 +26,8 @@ from pipeline import geo_h3
 from pipeline.addr import normalize
 from pipeline.geo_scoring import haversine_km
 from pipeline.property_provider import get_provider
-from pipeline.reconcile import map_record as map_rentcast_record
+from pipeline.equity import EQUITY_SOURCE_FLAG
+from pipeline.reconcile import equity_provenance, map_record as map_rentcast_record
 
 log = logging.getLogger(__name__)
 
@@ -155,12 +156,17 @@ def map_record(r: dict, vertical: str | None) -> dict:
     row = map_rentcast_record(r)
     if row["latitude"] is not None and row["longitude"] is not None:
         row["geocode_source"] = "rentcast"
+    flags = {"seed": "rentcast", "source": "prospecting"}
+    # Stamp the basis of the equity map_record derived (pipeline/equity.py).
+    equity_source = equity_provenance({}, row)
+    if equity_source:
+        flags[EQUITY_SOURCE_FLAG] = equity_source
     row.update({
         "address":          r.get("addressLine1") or r.get("formattedAddress") or "",
         "zip":              r.get("zipCode"),
         "vertical":         vertical,
         "lead_source":      "prospecting",
-        "enrichment_flags": {"seed": "rentcast", "source": "prospecting"},
+        "enrichment_flags": flags,
     })
     return row
 

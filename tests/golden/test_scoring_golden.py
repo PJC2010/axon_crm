@@ -38,6 +38,7 @@ import pytest
 import config
 from pipeline import scoring
 from pipeline.scoring import _compute_score
+from pipeline.equity import EQUITY_SOURCE_FLAG
 
 from tests.golden import harness, sanitize
 
@@ -104,6 +105,12 @@ def test_scored_field_values(slug, golden_scores):
     assert got == want, (
         f"{slug}: scored input values drifted: "
         f"{ {k: (want.get(k), got.get(k)) for k in set(got) | set(want) if got.get(k) != want.get(k)} }")
+
+
+@pytest.mark.parametrize("slug", SLUGS)
+def test_equity_source(slug, golden_scores):
+    """The basis the composite's equity signal was scaled on, as stored."""
+    assert result_for(slug)["equity_source"] == golden_scores[slug]["equity_source"]
 
 
 @pytest.mark.parametrize("slug", SLUGS)
@@ -175,21 +182,27 @@ class TestGarageZeroVsNull:
 
 
 class TestEquityFallbackPolicy:
-    """estimated_equity is always derived; who derives it decides its weight.
+    """estimated_equity is always derived; its BASIS decides its weight.
 
-    OBSERVED asymmetry, pinned deliberately: when an enrichment stage (HCAD or
-    RentCast) writes the flat-fallback equity into the row, the scorer sees a
-    populated field and applies FULL equity weight. The
-    EQUITY_FALLBACK_SIGNAL_SCALE haircut only fires when the *scorer itself*
-    backfills at scoring time. Same basis, different weight, depending on
-    which stage got there first. If that ever looks wrong enough to fix, the
-    fix changes these goldens — which is the point of having them.
+    The flat value×pct fallback is scaled by EQUITY_FALLBACK_SIGNAL_SCALE
+    whichever stage wrote it: every writer stamps enrichment_flags.equity_source
+    and the engine reads it back (pipeline/equity.py::stored_equity_source).
+    The previous asymmetry — full weight when HCAD/RentCast persisted the
+    fallback first, the haircut only when the scorer backfilled it — is what
+    this class used to pin as observed behaviour, and what these goldens moved
+    on when it was fixed.
     """
 
-    def test_hcad_fallback_equity_gets_full_weight(self, golden_scores):
+    def test_hcad_fallback_equity_is_haircut(self, golden_scores):
         g = golden_scores["4614-pin-oak-forest-dr-77070"]
         assert g["provenance"]["estimated_equity"] == "imputed:fallback@hcad"
-        assert g["subscores"]["equity"] == 1.0   # not scaled by 0.5
+        assert g["subscores"]["equity"] == pytest.approx(
+            1.0 * config.EQUITY_FALLBACK_SIGNAL_SCALE)
+
+    def test_hcad_stamps_the_equity_basis(self):
+        entry = BY_SLUG["4614-pin-oak-forest-dr-77070"]
+        result = harness.build_result(entry)
+        assert result["equity_source"] == "fallback"
 
     def test_scorer_backfill_fallback_is_halved(self, frozen):
         entry = BY_SLUG["4614-pin-oak-forest-dr-77070"]
@@ -201,14 +214,17 @@ class TestEquityFallbackPolicy:
         for record in payloads["rentcast"]:
             record["taxAssessments"] = {}
         result = harness.build_result(entry, payloads)
-        # No value anywhere -> no equity at all -> nothing to scale.
+        # No value anywhere -> no equity at all -> nothing to scale or stamp.
         assert result["provenance"]["estimated_equity"] == "missing"
         assert result["subscores"]["equity"] == 0.0
+        assert result["equity_source"] is None
 
-        # Now give the scorer a value but keep enrichment's equity out of the
-        # row: value arrives via RentCast, whose own equity derivation is
-        # dropped by simulating a pre-populated estimated_value... simplest
-        # honest form: hand the scorer stage a row directly.
+        # Hand the scorer stage a row with a value and no equity. It backfills
+        # 385000*0.6 = 231000, stamps the basis, and scores it with the
+        # haircut. Compared against the profile the ZIP scores on, so the
+        # assertion measures the HAIRCUT and not the market's weights:
+        # equity's contribution drops by exactly
+        # weight x signal x 100 x (1 - EQUITY_FALLBACK_SIGNAL_SCALE).
         row = {"estimated_value": 385000, "year_built": 2003,
                "last_sale_date": None, "estimated_equity": None,
                "garage_spaces": 2, "zip_median_income": 92000,
@@ -216,19 +232,26 @@ class TestEquityFallbackPolicy:
         update = harness._run_score(dict(row, address=entry["address"],
                                          id=1, zip=entry["zip"]),
                                     str(entry["zip"]), [])
-        # Fallback equity written by the scorer: flagged in-memory, halved in
-        # the composite. 385000*0.6 = 231000. Compared against the profile the
-        # ZIP scores on, so the assertion measures the HAIRCUT and not the
-        # market's weights: equity's contribution drops by exactly
-        # weight x signal x 100 x (1 - EQUITY_FALLBACK_SIGNAL_SCALE).
+        assert update["estimated_equity"] == 231000
+        assert update["enrichment_flags"][EQUITY_SOURCE_FLAG] == "fallback"
         profile = harness._scored_profile(str(entry["zip"]), {"state": "TX"})
-        full = dict(row, estimated_equity=231000)
-        full_weight_score = scoring.compute_score(full, profile)
+        measured = dict(row, estimated_equity=231000,
+                        enrichment_flags={EQUITY_SOURCE_FLAG: "balance"})
+        full_weight_score = scoring.compute_score(measured, profile)
         haircut = (profile.weights["equity"]
                    * profile.signal_fns["equity"](231000) * 100
                    * (1 - config.EQUITY_FALLBACK_SIGNAL_SCALE))
         assert update["lead_score"] == pytest.approx(
             round(full_weight_score - haircut, 2), abs=0.01)
+
+        # The rescore path agrees: the row as persisted (number + stamp, no
+        # in-run hint) reproduces the first-pass score exactly. This is the
+        # asymmetry the old goldens pinned — first pass halved, every rescore
+        # at full weight — closed.
+        persisted = dict(row, estimated_equity=231000,
+                         enrichment_flags=update["enrichment_flags"])
+        assert scoring.compute_score(persisted, profile) == pytest.approx(
+            update["lead_score"], abs=0.01)
 
 
 # ── Meta-assertions: the acceptance criteria are themselves tested ────────────

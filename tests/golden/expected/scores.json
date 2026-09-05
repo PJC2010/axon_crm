@@ -1,7 +1,8 @@
 {
   "10119-forum-west-dr-77036": {
-    "composite": 50.98,
+    "composite": 44.89,
     "data_completeness": 0.9466,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 114000,
       "estimated_value": 190000,
@@ -31,7 +32,7 @@
     },
     "subscores": {
       "age": 0.314286,
-      "equity": 0.76,
+      "equity": 0.38,
       "garage": 0.333333,
       "home_size": 0.568966,
       "income": 0.56,
@@ -42,8 +43,9 @@
     }
   },
   "11322-sagevale-ln-77089": {
-    "composite": 59.84,
+    "composite": 53.11,
     "data_completeness": 0.7508,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 126000,
       "estimated_value": 210000,
@@ -60,7 +62,7 @@
       "longitude": -95.193,
       "resolved": true
     },
-    "grade": "B",
+    "grade": "C",
     "provenance": {
       "estimated_equity": "imputed:fallback@hcad",
       "estimated_value": "hcad",
@@ -73,7 +75,7 @@
     },
     "subscores": {
       "age": 0.914286,
-      "equity": 0.84,
+      "equity": 0.42,
       "garage": 0.666667,
       "home_size": 0.682759,
       "income": 0.78,
@@ -84,8 +86,9 @@
     }
   },
   "1218-wakefield-dr-77018": {
-    "composite": 62.04,
+    "composite": 54.03,
     "data_completeness": 0.6796,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 252000,
       "estimated_value": 420000,
@@ -102,7 +105,7 @@
       "longitude": -95.427,
       "resolved": true
     },
-    "grade": "B",
+    "grade": "C",
     "provenance": {
       "estimated_equity": "imputed:fallback@hcad",
       "estimated_value": "hcad",
@@ -115,7 +118,7 @@
     },
     "subscores": {
       "age": 1.0,
-      "equity": 1.0,
+      "equity": 0.5,
       "garage": 0.666667,
       "home_size": 0.706897,
       "income": 1.0,
@@ -126,8 +129,9 @@
     }
   },
   "12206-mossycup-dr-77024": {
-    "composite": 90.18,
+    "composite": 82.17,
     "data_completeness": 0.9466,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 750000,
       "estimated_value": 1250000,
@@ -157,7 +161,7 @@
     },
     "subscores": {
       "age": 1.0,
-      "equity": 1.0,
+      "equity": 0.5,
       "garage": 1.0,
       "home_size": 1.0,
       "income": 1.0,
@@ -168,8 +172,9 @@
     }
   },
   "13230-ravensway-dr-77429": {
-    "composite": 45.66,
+    "composite": 40.06,
     "data_completeness": 0.5461,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 105000,
       "estimated_value": 175000,
@@ -199,7 +204,7 @@
     },
     "subscores": {
       "age": 0.866667,
-      "equity": 0.7,
+      "equity": 0.35,
       "garage": 0.0,
       "home_size": 0.77931,
       "income": 0.986667,
@@ -210,8 +215,9 @@
     }
   },
   "13818-hollowgreen-dr-77082": {
-    "composite": 68.29,
+    "composite": 60.28,
     "data_completeness": 0.8932,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 159000,
       "estimated_value": 265000,
@@ -241,7 +247,7 @@
     },
     "subscores": {
       "age": 0.657143,
-      "equity": 1.0,
+      "equity": 0.5,
       "garage": 0.666667,
       "home_size": 0.693103,
       "income": 0.0,
@@ -252,8 +258,9 @@
     }
   },
   "15918-lakeview-terrace-dr-77346": {
-    "composite": 86.24,
+    "composite": 78.23,
     "data_completeness": 0.9466,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 177000,
       "estimated_value": 295000,
@@ -283,7 +290,7 @@
     },
     "subscores": {
       "age": 1.0,
-      "equity": 1.0,
+      "equity": 0.5,
       "garage": 0.666667,
       "home_size": 0.855172,
       "income": 1.0,
@@ -294,8 +301,9 @@
     }
   },
   "1611-avenue-o-77571": {
-    "composite": 39.43,
+    "composite": 34.79,
     "data_completeness": 0.7508,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 87000,
       "estimated_value": 145000,
@@ -312,7 +320,7 @@
       "longitude": -95.048,
       "resolved": true
     },
-    "grade": "C",
+    "grade": "D",
     "provenance": {
       "estimated_equity": "imputed:fallback@hcad",
       "estimated_value": "hcad",
@@ -325,7 +333,7 @@
     },
     "subscores": {
       "age": 0.25,
-      "equity": 0.58,
+      "equity": 0.29,
       "garage": 0.333333,
       "home_size": 0.475862,
       "income": 0.866667,
@@ -336,8 +344,9 @@
     }
   },
   "16706-clan-macintosh-dr-77084": {
-    "composite": 51.36,
+    "composite": 43.67,
     "data_completeness": 0.6796,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 144000,
       "estimated_value": 240000,
@@ -367,7 +376,7 @@
     },
     "subscores": {
       "age": 1.0,
-      "equity": 0.96,
+      "equity": 0.48,
       "garage": 0.0,
       "home_size": 0.606897,
       "income": 0.88,
@@ -378,8 +387,9 @@
     }
   },
   "16710-clan-macintosh-dr-77084": {
-    "composite": 51.36,
+    "composite": 43.67,
     "data_completeness": 0.5461,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 144000,
       "estimated_value": 240000,
@@ -409,7 +419,7 @@
     },
     "subscores": {
       "age": 1.0,
-      "equity": 0.96,
+      "equity": 0.48,
       "garage": 0.0,
       "home_size": 0.606897,
       "income": 0.88,
@@ -420,8 +430,9 @@
     }
   },
   "223-frawley-st-77009": {
-    "composite": 21.54,
+    "composite": 16.26,
     "data_completeness": 0.5461,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 99000,
       "estimated_value": 165000,
@@ -451,7 +462,7 @@
     },
     "subscores": {
       "age": 0.25,
-      "equity": 0.66,
+      "equity": 0.33,
       "garage": 0.0,
       "home_size": 0.341379,
       "income": 0.693333,
@@ -464,6 +475,7 @@
   "2323-crawford-st-apt-208-77002": {
     "composite": 53.09,
     "data_completeness": 0.8754,
+    "equity_source": "amortized",
     "fields": {
       "estimated_equity": 70999,
       "estimated_value": 285000,
@@ -504,8 +516,9 @@
     }
   },
   "24011-verona-river-dr-77389": {
-    "composite": 34.98,
+    "composite": 26.97,
     "data_completeness": 0.6796,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 228000,
       "estimated_value": 380000,
@@ -535,7 +548,7 @@
     },
     "subscores": {
       "age": 0.0,
-      "equity": 1.0,
+      "equity": 0.5,
       "garage": 0.666667,
       "home_size": 0.944828,
       "income": 1.0,
@@ -546,8 +559,9 @@
     }
   },
   "2815-quiet-glen-ct-77084": {
-    "composite": 60.2,
+    "composite": 52.83,
     "data_completeness": 0.6796,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 138000,
       "estimated_value": 230000,
@@ -564,7 +578,7 @@
       "longitude": -95.662,
       "resolved": true
     },
-    "grade": "B",
+    "grade": "C",
     "provenance": {
       "estimated_equity": "imputed:fallback@hcad",
       "estimated_value": "hcad",
@@ -577,7 +591,7 @@
     },
     "subscores": {
       "age": 1.0,
-      "equity": 0.92,
+      "equity": 0.46,
       "garage": 0.666667,
       "home_size": 0.651724,
       "income": 0.946667,
@@ -588,8 +602,9 @@
     }
   },
   "4022-lambeth-ln-77373": {
-    "composite": 65.57,
+    "composite": 57.88,
     "data_completeness": 0.8754,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 144000,
       "estimated_value": 240000,
@@ -619,7 +634,7 @@
     },
     "subscores": {
       "age": 0.666667,
-      "equity": 0.96,
+      "equity": 0.48,
       "garage": 0.666667,
       "home_size": 0.82069,
       "income": 0.826667,
@@ -630,8 +645,9 @@
     }
   },
   "4614-pin-oak-forest-dr-77070": {
-    "composite": 82.7,
+    "composite": 74.69,
     "data_completeness": 0.9466,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 231000,
       "estimated_value": 385000,
@@ -648,7 +664,7 @@
       "longitude": -95.5361,
       "resolved": true
     },
-    "grade": "A",
+    "grade": "B",
     "provenance": {
       "estimated_equity": "imputed:fallback@hcad",
       "estimated_value": "hcad",
@@ -661,7 +677,7 @@
     },
     "subscores": {
       "age": 1.0,
-      "equity": 1.0,
+      "equity": 0.5,
       "garage": 0.666667,
       "home_size": 0.913793,
       "income": 1.0,
@@ -672,8 +688,9 @@
     }
   },
   "5106-elm-heights-st-77093": {
-    "composite": 29.72,
+    "composite": 23.79,
     "data_completeness": 0.5461,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 111000,
       "estimated_value": 185000,
@@ -703,7 +720,7 @@
     },
     "subscores": {
       "age": 0.266667,
-      "equity": 0.74,
+      "equity": 0.37,
       "garage": 0.0,
       "home_size": 0.544828,
       "income": 0.6,
@@ -714,8 +731,9 @@
     }
   },
   "514-woodhaven-st-77336": {
-    "composite": 45.4,
+    "composite": 40.43,
     "data_completeness": 0.7508,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 93000,
       "estimated_value": 155000,
@@ -745,7 +763,7 @@
     },
     "subscores": {
       "age": 0.485714,
-      "equity": 0.62,
+      "equity": 0.31,
       "garage": 0.666667,
       "home_size": 0.513793,
       "income": 0.68,
@@ -756,8 +774,9 @@
     }
   },
   "6110-grand-colony-ct-77449": {
-    "composite": 82.4,
+    "composite": 74.39,
     "data_completeness": 0.9466,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 159000,
       "estimated_value": 265000,
@@ -774,7 +793,7 @@
       "longitude": -95.736,
       "resolved": true
     },
-    "grade": "A",
+    "grade": "B",
     "provenance": {
       "estimated_equity": "imputed:fallback@hcad",
       "estimated_value": "hcad",
@@ -787,7 +806,7 @@
     },
     "subscores": {
       "age": 1.0,
-      "equity": 1.0,
+      "equity": 0.5,
       "garage": 0.666667,
       "home_size": 0.741379,
       "income": 1.0,
@@ -798,8 +817,9 @@
     }
   },
   "7002-fair-oaks-dr-77396": {
-    "composite": 86.8,
+    "composite": 78.79,
     "data_completeness": 0.9466,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 174000,
       "estimated_value": 290000,
@@ -829,7 +849,7 @@
     },
     "subscores": {
       "age": 1.0,
-      "equity": 1.0,
+      "equity": 0.5,
       "garage": 0.666667,
       "home_size": 0.8,
       "income": 1.0,
@@ -840,8 +860,9 @@
     }
   },
   "7726-battle-oaks-dr-77521": {
-    "composite": 46.42,
+    "composite": 39.53,
     "data_completeness": 0.6796,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 129000,
       "estimated_value": 215000,
@@ -871,7 +892,7 @@
     },
     "subscores": {
       "age": 0.466667,
-      "equity": 0.86,
+      "equity": 0.43,
       "garage": 0.666667,
       "home_size": 0.703448,
       "income": 0.72,
@@ -882,8 +903,9 @@
     }
   },
   "818-w-main-st-77506": {
-    "composite": 49.25,
+    "composite": 43.64,
     "data_completeness": 0.6796,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 105000,
       "estimated_value": 175000,
@@ -913,7 +935,7 @@
     },
     "subscores": {
       "age": 0.971429,
-      "equity": 0.7,
+      "equity": 0.35,
       "garage": 0.333333,
       "home_size": 0.524138,
       "income": 0.626667,
@@ -924,8 +946,9 @@
     }
   },
   "8814-rocky-knoll-ln-77064": {
-    "composite": 83.25,
+    "composite": 75.24,
     "data_completeness": 1.0,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 186000,
       "estimated_value": 310000,
@@ -955,7 +978,7 @@
     },
     "subscores": {
       "age": 1.0,
-      "equity": 1.0,
+      "equity": 0.5,
       "garage": 0.666667,
       "home_size": 0.762069,
       "income": 1.0,
@@ -966,8 +989,9 @@
     }
   },
   "918-ringrose-dr-77029": {
-    "composite": 22.51,
+    "composite": 19.37,
     "data_completeness": 0.5461,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 58800,
       "estimated_value": 98000,
@@ -997,7 +1021,7 @@
     },
     "subscores": {
       "age": 0.25,
-      "equity": 0.392,
+      "equity": 0.196,
       "garage": 0.0,
       "home_size": 0.386207,
       "income": 0.513333,
@@ -1008,8 +1032,9 @@
     }
   },
   "9503-truscon-dr-77080": {
-    "composite": 62.06,
+    "composite": 54.05,
     "data_completeness": 0.9466,
+    "equity_source": "fallback",
     "fields": {
       "estimated_equity": 171000,
       "estimated_value": 285000,
@@ -1026,7 +1051,7 @@
       "longitude": -95.505,
       "resolved": true
     },
-    "grade": "B",
+    "grade": "C",
     "provenance": {
       "estimated_equity": "imputed:fallback@hcad",
       "estimated_value": "hcad",
@@ -1039,7 +1064,7 @@
     },
     "subscores": {
       "age": 1.0,
-      "equity": 1.0,
+      "equity": 0.5,
       "garage": 0.333333,
       "home_size": 0.589655,
       "income": 0.9,

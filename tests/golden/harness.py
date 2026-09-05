@@ -412,9 +412,10 @@ def build_result(entry: dict, payloads: dict | None = None) -> dict:
             for factor, weight in profile.weights.items() if weight
         }
         # The equity signal the composite actually used is scaled when the
-        # scorer's flat-fallback backfill supplied the number; report that in
+        # row's equity is the flat fallback — whichever stage wrote it, read
+        # through the same provenance rule the engine uses; report that in
         # the subscore so composite == Σ weight×subscore×100 always holds.
-        if row.get("estimated_equity_is_fallback"):
+        if scoring.equity_is_fallback(row):
             subscores["equity"] = round(
                 subscores["equity"] * config.EQUITY_FALLBACK_SIGNAL_SCALE, 6)
 
@@ -433,6 +434,10 @@ def build_result(entry: dict, payloads: dict | None = None) -> dict:
         "subscores": subscores,
         "provenance": provenance,
         "geocode": geocode,
+        # The basis the composite's equity signal was scaled on, as the stored
+        # row now carries it (pipeline/equity.py::stored_equity_source) — the
+        # stamp is what lets a rescore reproduce the golden composite.
+        "equity_source": equity_mod.stored_equity_source(row),
     }
 
 

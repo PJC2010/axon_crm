@@ -845,8 +845,14 @@ GATE_MISS_FACTOR = float(os.getenv("GATE_MISS_FACTOR", "0.25"))
 # Equity estimated from the flat fallback (value × EQUITY_FALLBACK_PCT) is a
 # home-value proxy, not measured equity — and value is already proxied by the
 # neighborhood and income signals. The equity signal's contribution is scaled
-# by this factor when the scorer backfilled equity via the fallback path, so
-# sparse data doesn't triple-count "expensive house". 1.0 disables the scale.
+# by this factor whenever the row's stored equity IS that fallback — its basis
+# is stamped in enrichment_flags.equity_source by every writer (HCAD, RentCast,
+# backfill, the scorer's own backfill) and read back by pipeline/scoring.py, so
+# the haircut is a property of the number and not of which step wrote it. On a
+# Texas HCAD-seeded book that is nearly every row (non-disclosure state, so
+# the amortized path has no sale price to work from): the scale therefore
+# moves the whole book, by weight × 0.5 × 100 at saturation (9.0 pts on the
+# national default profile, 8.0 after the Houston rescale). 1.0 disables it.
 EQUITY_FALLBACK_SIGNAL_SCALE = float(os.getenv("EQUITY_FALLBACK_SIGNAL_SCALE", "0.5"))
 
 # ── Grade bands ──────────────────────────────────────────────────────────────

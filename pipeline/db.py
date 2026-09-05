@@ -134,12 +134,16 @@ def _upsert_sql(data_cols: tuple, fill_only: bool = False) -> str:
         return f"{c} = EXCLUDED.{c}"
 
     updates = ", ".join(assign(c) for c in data_cols if c not in ("address", "zip"))
-    # Merge enrichment_flags rather than overwrite so earlier steps' flags survive.
+    # Merge enrichment_flags rather than overwrite so earlier steps' flags
+    # survive. In fill_only mode the EXISTING keys win: a re-seed that leaves a
+    # row's columns alone must leave the provenance of those columns alone
+    # too — the seed's equity_source stamp (pipeline/equity.py) describes the
+    # equity it would have written, not the one the row kept.
     if "enrichment_flags" in data_cols:
-        updates = updates.replace(
-            assign("enrichment_flags"),
-            "enrichment_flags = properties.enrichment_flags || EXCLUDED.enrichment_flags",
-        )
+        merged = ("enrichment_flags = EXCLUDED.enrichment_flags || properties.enrichment_flags"
+                  if fill_only else
+                  "enrichment_flags = properties.enrichment_flags || EXCLUDED.enrichment_flags")
+        updates = updates.replace(assign("enrichment_flags"), merged)
     # A row whose only non-key columns are address/zip has nothing to update; skip
     # the write on conflict rather than emit an invalid empty SET clause.
     conflict = f"DO UPDATE SET {updates}" if updates else "DO NOTHING"

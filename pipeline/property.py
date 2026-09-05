@@ -23,8 +23,9 @@ from config import (
 from pipeline.backfill import record_findings
 from pipeline.db import get_conn, fetch_missing_any, upsert_properties
 from pipeline.http import get_json_result
+from pipeline.equity import EQUITY_SOURCE_FLAG
 from pipeline.reconcile import (
-    consistent_derived, map_detail, parcel_finding, verify_record,
+    consistent_derived, equity_provenance, map_detail, parcel_finding, verify_record,
 )
 
 log = logging.getLogger(__name__)
@@ -128,6 +129,12 @@ def enrich_property(zip_code: str, account_id: int, selected_only: bool = False)
                     fresh = {k: v for k, v in data.items()
                              if row.get(k) is None}
                     update.update(consistent_derived(row, fresh))
+                    # Stamp the basis of any equity this write lands, so the
+                    # scorer can tell a flat fallback from a measured figure
+                    # whichever step wrote it (pipeline/equity.py).
+                    equity_source = equity_provenance(row, update)
+                    if equity_source:
+                        flags[EQUITY_SOURCE_FLAG] = equity_source
                 else:
                     counter["fail"] += 1
                 updates.append(update)

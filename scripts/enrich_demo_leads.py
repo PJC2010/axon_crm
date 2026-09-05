@@ -46,12 +46,11 @@ Usage:
     # Different mix, and include every unscored lead rather than just imports
     python scripts/enrich_demo_leads.py --account-id 3 --mix A:35,B:30,C:22,D:13 --all-leads
 
-One caveat about rescoring afterwards. POST /api/pipeline/rescore-all calls
-score_zip(zip, account, vertical=None), so it scores every lead with the DEFAULT
-weight profile rather than the lead's own vertical — grades written here (fitted
-against the row's vertical, the way a real pipeline run scores it) will move if
-you trigger it. Use the per-ZIP POST /api/pipeline/rescore, which does carry the
-vertical, or leave the scores this script wrote alone.
+Rescoring afterwards is safe: POST /api/pipeline/rescore-all (and the per-ZIP
+POST /api/pipeline/rescore without a vertical) keep every lead on its own stored
+vertical — score_zip(vertical=None) groups rows by `vertical` rather than moving
+them all onto the default profile — so the grades written here (fitted against
+the row's vertical, the way a real pipeline run scores it) are reproduced.
 
 Run it AFTER the CSV import. Geocode first (free Census batch) if you want map
 pins and neighborhood benchmarks:

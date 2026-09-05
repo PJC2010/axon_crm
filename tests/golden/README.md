@@ -32,8 +32,10 @@ catches it), `data_completeness`, and the geocoder resolution.
 
 ## The corpus
 
-`fixtures/addresses.yaml`: 25 Harris County addresses — 5 clear A, 5 B, 5 C,
-3 below C, and 7 edge rows (new construction; the `garage_spaces = 0` vs
+`fixtures/addresses.yaml`: 25 Harris County addresses — 3 clear A, 3 B, 8 C,
+4 below C (seven rows moved down one band when the fallback-equity haircut
+started applying to enrichment-written equity; their `purpose` says so), and
+7 edge rows (new construction; the `garage_spaces = 0` vs
 `NULL` twins; a condo with no HCAD parcel match; an ambiguous geocode; a ZCTA
 with the ACS suppressed-estimate sentinel; a 90-day-old sale). Synthetic
 boundary rows in `test_boundaries.py` pin `GRADE_BANDS` inclusivity at
@@ -80,13 +82,16 @@ own PR, where the golden diff will show exactly what moved:
    surface today — `data_completeness` (0 counts as measured, NULL doesn't)
    and provenance — plus the fact that the opt-in `renormalize` mode
    separates the composites.
-2. **Flat-fallback equity dodges its own haircut when enrichment writes it.**
-   `EQUITY_FALLBACK_SIGNAL_SCALE` (0.5×) only applies when the *scorer*
-   backfills equity at scoring time; when `enrich_hcad`/`enrich_property`
-   store the same `value × 0.6` fallback into the row first, the scorer sees
-   a populated field and applies full weight. In Texas (non-disclosure, so
-   RentCast rarely has a sale price) HCAD-seeded rows effectively always
-   carry full-weight fallback equity.
+2. **Flat-fallback equity is haircut whichever stage wrote it.** Every
+   writer stamps `enrichment_flags.equity_source` next to the number and the
+   engine reads it back (`pipeline/equity.py::stored_equity_source`), so
+   `EQUITY_FALLBACK_SIGNAL_SCALE` (0.5×) applies to `enrich_hcad`'s and
+   `enrich_property`'s `value × 0.6` fallback exactly as it does to the
+   scorer's own backfill. (It used to fire only on the scorer's path, which
+   this suite pinned as observed behaviour; the goldens moved when that was
+   fixed.) In Texas (non-disclosure, so RentCast rarely has a sale price)
+   HCAD-seeded rows effectively always carry fallback equity, so the haircut
+   is the normal case there, not the exception.
 3. **"No permits" is NULL, not 0** — `query_permits` only emits addresses
    that have permits, so a quiet home loses `data_completeness` rather than
    scoring a measured zero.

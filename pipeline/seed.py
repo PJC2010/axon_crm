@@ -21,7 +21,8 @@ from pipeline.http import get_json
 from pipeline.owner import clean_owner_name
 from pipeline.parcel_id import normalize_apn
 from pipeline.property_type import from_state_class as type_from_state_class
-from pipeline.reconcile import map_record
+from pipeline.equity import EQUITY_SOURCE_FLAG
+from pipeline.reconcile import equity_provenance, map_record
 
 log = logging.getLogger(__name__)
 
@@ -325,6 +326,11 @@ def _normalize_rentcast(p: dict, origin_zip: str | None = None) -> dict:
     # never enter the Census geocode queue (juncto geo layer, Phase 1).
     if row["latitude"] is not None and row["longitude"] is not None:
         row["geocode_source"] = "rentcast"
+    # The basis of the equity map_record derived, stamped next to the number
+    # so the scorer's fallback haircut follows it (pipeline/equity.py).
+    equity_source = equity_provenance({}, row)
+    if equity_source:
+        flags[EQUITY_SOURCE_FLAG] = equity_source
     row.update({
         "address":          p.get("addressLine1", ""),
         "zip":              p.get("zipCode", ""),
