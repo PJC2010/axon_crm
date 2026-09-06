@@ -258,3 +258,194 @@ class TestEvaluateConfigChecks:
         for check in evaluate_config_checks(self.BASE):
             assert set(check) == {"key", "label", "status", "detail"}
             assert check["status"] in ("ok", "warn", "error", "info")
+
+
+# ── Additions for the org controls / usage / data-health surfaces ─────────────
+
+import inspect  # noqa: E402
+import os  # noqa: E402
+import re  # noqa: E402
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+from api.admin_logic import (  # noqa: E402
+    AUDIT_ACTIONS, data_health_alerts, effective_scoring_limit, match_rate, merge_usage,
+    normalize_account_update, overlay_account_state, overlay_zip_rule_state, paginate_rows,
+    pct, rule_state, rule_summary, sort_usage, validate_account_limits,
+    validate_account_update,
+)
+
+
+class TestAuditActionsRegistry:
+    def test_every_recorded_action_is_registered(self):
+        os.environ.setdefault("JWT_SECRET_KEY", "test-secret-not-used-for-signing")
+        from api.routes import admin, admin_data, admin_usage
+        pattern = re.compile(r'record_admin_action\(\s*db,\s*admin,\s*"([a-z_.]+)"')
+        found: set[str] = set()
+        for module in (admin, admin_data, admin_usage):
+            found |= set(pattern.findall(inspect.getsource(module)))
+        assert found, "the probe found no audit calls — did the call shape change?"
+        assert found <= set(AUDIT_ACTIONS), found - set(AUDIT_ACTIONS)
+
+    def test_registry_is_sorted_and_unique(self):
+        assert list(AUDIT_ACTIONS) == sorted(set(AUDIT_ACTIONS))
+
+
+class TestNormalizeAccountUpdate:
+    def test_trims_and_drops_unknown_keys(self):
+        assert normalize_account_update({"name": "  Blue Sky ", "hashed_pw": "x"}) == {"name": "Blue Sky"}
+
+    def test_empty_review_link_means_clear(self):
+        assert normalize_account_update({"review_link": ""}) == {"review_link": None}
+        assert normalize_account_update({"review_link": None}) == {"review_link": None}
+
+    def test_absent_fields_stay_absent(self):
+        assert normalize_account_update({}) == {}
+
+
+class TestValidateAccountUpdate:
+    TYPES = {"home_services", "retail"}
+
+    def test_empty_is_a_problem(self):
+        assert validate_account_update({}, self.TYPES) == ["No fields to update."]
+
+    def test_name_uses_the_shared_company_rule(self):
+        assert any("required" in p for p in validate_account_update({"name": ""}, self.TYPES))
+        assert any("80" in p for p in validate_account_update({"name": "x" * 81}, self.TYPES))
+        assert validate_account_update({"name": "Blue Sky Roofing"}, self.TYPES) == []
+
+    def test_business_type_must_be_known(self):
+        assert validate_account_update({"business_type": "retail"}, self.TYPES) == []
+        assert any("Unknown business type" in p
+                   for p in validate_account_update({"business_type": "spaceship"}, self.TYPES))
+
+    def test_review_link_is_an_http_url_or_null(self):
+        assert validate_account_update({"review_link": None}, self.TYPES) == []
+        assert validate_account_update({"review_link": "https://g.page/x"}, self.TYPES) == []
+        for bad in ("g.page/x", "ftp://x", "https://has space", "https://" + "a" * 500):
+            assert validate_account_update({"review_link": bad}, self.TYPES), bad
+
+
+class TestValidateAccountLimits:
+    def test_empty_is_a_problem(self):
+        assert validate_account_limits({}) == ["No limits to update."]
+
+    def test_null_and_non_negative_ints_are_fine(self):
+        assert validate_account_limits({"scoring_monthly_limit": None, "territory_limit": 0}) == []
+        assert validate_account_limits({"territory_limit": 3}) == []
+
+    def test_rejects_negatives_bools_and_unknown_keys(self):
+        assert validate_account_limits({"scoring_monthly_limit": -1})
+        assert validate_account_limits({"territory_limit": True})
+        assert validate_account_limits({"modules": {}})
+
+
+class TestUsageHelpers:
+    LIMITS = {"starter": 25, "growth": 100, "pro": None}
+    COLS = {"rentcast": ("rentcast_requests",), "calls": ("calls", "call_minutes")}
+    ACCOUNTS = [{"id": 1, "name": "Zed", "plan_name": "pro", "scoring_monthly_limit": None},
+                {"id": 2, "name": "acme", "plan_name": "starter", "scoring_monthly_limit": 40},
+                {"id": 3, "name": "Nolan", "plan_name": None, "scoring_monthly_limit": None}]
+
+    def test_effective_scoring_limit(self):
+        assert effective_scoring_limit("starter", None, self.LIMITS) == 25
+        assert effective_scoring_limit("starter", 40, self.LIMITS) == 40
+        assert effective_scoring_limit("pro", None, self.LIMITS) is None
+        assert effective_scoring_limit(None, None, self.LIMITS) is None   # no plan row = unlimited
+
+    def test_merge_fills_zero_and_degrades_to_none(self):
+        rows = merge_usage(self.ACCOUNTS,
+                           {"rentcast": [{"account_id": 1, "rentcast_requests": 9}], "calls": None},
+                           self.COLS, self.LIMITS)
+        by = {r["account_id"]: r for r in rows}
+        assert by[1]["rentcast_requests"] == 9 and by[2]["rentcast_requests"] == 0
+        assert by[1]["calls"] is None and by[3]["call_minutes"] is None
+        assert by[2]["scoring_limit"] == 40 and by[3]["scoring_limit"] is None
+
+    def test_sort_name_is_case_insensitive_and_metrics_put_unknown_last(self):
+        rows = merge_usage(self.ACCOUNTS,
+                           {"rentcast": [{"account_id": 2, "rentcast_requests": 5},
+                                         {"account_id": 3, "rentcast_requests": 7}], "calls": None},
+                           self.COLS, self.LIMITS)
+        assert [r["name"] for r in sort_usage(rows, "name", ("rentcast_requests",))] == ["acme", "Nolan", "Zed"]
+        assert [r["account_id"] for r in sort_usage(rows, "rentcast_requests", ("rentcast_requests",))] == [3, 2, 1]
+        rows[0]["rentcast_requests"] = None
+        assert sort_usage(rows, "rentcast_requests", ("rentcast_requests",))[-1]["rentcast_requests"] is None
+
+    def test_sort_whitelist(self):
+        with pytest.raises(ValueError):
+            sort_usage([], "hashed_pw", ("calls",))
+
+    def test_paginate(self):
+        assert paginate_rows(list(range(7)), 2, 3) == [3, 4, 5]
+        assert paginate_rows(list(range(7)), 4, 3) == []
+
+
+class TestDataHealthOverlay:
+    def test_pct_and_match_rate_handle_unknowns(self):
+        assert pct(1, 4) == 25.0 and pct(0, 4) == 0.0
+        assert pct(None, 4) is None and pct(3, 0) is None and pct(3, None) is None
+        assert match_rate(1000, 950) == 0.95
+        assert match_rate(0, 0) is None and match_rate(None, 5) is None
+
+    def test_rule_state(self):
+        assert rule_state(None, "h") == "unstamped"
+        assert rule_state("h", "h") == "current"
+        assert rule_state("old", "h") == "stale"
+
+    def test_zip_overlay_marks_each_zip_against_the_parcel_hash(self):
+        zips = [{"zip": "77001", "parcels": 5}, {"zip": "77002", "parcels": 1}]
+        stamps = [{"zip": "77001", "rule_hash": "pc", "classified_at": "t1"}]
+        out = overlay_zip_rule_state(zips, stamps, "pc")
+        assert out[0]["rule_state"] == "current" and out[0]["classified_at"] == "t1"
+        assert out[1]["rule_state"] == "unstamped" and out[1]["classified_at"] is None
+
+    def test_account_overlay_joins_live_state_and_survives_org_churn(self):
+        rows = [{"account_id": 1, "properties": 900, "with_coords": 1, "unclassified": 0, "excludable": 0},
+                {"account_id": 99, "properties": 5, "with_coords": 1, "unclassified": 0, "excludable": 0}]
+        names = {1: "Acme", 2: "New"}
+        stamps = [{"account_id": 1, "rule_hash": "old", "classified_at": "t"}]
+        out = overlay_account_state(rows, names, stamps, {2: 4}, "hp")
+        assert [r["account_id"] for r in out] == [1, 2]      # 99 gone, 2 appended
+        assert out[0]["rule_state"] == "stale" and out[0]["unclassified_live"] == 0
+        assert out[1]["properties"] is None and out[1]["unclassified_live"] == 4
+        # A cut-off live read is None on every row, never 0.
+        assert all(r["unclassified_live"] is None
+                   for r in overlay_account_state(rows, names, stamps, None, "hp"))
+        assert rule_summary([{"rule_state": "stale"}], out) == {
+            "accounts_stale": 1, "accounts_unstamped": 1, "zips_stale": 1, "zips_unstamped": 0}
+
+
+class TestDataHealthAlerts:
+    NOW = datetime(2026, 9, 6, 12, tzinfo=timezone.utc)
+
+    def _snapshot(self, hours_old=3, **report):
+        base = {"apn_match": {"with_apn": 100, "matched": 99}, "parcels": {"unclassified": 0},
+                "city_sanity": {}, "blocks_failed": []}
+        return {"started_at": self.NOW - timedelta(hours=hours_old), "status": "ok",
+                "report": {**base, **report}}
+
+    def _keys(self, snapshot, live=None, rule=None):
+        return [a["key"] for a in data_health_alerts(snapshot, live, rule, now=self.NOW)]
+
+    def test_clean_snapshot_raises_nothing(self):
+        assert self._keys(self._snapshot()) == []
+
+    def test_no_snapshot(self):
+        assert self._keys(None) == ["no_snapshot"]
+
+    def test_each_condition_has_its_alert(self):
+        assert "snapshot_stale" in self._keys(self._snapshot(hours_old=72))
+        assert "blocks_failed" in self._keys(self._snapshot(blocks_failed=["hcad"]))
+        assert "apn_match_rate" in self._keys(self._snapshot(apn_match={"with_apn": 100, "matched": 80}))
+        assert "parcels_unclassified" in self._keys(self._snapshot(parcels={"unclassified": 5}))
+        assert "mail_city_leak" in self._keys(self._snapshot(city_sanity={"parcels_mail_city_leak": 1}))
+        assert "accounts_stale" in self._keys(self._snapshot(), rule={"accounts_stale": 2})
+        assert "geocode_failed" in self._keys(self._snapshot(), live={"geocode_queue": {"failed": 3}})
+        assert "hcad_source" in self._keys(self._snapshot(), live={"hcad_source": "none"})
+
+    def test_every_alert_is_well_formed(self):
+        for alert in data_health_alerts(self._snapshot(hours_old=72, blocks_failed=["x"]),
+                                        {"hcad_source": "none", "geocode_queue": {"failed": 1}},
+                                        {"zips_unstamped": 1}, now=self.NOW):
+            assert set(alert) == {"key", "severity", "label", "detail"}
+            assert alert["severity"] in ("error", "warn", "info")

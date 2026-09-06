@@ -1518,6 +1518,8 @@ export interface AdminMember {
   account_id: number
   created_at: string
   last_login_at: string | null
+  // Linked Google/Apple identities — only the org drill-down returns these.
+  providers?: string[]
 }
 
 export interface AdminUserRow extends AdminMember {
@@ -1541,13 +1543,238 @@ export interface AdminAccountDetail {
   business_type: string
   created_at: string
   review_link: string | null
-  plan: { plan_name: string; modules: Record<string, boolean>; scoring_monthly_limit: number | null; updated_at: string } | null
+  plan: { plan_name: string; modules: Record<string, boolean>; scoring_monthly_limit: number | null; territory_limit: number | null; updated_at: string } | null
   modules: Record<string, boolean>
   billing: AdminBillingState | null
   members: AdminMember[]
   counts: Record<string, number>
-  recent_runs: { id: number; zip: string; status: string; triggered_by: string; created_at: string; started_at: string | null; finished_at: string | null }[]
+  recent_runs: AdminRecentRun[]
   recent_events: { id: number; event_type: string; channel: string | null; occurred_at: string; actor: string | null }[]
+  schedules: AdminScheduleRow[]
+  usage: AdminUsageBlock
+}
+
+export interface AdminRecentRun {
+  id: number
+  zip: string
+  vertical: string | null
+  status: string
+  triggered_by: string
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+  duration_seconds: number | null
+  error: string | null
+  properties_scored: number | null
+}
+
+export interface AdminScheduleRow {
+  id: number
+  zip: string
+  vertical: string | null
+  day_of_week: string            // weekday name, e.g. "monday" (api/scheduler.py DAY_MAP)
+  hour: number
+  is_active: boolean
+  top_n: number | null
+  center_address: string | null
+  radius_mi: number | null
+  created_at: string
+}
+
+// PATCH /admin/accounts/{id} — only the fields sent are touched; an explicit
+// null review_link clears it.
+export interface AdminAccountUpdate {
+  name?: string
+  business_type?: string
+  review_link?: string | null
+}
+
+// POST /admin/accounts/{id}/limits — null puts the org back on its plan default.
+export interface AdminLimits {
+  scoring_monthly_limit?: number | null
+  territory_limit?: number | null
+}
+
+export interface AdminScoringUsage {
+  limit: number | null          // null = unlimited
+  used: number
+  remaining: number | null
+  plan_default: number | null
+  override: number | null
+}
+
+export interface AdminTerritoryUsage {
+  limit: number | null
+  used: number
+  zips: string[]
+  remaining: number | null
+  plan_default: number | null
+  override: number | null
+}
+
+export interface AdminUsageBlock {
+  scoring: AdminScoringUsage
+  // null when the territory set could not be measured (degrade-open).
+  territories: AdminTerritoryUsage | null
+}
+
+// ── Usage tab (/api/admin/usage) ─────────────────────────────────────────────
+// Every metric is null when its query was cut off (the `degraded` list names
+// it) — render as "—", never 0.
+export interface AdminUsageRow {
+  account_id: number
+  name: string
+  plan_name: string | null
+  scoring_limit: number | null
+  rentcast_requests: number | null
+  scoring_reveals: number | null
+  runs: number | null
+  skip_traces: number | null
+  sms_sent: number | null
+  email_sent: number | null
+  calls: number | null
+  call_minutes: number | null
+  tracking_numbers_active: number | null
+  territories: number | null
+}
+
+export interface AdminUsagePage {
+  days: number
+  items: AdminUsageRow[]
+  total: number
+  page: number
+  page_size: number
+  sort: string
+  columns: string[]
+  degraded: string[]
+}
+
+export interface AdminUsageFilters {
+  days?: number
+  sort?: string
+  page?: number
+  page_size?: number
+}
+
+export interface AdminAccountUsage {
+  days: number
+  metrics: AdminUsageRow
+  degraded: string[]
+}
+
+// ── Data tab (/api/admin/data-health) ────────────────────────────────────────
+export type RuleState = 'current' | 'stale' | 'unstamped'
+
+export interface DataHealthParcels {
+  total: number
+  with_coords: number
+  with_apn: number
+  unclassified: number
+  non_residential: number
+  property_type: number
+  year_built: number
+  estimated_value: number
+  owner_name: number
+  last_updated_at: string | null
+}
+
+export interface DataHealthZip {
+  zip: string
+  parcels: number
+  with_coords: number
+  unclassified: number
+  non_residential: number
+  hcad_rows: number
+  rule_state: RuleState
+  classified_at: string | null
+}
+
+export interface DataHealthAccountRow {
+  account_id: number
+  name: string
+  // null = org created since the snapshot (unknown until the next one).
+  properties: number | null
+  with_coords: number | null
+  unclassified: number | null
+  excludable: number | null
+  rule_state: RuleState
+  classified_at: string | null
+  // Live, index-only; null when that read was cut off.
+  unclassified_live: number | null
+}
+
+export interface DataHealthReport {
+  parcels: DataHealthParcels | null
+  apn_match: { with_apn: number; matched: number } | null
+  zips: Omit<DataHealthZip, 'rule_state' | 'classified_at'>[] | null
+  geocode_sources: { source: string; count: number }[] | null
+  hcad: { properties: number; site_city_filled: number; centroids: number; centroids_loaded_at: string | null; permits: number } | null
+  accounts: Omit<DataHealthAccountRow, 'name' | 'rule_state' | 'classified_at' | 'unclassified_live'>[] | null
+  discrepancies: { total_open: number; by_field: { field: string; source: string; open: number }[]; by_account: { account_id: number; open: number }[] } | null
+  city_sanity: { parcels_mail_city_leak: number; properties_mail_city_leak: number; parcels_null_city: number; properties_null_city: number } | null
+  blocks_failed: string[]
+  duration_seconds: number
+}
+
+export interface DataHealthSnapshot {
+  id: number
+  started_at: string
+  finished_at: string | null
+  status: 'ok' | 'partial'
+  triggered_by: string
+  host: string | null
+  report: DataHealthReport
+}
+
+export interface DataHealthAlert {
+  key: string
+  severity: 'error' | 'warn' | 'info'
+  label: string
+  detail: string
+}
+
+export interface AdminDataHealth {
+  snapshot: DataHealthSnapshot | null
+  summary: {
+    coords_pct: number | null
+    apn_pct: number | null
+    match_rate_pct: number | null
+    unclassified_pct: number | null
+    non_residential_pct: number | null
+  } | null
+  zips: DataHealthZip[]
+  accounts: DataHealthAccountRow[]
+  rule: {
+    property_rule_hash: string
+    parcel_rule_hash: string
+    accounts_stale: number
+    accounts_unstamped: number
+    zips_stale: number
+    zips_unstamped: number
+  }
+  live: {
+    geocode_queue: {
+      queued: number
+      failed: number
+      done: number
+      oldest_queued_at: string | null
+      top_errors: { last_error: string | null; n: number }[]
+    } | null
+    hcad_source: 'duckdb' | 'postgres' | 'none' | 'unknown'
+  }
+  alerts: DataHealthAlert[]
+  refresh: {
+    id: number
+    started_at: string
+    finished_at: string | null
+    status: string
+    triggered_by: string
+    error: string | null
+    running: boolean
+    stalled: boolean
+  } | null
+  job_id: string
+  degraded: string[]
 }
 
 export interface AdminOrgActivityRow {

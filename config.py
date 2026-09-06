@@ -47,6 +47,15 @@ DASHBOARD_STATEMENT_TIMEOUT_MS = int(
 ACCOUNT_DELETE_TIMEOUT_MS = int(os.getenv("ACCOUNT_DELETE_TIMEOUT_MS", "120000"))
 ACCOUNT_DELETE_BATCH = int(os.getenv("ACCOUNT_DELETE_BATCH", "5000"))
 
+# The nightly platform data-health snapshot (api/data_health.py) aggregates the
+# shared parcel cache and the HCAD mirror — full scans of ~1.5M-row tables that
+# have no business on a request path (the pre-0083 data-quality page returning
+# QueryCanceled is the precedent). Each block runs under its own SET LOCAL cap
+# on the tick's own connection, so one pathological scan cannot hold the job
+# forever; a block that hits the cap is recorded as failed and the rest still
+# land. 0 disables the per-block cap.
+DATA_HEALTH_BLOCK_TIMEOUT_MS = int(os.getenv("DATA_HEALTH_BLOCK_TIMEOUT_MS", "300000"))
+
 # ── Harris County Appraisal District DuckDB ───────────────────────────────────
 PERMIT_DB_PATH = os.getenv("PERMIT_DB_PATH", "/Users/petecastillo/property_data/harris_county.duckdb")
 
