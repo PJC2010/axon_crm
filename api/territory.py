@@ -42,6 +42,9 @@ ENGINE_BOOK_SQL = engine_book_sql()
 # (api/scheduler.py). Neither is a territory. Doubled percent = LIKE wildcard;
 # every query using this fragment passes params, which collapses it.
 _RUN_ZIP_SQL = "zip IS NOT NULL AND zip <> 'backfill' AND zip NOT LIKE 'region:%%'"
+# Public name for the same predicate — the admin usage router counts an org's
+# territories with it, and one definition is what keeps the two counts equal.
+RUN_ZIP_SQL = _RUN_ZIP_SQL
 
 
 # ── pure helpers ──────────────────────────────────────────────────────────────

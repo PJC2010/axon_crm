@@ -14,9 +14,12 @@ transaction as the change. No endpoint here may declare a query param named
 GET    /admin/summary                     — platform KPI tiles
 GET    /admin/accounts                    — org list w/ plan, billing, usage aggregates
 POST   /admin/accounts                    — provision a fresh org + its owner login
-GET    /admin/accounts/{id}               — org drill-down (members, counts, recent activity)
+GET    /admin/accounts/{id}               — org drill-down (members, counts, usage, schedules, recent activity)
+PATCH  /admin/accounts/{id}               — edit name / business type / review link
 GET    /admin/accounts/{id}/activity      — per-user activity inside one org
 POST   /admin/accounts/{id}/plan          — assign plan + module overrides
+POST   /admin/accounts/{id}/limits        — scoring + territory limit overrides
+POST   /admin/accounts/{id}/schedules/{sid}/deactivate — switch off a pipeline schedule
 POST   /admin/accounts/{id}/trial         — extend or expire a trial
 DELETE /admin/accounts/{id}               — purge the org and every row it owns
 GET    /admin/users                       — cross-tenant user list
@@ -25,10 +28,17 @@ PATCH  /admin/users/{id}                  — role / active / verified / platfor
 DELETE /admin/users/{id}                  — delete the login, keep the org's data
 POST   /admin/users/{id}/reset-password   — mint a reset link (optionally email it)
 POST   /admin/users/{id}/set-password     — directly set a temporary password
+POST   /admin/users/{id}/revoke-sessions  — sign a user out everywhere
 GET   /admin/security                     — security panel (failed logins, config checks, …)
 GET   /admin/auth-events                  — login/auth event feed
 GET   /admin/audit-log                    — admin-action audit feed
+GET   /admin/audit-log/actions            — the audit action vocabulary (admin_logic.AUDIT_ACTIONS)
 GET   /admin/prospects                    — landing-page prospect signups
+
+Sibling routers under the same guard (api/main.py registers each with
+require_platform_admin, and tests/test_router_gating.py asserts it for every
+router serving /admin): api/routes/admin_usage.py (per-org usage) and
+api/routes/admin_data.py (platform data health).
 """
 import logging
 import os
@@ -48,16 +58,20 @@ from config import (
 from api.accounts import provision_owner
 from api.admin_audit import record_admin_action
 from api.admin_logic import (
-    ADMIN_ROLES, build_leftover_probe_sql, build_reset_url, clamp_page,
-    evaluate_config_checks, validate_account_delete, validate_admin_user_update,
-    validate_user_delete,
+    ADMIN_ROLES, AUDIT_ACTIONS, LIMIT_FIELDS, build_leftover_probe_sql,
+    build_reset_url, clamp_page, evaluate_config_checks, normalize_account_update,
+    validate_account_delete, validate_account_limits, validate_account_update,
+    validate_admin_user_update, validate_user_delete,
 )
 from api.billing import apply_plan, billing_configured
 from api.business_types import BUSINESS_TYPES, DEFAULT_BUSINESS_TYPE
 from api.deps import (
     dict_fetchall, dict_fetchone, get_db, require_platform_admin,
 )
-from api.entitlements import get_account_modules, resolve_plan_modules
+from api.entitlements import (
+    PLAN_SCORING_LIMITS, PLAN_TERRITORY_LIMITS, get_account_modules,
+    get_scoring_limit, get_territory_limit, resolve_plan_modules,
+)
 from api.routes.signup import _issue_token, _send_reset_email
 from api.security import hash_password
 from api.signup_logic import (
@@ -114,6 +128,17 @@ class AdminUserUpdate(BaseModel):
     is_active: bool | None = None
     email_verified: bool | None = None
     is_platform_admin: bool | None = None
+
+
+class AdminAccountUpdate(BaseModel):
+    name: str | None = None
+    business_type: str | None = None
+    review_link: str | None = None            # explicit null clears it
+
+
+class AdminLimits(BaseModel):
+    scoring_monthly_limit: int | None = None  # null = plan default
+    territory_limit: int | None = None        # null = plan default
 
 
 class ResetLinkRequest(BaseModel):
@@ -219,6 +244,48 @@ def _account_counts(db: PGConn, account_id: int) -> dict:
     with db.cursor() as cur:
         cur.execute(_ACCOUNT_COUNTS_SQL, {"id": account_id})
         return dict_fetchone(cur)
+
+
+def _usage_block(db: PGConn, account_id: int) -> dict:
+    """Used-vs-limit meters for the org detail page and the limits endpoint.
+
+    Limits resolve through the same functions the product enforces with
+    (entitlements.get_scoring_limit / get_territory_limit: override, else plan
+    default, else unlimited), so the meter can never disagree with the gate.
+    ``territories`` is None when the territory set cannot be measured —
+    territory.used_territories degrades open, and so does this.
+    """
+    from api.scoring_quota import used_this_month
+    from api.territory import territory_quota, used_territories
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT plan_name, scoring_monthly_limit, territory_limit "
+            "FROM account_plans WHERE account_id = %s", (account_id,),
+        )
+        plan = dict_fetchone(cur)
+    plan_name = plan["plan_name"] if plan else None
+    scoring_limit = get_scoring_limit(account_id, db)
+    used = used_this_month(db, account_id)
+    scoring = {
+        "limit": scoring_limit,
+        "used": used,
+        "remaining": None if scoring_limit is None else max(0, scoring_limit - used),
+        "plan_default": PLAN_SCORING_LIMITS.get(plan_name) if plan else None,
+        "override": plan["scoring_monthly_limit"] if plan else None,
+    }
+    territory_limit = get_territory_limit(account_id, db)
+    if territory_limit is None:
+        used_zips = used_territories(db, account_id)
+        territories = None if used_zips is None else {
+            "limit": None, "used": len(used_zips), "zips": sorted(used_zips),
+            "remaining": None,
+        }
+    else:
+        territories = territory_quota(db, account_id, territory_limit)
+    if territories is not None:
+        territories["plan_default"] = PLAN_TERRITORY_LIMITS.get(plan_name) if plan else None
+        territories["override"] = plan["territory_limit"] if plan else None
+    return {"scoring": scoring, "territories": territories}
 
 
 def _assert_account_purged(db: PGConn, account_id: int) -> None:
@@ -501,7 +568,7 @@ def admin_account_detail(account_id: int, db: PGConn = Depends(get_db)):
     account = _require_account(db, account_id)
     with db.cursor() as cur:
         cur.execute(
-            "SELECT plan_name, modules, scoring_monthly_limit, updated_at "
+            "SELECT plan_name, modules, scoring_monthly_limit, territory_limit, updated_at "
             "FROM account_plans WHERE account_id = %s", (account_id,),
         )
         plan_row = dict_fetchone(cur)
@@ -517,15 +584,42 @@ def admin_account_detail(account_id: int, db: PGConn = Depends(get_db)):
             (account_id,),
         )
         members = dict_fetchall(cur)
+        # Linked Google/Apple identities, one query for the whole org. This is
+        # the "user can't log in" blind spot: auth_events shows the attempts,
+        # this shows which door they are supposed to be using.
+        providers: dict[int, list[str]] = {}
+        if members:
+            cur.execute(
+                "SELECT user_id, array_agg(provider ORDER BY provider) AS providers "
+                "FROM oauth_identities WHERE user_id = ANY(%s) GROUP BY user_id",
+                ([m["id"] for m in members],),
+            )
+            providers = {r["user_id"]: list(r["providers"] or []) for r in dict_fetchall(cur)}
+        for m in members:
+            m["providers"] = providers.get(m["id"], [])
         # Heavy per-table counts live here (one org), never on the list endpoint.
         cur.execute(_ACCOUNT_COUNTS_SQL, {"id": account_id})
         counts = dict_fetchone(cur)
         cur.execute(
-            "SELECT id, zip, status, triggered_by, created_at, started_at, finished_at "
-            "FROM pipeline_runs WHERE account_id = %s ORDER BY created_at DESC LIMIT 5",
+            "SELECT id, zip, vertical, status, triggered_by, created_at, started_at, finished_at, "
+            "EXTRACT(EPOCH FROM (finished_at - started_at))::int AS duration_seconds, "
+            "result_json->>'error' AS error, "
+            "(result_json->'summary'->>'properties_scored')::int AS properties_scored "
+            "FROM pipeline_runs WHERE account_id = %s ORDER BY created_at DESC LIMIT 10",
             (account_id,),
         )
         recent_runs = dict_fetchall(cur)
+        # The org's schedules are what a plan downgrade or a territory decrease
+        # silently deactivates (territory.trim_schedules_to_limit); until now
+        # only the audit row's id list said which.
+        cur.execute(
+            "SELECT id, zip, vertical, day_of_week, hour, is_active, top_n, "
+            "center_address, radius_mi, created_at "
+            "FROM pipeline_schedules WHERE account_id = %s "
+            "ORDER BY is_active DESC, created_at, id",
+            (account_id,),
+        )
+        schedules = dict_fetchall(cur)
         cur.execute(
             "SELECT le.id, le.event_type, le.channel, le.occurred_at, u.username AS actor "
             "FROM lead_events le LEFT JOIN users u ON u.id = le.actor_user_id "
@@ -543,6 +637,8 @@ def admin_account_detail(account_id: int, db: PGConn = Depends(get_db)):
         "counts": counts,
         "recent_runs": recent_runs,
         "recent_events": recent_events,
+        "schedules": schedules,
+        "usage": _usage_block(db, account_id),
     }
 
 
@@ -571,6 +667,145 @@ def admin_account_activity(
             {"id": account_id, "days": days},
         )
         return {"days": days, "items": dict_fetchall(cur)}
+
+
+@router.patch("/admin/accounts/{account_id}")
+def admin_update_account(
+    account_id: int,
+    body: AdminAccountUpdate,
+    admin: dict = Depends(require_platform_admin),
+    db: PGConn = Depends(get_db),
+):
+    """Edit an org's name, business type or review link.
+
+    Business type was CLI-only before this (scripts/set_account_plan.py). Note
+    what changing it does NOT do: it leaves ``account_plans.modules`` alone.
+    Provisioning intersects the plan's modules with the preset's defaults once,
+    at signup; re-running that here would silently discard every override the
+    owner or an admin has made since. Terminology and picklists follow the new
+    type immediately; modules stay an explicit decision on the plan card.
+    """
+    changes = normalize_account_update(body.model_dump(exclude_unset=True))
+    problems = validate_account_update(changes, BUSINESS_TYPES)
+    if problems:
+        raise HTTPException(status_code=400, detail=" ".join(problems))
+    old = _require_account(db, account_id)
+    changed = {k: v for k, v in changes.items() if old.get(k) != v}
+    if changed:
+        # Fixed column map — normalize_account_update only lets
+        # ACCOUNT_UPDATE_FIELDS through, so the SET clause is built from those
+        # literal names and never from the request body's keys.
+        set_sql = ", ".join(f"{col} = %s" for col in changed)
+        with db.cursor() as cur:
+            cur.execute(
+                f"UPDATE accounts SET {set_sql} WHERE id = %s",
+                (*changed.values(), account_id),
+            )
+        record_admin_action(
+            db, admin, "account.update", "account", account_id,
+            {field: {"old": old.get(field), "new": value} for field, value in changed.items()},
+        )
+        db.commit()
+    return _require_account(db, account_id)
+
+
+@router.post("/admin/accounts/{account_id}/limits")
+def admin_set_limits(
+    account_id: int,
+    body: AdminLimits,
+    admin: dict = Depends(require_platform_admin),
+    db: PGConn = Depends(get_db),
+):
+    """Per-org overrides for the monthly scored-reveal allowance and the
+    territory (distinct pipeline ZIP) cap — the two account_plans columns that
+    until now could only be set by raw SQL (migrations 0061, 0085).
+
+    A field the admin did not send is left alone; an explicit null puts the org
+    back on its plan default (entitlements.PLAN_*_LIMITS). Refused with 409 when
+    the org has no account_plans row: creating one here would silently flip
+    module gating from permissive-all to the plan's defaults, and every
+    provisioned org already has one. A territory decrease deactivates the
+    over-limit schedules in the same transaction, exactly as a plan downgrade
+    does (territory.trim_schedules_to_limit — oldest survive).
+    """
+    changes = body.model_dump(exclude_unset=True)
+    problems = validate_account_limits(changes)
+    if problems:
+        raise HTTPException(status_code=400, detail=" ".join(problems))
+    _require_account(db, account_id)
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT plan_name, scoring_monthly_limit, territory_limit "
+            "FROM account_plans WHERE account_id = %s", (account_id,),
+        )
+        plan = dict_fetchone(cur)
+    if plan is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Assign this organization a plan before overriding its limits.",
+        )
+    merged = {key: changes.get(key, plan[key]) for key in LIMIT_FIELDS}
+    with db.cursor() as cur:
+        cur.execute(
+            "UPDATE account_plans SET scoring_monthly_limit = %s, territory_limit = %s, "
+            "updated_at = NOW() WHERE account_id = %s",
+            (merged["scoring_monthly_limit"], merged["territory_limit"], account_id),
+        )
+    trimmed: list[int] = []
+    if "territory_limit" in changes:
+        from api.territory import trim_schedules_to_limit
+        trimmed = trim_schedules_to_limit(db, account_id)
+    record_admin_action(
+        db, admin, "account.limits_set", "account", account_id,
+        {**{key: {"old": plan[key], "new": merged[key]}
+            for key in LIMIT_FIELDS if key in changes},
+         "trimmed_schedule_ids": trimmed},
+    )
+    db.commit()
+    return _usage_block(db, account_id)
+
+
+@router.post("/admin/accounts/{account_id}/schedules/{schedule_id}/deactivate")
+def admin_deactivate_schedule(
+    account_id: int,
+    schedule_id: int,
+    admin: dict = Depends(require_platform_admin),
+    db: PGConn = Depends(get_db),
+):
+    """Switch off one of the org's pipeline schedules.
+
+    Deactivate only — re-activation needs the territory guards the tenant
+    endpoint runs (api/territory.py::require_schedule_allowed), and an admin
+    turning a ZIP back on for a customer is a plan conversation, not a toggle.
+    The DB write is the decision; APScheduler is told best-effort afterwards
+    (remove_schedule_job), in the same order as the tenant PATCH — and on the
+    other web instance _scheduled_job re-reads is_active before firing and drops
+    itself, so a missed in-process removal cannot run a deactivated schedule.
+    """
+    _require_account(db, account_id)
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT zip, is_active FROM pipeline_schedules WHERE id = %s AND account_id = %s",
+            (schedule_id, account_id),
+        )
+        row = dict_fetchone(cur)
+    if not row:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    if not row["is_active"]:
+        raise HTTPException(status_code=409, detail="This schedule is already inactive.")
+    with db.cursor() as cur:
+        cur.execute(
+            "UPDATE pipeline_schedules SET is_active = FALSE WHERE id = %s AND account_id = %s",
+            (schedule_id, account_id),
+        )
+    record_admin_action(
+        db, admin, "schedule.deactivate", "pipeline_schedule", schedule_id,
+        {"account_id": account_id, "zip": row["zip"]},
+    )
+    db.commit()
+    from api.scheduler import remove_schedule_job
+    remove_schedule_job(schedule_id)
+    return {"ok": True, "schedule_id": schedule_id, "is_active": False}
 
 
 @router.post("/admin/accounts/{account_id}/plan")
@@ -1060,6 +1295,33 @@ def admin_set_password(
     return {"ok": True}
 
 
+@router.post("/admin/users/{user_id}/revoke-sessions")
+def admin_revoke_sessions(
+    user_id: int,
+    admin: dict = Depends(require_platform_admin),
+    db: PGConn = Depends(get_db),
+):
+    """Sign a user out everywhere.
+
+    Stamps ``users.password_changed_at`` (migration 0076): get_current_user
+    rejects any JWT issued before it, so every session the user holds dies on
+    its next request, without touching the password. This is what a suspected
+    stolen token needs; deactivating (PATCH is_active) is the reversible
+    lockout and set-password is the recovery. Allowed on yourself — it is not a
+    lockout, the admin simply signs in again — and the response says so,
+    because the caller's own token is now dead.
+    """
+    user = _get_user(db, user_id)
+    with db.cursor() as cur:
+        cur.execute("UPDATE users SET password_changed_at = NOW() WHERE id = %s", (user_id,))
+    record_admin_action(
+        db, admin, "user.sessions_revoked", "user", user_id,
+        {"username": user["username"], "account_id": user["account_id"]},
+    )
+    db.commit()
+    return {"ok": True, "user_id": user_id, "self": user_id == admin["id"]}
+
+
 # ── Security panel ────────────────────────────────────────────────────────────
 
 @router.get("/admin/security")
@@ -1195,6 +1457,14 @@ def admin_auth_events(
         )
 
 
+@router.get("/admin/audit-log/actions")
+def admin_audit_actions():
+    """The audit vocabulary, for the feed's filter. Served rather than copied
+    into the frontend so a new action can never be unfilterable — the copied
+    list used to lack both delete actions."""
+    return {"actions": list(AUDIT_ACTIONS)}
+
+
 @router.get("/admin/audit-log")
 def admin_audit_log(
     admin_user_id: int | None = Query(None),
@@ -1216,7 +1486,8 @@ def admin_audit_log(
     with db.cursor() as cur:
         cur.execute(
             f"""
-            SELECT l.id, l.admin_user_id, u.username AS admin_username,
+            SELECT l.id, l.admin_user_id,
+                   COALESCE(l.admin_username, u.username) AS admin_username,
                    l.action, l.target_type, l.target_id, l.detail, l.created_at,
                    COUNT(*) OVER () AS _total
             FROM admin_audit_log l

@@ -1,6 +1,6 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
-import { adminAuditLog } from '@/lib/api'
+import { adminAuditActions, adminAuditLog } from '@/lib/api'
 import type { AdminAuditRow } from '@/lib/types'
 import { TH_STYLE, TD_STYLE, zebra, fmtDateTime, Pagination } from './AdminTable'
 import { SkeletonRows, EmptyRow } from '@/components/ds'
@@ -12,7 +12,15 @@ export function AdminAudit() {
   const [action, setAction] = useState('')
   const [page, setPage] = useState(1)
   const [error, setError] = useState<string | null>(null)
+  // Served by the API (admin_logic.AUDIT_ACTIONS) so a new action is
+  // filterable the day it ships — the hand-copied list this replaced lacked
+  // both delete actions.
+  const [actions, setActions] = useState<string[]>([])
   const pageSize = 50
+
+  useEffect(() => {
+    adminAuditActions().then((r) => setActions(r.actions)).catch(() => setActions([]))
+  }, [])
 
   const load = useCallback(async () => {
     setError(null)
@@ -28,10 +36,7 @@ export function AdminAudit() {
 
   useEffect(() => { load() }, [load])
 
-  const ACTIONS = [
-    '', 'user.create', 'user.update', 'user.reset_link', 'user.set_password',
-    'account.create', 'account.plan_set', 'account.trial_extend', 'account.trial_expire',
-  ]
+  const ACTIONS = ['', ...actions]
 
   return (
     <div>

@@ -31,7 +31,7 @@ for _noisy in ("apscheduler.executors.default", "apscheduler.scheduler",
 # import time lands in the configured handler.
 from api.deps import require_platform_admin  # noqa: E402
 from api.entitlements import require_module  # noqa: E402
-from api.routes import admin
+from api.routes import admin, admin_data, admin_usage
 from api.routes import leads, notes, history, export, record_fields, segments, messaging
 from api.routes import lead_events
 from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, hcad, workflows, imports, quotes
@@ -72,6 +72,7 @@ async def lifespan(app: FastAPI):
         schedule_user_digest, schedule_phone_append_sweep,
         schedule_stale_run_reconcile, schedule_non_residential_sweep,
     )
+    from api.data_health import schedule_data_health_snapshot
     scheduler.start()
     # Before any schedule fires: a previous instance that crashed mid-run leaves
     # its pipeline_runs row at `running`, which the UI shows as active forever.
@@ -87,6 +88,7 @@ async def lifespan(app: FastAPI):
     schedule_user_digest()
     schedule_phone_append_sweep()
     schedule_non_residential_sweep()
+    schedule_data_health_snapshot()
     _check_hcad_source()
     yield
     scheduler.shutdown(wait=False)
@@ -120,6 +122,13 @@ app.include_router(oauth.router,    prefix="/api", tags=["Auth"])
 # it can ever ship unguarded; mutating endpoints re-declare the dependency to
 # get the actor for admin_audit_log (FastAPI caches it per-request).
 app.include_router(admin.router,    prefix="/api", tags=["Admin"],
+                   dependencies=[Depends(require_platform_admin)])
+# Sibling admin routers — same guard, same exemption; tests/test_router_gating.py
+# asserts the guard for every router that serves /admin, so a new one cannot
+# ship without it.
+app.include_router(admin_usage.router, prefix="/api", tags=["Admin"],
+                   dependencies=[Depends(require_platform_admin)])
+app.include_router(admin_data.router,  prefix="/api", tags=["Admin"],
                    dependencies=[Depends(require_platform_admin)])
 # Self-serve signup + email verification + password reset. Ungated by design —
 # these are how a stranger becomes a customer.

@@ -122,6 +122,9 @@ See [Geo Scoring & Prospecting](#geo-scoring--prospecting) below. (A predictive-
 - **Create an organization** from the Orgs tab: provisions a fresh org + its owner login through the same path as self-serve signup (stages, fields, plan, 14-day pro trial, workflows), with the owner's email pre-verified
 - Plan & trial management from the UI (assign plans and module overrides, extend/expire trials) — refused when Stripe owns the subscription
 - **Delete a user**: removes the login, their reset links and their linked Google/Apple sign-in; the org keeps its data, with the deleted user's leads unassigned and their notes/invoices/calls kept but unattributed. Refused for yourself, for a platform admin, for an org's last user, and for its only owner
+- **Org controls**: edit an org's name / business type / review link, override its monthly scored-reveal and territory limits with used-vs-limit meters, see and switch off its pipeline schedules (the rows a downgrade silently trims), sign a user out everywhere, and see which Google/Apple identities a member signs in with
+- **Usage tab**: what each tenant costs the platform over 7/30/90 days — RentCast requests, scored reveals against the limit, runs and skip traces, SMS/email, calls and minutes, active Twilio numbers, ZIPs run — sortable per column; a metric whose query times out shows "—", never 0
+- **Data tab**: the shared data layer's vital signs from a nightly snapshot (`api/data_health.py`, refreshable on demand): parcel-cache coverage per ZIP against the county roll, APN→centroid match rate, classification backlog and stale rule stamps per org and ZIP, RentCast disagreement counts, the geocode queue, and the migration-0079 mail-city tripwire
 - **Delete an organization**: purges the org and everything it owns (leads, invoices, quotes, calls, notes, logins, login history) via `ON DELETE CASCADE`, then verifies nothing survived before committing. The shared parcel cache and the audit trail are kept. Requires typing the org's name back, and is refused for your own org, an org with a live Stripe subscription, or an org containing a platform admin
 - Security panel: login/failed-login monitoring (`auth_events`, written by password + OAuth logins), unverified/disabled users, Stripe webhook and pipeline failures, deployment config checks
 - Every admin mutation lands in `admin_audit_log` (same transaction as the change), browsable from the Audit tab — and outlives both the org and the admin it describes
@@ -660,7 +663,16 @@ Cross-tenant operator surface, guarded by `users.is_platform_admin` (grant via `
 | GET | `/api/admin/security` | Failed logins, unverified/disabled users, webhook + pipeline failures, config checks |
 | GET | `/api/admin/auth-events` | Login/auth event feed (success + failure, password + OAuth) |
 | GET | `/api/admin/audit-log` | Admin-action audit feed |
+| GET | `/api/admin/audit-log/actions` | The audit action vocabulary (`admin_logic.AUDIT_ACTIONS`), for the feed's filter |
 | GET | `/api/admin/prospects` | Landing-page prospect signups |
+| PATCH | `/api/admin/accounts/{id}` | Edit name / business type / review link (enabled modules are left alone) |
+| POST | `/api/admin/accounts/{id}/limits` | Override the monthly scored-reveal and territory limits (null = plan default; a territory decrease trims schedules like a downgrade) |
+| POST | `/api/admin/accounts/{id}/schedules/{sid}/deactivate` | Switch off one pipeline schedule (deactivate only) |
+| POST | `/api/admin/users/{id}/revoke-sessions` | Sign a user out everywhere (stamps `password_changed_at`; allowed on yourself) |
+| GET | `/api/admin/usage` | Every org's cost drivers over a window — RentCast requests, reveals vs limit, runs + skip traces, SMS/email, calls + minutes, active Twilio numbers, ZIPs run — each a `soft_query` block (`degraded` names what timed out) |
+| GET | `/api/admin/accounts/{id}/usage` | One org's cost drivers over a window |
+| GET | `/api/admin/data-health` | Newest nightly data-health snapshot (parcel cache per ZIP, APN→centroid match, classification backlog, RentCast disagreements, mail-city tripwire) plus live geocode-queue and rule-staleness figures |
+| POST | `/api/admin/data-health/refresh` | Recompute the snapshot now, in the background (409 while one is running) |
 
 ### Leads
 | Method | Path | Description |
