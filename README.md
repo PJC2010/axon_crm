@@ -125,6 +125,7 @@ See [Geo Scoring & Prospecting](#geo-scoring--prospecting) below. (A predictive-
 - **Org controls**: edit an org's name / business type / review link, override its monthly scored-reveal and territory limits with used-vs-limit meters, see and switch off its pipeline schedules (the rows a downgrade silently trims), sign a user out everywhere, and see which Google/Apple identities a member signs in with
 - **Usage tab**: what each tenant costs the platform over 7/30/90 days — RentCast requests, scored reveals against the limit, runs and skip traces, SMS/email, calls and minutes, active Twilio numbers, ZIPs run — sortable per column; a metric whose query times out shows "—", never 0
 - **Data tab**: the shared data layer's vital signs from a nightly snapshot (`api/data_health.py`, refreshable on demand): parcel-cache coverage per ZIP against the county roll, APN→centroid match rate, classification backlog and stale rule stamps per org and ZIP, RentCast disagreement counts, the geocode queue, and the migration-0079 mail-city tripwire
+- **Ops tab**: what the platform is doing right now — every APScheduler job on the answering instance next to its job ledger (`scheduler_job_runs`, migration 0088: every scheduler tick is wrapped in `api/job_runs.py` and lands as ok / error / skipped with its reason), a cross-tenant pipeline-runs feed with cooperative cancel (audited as `run.cancel`), the backlog (stale runs, geocode queue, Stripe webhooks left unprocessed, verify-email tokens, workflow firings) and the system card (build, instance, pending migrations, timeouts, scheduler state)
 - **Delete an organization**: purges the org and everything it owns (leads, invoices, quotes, calls, notes, logins, login history) via `ON DELETE CASCADE`, then verifies nothing survived before committing. The shared parcel cache and the audit trail are kept. Requires typing the org's name back, and is refused for your own org, an org with a live Stripe subscription, or an org containing a platform admin
 - Security panel: login/failed-login monitoring (`auth_events`, written by password + OAuth logins), unverified/disabled users, Stripe webhook and pipeline failures, deployment config checks
 - Every admin mutation lands in `admin_audit_log` (same transaction as the change), browsable from the Audit tab — and outlives both the org and the admin it describes
@@ -165,6 +166,7 @@ axon-crm/
 │   ├── business_types.py        # Business-type/terminology presets (multi-vertical)
 │   ├── accounts.py              # New-account provisioning (default stages, etc.)
 │   ├── scheduler.py             # APScheduler setup: pipeline, retrain, workflow tick, rescore, recurring invoices, phone-append sweep
+│   ├── job_runs.py              # Scheduler job-run ledger: every tick lands in scheduler_job_runs (the admin Ops tab reads it)
 │   ├── workflow_engine.py       # Status-change + scheduled workflow automation engine
 │   ├── ratelimit.py             # In-process rate limiting (login/import/pipeline-run)
 │   ├── oauth_verify.py          # Google/Apple OIDC ID token verification
@@ -673,6 +675,13 @@ Cross-tenant operator surface, guarded by `users.is_platform_admin` (grant via `
 | GET | `/api/admin/accounts/{id}/usage` | One org's cost drivers over a window |
 | GET | `/api/admin/data-health` | Newest nightly data-health snapshot (parcel cache per ZIP, APN→centroid match, classification backlog, RentCast disagreements, mail-city tripwire) plus live geocode-queue and rule-staleness figures |
 | POST | `/api/admin/data-health/refresh` | Recompute the snapshot now, in the background (409 while one is running) |
+| GET | `/api/admin/jobs` | Every APScheduler job on the answering instance joined with the job ledger (`scheduler_job_runs`): kind, trigger, next run, last run, 7-day ok/error/skipped counts |
+| GET | `/api/admin/jobs/{job_id}/runs` | One job's ledger history, newest first |
+| GET | `/api/admin/runs` | Cross-tenant pipeline-runs feed, newest first; filters `status`, `account_id`, `triggered_by`, `zip` |
+| GET | `/api/admin/runs/{id}` | One run with its full `result_json` |
+| POST | `/api/admin/runs/{id}/cancel` | Cooperative cancel of any org's queued/running run (400 when already finished, 409 when it finished first); audited as `run.cancel` |
+| GET | `/api/admin/backlog` | Queues and stale work — pipeline runs by state, geocode queue, verify-email tokens, unprocessed Stripe webhooks, workflow firings — each a `soft_query` block |
+| GET | `/api/admin/system` | Build commit / service / instance, Python and Postgres versions, on-disk vs applied migrations (pending named), pool and timeouts, scheduler state |
 
 ### Leads
 | Method | Path | Description |

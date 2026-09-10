@@ -278,10 +278,10 @@ from api.admin_logic import (  # noqa: E402
 class TestAuditActionsRegistry:
     def test_every_recorded_action_is_registered(self):
         os.environ.setdefault("JWT_SECRET_KEY", "test-secret-not-used-for-signing")
-        from api.routes import admin, admin_data, admin_usage
+        from api.routes import admin, admin_data, admin_ops, admin_usage
         pattern = re.compile(r'record_admin_action\(\s*db,\s*admin,\s*"([a-z_.]+)"')
         found: set[str] = set()
-        for module in (admin, admin_data, admin_usage):
+        for module in (admin, admin_data, admin_ops, admin_usage):
             found |= set(pattern.findall(inspect.getsource(module)))
         assert found, "the probe found no audit calls — did the call shape change?"
         assert found <= set(AUDIT_ACTIONS), found - set(AUDIT_ACTIONS)
@@ -449,3 +449,120 @@ class TestDataHealthAlerts:
                                         {"zips_unstamped": 1}, now=self.NOW):
             assert set(alert) == {"key", "severity", "label", "detail"}
             assert alert["severity"] in ("error", "warn", "info")
+
+
+# ── Ops tab helpers (api/routes/admin_ops.py) ────────────────────────────────
+
+from api.admin_logic import (  # noqa: E402
+    CANCELLABLE_RUN_STATUSES, RUN_STATUSES, canonical_migration_name, classify_job_id,
+    merge_jobs, pending_migrations, runs_where, stale_run_threshold, validate_run_cancel,
+)
+
+
+class TestValidateRunCancel:
+    def test_only_live_runs_can_be_cancelled(self):
+        for status in CANCELLABLE_RUN_STATUSES:
+            assert validate_run_cancel(status) is None
+        for status in set(RUN_STATUSES) - set(CANCELLABLE_RUN_STATUSES):
+            assert validate_run_cancel(status) == f"Run is already {status}"
+
+
+class TestStaleRunThreshold:
+    def test_watchdog_value_or_a_day_when_disabled(self):
+        assert stale_run_threshold(3600) == 3600
+        assert stale_run_threshold(0) == 86400
+        assert stale_run_threshold(None) == 86400
+
+
+class TestRunsWhere:
+    def test_no_filters_means_no_where(self):
+        assert runs_where() == ("", [])
+
+    def test_binds_every_filter_in_clause_order(self):
+        sql, params = runs_where(status="running", account_id=2, triggered_by="schedule",
+                                 zip_code="77396")
+        assert sql == ("WHERE r.status = %s AND r.account_id = %s AND r.triggered_by = %s "
+                       "AND r.zip = %s")
+        assert params == ["running", 2, "schedule", "77396"]
+
+    def test_account_zero_is_a_filter_but_empty_strings_are_not(self):
+        assert runs_where(account_id=0) == ("WHERE r.account_id = %s", [0])
+        assert runs_where(status="", zip_code="") == ("", [])
+
+
+class TestClassifyJobId:
+    TRACKED = {"trial_expiry_daily"}
+
+    def test_each_family(self):
+        assert classify_job_id("pipeline_schedule_12", self.TRACKED) == ("pipeline_schedule", 12)
+        assert classify_job_id("run_301", self.TRACKED) == ("one_shot", 301)
+        assert classify_job_id("geo_rescore_customer_3_44", self.TRACKED) == \
+            ("geo_rescore_customer", None)
+        assert classify_job_id("trial_expiry_daily", self.TRACKED) == ("tick", None)
+        assert classify_job_id("something_else", self.TRACKED) == ("unknown", None)
+
+    def test_a_malformed_schedule_id_is_unknown_not_a_schedule(self):
+        assert classify_job_id("pipeline_schedule_x", self.TRACKED) == ("unknown", None)
+
+
+class TestMergeJobs:
+    TRACKED = {"trial_expiry_daily", "stale_run_reconcile"}
+    REGISTERED = [
+        {"id": "run_301", "trigger": "date", "next_run_time": None, "func_job_id": None},
+        {"id": "pipeline_schedule_9", "trigger": "cron", "next_run_time": None, "func_job_id": None},
+        {"id": "trial_expiry_daily", "trigger": "cron[hour='7']", "next_run_time": "t",
+         "func_job_id": "trial_expiry_daily"},
+        {"id": "pipeline_schedule_2", "trigger": "cron", "next_run_time": None, "func_job_id": None},
+        {"id": "run_305", "trigger": "date", "next_run_time": None, "func_job_id": None},
+    ]
+    LAST = [{"job_id": "trial_expiry_daily", "status": "ok"},
+            {"job_id": "stale_run_reconcile", "status": "skipped"}]
+    COUNTS = [{"job_id": "trial_expiry_daily", "status": "ok", "n": 6},
+              {"job_id": "trial_expiry_daily", "status": "error", "n": 1}]
+
+    def test_orders_ticks_then_schedules_ascending_then_one_shots_newest_first(self):
+        rows = merge_jobs(self.REGISTERED, self.LAST, self.COUNTS, self.TRACKED)
+        assert [r["id"] for r in rows] == [
+            "stale_run_reconcile", "trial_expiry_daily",
+            "pipeline_schedule_2", "pipeline_schedule_9", "run_305", "run_301"]
+
+    def test_joins_registry_ledger_and_counts(self):
+        rows = {r["id"]: r for r in merge_jobs(self.REGISTERED, self.LAST, self.COUNTS,
+                                               self.TRACKED)}
+        trial = rows["trial_expiry_daily"]
+        assert trial["scheduled_here"] and trial["trigger"] == "cron[hour='7']"
+        assert trial["next_run_time"] == "t" and trial["last"]["status"] == "ok"
+        assert trial["counts_7d"] == {"ok": 6, "error": 1, "skipped": 0, "running": 0}
+        # Known to the ledger only: the other instance's job, or one no longer
+        # registered here.
+        stale = rows["stale_run_reconcile"]
+        assert stale["scheduled_here"] is False and stale["trigger"] is None
+        assert stale["counts_7d"] == {"ok": 0, "error": 0, "skipped": 0, "running": 0}
+        schedule = rows["pipeline_schedule_9"]
+        assert schedule["last"] is None and schedule["tracked"] is False
+        assert schedule["counts_7d"] == {"ok": 0, "error": 0, "skipped": 0, "running": 0}
+
+    def test_a_degraded_read_is_none_everywhere_never_zero(self):
+        rows = merge_jobs(self.REGISTERED, None, None, self.TRACKED)
+        assert rows and all(r["last"] is None and r["counts_7d"] is None for r in rows)
+        assert "stale_run_reconcile" not in {r["id"] for r in rows}   # nothing to union from
+        rows = merge_jobs(self.REGISTERED, self.LAST, None, self.TRACKED)
+        assert all(r["counts_7d"] is None for r in rows)
+        assert "stale_run_reconcile" in {r["id"] for r in rows}
+
+
+class TestMigrationNames:
+    def test_canonical_matches_the_runner_byte_for_byte(self, monkeypatch):
+        # admin_ops cannot import db/migrate.py (it reads DATABASE_URL at
+        # import), so the rule is duplicated — and pinned here.
+        from tests.test_migrate_lock_guard import _load_migrate
+        mod = _load_migrate(monkeypatch)
+        for name in ("001_init.sql", "0088_scheduler_job_runs.sql", "12_x.sql", "README.md",
+                     "0000_base.sql", "7_a_b.sql", "0087_data_health_snapshots.sql"):
+            assert canonical_migration_name(name) == mod._canonical(name), name
+
+    def test_pending_ignores_zero_padding_and_sorts_oldest_first(self):
+        on_disk = ["0088_b.sql", "0001_a.sql", "0087_c.sql"]
+        assert pending_migrations(on_disk, ["001_a.sql", "0087_c.sql"]) == ["0088_b.sql"]
+        assert pending_migrations(on_disk, []) == ["0001_a.sql", "0087_c.sql", "0088_b.sql"]
+        assert pending_migrations(on_disk, on_disk) == []

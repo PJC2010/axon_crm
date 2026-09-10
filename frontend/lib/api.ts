@@ -1,6 +1,6 @@
 
 import type { Lead, LeadPage, LeadFilters, CustomerSearchResult, Note, HistoryEntry, LeadStatus, Task, TaskCreate, PipelineGroup, PipelineCounts, User, PipelineRun, PipelineSchedule, Expense, ExpenseCreate, ExpenseSummary, ExpenseFilters, ReceiptScanResult, Invoice, InvoiceCreate, InvoiceFilters, InvoicePayment, Quote, QuoteCreate, QuoteFilters, QuoteStatus, PublicQuote, StripeStatus, PublicPayInfo, BillingInfo, ARSummary, AgingBucket, PnLReport, JobCostRow, TimelineEntry, PipelineStage, PipelineAnalytics, ForecastData, PipelineAlerts, PerformanceBreakdown, PerformanceDimension, TeamMember, WorkflowRule, WorkflowRuleCreate, Segment, MessageTemplate, MessageTemplateCreate, Policy, PolicyCreate, PolicyPage, Order, OrderCreate, OrderPage, Appointment, AppointmentCreate, AppointmentPage, ScoreExplanation, ImportPreview, ImportResult, AccountFeatures, BusinessTypeInfo, ObjectKpis, ModuleMap, RecordFieldDef, RecordFieldType, HeatmapMetric, HeatmapResponse, ClusterCollection, ProspectSeed, ProspectResult, BlastRadiusResult, ServiceArea, EventCollection, EventCreate, LeadEvent, LeadEventCreate, CallSettings, CallSettingsResponse, TrackingNumber, AvailableNumber, CallOutcome, CallLogPage, CallDisposition, DialerQueueResponse, DialerTokenResponse, DispositionResult, ScoreGrade } from './types'
-import type { AdminSummary, AdminPage, AdminAccountRow, AdminAccountDetail, AdminAccountCreate, AdminAccountCreateResult, AdminOrgActivityRow, AdminMember, AdminUserRow, AdminUserCreate, AdminUserUpdate, AdminResetLinkResult, AdminDeleteUserResult, AdminDeleteAccountResult, AdminBillingState, AdminSecurityReport, AuthEventRow, AuthEventFilters, AdminAuditRow, AdminProspectRow, AdminAccountUpdate, AdminLimits, AdminUsageBlock, AdminUsagePage, AdminUsageFilters, AdminAccountUsage, AdminDataHealth } from './types'
+import type { AdminSummary, AdminPage, AdminAccountRow, AdminAccountDetail, AdminAccountCreate, AdminAccountCreateResult, AdminOrgActivityRow, AdminMember, AdminUserRow, AdminUserCreate, AdminUserUpdate, AdminResetLinkResult, AdminDeleteUserResult, AdminDeleteAccountResult, AdminBillingState, AdminSecurityReport, AuthEventRow, AuthEventFilters, AdminAuditRow, AdminProspectRow, AdminAccountUpdate, AdminLimits, AdminUsageBlock, AdminUsagePage, AdminUsageFilters, AdminAccountUsage, AdminDataHealth, AdminJobsReport, AdminJobRunRow, AdminRunRow, AdminRunDetail, AdminRunFilters, AdminBacklog, AdminSystemInfo } from './types'
 import { getToken, clearToken } from './auth'
 
 // Use 127.0.0.1 (not localhost): on macOS `localhost` resolves to IPv6 ::1
@@ -1383,4 +1383,38 @@ export function adminDataHealth(): Promise<AdminDataHealth> {
 
 export function adminDataHealthRefresh(): Promise<{ queued: boolean; job_id: string }> {
   return req('/admin/data-health/refresh', { method: 'POST' })
+}
+
+// ── Ops tab (api/routes/admin_ops.py) ──
+
+/** Every APScheduler job on the instance that answers, joined with the job
+ *  ledger; next-run times belong to that instance only. */
+export function adminJobs(): Promise<AdminJobsReport> {
+  return req('/admin/jobs')
+}
+
+export function adminJobRuns(jobId: string, page = 1, pageSize = 50): Promise<AdminPage<AdminJobRunRow>> {
+  return req(`/admin/jobs/${encodeURIComponent(jobId)}/runs?page=${page}&page_size=${pageSize}`)
+}
+
+export function adminRuns(filters: AdminRunFilters = {}): Promise<AdminPage<AdminRunRow>> {
+  return req(`/admin/runs${adminQuery(filters as Record<string, unknown>)}`)
+}
+
+export function adminRun(runId: number): Promise<AdminRunDetail> {
+  return req(`/admin/runs/${runId}`)
+}
+
+/** Cooperative cancel: the row flips to cancelled now; the run itself stops
+ *  between steps on the instance executing it. 409 when it finished first. */
+export function adminCancelRun(runId: number): Promise<{ ok: boolean; run_id: number; status: 'cancelled'; previous_status: string }> {
+  return req(`/admin/runs/${runId}/cancel`, { method: 'POST' })
+}
+
+export function adminBacklog(): Promise<AdminBacklog> {
+  return req('/admin/backlog')
+}
+
+export function adminSystem(): Promise<AdminSystemInfo> {
+  return req('/admin/system')
 }

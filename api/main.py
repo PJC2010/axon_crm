@@ -31,7 +31,7 @@ for _noisy in ("apscheduler.executors.default", "apscheduler.scheduler",
 # import time lands in the configured handler.
 from api.deps import require_platform_admin  # noqa: E402
 from api.entitlements import require_module  # noqa: E402
-from api.routes import admin, admin_data, admin_usage
+from api.routes import admin, admin_data, admin_ops, admin_usage
 from api.routes import leads, notes, history, export, record_fields, segments, messaging
 from api.routes import lead_events
 from api.routes import auth, tasks, pipeline, expenses, invoices, bookkeeping, hcad, workflows, imports, quotes
@@ -129,6 +129,8 @@ app.include_router(admin.router,    prefix="/api", tags=["Admin"],
 app.include_router(admin_usage.router, prefix="/api", tags=["Admin"],
                    dependencies=[Depends(require_platform_admin)])
 app.include_router(admin_data.router,  prefix="/api", tags=["Admin"],
+                   dependencies=[Depends(require_platform_admin)])
+app.include_router(admin_ops.router,   prefix="/api", tags=["Admin"],
                    dependencies=[Depends(require_platform_admin)])
 # Self-serve signup + email verification + password reset. Ungated by design —
 # these are how a stranger becomes a customer.

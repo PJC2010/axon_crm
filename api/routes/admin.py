@@ -37,8 +37,9 @@ GET   /admin/prospects                    — landing-page prospect signups
 
 Sibling routers under the same guard (api/main.py registers each with
 require_platform_admin, and tests/test_router_gating.py asserts it for every
-router serving /admin): api/routes/admin_usage.py (per-org usage) and
-api/routes/admin_data.py (platform data health).
+router serving /admin): api/routes/admin_usage.py (per-org usage),
+api/routes/admin_data.py (platform data health) and api/routes/admin_ops.py
+(scheduler jobs, cross-tenant runs, backlog, system).
 """
 import logging
 import os

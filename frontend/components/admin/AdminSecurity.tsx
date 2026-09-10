@@ -3,42 +3,13 @@ import { Skeleton, SkeletonRows, EmptyRow } from '@/components/ds'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { adminAuthEvents, adminSecurity } from '@/lib/api'
 import type { AdminSecurityReport, AuthEventRow, ConfigCheck } from '@/lib/types'
-import { TH_STYLE, TD_STYLE, zebra, fmtDate, fmtDateTime, Pagination } from './AdminTable'
-
-const CARD: React.CSSProperties = {
-  background: 'var(--color-surface)', borderRadius: 'var(--radius-card)',
-  boxShadow: 'var(--shadow-card)', marginBottom: 18,
-}
+import { TH_STYLE, TD_STYLE, zebra, fmtDate, fmtDateTime, Pagination, CARD, SectionTable } from './AdminTable'
 
 const CHECK_COLOR: Record<ConfigCheck['status'], string> = {
   ok: 'var(--color-success)',
   warn: 'var(--color-warning)',
   error: 'var(--color-danger)',
   info: 'var(--color-ink-400)',
-}
-
-function SectionTable({ title, headers, empty, children }: {
-  title: string
-  headers: string[]
-  empty: boolean
-  children: React.ReactNode
-}) {
-  return (
-    <div style={{ ...CARD, overflowX: 'auto' }}>
-      <h2 className="t-eyebrow" style={{ margin: 0, padding: '14px 16px 8px' }}>{title}</h2>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr>{headers.map((h) => <th key={h} style={TH_STYLE}>{h}</th>)}</tr>
-        </thead>
-        <tbody>
-          {empty && (
-            <tr><td colSpan={headers.length} style={{ ...TD_STYLE, textAlign: 'center', padding: '24px 0', color: 'var(--color-ink-400)' }}>Nothing to show</td></tr>
-          )}
-          {children}
-        </tbody>
-      </table>
-    </div>
-  )
 }
 
 export function AdminSecurity() {

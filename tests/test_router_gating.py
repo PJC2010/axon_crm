@@ -91,10 +91,10 @@ class TestModuleGating:
 
 class TestAdminGuard:
     def test_every_router_serving_admin_is_platform_admin_guarded(self):
-        # Three routers serve /api/admin now (admin, admin_usage, admin_data) and
-        # each is included with its own guard line in api/main.py. This reads
-        # the guard off the include context the same way _module_gates does, so
-        # a fourth router cannot ship without it.
+        # Four routers serve /api/admin now (admin, admin_usage, admin_data,
+        # admin_ops) and each is included with its own guard line in
+        # api/main.py. This reads the guard off the include context the same
+        # way _module_gates does, so a fifth router cannot ship without it.
         from api.deps import require_platform_admin
         guarded = 0
         for entry in app.routes:
@@ -112,4 +112,4 @@ class TestAdminGuard:
             guarded += 1
         # If the probe stops seeing include contexts the loop above passes
         # vacuously, so the count is the canary.
-        assert guarded >= 3
+        assert guarded >= 4

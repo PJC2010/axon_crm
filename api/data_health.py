@@ -28,6 +28,7 @@ from decimal import Decimal
 import psycopg2
 from psycopg2.extras import Json
 
+from api import job_runs
 from config import DATA_HEALTH_BLOCK_TIMEOUT_MS, DATABASE_URL
 
 log = logging.getLogger(__name__)
@@ -243,6 +244,7 @@ def build_report(conn, *, block_timeout_ms: int | None = None) -> dict:
 
 # ── The tick ──────────────────────────────────────────────────────────────────
 
+@job_runs.tracked(JOB_ID, manual_id=MANUAL_JOB_ID)
 def run_snapshot(triggered_by: str = "schedule"):
     """Compute and store one snapshot. Returns the row id, None when skipped.
 
@@ -259,7 +261,7 @@ def run_snapshot(triggered_by: str = "schedule"):
             cur.execute("SELECT pg_try_advisory_lock(%s)", (LOCK_KEY,))
             if not cur.fetchone()[0]:
                 log.info("Data-health snapshot skipped — another worker holds the lock")
-                return None
+                job_runs.skip("another worker holds the lock")
         try:
             with conn.cursor() as cur:
                 cur.execute(
@@ -275,8 +277,12 @@ def run_snapshot(triggered_by: str = "schedule"):
                 error = None
             except Exception as exc:  # build_report catches per block; belt and braces
                 log.exception("Data-health snapshot failed")
+                job_runs.failed(exc)
                 report = {"blocks_failed": list(BLOCK_NAMES)}
                 status, error = "error", f"{type(exc).__name__}: {exc}"[:2000]
+            job_runs.note(triggered_by=triggered_by, snapshot_id=row_id, snapshot_status=status,
+                          blocks_failed=report.get("blocks_failed"),
+                          duration_seconds=report.get("duration_seconds"))
             with conn.cursor() as cur:
                 cur.execute(
                     "UPDATE data_health_snapshots SET finished_at = NOW(), status = %s, "
@@ -296,7 +302,8 @@ def run_snapshot(triggered_by: str = "schedule"):
             with conn.cursor() as cur:
                 cur.execute("SELECT pg_advisory_unlock(%s)", (LOCK_KEY,))
             conn.commit()
-    except Exception:
+    except Exception as exc:
+        job_runs.failed(exc)
         log.exception("Data-health snapshot tick failed")
     finally:
         conn.close()

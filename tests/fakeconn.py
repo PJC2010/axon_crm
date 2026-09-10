@@ -90,3 +90,30 @@ def first_index(conn, needle):
         if needle in s:
             return i
     raise AssertionError(f"no statement containing {needle!r}")
+
+
+# ── the job ledger's connections ──────────────────────────────────────────────
+# api/job_runs.py opens its own short-lived connection before a tick (the
+# INSERT) and after it (the closing UPDATE). A fixture that patches
+# psycopg2.connect sees those too, so a test that means "the tick's connection"
+# splits them apart here instead of reading conns[0].
+
+LEDGER_OPENERS = ("INSERT INTO scheduler_job_runs (job_id, host)",
+                  "UPDATE scheduler_job_runs SET finished_at")
+
+
+def is_ledger_conn(conn) -> bool:
+    """Whether ``conn`` is one the job ledger opened: its first statement is
+    the ledger's INSERT or its closing UPDATE. A tick's own connection never
+    starts with either — reconcile_stale_runs touches scheduler_job_runs too,
+    but only after taking its lock."""
+    if not conn.executed:
+        return False
+    return conn.executed[0][0].startswith(LEDGER_OPENERS)
+
+
+def split_ledger(conns):
+    """(ledger connections, tick connections), each in open order."""
+    ledger = [c for c in conns if is_ledger_conn(c)]
+    ticks = [c for c in conns if not is_ledger_conn(c)]
+    return ledger, ticks

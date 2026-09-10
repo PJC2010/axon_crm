@@ -15,6 +15,7 @@ import pytest
 
 import config
 from api import scheduler as sched
+from tests.fakeconn import split_ledger
 
 
 class _FakeCursor:
@@ -63,7 +64,12 @@ class _FakeConn:
 
 @pytest.fixture
 def fake_db(monkeypatch):
-    """Hand every psycopg2.connect() in the scheduler the same fake connection."""
+    """Hand every psycopg2.connect() in the scheduler the same fake connection.
+
+    The job ledger (api/job_runs.py) opens its own connection before a tick and
+    again after it, so a test that means "the tick's connection" reads
+    ``tick_conns``, never ``conns[0]``; ``ledger_conns`` are the ledger's.
+    """
     conns = []
 
     def _factory(*a, **k):
@@ -73,7 +79,12 @@ def fake_db(monkeypatch):
 
     _factory.kwargs = {}
     monkeypatch.setattr(sched.psycopg2, "connect", _factory)
-    return type("Handle", (), {"conns": conns, "configure": lambda s, **kw: _factory.kwargs.update(kw)})()
+    return type("Handle", (), {
+        "conns": conns,
+        "configure": lambda s, **kw: _factory.kwargs.update(kw),
+        "tick_conns": property(lambda s: split_ledger(conns)[1]),
+        "ledger_conns": property(lambda s: split_ledger(conns)[0]),
+    })()
 
 
 def _sql(conn, needle):
@@ -184,7 +195,7 @@ class TestReconcileStaleRuns:
         # The fake returns rowcount=2 for each of the two sweeps (running +
         # orphaned queued), so the total is 4.
         assert sched.reconcile_stale_runs() == 4
-        conn = fake_db.conns[0]
+        conn = fake_db.tick_conns[0]
         updates = _sql(conn, "UPDATE pipeline_runs SET status = 'failed'")
         sql, params = updates[0]
         assert "WHERE status = 'running'" in sql
@@ -199,13 +210,21 @@ class TestReconcileStaleRuns:
         assert "WHERE status = 'queued'" in queued_sql
         assert "make_interval(hours => 1)" in queued_sql
         assert queued_params[0].adapted == {"error": "stale (never started — process restarted)"}
+        # The job ledger's hygiene rides the same sweep (api/job_runs.py): a
+        # tick killed mid-run by a redeploy is closed as error, and rows past
+        # the retention window are pruned. Neither rowcount is in the 4 above —
+        # the return value counts stale pipeline runs only.
+        (stale_sql, _), = _sql(conn, "UPDATE scheduler_job_runs SET status = 'error'")
+        assert "status = 'running' AND started_at < NOW() - INTERVAL '6 hours'" in stale_sql
+        (prune_sql, _), = _sql(conn, "DELETE FROM scheduler_job_runs")
+        assert "INTERVAL '90 days'" in prune_sql
         assert _sql(conn, "pg_advisory_unlock")
         assert conn.closed
 
     def test_skips_while_a_run_holds_the_lock(self, fake_db):
         fake_db.configure(lock_granted=False, rowcount=9)
         assert sched.reconcile_stale_runs() == 0
-        conn = fake_db.conns[0]
+        conn = fake_db.tick_conns[0]
         assert not _sql(conn, "UPDATE pipeline_runs")
         assert conn.closed
 
@@ -214,7 +233,7 @@ class TestReconcileStaleRuns:
         # into "fail every running row right now".
         monkeypatch.setattr(config, "RUN_MAX_SECONDS", 0)
         sched.reconcile_stale_runs()
-        _, params = _sql(fake_db.conns[0], "UPDATE pipeline_runs SET status = 'failed'")[0]
+        _, params = _sql(fake_db.tick_conns[0], "UPDATE pipeline_runs SET status = 'failed'")[0]
         assert params[1] >= 1
 
 

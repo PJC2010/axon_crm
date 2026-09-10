@@ -1753,13 +1753,7 @@ export interface AdminDataHealth {
     zips_unstamped: number
   }
   live: {
-    geocode_queue: {
-      queued: number
-      failed: number
-      done: number
-      oldest_queued_at: string | null
-      top_errors: { last_error: string | null; n: number }[]
-    } | null
+    geocode_queue: GeocodeQueueLive | null
     hcad_source: 'duckdb' | 'postgres' | 'none' | 'unknown'
   }
   alerts: DataHealthAlert[]
@@ -1774,6 +1768,155 @@ export interface AdminDataHealth {
     stalled: boolean
   } | null
   job_id: string
+  degraded: string[]
+}
+
+/** The geocode queue's live figures — the Data tab's reader
+ *  (api/routes/admin_data.py::geocode_queue_block), shared with the Ops backlog. */
+export interface GeocodeQueueLive {
+  queued: number
+  failed: number
+  done: number
+  oldest_queued_at: string | null
+  top_errors: { last_error: string | null; n: number }[]
+}
+
+// ── Ops tab (api/routes/admin_ops.py) ────────────────────────────────────────
+
+export type JobRunStatus = 'running' | 'ok' | 'error' | 'skipped'
+
+/** One scheduler_job_runs row (migration 0088): a tick's execution. */
+export interface AdminJobRunRow {
+  id: number
+  job_id: string
+  started_at: string
+  finished_at: string | null
+  status: JobRunStatus
+  error: string | null
+  detail: Record<string, unknown>
+  host: string | null
+  duration_seconds: number | null
+}
+
+export type AdminJobKind = 'tick' | 'pipeline_schedule' | 'one_shot' | 'geo_rescore_customer' | 'unknown'
+
+export interface AdminJobRow {
+  id: string
+  kind: AdminJobKind
+  ref: number | null            // the schedule id / run id a job refers to
+  tracked: boolean              // ledgered by api/job_runs.py (ticks); runs record themselves in pipeline_runs
+  scheduled_here: boolean       // registered on the instance that answered — the other instance keeps its own
+  trigger: string | null
+  next_run_time: string | null
+  last: AdminJobRunRow | null   // null when the ledger read was cut off OR the job never ran; `degraded` tells them apart
+  counts_7d: { ok: number; error: number; skipped: number; running: number } | null
+}
+
+export interface AdminJobsReport {
+  instance: string
+  scheduler: { running: boolean; state: number }
+  jobs: AdminJobRow[]
+  degraded: string[]
+}
+
+export type PipelineRunStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
+
+export interface AdminRunRow {
+  id: number
+  account_id: number
+  account_name: string | null
+  zip: string | null            // 'region:<id>' for region runs, 'backfill' for account sweeps
+  vertical: string | null
+  status: PipelineRunStatus | string
+  triggered_by: string | null
+  schedule_id: number | null
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+  duration_seconds: number | null
+  error: string | null
+  properties_scored: number | null
+}
+
+/** GET /admin/runs/{id}: the whole pipeline_runs row plus the org name. */
+export interface AdminRunDetail {
+  id: number
+  account_id: number
+  account_name: string | null
+  schedule_id: number | null
+  zip: string | null
+  vertical: string | null
+  status: string
+  triggered_by: string | null
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+  result_json: Record<string, unknown> | null
+}
+
+export interface AdminRunFilters {
+  status?: string
+  account_id?: number
+  triggered_by?: string
+  zip?: string
+  page?: number
+  page_size?: number
+}
+
+export interface AdminBacklog {
+  geocode_queue: GeocodeQueueLive | null
+  runs: {
+    queued: number
+    running: number
+    queued_stale: number
+    running_stale: number
+    oldest_active_at: string | null
+  } | null
+  verify_tokens: { live: number; expired_unused: number } | null
+  stripe_webhooks: {
+    received: number
+    error: number
+    error_7d: number
+    oldest_received_at: string | null
+    last_received_at: string | null
+  } | null
+  workflow_firings: { fired_24h: number; accounts_24h: number } | null
+  stale_after_seconds: number
+  degraded: string[]
+}
+
+export interface AdminSystemInfo {
+  app: {
+    commit: string | null
+    service: string | null
+    instance_id: string | null
+    host: string
+    python: string
+    postgres: string | null
+  }
+  migrations: {
+    on_disk: number
+    applied: number | null
+    pending: string[] | null
+    latest_applied: { filename: string; applied_at: string } | null
+  }
+  db: {
+    pool_min: number
+    pool_max: number
+    statement_timeout_ms: number
+    dashboard_statement_timeout_ms: number
+    account_delete_timeout_ms: number
+    data_health_block_timeout_ms: number
+  }
+  scheduler: {
+    running: boolean
+    state: number
+    jobs: number
+    workflow_tick_hour: number
+    user_digest_hour: number
+    ml_retrain_enabled: boolean
+    run_max_seconds: number
+  }
   degraded: string[]
 }
 

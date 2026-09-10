@@ -57,6 +57,25 @@ def _hcad_source(report: dict) -> str:
     return "postgres" if (hcad.get("properties") or 0) > 0 else "none"
 
 
+def geocode_queue_block(cur) -> dict:
+    """The geocode queue by status plus its top failure reasons — index-only on
+    idx_geocode_queue_status (status, queued_at). Shared with the Ops backlog
+    (api/routes/admin_ops.py) so the two panels can never disagree."""
+    cur.execute("SELECT status, COUNT(*) AS n, MIN(queued_at) AS oldest "
+                "FROM geocode_queue GROUP BY status")
+    by_status = {r["status"]: r for r in dict_fetchall(cur)}
+    cur.execute("SELECT last_error, COUNT(*) AS n FROM geocode_queue "
+                "WHERE status = 'failed' GROUP BY last_error ORDER BY n DESC LIMIT 5")
+    errors = dict_fetchall(cur)
+    return {
+        "queued": (by_status.get("queued") or {}).get("n", 0),
+        "failed": (by_status.get("failed") or {}).get("n", 0),
+        "done": (by_status.get("done") or {}).get("n", 0),
+        "oldest_queued_at": (by_status.get("queued") or {}).get("oldest"),
+        "top_errors": errors,
+    }
+
+
 @router.get("/admin/data-health")
 def admin_data_health(db: PGConn = Depends(get_db)):
     degraded: list[str] = []
@@ -82,21 +101,6 @@ def admin_data_health(db: PGConn = Depends(get_db)):
         cur.execute("SELECT id, name FROM accounts")
         names = {r["id"]: r["name"] for r in dict_fetchall(cur)}
 
-    def _geocode(cur):
-        cur.execute("SELECT status, COUNT(*) AS n, MIN(queued_at) AS oldest "
-                    "FROM geocode_queue GROUP BY status")
-        by_status = {r["status"]: r for r in dict_fetchall(cur)}
-        cur.execute("SELECT last_error, COUNT(*) AS n FROM geocode_queue "
-                    "WHERE status = 'failed' GROUP BY last_error ORDER BY n DESC LIMIT 5")
-        errors = dict_fetchall(cur)
-        return {
-            "queued": (by_status.get("queued") or {}).get("n", 0),
-            "failed": (by_status.get("failed") or {}).get("n", 0),
-            "done": (by_status.get("done") or {}).get("n", 0),
-            "oldest_queued_at": (by_status.get("queued") or {}).get("oldest"),
-            "top_errors": errors,
-        }
-
     def _unclassified(cur):
         # Index-only on idx_properties_unclassified (0083): the backlog shrinks
         # toward empty, so this is cheap exactly when it matters least.
@@ -110,7 +114,7 @@ def admin_data_health(db: PGConn = Depends(get_db)):
             return dict_fetchall(cur)
         return _fn
 
-    geocode_queue = _q("geocode_queue", _geocode, None)
+    geocode_queue = _q("geocode_queue", geocode_queue_block, None)
     live_unclassified = _q("unclassified_live", _unclassified, None)
     property_stamps = _q(
         "property_rule_stamps",

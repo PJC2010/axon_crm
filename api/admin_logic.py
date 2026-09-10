@@ -271,6 +271,7 @@ AUDIT_ACTIONS = (
     "account.trial_extend",
     "account.update",
     "data_health.refresh",
+    "run.cancel",
     "schedule.deactivate",
     "user.create",
     "user.delete",
@@ -582,3 +583,130 @@ def data_health_alerts(snapshot: dict | None, live: dict | None, rule: dict | No
             "Neither a DuckDB file nor the hcad_properties mirror has data — HCAD "
             "seeding returns nothing. Load the mirror with tools/load_hcad_to_postgres.py.")
     return alerts
+
+
+# ── Ops tab (api/routes/admin_ops.py) ─────────────────────────────────────────
+
+RUN_STATUSES = ("queued", "running", "done", "failed", "cancelled")
+CANCELLABLE_RUN_STATUSES = ("queued", "running")
+JOB_KINDS = ("tick", "pipeline_schedule", "one_shot", "geo_rescore_customer", "unknown")
+_KIND_ORDER = {kind: i for i, kind in enumerate(JOB_KINDS)}
+_SCHEDULE_JOB_RE = re.compile(r"^pipeline_schedule_(\d+)$")
+_ONE_SHOT_JOB_RE = re.compile(r"^run_(\d+)$")
+_GEO_JOB_RE = re.compile(r"^geo_rescore_customer_(\d+)_(\d+)$")
+# The same rule as db/migrate.py::_canonical — pinned by a parity test, because
+# that module reads DATABASE_URL at import and cannot be imported by a request.
+_MIGRATION_PREFIX_RE = re.compile(r"^(\d+)(_.*)$")
+
+
+def validate_run_cancel(status) -> str | None:
+    """Why a run cannot be cancelled (None = it can). Mirrors the tenant
+    endpoint's message so the two surfaces read the same."""
+    if status in CANCELLABLE_RUN_STATUSES:
+        return None
+    return f"Run is already {status}"
+
+
+def stale_run_threshold(run_max_seconds) -> int:
+    """The stale-run reconcile's rule: a `running` row older than RUN_MAX_SECONDS
+    is stale — or older than a day when the watchdog is disabled (0)."""
+    return int(run_max_seconds) if run_max_seconds and run_max_seconds > 0 else 24 * 3600
+
+
+def runs_where(*, status=None, account_id=None, triggered_by=None,
+               zip_code=None) -> tuple[str, list]:
+    """WHERE clause + params for the cross-tenant runs feed (alias ``r``)."""
+    where, params = [], []
+    if status:
+        where.append("r.status = %s")
+        params.append(status)
+    if account_id is not None:
+        where.append("r.account_id = %s")
+        params.append(account_id)
+    if triggered_by:
+        where.append("r.triggered_by = %s")
+        params.append(triggered_by)
+    if zip_code:
+        where.append("r.zip = %s")
+        params.append(zip_code)
+    return (("WHERE " + " AND ".join(where)) if where else ""), params
+
+
+def classify_job_id(job_id: str, tracked_ids) -> tuple[str, int | None]:
+    """What an APScheduler job id is: a ledgered tick, a per-schedule pipeline
+    cron, a one-shot run, a customer geo rescore — with the id it refers to."""
+    m = _SCHEDULE_JOB_RE.match(job_id)
+    if m:
+        return "pipeline_schedule", int(m.group(1))
+    m = _ONE_SHOT_JOB_RE.match(job_id)
+    if m:
+        return "one_shot", int(m.group(1))
+    if _GEO_JOB_RE.match(job_id):
+        return "geo_rescore_customer", None
+    if job_id in tracked_ids:
+        return "tick", None
+    return "unknown", None
+
+
+def merge_jobs(registered: list[dict], last_rows, count_rows, tracked_ids) -> list[dict]:
+    """One row per job: APScheduler's registry on THIS instance joined with the
+    ledger's newest row and 7-day counts.
+
+    ``registered``: [{id, trigger, next_run_time, func_job_id}] from
+    ``scheduler.get_jobs()``. ``last_rows`` (DISTINCT ON job_id) and
+    ``count_rows`` ({job_id, status, n}) are None when that read was cut off —
+    then ``last`` / ``counts_7d`` are None on every job, never zeros. A job the
+    ledger knows but this instance does not (the other instance's, or one that
+    is no longer registered) gets ``scheduled_here: False``.
+    """
+    last_by = None if last_rows is None else {r["job_id"]: r for r in last_rows}
+    counts_by = None
+    if count_rows is not None:
+        counts_by = {}
+        for r in count_rows:
+            bucket = counts_by.setdefault(
+                r["job_id"], {"ok": 0, "error": 0, "skipped": 0, "running": 0})
+            bucket[r["status"]] = r["n"]
+    reg_by = {r["id"]: r for r in registered}
+    ids = set(reg_by)
+    if last_by:
+        ids |= set(last_by)
+    out = []
+    for jid in ids:
+        kind, ref = classify_job_id(jid, tracked_ids)
+        reg = reg_by.get(jid)
+        out.append({
+            "id": jid,
+            "kind": kind,
+            "ref": ref,
+            "tracked": jid in tracked_ids,
+            "scheduled_here": reg is not None,
+            "trigger": reg["trigger"] if reg else None,
+            "next_run_time": reg["next_run_time"] if reg else None,
+            "last": None if last_by is None else last_by.get(jid),
+            "counts_7d": None if counts_by is None else counts_by.get(
+                jid, {"ok": 0, "error": 0, "skipped": 0, "running": 0}),
+        })
+
+    def _key(row):
+        ref = row["ref"] or 0
+        # schedules ascending by schedule id, one-shots newest first
+        return (_KIND_ORDER[row["kind"]], ref if row["kind"] == "pipeline_schedule" else -ref,
+                row["id"])
+    return sorted(out, key=_key)
+
+
+def canonical_migration_name(name: str) -> str:
+    """Zero-pad a migration filename's leading number to 4 digits — the exact
+    rule db/migrate.py::_canonical applies when comparing files to the
+    schema_migrations table (a database migrated under the old 3-digit names
+    still recognises the renamed files)."""
+    m = _MIGRATION_PREFIX_RE.match(name)
+    return f"{int(m.group(1)):04d}{m.group(2)}" if m else name
+
+
+def pending_migrations(on_disk, applied) -> list[str]:
+    """On-disk migration files not recorded as applied, oldest first."""
+    done = {canonical_migration_name(a) for a in applied}
+    pending = [n for n in on_disk if canonical_migration_name(n) not in done]
+    return sorted(pending, key=canonical_migration_name)

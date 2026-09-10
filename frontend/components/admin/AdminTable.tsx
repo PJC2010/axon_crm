@@ -74,3 +74,49 @@ export function Pagination({
     </div>
   )
 }
+
+/** "42s", "3m 05s", "1h 12m" — a job or run's wall time; "—" when unknown. */
+export function fmtDuration(s: number | null | undefined): string {
+  if (s === null || s === undefined || Number.isNaN(s)) return '—'
+  const secs = Math.max(0, Math.round(s))
+  if (secs < 60) return `${secs}s`
+  const m = Math.floor(secs / 60)
+  if (m < 60) return `${m}m ${String(secs % 60).padStart(2, '0')}s`
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`
+}
+
+/* Card chrome + a titled table inside it — the Security and Ops pages' section
+   unit, kept here so there is one copy of the style. */
+
+export const CARD: React.CSSProperties = {
+  background: 'var(--color-surface)', borderRadius: 'var(--radius-card)',
+  boxShadow: 'var(--shadow-card)', marginBottom: 18,
+}
+
+export function SectionTable({ title, headers, empty, note, children }: {
+  title: string
+  headers: string[]
+  empty: boolean
+  note?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <div style={{ ...CARD, overflowX: 'auto' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', padding: '14px 16px 8px' }}>
+        <h2 className="t-eyebrow" style={{ margin: 0 }}>{title}</h2>
+        {note && <span style={{ fontSize: 12.5, color: 'var(--color-ink-500)' }}>{note}</span>}
+      </div>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr>{headers.map((h, i) => <th key={`${h}-${i}`} style={TH_STYLE}>{h}</th>)}</tr>
+        </thead>
+        <tbody>
+          {empty && (
+            <tr><td colSpan={headers.length} style={{ ...TD_STYLE, textAlign: 'center', padding: '24px 0', color: 'var(--color-ink-400)' }}>Nothing to show</td></tr>
+          )}
+          {children}
+        </tbody>
+      </table>
+    </div>
+  )
+}

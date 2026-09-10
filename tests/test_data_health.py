@@ -11,7 +11,7 @@ os.environ.setdefault("JWT_SECRET_KEY", "test-secret-not-used-for-signing")
 import config  # noqa: E402
 from api import data_health  # noqa: E402
 from api import scheduler as sched  # noqa: E402
-from tests.fakeconn import Conn, first_index, sql_matching  # noqa: E402
+from tests.fakeconn import Conn, first_index, split_ledger, sql_matching  # noqa: E402
 
 PARCEL_COLS = ["total", "with_coords", "with_apn", "unclassified", "non_residential",
                "property_type", "year_built", "estimated_value", "owner_name",
@@ -104,7 +104,13 @@ def fake_db(monkeypatch):
         ("INSERT INTO data_health_snapshots", (["id"], [(42,)])),
     ]
     monkeypatch.setattr(data_health.psycopg2, "connect", _factory)
-    return type("Handle", (), {"conns": conns, "script": _factory.script})()
+    # run_snapshot is a tracked tick (api/job_runs.py), so the ledger's own
+    # connections come before and after the tick's: read tick_conns.
+    return type("Handle", (), {
+        "conns": conns, "script": _factory.script,
+        "tick_conns": property(lambda s: split_ledger(conns)[1]),
+        "ledger_conns": property(lambda s: split_ledger(conns)[0]),
+    })()
 
 
 class TestRunSnapshot:
@@ -112,7 +118,7 @@ class TestRunSnapshot:
         monkeypatch.setattr(data_health, "build_report", lambda conn, **kw: {
             "blocks_failed": [], "duration_seconds": 0.2, "parcels": {"total": 1}})
         assert data_health.run_snapshot("admin") == 42
-        conn, = fake_db.conns
+        conn, = fake_db.tick_conns
         (_, ins_params), = sql_matching(conn, "INSERT INTO data_health_snapshots")
         assert ins_params[0] == "admin"
         (_, upd), = sql_matching(conn, "UPDATE data_health_snapshots SET finished_at")
@@ -130,7 +136,7 @@ class TestRunSnapshot:
         monkeypatch.setattr(data_health, "build_report",
                             lambda conn, **kw: {"blocks_failed": ["hcad"], "duration_seconds": 0.2})
         data_health.run_snapshot()
-        (_, params), = sql_matching(fake_db.conns[0], "UPDATE data_health_snapshots SET finished_at")
+        (_, params), = sql_matching(fake_db.tick_conns[0], "UPDATE data_health_snapshots SET finished_at")
         assert params[0] == "partial"
 
     def test_error_when_the_report_itself_blows_up(self, fake_db, monkeypatch):
@@ -138,14 +144,64 @@ class TestRunSnapshot:
             raise RuntimeError("db gone")
         monkeypatch.setattr(data_health, "build_report", boom)
         assert data_health.run_snapshot() == 42
-        (_, params), = sql_matching(fake_db.conns[0], "UPDATE data_health_snapshots SET finished_at")
+        (_, params), = sql_matching(fake_db.tick_conns[0], "UPDATE data_health_snapshots SET finished_at")
         assert params[0] == "error" and params[2] == "RuntimeError: db gone"
 
     def test_lock_held_means_skip(self, fake_db):
         fake_db.script[0] = ("pg_try_advisory_lock", (["ok"], [(False,)]))
         assert data_health.run_snapshot() is None
-        conn, = fake_db.conns
+        conn, = fake_db.tick_conns
         assert not sql_matching(conn, "INSERT INTO data_health_snapshots") and conn.closed
+
+
+class TestLedger:
+    """run_snapshot is wrapped in job_runs.tracked with a manual id: the nightly
+    job and the admin Refresh are ledgered under different ids, so "did the
+    nightly job run?" is never answered by an afternoon refresh."""
+
+    @staticmethod
+    def _ledger_row(fake_db):
+        opened, closed = fake_db.ledger_conns
+        (_, ins), = sql_matching(opened, "INSERT INTO scheduler_job_runs")
+        (_, upd), = sql_matching(closed, "UPDATE scheduler_job_runs SET finished_at")
+        return ins[0], upd[0], upd[1], upd[2].adapted
+
+    def test_manual_refresh_is_ledgered_under_its_own_id(self, fake_db, monkeypatch):
+        fake_db.script.append(("INSERT INTO scheduler_job_runs", (["id"], [(9,)])))
+        monkeypatch.setattr(data_health, "build_report", lambda conn, **kw: {
+            "blocks_failed": [], "duration_seconds": 0.2})
+        assert data_health.run_snapshot("admin") == 42
+        job_id, status, error, detail = self._ledger_row(fake_db)
+        assert job_id == data_health.MANUAL_JOB_ID and status == "ok" and error is None
+        assert detail["snapshot_id"] == 42 and detail["triggered_by"] == "admin"
+        assert detail["snapshot_status"] == "ok" and detail["blocks_failed"] == []
+
+    def test_scheduled_run_is_ledgered_under_the_nightly_id(self, fake_db, monkeypatch):
+        fake_db.script.append(("INSERT INTO scheduler_job_runs", (["id"], [(9,)])))
+        monkeypatch.setattr(data_health, "build_report", lambda conn, **kw: {
+            "blocks_failed": ["hcad"], "duration_seconds": 0.2})
+        data_health.run_snapshot()
+        job_id, status, _, detail = self._ledger_row(fake_db)
+        assert job_id == data_health.JOB_ID and status == "ok"
+        assert detail["snapshot_status"] == "partial" and detail["blocks_failed"] == ["hcad"]
+
+    def test_lock_held_is_a_skipped_run(self, fake_db):
+        fake_db.script[0] = ("pg_try_advisory_lock", (["ok"], [(False,)]))
+        fake_db.script.append(("INSERT INTO scheduler_job_runs", (["id"], [(9,)])))
+        assert data_health.run_snapshot() is None
+        _, status, error, _ = self._ledger_row(fake_db)
+        assert status == "skipped" and error == "another worker holds the lock"
+
+    def test_a_report_crash_is_an_error_run(self, fake_db, monkeypatch):
+        fake_db.script.append(("INSERT INTO scheduler_job_runs", (["id"], [(9,)])))
+
+        def boom(conn, **kw):
+            raise RuntimeError("db gone")
+        monkeypatch.setattr(data_health, "build_report", boom)
+        data_health.run_snapshot()
+        _, status, error, detail = self._ledger_row(fake_db)
+        assert status == "error" and error == "RuntimeError: db gone"
+        assert detail["snapshot_status"] == "error"
 
 
 class TestScheduling:

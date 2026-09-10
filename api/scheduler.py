@@ -9,6 +9,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from config import DATABASE_URL
+from api import job_runs
 
 log = logging.getLogger(__name__)
 
@@ -821,6 +822,10 @@ def enqueue_backfill(run_id: int, account_id: int, zip_code: str | None = None,
     )
 
 
+RETRAIN_JOB_ID = "ml_retrain_nightly"
+
+
+@job_runs.tracked(RETRAIN_JOB_ID)
 def retrain_models():
     """Nightly: refresh outcome labels and retrain the predictive models.
 
@@ -832,14 +837,13 @@ def retrain_models():
     try:
         from pipeline.ml.train import train_all
         result = train_all(conn)
+        job_runs.note(promoted=result.get("promoted"))
         log.info("Model retrain finished: %s", result.get("promoted"))
-    except Exception:
+    except Exception as exc:
+        job_runs.failed(exc)
         log.exception("Model retrain job failed")
     finally:
         conn.close()
-
-
-RETRAIN_JOB_ID = "ml_retrain_nightly"
 
 
 def schedule_retraining():
@@ -880,6 +884,7 @@ ACCOUNT_RESCORE_LOCK_KEY = 742026002
 RECURRING_INVOICE_LOCK_KEY = 742026003
 
 
+@job_runs.tracked("workflow_daily_tick")
 def run_workflow_daily_tick():
     """Daily: evaluate date_offset / inactivity workflow rules for all accounts."""
     conn = psycopg2.connect(DATABASE_URL)
@@ -888,16 +893,18 @@ def run_workflow_daily_tick():
             cur.execute("SELECT pg_try_advisory_lock(%s)", (WORKFLOW_TICK_LOCK_KEY,))
             if not cur.fetchone()[0]:
                 log.info("Workflow tick skipped — another worker holds the lock")
-                return
+                job_runs.skip("another worker holds the lock")
         try:
             from api.workflow_engine import run_daily_rules
             summary = run_daily_rules(conn)
+            job_runs.note(summary)
             log.info("Workflow daily tick finished: %s", summary)
         finally:
             with conn.cursor() as cur:
                 cur.execute("SELECT pg_advisory_unlock(%s)", (WORKFLOW_TICK_LOCK_KEY,))
             conn.commit()
-    except Exception:
+    except Exception as exc:
+        job_runs.failed(exc)
         log.exception("Workflow daily tick failed")
     finally:
         conn.close()
@@ -916,6 +923,7 @@ def schedule_workflow_tick():
     log.info("Scheduled daily workflow tick at %02d:15 UTC", WORKFLOW_TICK_HOUR)
 
 
+@job_runs.tracked("account_rescore_daily")
 def run_account_rescore_tick():
     """Daily: rescore non-property accounts (insurance renewal, retail RFM) whose
     scores drift with time (days-to-renewal, days-since-last-order)."""
@@ -925,16 +933,18 @@ def run_account_rescore_tick():
             cur.execute("SELECT pg_try_advisory_lock(%s)", (ACCOUNT_RESCORE_LOCK_KEY,))
             if not cur.fetchone()[0]:
                 log.info("Account rescore skipped — another worker holds the lock")
-                return
+                job_runs.skip("another worker holds the lock")
         try:
             from pipeline.account_rescore import rescore_all_accounts
             summary = rescore_all_accounts(conn)
+            job_runs.note(summary)
             log.info("Account rescore finished: %s", summary)
         finally:
             with conn.cursor() as cur:
                 cur.execute("SELECT pg_advisory_unlock(%s)", (ACCOUNT_RESCORE_LOCK_KEY,))
             conn.commit()
-    except Exception:
+    except Exception as exc:
+        job_runs.failed(exc)
         log.exception("Account rescore tick failed")
     finally:
         conn.close()
@@ -958,6 +968,7 @@ def schedule_account_rescore():
 NON_RESIDENTIAL_SWEEP_LOCK_KEY = 742026010
 
 
+@job_runs.tracked("non_residential_sweep_daily")
 def run_non_residential_sweep_tick():
     """Nightly: bring every account's stored non-residential verdicts up to date.
 
@@ -982,7 +993,7 @@ def run_non_residential_sweep_tick():
                         (NON_RESIDENTIAL_SWEEP_LOCK_KEY,))
             if not cur.fetchone()[0]:
                 log.info("Non-residential sweep skipped — another worker holds the lock")
-                return
+                job_runs.skip("another worker holds the lock")
         try:
             from pipeline.property_audit import sweep
             with conn.cursor() as cur:
@@ -1000,6 +1011,7 @@ def run_non_residential_sweep_tick():
                     continue
                 swept += 1
                 changed += result["changed"]
+            job_runs.note(accounts=swept, changed=changed, failed=failed)
             log.info("Non-residential sweep finished: %d account(s), %d verdict(s) "
                      "changed, %d failed", swept, changed, failed)
         finally:
@@ -1007,7 +1019,8 @@ def run_non_residential_sweep_tick():
                 cur.execute("SELECT pg_advisory_unlock(%s)",
                             (NON_RESIDENTIAL_SWEEP_LOCK_KEY,))
             conn.commit()
-    except Exception:
+    except Exception as exc:
+        job_runs.failed(exc)
         log.exception("Non-residential sweep tick failed")
     finally:
         conn.close()
@@ -1029,6 +1042,7 @@ def schedule_non_residential_sweep():
              WORKFLOW_TICK_HOUR)
 
 
+@job_runs.tracked("recurring_invoices_daily")
 def run_recurring_invoice_tick():
     """Daily: generate the next occurrence of every due recurring invoice."""
     conn = psycopg2.connect(DATABASE_URL)
@@ -1037,16 +1051,18 @@ def run_recurring_invoice_tick():
             cur.execute("SELECT pg_try_advisory_lock(%s)", (RECURRING_INVOICE_LOCK_KEY,))
             if not cur.fetchone()[0]:
                 log.info("Recurring invoice tick skipped — another worker holds the lock")
-                return
+                job_runs.skip("another worker holds the lock")
         try:
             from api.recurring_invoices import generate_due_invoices
             summary = generate_due_invoices(conn)
+            job_runs.note(summary)
             log.info("Recurring invoice tick finished: %s", summary)
         finally:
             with conn.cursor() as cur:
                 cur.execute("SELECT pg_advisory_unlock(%s)", (RECURRING_INVOICE_LOCK_KEY,))
             conn.commit()
-    except Exception:
+    except Exception as exc:
+        job_runs.failed(exc)
         log.exception("Recurring invoice tick failed")
     finally:
         conn.close()
@@ -1068,28 +1084,33 @@ def schedule_recurring_invoices():
 PHONE_APPEND_SWEEP_LOCK_KEY = 742026008
 
 
+@job_runs.tracked("phone_append_sweep_daily")
 def run_phone_append_sweep_tick():
     """Daily: reverse-append missed-call leads the voice webhook left bare."""
     from config import PHONE_APPEND_SWEEP_MAX
     if PHONE_APPEND_SWEEP_MAX <= 0:
-        return  # sweep disabled — don't even take a connection
+        # sweep disabled — don't even take a connection (the ledger still
+        # records that it was skipped, and why)
+        job_runs.skip("PHONE_APPEND_SWEEP_MAX=0")
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT pg_try_advisory_lock(%s)", (PHONE_APPEND_SWEEP_LOCK_KEY,))
             if not cur.fetchone()[0]:
                 log.info("Phone append sweep skipped — another worker holds the lock")
-                return
+                job_runs.skip("another worker holds the lock")
         try:
             from api.call_append_sweep import run_sweep
             summary = run_sweep(conn)
+            job_runs.note(summary)
             if summary["candidates"]:
                 log.info("Phone append sweep finished: %s", summary)
         finally:
             with conn.cursor() as cur:
                 cur.execute("SELECT pg_advisory_unlock(%s)", (PHONE_APPEND_SWEEP_LOCK_KEY,))
             conn.commit()
-    except Exception:
+    except Exception as exc:
+        job_runs.failed(exc)
         log.exception("Phone append sweep failed")
     finally:
         conn.close()
@@ -1111,6 +1132,7 @@ def schedule_phone_append_sweep():
 TRIAL_EXPIRY_LOCK_KEY = 742026005
 
 
+@job_runs.tracked("trial_expiry_daily")
 def run_trial_expiry_tick():
     """Daily: downgrade expired self-serve trials with no subscription to starter."""
     conn = psycopg2.connect(DATABASE_URL)
@@ -1119,17 +1141,19 @@ def run_trial_expiry_tick():
             cur.execute("SELECT pg_try_advisory_lock(%s)", (TRIAL_EXPIRY_LOCK_KEY,))
             if not cur.fetchone()[0]:
                 log.info("Trial expiry tick skipped — another worker holds the lock")
-                return
+                job_runs.skip("another worker holds the lock")
         try:
             from api.billing import expire_stale_trials
             n = expire_stale_trials(conn)
+            job_runs.note(downgraded=n)
             if n:
                 log.info("Trial expiry tick: downgraded %d account(s) to starter", n)
         finally:
             with conn.cursor() as cur:
                 cur.execute("SELECT pg_advisory_unlock(%s)", (TRIAL_EXPIRY_LOCK_KEY,))
             conn.commit()
-    except Exception:
+    except Exception as exc:
+        job_runs.failed(exc)
         log.exception("Trial expiry tick failed")
     finally:
         conn.close()
@@ -1151,6 +1175,7 @@ def schedule_trial_expiry():
 UNVERIFIED_DIGEST_LOCK_KEY = 742026006
 
 
+@job_runs.tracked("unverified_digest_daily")
 def run_unverified_signup_digest():
     """Daily: email ADMIN_NOTIFICATION_EMAIL a digest of yesterday's signups
     that never verified their email — warm leads worth a manual follow-up.
@@ -1162,14 +1187,14 @@ def run_unverified_signup_digest():
     from api.notifications import admin_alerts_configured, send_email
     from config import ADMIN_NOTIFICATION_EMAIL
     if not admin_alerts_configured():
-        return
+        job_runs.skip("admin alerts not configured")
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT pg_try_advisory_lock(%s)", (UNVERIFIED_DIGEST_LOCK_KEY,))
             if not cur.fetchone()[0]:
                 log.info("Unverified-signup digest skipped — another worker holds the lock")
-                return
+                job_runs.skip("another worker holds the lock")
         try:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
@@ -1186,6 +1211,7 @@ def run_unverified_signup_digest():
                 )
                 rows = cur.fetchall()
             if not rows:
+                job_runs.note(signups=0)
                 return
             import html as _html
             items = "".join(
@@ -1210,12 +1236,14 @@ def run_unverified_signup_digest():
                 </div>
                 """,
             )
+            job_runs.note(signups=len(rows))
             log.info("Unverified-signup digest sent: %d signup(s)", len(rows))
         finally:
             with conn.cursor() as cur:
                 cur.execute("SELECT pg_advisory_unlock(%s)", (UNVERIFIED_DIGEST_LOCK_KEY,))
             conn.commit()
-    except Exception:
+    except Exception as exc:
+        job_runs.failed(exc)
         log.exception("Unverified-signup digest failed")
     finally:
         conn.close()
@@ -1237,6 +1265,7 @@ def schedule_unverified_digest():
 USER_DIGEST_LOCK_KEY = 742026007
 
 
+@job_runs.tracked("user_digest_daily")
 def run_user_digest_tick():
     """Daily: send the opt-in "who to call today" email to subscribed users
     (see api/digest.py). The morning-list ritual is the product's habit loop."""
@@ -1246,17 +1275,19 @@ def run_user_digest_tick():
             cur.execute("SELECT pg_try_advisory_lock(%s)", (USER_DIGEST_LOCK_KEY,))
             if not cur.fetchone()[0]:
                 log.info("User digest tick skipped — another worker holds the lock")
-                return
+                job_runs.skip("another worker holds the lock")
         try:
             from api.digest import send_daily_digests
             sent = send_daily_digests(conn)
+            job_runs.note(sent=sent)
             if sent:
                 log.info("User digest tick: sent %d email(s)", sent)
         finally:
             with conn.cursor() as cur:
                 cur.execute("SELECT pg_advisory_unlock(%s)", (USER_DIGEST_LOCK_KEY,))
             conn.commit()
-    except Exception:
+    except Exception as exc:
+        job_runs.failed(exc)
         log.exception("User digest tick failed")
     finally:
         conn.close()
@@ -1312,6 +1343,7 @@ def enqueue_customer_geo_rescore(account_id: int, customer_id: int):
                       account_id, customer_id)
 
 
+@job_runs.tracked("geo_rescore_nightly")
 def run_geo_rescore_tick():
     """Nightly: drain the geocode queue, refresh derived service areas, and
     re-score every account's leads whose geo inputs may have drifted."""
@@ -1321,16 +1353,17 @@ def run_geo_rescore_tick():
             cur.execute("SELECT pg_try_advisory_lock(%s)", (GEO_RESCORE_LOCK_KEY,))
             if not cur.fetchone()[0]:
                 log.info("Geo rescore skipped — another worker holds the lock")
-                return
+                job_runs.skip("another worker holds the lock")
         try:
             from pipeline.geocode_provider import process_queue
             from pipeline.geo_score_store import refresh_service_area, rescore_leads
             from pipeline.geo_cluster_store import backfill_h3, recompute_clusters
-            process_queue(conn, limit=1000)
+            job_runs.note(geocode_queue=process_queue(conn, limit=1000))
             with conn.cursor() as cur:
                 cur.execute("SELECT id FROM accounts")
                 account_ids = [r[0] for r in cur.fetchall()]
             total = 0
+            failed_accounts = 0
             for account_id in account_ids:
                 try:
                     # H3 first so freshly geocoded rows land in a hex; rescore before
@@ -1341,14 +1374,17 @@ def run_geo_rescore_tick():
                     recompute_clusters(conn, account_id)
                 except Exception:
                     conn.rollback()
+                    failed_accounts += 1
                     log.exception("Geo rescore failed for account %d", account_id)
+            job_runs.note(leads=total, accounts=len(account_ids), failed=failed_accounts)
             log.info("Geo rescore tick finished: %d lead(s) across %d account(s)",
                      total, len(account_ids))
         finally:
             with conn.cursor() as cur:
                 cur.execute("SELECT pg_advisory_unlock(%s)", (GEO_RESCORE_LOCK_KEY,))
             conn.commit()
-    except Exception:
+    except Exception as exc:
+        job_runs.failed(exc)
         log.exception("Geo rescore tick failed")
     finally:
         conn.close()
@@ -1369,6 +1405,7 @@ def schedule_geo_rescore():
     log.info("Scheduled nightly geo rescore at %02d:50 UTC", WORKFLOW_TICK_HOUR)
 
 
+@job_runs.tracked("stale_run_reconcile")
 def reconcile_stale_runs() -> int:
     """Mark runs `failed` that no process can still be executing.
 
@@ -1392,7 +1429,7 @@ def reconcile_stale_runs() -> int:
             cur.execute("SELECT pg_try_advisory_lock(%s)", (PIPELINE_RUN_LOCK_KEY,))
             if not cur.fetchone()[0]:
                 log.debug("Stale-run reconcile skipped — a run is in progress")
-                return 0
+                job_runs.skip("a run is in progress", result=0)
         try:
             # RUN_MAX_SECONDS=0 disables the watchdog; the sweep must then use
             # a generous fallback, not 1 second — a live backfill doesn't hold
@@ -1420,6 +1457,22 @@ def reconcile_stale_runs() -> int:
                     (psycopg2.extras.Json({"error": "stale (never started — process restarted)"}),),
                 )
                 n += cur.rowcount
+                # The job ledger's own hygiene (api/job_runs.py, migration 0088):
+                # a tick that died mid-run — a redeploy — leaves its row at
+                # `running`, and rows older than 90 days are not worth a scan.
+                # Neither rowcount joins `n`, which counts stale pipeline runs.
+                cur.execute(
+                    "UPDATE scheduler_job_runs SET status = 'error', finished_at = NOW(), "
+                    "error = 'stale (process restarted)' "
+                    "WHERE status = 'running' AND started_at < NOW() - INTERVAL '6 hours'"
+                )
+                stale_job_rows = cur.rowcount
+                cur.execute(
+                    "DELETE FROM scheduler_job_runs "
+                    "WHERE started_at < NOW() - INTERVAL '90 days'"
+                )
+                job_runs.note(reconciled=n, stale_job_rows=stale_job_rows,
+                              pruned_job_rows=cur.rowcount)
             conn.commit()
             if n:
                 log.warning("Reconciled %d stale pipeline run(s) to failed", n)
@@ -1428,7 +1481,8 @@ def reconcile_stale_runs() -> int:
             with conn.cursor() as cur:
                 cur.execute("SELECT pg_advisory_unlock(%s)", (PIPELINE_RUN_LOCK_KEY,))
             conn.commit()
-    except Exception:
+    except Exception as exc:
+        job_runs.failed(exc)
         log.exception("Stale-run reconciliation failed")
         return 0
     finally:
